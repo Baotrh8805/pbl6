@@ -5,14 +5,18 @@ import com.pbl6.flashcard.dto.AuthResponse;
 import com.pbl6.flashcard.dto.RegisterRequest;
 import com.pbl6.flashcard.service.AuthService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
+
 public class AuthController {
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
+
 
     private final AuthService authService;
 

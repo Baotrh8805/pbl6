@@ -8,7 +8,7 @@ import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.repository.UserRepository;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.security.JwtTokenProvider;
-import lombok.RequiredArgsConstructor;
+
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -17,8 +17,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
+
 public class AuthService {
+    public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository, PasswordEncoder passwordEncoder, JwtTokenProvider tokenProvider) {
+        this.authenticationManager = authenticationManager;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.tokenProvider = tokenProvider;
+    }
+
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
