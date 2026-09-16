@@ -1,0 +1,13 @@
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/model/User.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/security/CustomUserDetails.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/controller/AuthController.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/security/JwtAuthenticationFilter.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/repository/UserRepository.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/service/AuthService.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/dto/AuthResponse.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/dto/RegisterRequest.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/config/SecurityConfig.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/dto/AuthRequest.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/model/Role.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/security/JwtTokenProvider.java
+/Users/thinguyen/nam 4/pbl6/backend-core/src/main/java/com/pbl6/flashcard/security/CustomUserDetailsService.java
