@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Database PostgreSQL (Nếu chạy local offline thay vì Supabase Cloud)
+  postgres:
+    image: postgres:16-alpine
+    container_name: pbl6_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pbl6_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Redis Cache cho Java Backend & AI service
+  redis:
+    image: redis:7-alpine
+    container_name: pbl6_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  # Neo4j Graph Database cho GraphRAG
+  neo4j:
+    image: neo4j:5-community
+    container_name: pbl6_neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/password123
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474" # Neo4j Browser UI
+      - "7687:7687" # Bolt protocol
+    volumes:
+      - neo4jdata:/data
+
+volumes:
+  pgdata:
+  neo4jdata:
