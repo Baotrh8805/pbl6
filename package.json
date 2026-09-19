@@ -1,0 +1,9 @@
+{
+    "name": "pbl6",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "node dev.mjs",
+        "smoke": "node smoke-auth.mjs"
+    }
+}

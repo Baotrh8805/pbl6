@@ -58,4 +58,15 @@ public class AuthService {
 
         return userRepository.save(user);
     }
+
+    public User getCurrentUser(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng: " + email));
+    }
+
+    public User updateJlptLevel(String email, String newLevel) {
+        User user = getCurrentUser(email);
+        user.setJlptLevel(newLevel);
+        return userRepository.save(user);
+    }
 }

@@ -1,0 +1,78 @@
+# ==============================================================================
+# Security & Environment Variables (API Keys, Passwords, Secrets)
+# ==============================================================================
+.env
+.env.*
+!.env.example
+*.env
+*.key
+*.pem
+secrets/
+credentials.json
+backend-core/src/main/resources/application-local.properties
+ai-service/.env
+
+# ==============================================================================
+# Java & Maven (backend-core)
+# ==============================================================================
+backend-core/target/
+**/target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/wrapper/maven-wrapper.jar
+
+# ==============================================================================
+# Python & AI Service (ai-service)
+# ==============================================================================
+venv/
+*/venv/
+env/
+*/env/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# ==============================================================================
+# Frontend & Node (frontend)
+# ==============================================================================
+node_modules/
+**/node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+dist-ssr/
+*.local
+
+# ==============================================================================
+# IDEs & Operating System Files
+# ==============================================================================
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================================================================
+# Database / Docker Local Data
+# ==============================================================================
+pgdata/
+neo4jdata/

@@ -30,6 +30,19 @@ Hệ thống được chia thành 3 phần độc lập (Service-oriented):
 
 ---
 
+## ⚡ Chạy nhanh Frontend + Backend bằng 1 lệnh
+
+Tại thư mục gốc dự án:
+```bash
+npm run dev      # chạy song song Backend (:8080) và Frontend (:5173)
+npm run smoke    # kiểm chứng register -> login end-to-end qua proxy Vite
+```
+Log hai tiến trình có tiền tố `[BE]` / `[FE]`. Nhấn Ctrl+C là tắt cả hai.
+Script tự giải phóng cổng 8080/5173 trước khi start, nên không còn lỗi
+`Port 8080 was already in use` do tiến trình mồ côi từ lần chạy trước.
+Yêu cầu: JDK 17+, Maven, Node 18+, và `npm install` trong `frontend/`.
+(AI Service chạy riêng — xem Bước 2 bên dưới.)
+
 ## 🚀 Khởi Động Nhanh Cho Cả Nhóm
 
 ### Bước 1: Khởi động cơ sở dữ liệu hạ tầng (Docker)

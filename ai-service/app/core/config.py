@@ -1,5 +1,9 @@
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+# Tự động nạp biến môi trường từ .env
+load_dotenv()
 
 class Settings(BaseModel):
     PROJECT_NAME: str = "PBL6 Japanese AI Service"
