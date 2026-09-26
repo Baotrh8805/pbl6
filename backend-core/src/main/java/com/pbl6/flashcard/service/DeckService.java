@@ -385,6 +385,11 @@ public class DeckService {
         return quizResultRepository.findTop10ByUserIdOrderByCreatedAtDesc(uid);
     }
 
+    @Transactional(readOnly = true)
+    public long countResults(Long uid) {
+        return quizResultRepository.countByUserId(uid);
+    }
+
     // ---------- tiện ích ----------
 
     /** Bỏ thẻ thiếu thuật ngữ/nghĩa (dòng trống trong trình soạn). */

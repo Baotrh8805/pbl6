@@ -1,5 +1,6 @@
-// Chạy song song backend (Spring Boot :8080) + frontend (Vite :5173). Dùng: npm run dev
+// Chạy backend (Spring Boot :8080), đợi backend lên rồi chạy frontend (Vite :5173). Dùng: npm run dev
 import { spawn, execSync } from "node:child_process";
+import net from "node:net";
 
 const isWin = process.platform === "win32";
 
@@ -34,10 +35,10 @@ function freePort(port) {
 const bePort = process.env.BE_PORT ?? "8080";
 for (const port of new Set([bePort, "8081", "5173"])) freePort(port);
 
-const procs = [
-    ["BE", `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${bePort}`, "backend-core"],
-    ["FE", "npm run dev", "frontend"],
-].map(([tag, cmd, cwd]) => {
+const procs = [];
+let closing = false;
+
+function start(tag, cmd, cwd) {
     // shell: true vì trên Windows mvn/npm là file .cmd, spawn trực tiếp sẽ EINVAL
     const p = spawn(cmd, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"] });
     const print = (chunk) => {
@@ -52,11 +53,22 @@ const procs = [
         console.log(`[${tag}] thoát với code ${code}`);
         shutdown();
     });
+    procs.push(p);
     return p;
-});
+}
+
+// Cổng đã nhận kết nối = Spring Boot khởi động xong (Tomcat mở cổng sau khi context sẵn sàng).
+const isPortOpen = (port) =>
+    new Promise((resolve) => {
+        const socket = net.connect({ port: Number(port), host: "localhost" });
+        socket.once("connect", () => {
+            socket.destroy();
+            resolve(true);
+        });
+        socket.once("error", () => resolve(false));
+    });
 
 // Một tiến trình chết -> tắt tiến trình còn lại, không để mồ côi cổng 8080/5173
-let closing = false;
 function shutdown() {
     if (closing) return;
     closing = true;
@@ -71,3 +83,16 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+start("BE", `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${bePort}`, "backend-core");
+
+// Chờ backend rồi mới bật Vite: nếu bật cùng lúc, tab trình duyệt đang mở reload và gọi /api
+// khi Spring Boot còn đang khởi động -> hàng loạt "http proxy error ... ECONNREFUSED".
+console.log(`[dev] chờ backend mở cổng ${bePort}...`);
+while (!closing && !(await isPortOpen(bePort))) {
+    await new Promise((r) => setTimeout(r, 1000));
+}
+if (!closing) {
+    console.log(`[dev] backend sẵn sàng -> khởi động frontend`);
+    start("FE", "npm run dev", "frontend");
+}

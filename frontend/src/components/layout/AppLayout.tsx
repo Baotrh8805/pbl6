@@ -4,7 +4,7 @@ import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
 import { calcLearningStats, EMPTY_STATS } from "@/lib/learningStats";
 import { fetchDecks } from "@/services/deckService";
-import { fetchQuizResults, fetchReviews } from "@/services/studyService";
+import { fetchQuizResultCount, fetchQuizResults, fetchReviews } from "@/services/studyService";
 import type { LearningSettings, UserMetrics } from "@/features/dashboard/types/dashboard.types";
 import {
     getTargetWordsByLevel,
@@ -17,8 +17,13 @@ import { LearningSettingsModal } from "@/features/dashboard/components/modals/Le
 import type { ShellContext } from "./shellContext";
 
 const loadStatsSource = async () => {
-    const [decks, reviews, quizResults] = await Promise.all([fetchDecks(), fetchReviews(), fetchQuizResults()]);
-    return { decks, reviews, quizResults };
+    const [decks, reviews, quizResults, quizCount] = await Promise.all([
+        fetchDecks(),
+        fetchReviews(),
+        fetchQuizResults(),
+        fetchQuizResultCount(),
+    ]);
+    return { decks, reviews, quizResults, quizCount };
 };
 
 export const AppLayout: React.FC = () => {
@@ -50,6 +55,8 @@ export const AppLayout: React.FC = () => {
             : EMPTY_STATS;
         return {
             ...base,
+            // /quiz-results chỉ trả 10 bài gần nhất; tổng số lấy từ endpoint đếm riêng.
+            quizCount: stats.data?.quizCount ?? base.quizCount,
             totalTargetWords: settings.targetWords ?? getTargetWordsByLevel(currentLevel),
             dailyGoalWords: settings.dailyGoalWords,
         };
@@ -65,12 +72,15 @@ export const AppLayout: React.FC = () => {
         metrics,
         decks: stats.data?.decks ?? [],
         reviews: stats.data?.reviews ?? {},
+        quizResults: stats.data?.quizResults ?? [],
         statsLoading: stats.loading,
         statsError: stats.error,
         reloadStats: () => setStatsVersion((v) => v + 1),
         displayName,
         currentLevel,
         openEditMetrics: () => setEditMetricsOpen(true),
+        settings,
+        saveSettings: handleSaveSettings,
     };
 
     return (

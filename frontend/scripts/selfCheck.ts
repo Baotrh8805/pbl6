@@ -18,6 +18,7 @@ import {
   dayKey,
   lastReviewedAt,
 } from "../src/lib/learningStats.ts";
+import { getInitials, isValidDailyGoal, parseProfileTab, scoreTone } from "../src/features/profile/lib/profileUtils.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -198,6 +199,20 @@ async function runSelfCheck() {
   assertStrictEqual(stats.currentStreak, 2, "Ôn hôm qua + hôm nay -> streak 2");
   assertStrictEqual(stats.quizAccuracy, 75, "3/4 = 75%");
   assertStrictEqual(stats.lastQuizPct, 75, "Bài gần nhất 75%");
+
+  // 13. Trang cá nhân (features/profile/lib/profileUtils.ts)
+  assertStrictEqual(getInitials("Lê Văn Chính"), "LC", "Chữ đầu của từ đầu + từ cuối, giữ dấu");
+  assertStrictEqual(getInitials("  chinh  "), "CH", "Một từ -> 2 ký tự đầu");
+  assertStrictEqual(getInitials("   "), "?", "Tên rỗng -> ?");
+  assertStrictEqual(scoreTone(4, 5), "good", "80% đúng ngưỡng -> tốt");
+  assertStrictEqual(scoreTone(79, 100), "fair", "79% -> trung bình");
+  assertStrictEqual(scoreTone(1, 2), "fair", "50% đúng ngưỡng -> trung bình");
+  assertStrictEqual(scoreTone(49, 100), "poor", "49% -> yếu");
+  assertStrictEqual(scoreTone(0, 0), "none", "Bài 0 câu -> trung tính");
+  assertStrictEqual(parseProfileTab("history"), "history", "Tab hợp lệ từ URL");
+  assertStrictEqual(parseProfileTab("hack"), "info", "Tab lạ -> mặc định info");
+  assertStrictEqual(isValidDailyGoal(500), true, "500 là giới hạn trên");
+  assertStrictEqual(isValidDailyGoal(0) || isValidDailyGoal(2.5) || isValidDailyGoal(501), false, "Ngoài 1–500 hoặc lẻ -> sai");
 
   console.log(" All self-check assertions passed successfully!");
 }

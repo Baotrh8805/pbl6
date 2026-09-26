@@ -33,3 +33,8 @@ export const submitQuiz = async (deckId: string, answers: Record<string, string>
 
 export const fetchQuizResults = async (): Promise<QuizResult[]> =>
     (await apiClient.get<QuizResult[]>("/quiz-results")).data;
+
+export const fetchQuizResultCount = async (): Promise<number> => {
+    const n = Number((await apiClient.get("/quiz-results/count")).data);
+    return Number.isFinite(n) ? n : 0;
+};

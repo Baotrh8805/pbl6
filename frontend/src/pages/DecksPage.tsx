@@ -8,7 +8,7 @@ import { useAsync } from "@/lib/useAsync";
 import { Button } from "@/components/ui/Button";
 import { FolderModal } from "@/features/decks/components/DeckModals";
 import { AddExistingDeckModal } from "@/features/decks/components/AddExistingDeckModal";
-import { extractErrorMessage } from "@/services/apiClient";
+import { useDialog } from "@/components/ui/dialogContext";
 
 const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
 
@@ -42,6 +42,7 @@ function getBreadcrumbs(tree: FolderNode[], targetId: string): FolderNode[] {
 
 export const DecksPage: React.FC = () => {
     const navigate = useNavigate();
+    const dialog = useDialog();
     const [params, setParams] = useSearchParams();
     const level = params.get("level") ?? "";
     const q = params.get("q") ?? "";
@@ -101,37 +102,43 @@ export const DecksPage: React.FC = () => {
     // Xoá theo ON DELETE SET NULL: thư mục con và bộ thẻ bên trong được đẩy lên gốc, không mất dữ liệu.
     const handleDeleteFolder = async (e: React.MouseEvent, folder: FolderNode) => {
         e.stopPropagation();
-        if (
-            !window.confirm(
-                `Xoá thư mục "${folder.title}"?\nThư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng, không bị xoá.`
-            )
-        )
-            return;
-        try {
-            await deleteFolder(folder.id);
-            if (folderId === folder.id) setParam("folderId", folder.parentId ?? "");
-            setRefreshIndex((n) => n + 1);
-        } catch (err) {
-            alert(extractErrorMessage(err));
-        }
+        const ok = await dialog.confirm({
+            title: "Xoá thư mục?",
+            message: `Thư mục "${folder.title}" sẽ bị xoá.
+Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng, không bị xoá.`,
+            confirmLabel: "Xoá thư mục",
+            tone: "danger",
+            action: () => deleteFolder(folder.id),
+        });
+        if (!ok) return;
+        if (folderId === folder.id) setParam("folderId", folder.parentId ?? "");
+        setRefreshIndex((n) => n + 1);
     };
 
     const handleDeleteDeck = async (e: React.MouseEvent, deck: Deck) => {
         e.preventDefault();
         e.stopPropagation();
+        const ok = await dialog.confirm({
+            title: "Xoá bộ thẻ?",
+            message: `Bộ thẻ "${deck.title}" và toàn bộ thẻ từ vựng bên trong sẽ bị xoá vĩnh viễn.`,
+            confirmLabel: "Xoá bộ thẻ",
+            tone: "danger",
+            action: () => deleteDeck(deck.id),
+        });
+        if (ok) setRefreshIndex((n) => n + 1);
+    };
 
-        if (
-            window.confirm(
-                `Bạn có chắc chắn muốn xoá bộ thẻ "${deck.title}" không?\nToàn bộ thẻ từ vựng bên trong sẽ bị xoá.`
-            )
-        ) {
-            try {
-                await deleteDeck(deck.id);
-                setRefreshIndex((n) => n + 1);
-            } catch (err) {
-                alert(extractErrorMessage(err));
-            }
-        }
+    const handleRemoveFromFolder = async (e: React.MouseEvent, deck: Deck, folder: FolderNode) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const ok = await dialog.confirm({
+            title: "Đưa bộ thẻ ra khỏi thư mục?",
+            message: `Bộ thẻ "${deck.title}" sẽ được chuyển từ thư mục "${folder.title}" về danh sách ngoài cùng.`,
+            confirmLabel: "Chuyển ra ngoài",
+            tone: "warning",
+            action: () => moveDeckToFolder(deck, null),
+        });
+        if (ok) setRefreshIndex((n) => n + 1);
     };
 
     return (
@@ -474,22 +481,7 @@ export const DecksPage: React.FC = () => {
                                             type="button"
                                             title="Đưa ra khỏi thư mục này (chuyển về gốc)"
                                             aria-label={`Đưa bộ thẻ "${deck.title}" ra khỏi thư mục này`}
-                                            onClick={async (e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                if (
-                                                    window.confirm(
-                                                        `Chuyển bộ thẻ "${deck.title}" ra khỏi thư mục "${currentFolder.title}"?`
-                                                    )
-                                                ) {
-                                                    try {
-                                                        await moveDeckToFolder(deck, null);
-                                                        setRefreshIndex((n) => n + 1);
-                                                    } catch (err) {
-                                                        alert(extractErrorMessage(err));
-                                                    }
-                                                }
-                                            }}
+                                            onClick={(e) => void handleRemoveFromFolder(e, deck, currentFolder)}
                                             className="p-1.5 rounded-lg text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
                                         >
                                             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">folder_off</span>

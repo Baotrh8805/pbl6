@@ -165,4 +165,10 @@ public class StudyController {
     public List<QuizResult> myQuizResults(@AuthenticationPrincipal CustomUserDetails me) {
         return deckService.recentResults(uid(me));
     }
+
+    /** Tổng số bài đã làm (danh sách trên chỉ trả 10 bài gần nhất). */
+    @GetMapping("/quiz-results/count")
+    public long myQuizResultCount(@AuthenticationPrincipal CustomUserDetails me) {
+        return deckService.countResults(uid(me));
+    }
 }

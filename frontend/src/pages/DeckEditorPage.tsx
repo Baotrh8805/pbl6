@@ -17,6 +17,7 @@ import {
   type EditorCard,
 } from "@/features/decks/editor/editorCards";
 import { extractErrorMessage } from "@/services/apiClient";
+import { useDialog } from "@/components/ui/dialogContext";
 
 interface DeckEditorPageProps {
   mode?: "create" | "edit" | "add-cards";
@@ -94,6 +95,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   isEditing,
 }) => {
   const navigate = useNavigate();
+  const dialog = useDialog();
 
   const [title, setTitle] = useState(deck?.title ?? "");
   const [level, setLevel] = useState(deck?.level || "N5");
@@ -135,10 +137,13 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
     setCards((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSwapTermsAndMeanings = () => {
-    if (!window.confirm("Bạn có chắc chắn muốn đảo vị trí giữa Thuật ngữ và Định nghĩa của tất cả thẻ?")) {
-      return;
-    }
+  const handleSwapTermsAndMeanings = async () => {
+    const ok = await dialog.confirm({
+      title: "Đảo thuật ngữ và định nghĩa?",
+      message: "Thuật ngữ và định nghĩa của tất cả thẻ sẽ đổi chỗ cho nhau. Bấm lần nữa để đảo lại.",
+      confirmLabel: "Đảo vị trí",
+    });
+    if (!ok) return;
     setCards((prev) =>
       prev.map((c) => ({
         ...c,
@@ -148,10 +153,14 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
     );
   };
 
-  const handleClearAllCards = () => {
-    if (!window.confirm("Bạn có chắc chắn muốn xóa toàn bộ danh sách thẻ để bắt đầu lại không?")) {
-      return;
-    }
+  const handleClearAllCards = async () => {
+    const ok = await dialog.confirm({
+      title: "Xoá toàn bộ thẻ?",
+      message: "Mọi thẻ đang soạn sẽ bị xoá để bắt đầu lại. Thao tác này không thể hoàn tác.",
+      confirmLabel: "Xoá tất cả",
+      tone: "danger",
+    });
+    if (!ok) return;
     setCards(createEmptyCards(3));
   };
 

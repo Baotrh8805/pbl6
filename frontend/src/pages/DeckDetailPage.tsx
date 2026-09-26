@@ -11,11 +11,12 @@ import { Button } from "@/components/ui/Button";
 import { CardModal } from "@/features/decks/components/DeckModals";
 import { ShareDeckModal } from "@/features/decks/components/ShareDeckModal";
 import { canEditDeck, deckSourceLabel } from "@/lib/deckUtils";
-import { extractErrorMessage } from "@/services/apiClient";
+import { useDialog } from "@/components/ui/dialogContext";
 
 export const DeckDetailPage: React.FC = () => {
     const { deckId = "" } = useParams();
     const navigate = useNavigate();
+    const dialog = useDialog();
 
     const [refreshIndex, setRefreshIndex] = useState(0);
     const { data, error, loading } = useAsync(
@@ -48,18 +49,14 @@ export const DeckDetailPage: React.FC = () => {
     const masteryPct = deck.cards.length ? Math.round((mastered / deck.cards.length) * 100) : 0;
 
     const handleDeleteDeck = async () => {
-        if (
-            window.confirm(
-                `Bạn có chắc chắn muốn xoá bộ thẻ "${deck.title}" không?\nToàn bộ thẻ từ vựng bên trong sẽ bị xoá.`
-            )
-        ) {
-            try {
-                await deleteDeck(deck.id);
-                navigate("/decks");
-            } catch (err) {
-                alert(extractErrorMessage(err));
-            }
-        }
+        const ok = await dialog.confirm({
+            title: "Xoá bộ thẻ?",
+            message: `Bộ thẻ "${deck.title}" và toàn bộ thẻ từ vựng bên trong sẽ bị xoá vĩnh viễn.`,
+            confirmLabel: "Xoá bộ thẻ",
+            tone: "danger",
+            action: () => deleteDeck(deck.id),
+        });
+        if (ok) navigate("/decks");
     };
 
     const handleSaveCard = async (dto: CardDto) => {
@@ -72,14 +69,14 @@ export const DeckDetailPage: React.FC = () => {
     };
 
     const handleDeleteCard = async (card: Card) => {
-        if (window.confirm(`Bạn có chắc chắn muốn xoá thẻ "${card.term}" không?`)) {
-            try {
-                await deleteCard(deck.id, card.id);
-                setRefreshIndex((n) => n + 1);
-            } catch (err) {
-                alert(extractErrorMessage(err));
-            }
-        }
+        const ok = await dialog.confirm({
+            title: "Xoá thẻ?",
+            message: `Thẻ "${card.term}" sẽ bị xoá khỏi bộ thẻ, kèm lịch sử ôn tập của thẻ này.`,
+            confirmLabel: "Xoá thẻ",
+            tone: "danger",
+            action: () => deleteCard(deck.id, card.id),
+        });
+        if (ok) setRefreshIndex((n) => n + 1);
     };
 
     return (

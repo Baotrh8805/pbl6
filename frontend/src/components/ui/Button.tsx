@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { Loader2 } from "lucide-react";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "accent" | "secondary" | "outline" | "ghost";
+  variant?: "primary" | "accent" | "secondary" | "outline" | "ghost" | "danger";
   size?: "sm" | "md" | "lg";
   isLoading?: boolean;
 }
@@ -31,6 +31,8 @@ export const Button: React.FC<ButtonProps> = ({
       "border border-outline-variant hover:border-primary text-on-surface bg-surface-container-lowest hover:bg-surface-container-low focus:ring-primary/20",
     ghost:
       "text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high focus:ring-surface-tint/20",
+    danger:
+      "bg-error hover:bg-on-error-container text-white shadow-sm hover:shadow active:scale-[0.99] focus:ring-error/40",
   };
 
   const sizes = {

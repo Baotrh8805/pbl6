@@ -9,4 +9,6 @@ import java.util.List;
 @Repository
 public interface QuizResultRepository extends JpaRepository<QuizResult, Long> {
     List<QuizResult> findTop10ByUserIdOrderByCreatedAtDesc(Long userId);
+
+    long countByUserId(Long userId);
 }

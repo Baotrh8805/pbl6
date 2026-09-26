@@ -5,7 +5,7 @@ import { fetchFolders, createFolder, updateFolder, deleteFolder } from "@/servic
 import { moveTargets } from "@/lib/deckUtils";
 import type { FolderNode, Deck, FolderDto } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
-import { extractErrorMessage } from "@/services/apiClient";
+import { useDialog, type ConfirmOptions } from "@/components/ui/dialogContext";
 import { FolderModal } from "@/features/decks/components/DeckModals";
 import { AddExistingDeckModal } from "@/features/decks/components/AddExistingDeckModal";
 import { ShareFolderModal } from "@/features/folders/components/ShareFolderModal";
@@ -25,6 +25,7 @@ type FolderRef = { id: string; title: string };
 
 export const FoldersPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
+  const dialog = useDialog();
   const folderId = params.get("folderId") ?? "";
   const levelParam = params.get("level") ?? "";
   const qParam = params.get("q") ?? "";
@@ -110,37 +111,39 @@ export const FoldersPage: React.FC = () => {
     refresh();
   };
 
-  // Hỏi xác nhận -> chạy thao tác -> tải lại; lỗi thì báo bằng alert.
-  const runConfirmed = async (message: string, action: () => Promise<unknown>) => {
-    if (!window.confirm(message)) return;
-    try {
-      await action();
-      refresh();
-    } catch (err) {
-      alert(extractErrorMessage(err));
-    }
+  // Hỏi xác nhận -> chạy thao tác ngay trong hộp thoại (lỗi hiện tại chỗ) -> thành công thì tải lại.
+  const runConfirmed = async (options: ConfirmOptions) => {
+    if (await dialog.confirm({ tone: "danger", ...options })) refresh();
   };
 
   const handleDeleteFolder = (folder: FolderNode) =>
-    runConfirmed(
-      `Xoá thư mục "${folder.title}"?\nThư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài cùng, không bị xoá.`,
-      async () => {
+    runConfirmed({
+      title: "Xoá thư mục?",
+      message: `Thư mục "${folder.title}" sẽ bị xoá.
+Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài cùng, không bị xoá.`,
+      confirmLabel: "Xoá thư mục",
+      action: async () => {
         await deleteFolder(folder.id);
         if (folderId === folder.id) setParam("folderId", folder.parentId ?? "");
-      }
-    );
+      },
+    });
 
   const handleDeleteDeck = (deck: Deck) =>
-    runConfirmed(
-      `Bạn có chắc chắn muốn xoá bộ thẻ "${deck.title}" không?\nToàn bộ flashcard bên trong sẽ bị xoá.`,
-      () => deleteDeck(deck.id)
-    );
+    runConfirmed({
+      title: "Xoá bộ thẻ?",
+      message: `Bộ thẻ "${deck.title}" và toàn bộ flashcard bên trong sẽ bị xoá vĩnh viễn.`,
+      confirmLabel: "Xoá bộ thẻ",
+      action: () => deleteDeck(deck.id),
+    });
 
   const handleRemoveDeckFromFolder = (deck: Deck) =>
-    runConfirmed(
-      `Đưa bộ thẻ "${deck.title}" ra khỏi thư mục "${currentFolder?.title}"?\nBộ thẻ sẽ được chuyển về danh sách ngoài cùng.`,
-      () => moveDeckToFolder(deck, null)
-    );
+    runConfirmed({
+      title: "Đưa bộ thẻ ra khỏi thư mục?",
+      message: `Bộ thẻ "${deck.title}" sẽ được chuyển từ thư mục "${currentFolder?.title}" về danh sách ngoài cùng.`,
+      confirmLabel: "Chuyển ra ngoài",
+      tone: "warning",
+      action: () => moveDeckToFolder(deck, null),
+    });
 
   const error = foldersError || decksError;
 
