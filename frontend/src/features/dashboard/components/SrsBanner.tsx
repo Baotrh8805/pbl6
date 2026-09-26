@@ -21,7 +21,7 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
       <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md">
         <div className="flex items-center gap-space-md">
           <div className="w-12 h-12 rounded-xl bg-surface-container-lowest/15 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
-            <span className="material-symbols-outlined text-secondary-fixed text-[28px] animate-pulse">
+            <span aria-hidden="true" className="material-symbols-outlined text-secondary-fixed text-[28px] animate-pulse">
               notifications_active
             </span>
           </div>
@@ -64,10 +64,11 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
 
         <div className="flex items-center gap-space-sm w-full md:w-auto shrink-0 pt-2 md:pt-0">
           <button
+            type="button"
             onClick={onStartSrs}
             className="w-full md:w-auto flex items-center justify-center gap-2 px-space-lg py-2.5 rounded-lg bg-surface-container-lowest text-tertiary font-label-md text-label-md hover:bg-surface-bright transition-all shadow-md active:scale-95 group font-bold cursor-pointer whitespace-nowrap"
           >
-            <span className="material-symbols-outlined text-tertiary-container group-hover:rotate-12 transition-transform">
+            <span aria-hidden="true" className="material-symbols-outlined text-tertiary-container group-hover:rotate-12 transition-transform">
               history_edu
             </span>
             <span>{srsDueCount > 0 ? "Ôn tập ngay (SRS Mode)" : "Học thêm từ mới"}</span>
@@ -77,12 +78,13 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={onDismiss}
             className="p-2 rounded-lg bg-surface-container-lowest/10 hover:bg-surface-container-lowest/20 text-on-tertiary transition-colors cursor-pointer"
             title="Ẩn tạm thời"
             aria-label="Đóng banner"
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
       </div>

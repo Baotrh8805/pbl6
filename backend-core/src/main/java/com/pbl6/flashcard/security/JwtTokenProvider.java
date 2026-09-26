@@ -1,56 +1,53 @@
 package com.pbl6.flashcard.security;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Component
 public class JwtTokenProvider {
-    
-    // Khóa bí mật (Trong thực tế nên cấu hình ở application.properties)
-    private final String JWT_SECRET = "PBL6_Japanese_Flashcard_Super_Secret_Key_For_JWT_Authentication_Length_Must_Be_Long_Enough_512_bits";
-    
-    // Thời hạn JWT: 3 ngày như yêu cầu (3 * 24 * 60 * 60 * 1000 = 259200000 ms)
-    private final long JWT_EXPIRATION = 259200000L;
 
-    private Key getSigningKey() {
-        return Keys.hmacShaKeyFor(JWT_SECRET.getBytes());
+    /** HS512 cần khoá >= 512 bit. */
+    private static final int MIN_SECRET_BYTES = 64;
+
+    private final SecretKey signingKey;
+    private final long expirationMs;
+
+    // Secret chỉ đến từ cấu hình (env JWT_SECRET / application-local.properties), không có giá trị mặc định:
+    // secret nằm trong mã nguồn = ai đọc được repo cũng ký được token cho bất kỳ user nào.
+    public JwtTokenProvider(@Value("${jwt.secret}") String secret,
+                            @Value("${jwt.expiration}") long expirationMs) {
+        byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException("jwt.secret phải dài ít nhất " + MIN_SECRET_BYTES + " byte");
+        }
+        this.signingKey = Keys.hmacShaKeyFor(bytes);
+        this.expirationMs = expirationMs;
     }
 
-    // Tạo JWT Token từ thông tin người dùng
     public String generateToken(CustomUserDetails userDetails) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + JWT_EXPIRATION);
-
         return Jwts.builder()
-                .setSubject(userDetails.getUsername())
-                .setIssuedAt(now)
-                .setExpiration(expiryDate)
-                .signWith(getSigningKey(), SignatureAlgorithm.HS512)
+                .subject(userDetails.getUsername())
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + expirationMs))
+                .signWith(signingKey, Jwts.SIG.HS512)
                 .compact();
     }
 
-    // Lấy Email (username) từ JWT
-    public String getEmailFromJwt(String token) {
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-        return claims.getSubject();
-    }
-
-    // Xác thực JWT Token
-    public boolean validateToken(String authToken) {
+    /** Trả về claims nếu token hợp lệ (đúng chữ ký, chưa hết hạn), ngược lại null. */
+    public Claims parseValidClaims(String token) {
         try {
-            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(authToken);
-            return true;
+            return Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
         } catch (JwtException | IllegalArgumentException ex) {
-            System.err.println("Token không hợp lệ hoặc đã hết hạn: " + ex.getMessage());
+            return null;
         }
-        return false;
     }
 }

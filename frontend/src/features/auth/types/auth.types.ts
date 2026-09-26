@@ -1,4 +1,4 @@
-﻿export interface AuthRequest {
+export interface AuthRequest {
   email: string;
   password: string;
 }
@@ -14,7 +14,12 @@ export interface RegisterRequest {
   fullName: string;
 }
 
+/** Khớp entity User backend trả ở GET /auth/me (passwordHash đã @JsonIgnore). */
 export interface UserProfile {
+  id?: number;
   email: string;
   fullName?: string;
+  jlptLevel?: string;
+  isPremium?: boolean;
+  role?: string;
 }

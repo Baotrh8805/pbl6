@@ -1,11 +1,16 @@
 package com.pbl6.flashcard.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "folders")
+@Table(name = "folders", indexes = {
+        @Index(name = "idx_folders_user_parent", columnList = "user_id, parent_id")
+})
 public class Folder {
 
     @Id
@@ -33,6 +38,15 @@ public class Folder {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    @JsonIgnore // cắt vòng lặp parent <-> children khi serialize
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_id", foreignKey = @ForeignKey(name = "fk_folders_parent"))
+    private Folder parent; // null = folder gốc
+
+    // Không cascade/orphanRemoval: xoá cha thì con được gỡ lên gốc (xem FolderService.deleteFolder)
+    @OneToMany(mappedBy = "parent")
+    private List<Folder> children = new ArrayList<>();
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -131,6 +145,18 @@ public class Folder {
 
     public void setUser(User user) {
         this.user = user;
+    }
+
+    public Folder getParent() {
+        return parent;
+    }
+
+    public void setParent(Folder parent) {
+        this.parent = parent;
+    }
+
+    public List<Folder> getChildren() {
+        return children;
     }
 
     public LocalDateTime getCreatedAt() {

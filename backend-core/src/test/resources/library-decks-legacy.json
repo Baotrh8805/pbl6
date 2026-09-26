@@ -1,0 +1,360 @@
+[
+  {
+    "id": "lib-n2-grammar-100",
+    "title": "100 Mẫu Ngữ Pháp N2 Xuất Hiện Tần Suất Cao Trong 10 Năm Qua",
+    "level": "N2",
+    "category": "bunpou",
+    "description": "Tổng hợp và phân tích mẫu câu bẫy từ các kỳ thi JLPT 2013-2024. Đính kèm ví dụ đa ngữ cảnh đời sống công sở, audio phát âm bản xứ và mẹo loại trừ đáp án nhiễu.",
+    "official": true,
+    "featured": true,
+    "cards": [
+      {
+        "term": "～を契機に",
+        "reading": "をけいきに",
+        "meaning": "Nhân cơ hội, lấy làm bước ngoặt",
+        "example": "東京オリンピックを契機に、街の再開発が一気に進んだ。"
+      },
+      {
+        "term": "～を皮切りに",
+        "reading": "をかわきりに",
+        "meaning": "Khởi đầu bằng, mở màn với",
+        "example": "東京公演を皮切りに、全国ツアーがスタートした。"
+      },
+      {
+        "term": "～にあたって",
+        "reading": "にあたって",
+        "meaning": "Nhân dịp, trước thềm (sự kiện quan trọng)",
+        "example": "新学期を迎えるにあたって、目標を立てた。"
+      },
+      {
+        "term": "～に伴って",
+        "reading": "にともなって",
+        "meaning": "Cùng với, kéo theo sự biến đổi",
+        "example": "人口減少に伴って、空き家問題が深刻化している。"
+      },
+      {
+        "term": "～に基づいて",
+        "reading": "にもとづいて",
+        "meaning": "Dựa trên, căn cứ theo",
+        "example": "集めたデータに基づいて、計画を立て直す。"
+      },
+      {
+        "term": "～に即して",
+        "reading": "にそくして",
+        "meaning": "Hợp với, bám sát theo thực tế",
+        "example": "現状に即した解決策が求められている。"
+      },
+      {
+        "term": "～を抜きにしては",
+        "reading": "をぬきにしては",
+        "meaning": "Nếu không nhờ vào, không có",
+        "example": "皆さんの協力抜きにしては、成功はあり得なかった。"
+      },
+      {
+        "term": "～に至るまで",
+        "reading": "にいたるまで",
+        "meaning": "Đến tận cả, chi tiết tới tận",
+        "example": "服装から言葉遣いに至るまで、厳しく指導された。"
+      }
+    ]
+  },
+  {
+    "id": "lib-shinkanzen-n2-dokkai",
+    "title": "Shinkanzen Master N2 Dokkai - Từ Vựng Then Chốt",
+    "level": "N2",
+    "category": "dokkai",
+    "description": "Trích xuất 450 cụm liên kết và từ vựng chuyển tiếp mấu chốt để xử lý nhanh bài đọc dài và đọc hiểu so sánh N2.",
+    "official": true,
+    "featured": false,
+    "cards": [
+      {
+        "term": "反対に",
+        "reading": "はんたいに",
+        "meaning": "Ngược lại (tương phản)",
+        "example": "前者は肯定的な意見だが、反対に後者は慎重論だ。"
+      },
+      {
+        "term": "要するに",
+        "reading": "ようするに",
+        "meaning": "Tóm lại, nói tóm gọn là",
+        "example": "要するに、結論はまだ出ていないということだ。"
+      },
+      {
+        "term": "従って",
+        "reading": "したがって",
+        "meaning": "Do đó, vì vậy (quan hệ nhân quả logic)",
+        "example": "需要が増えた。従って価格も上がった。"
+      },
+      {
+        "term": "一方では",
+        "reading": "いっぽうでは",
+        "meaning": "Mặt khác, đồng thời cũng",
+        "example": "利便性が高まる一方では、プライバシーの懸念もある。"
+      },
+      {
+        "term": "いわば",
+        "reading": "いわば",
+        "meaning": "Ví như, có thể nói là",
+        "example": "スマートフォンの普及は、いわば情報革命の象徴だ。"
+      },
+      {
+        "term": "あるいは",
+        "reading": "あるいは",
+        "meaning": "Hoặc là, hoặc giả",
+        "example": "直接話すか、あるいはメールで連絡してください。"
+      }
+    ]
+  },
+  {
+    "id": "lib-it-brse-words",
+    "title": "Thuật Ngữ CNTT & Giao Tiếp BrSE Chuẩn Doanh Nghiệp",
+    "level": "N2",
+    "category": "it",
+    "description": "Tuyển tập 250 thuật ngữ chuyên ngành công nghệ, quy trình phát triển Agile, Scrum, review pull request và cách phản hồi khách hàng Nhật.",
+    "official": false,
+    "featured": false,
+    "cards": [
+      {
+        "term": "要件定義",
+        "reading": "ようけんていぎ",
+        "meaning": "Định nghĩa yêu cầu (Requirements Definition)",
+        "example": "お客様と要件定義の詰めを行っています。"
+      },
+      {
+        "term": "設計書",
+        "reading": "せっけいしょ",
+        "meaning": "Tài liệu thiết kế (Design document)",
+        "example": "基本設計書に沿って実装を進めてください。"
+      },
+      {
+        "term": "不具合",
+        "reading": "ふぐあい",
+        "meaning": "Lỗi, sự cố phần mềm (Bug / Defect)",
+        "example": "テスト環境で重大な不具合が検出されました。"
+      },
+      {
+        "term": "納期",
+        "reading": "のうき",
+        "meaning": "Thời hạn bàn giao (Deadline/Delivery date)",
+        "example": "納期を厳守するために残業を調整します。"
+      },
+      {
+        "term": "仕様変更",
+        "reading": "しようへんこう",
+        "meaning": "Thay đổi quy cách / đặc tả (Spec change)",
+        "example": "クライアントからの仕様変更依頼を受領しました。"
+      },
+      {
+        "term": "本番反映",
+        "reading": "ほんばんはんえい",
+        "meaning": "Release lên môi trường Production",
+        "example": "今夜22時に本番反映を予定しております。"
+      }
+    ]
+  },
+  {
+    "id": "lib-kanji-214-radicals",
+    "title": "214 Bộ Thủ & 500 Kanji N2 Trọng Điểm Có Mẹo Nhớ",
+    "level": "N2",
+    "category": "kanji",
+    "description": "Phân tích cấu tạo chữ Hán, âm Hán Việt, On/Kun yomi và câu chuyện gợi nhớ hình ảnh để không bao giờ nhầm lẫn mặt chữ.",
+    "official": false,
+    "featured": false,
+    "cards": [
+      {
+        "term": "契",
+        "reading": "ケイ / ちぎ・る",
+        "meaning": "Khế (khế ước, giao kèo)",
+        "example": "契約書に署名と捺印を行いました。"
+      },
+      {
+        "term": "機",
+        "reading": "キ / はた",
+        "meaning": "Cơ (cơ hội, thời cơ, máy móc)",
+        "example": "絶好の機会を逃さないように注意する。"
+      },
+      {
+        "term": "厳",
+        "reading": "ゲン / きび・しい",
+        "meaning": "Nghiêm (nghiêm khắc, nghiêm trang)",
+        "example": "規則を厳格に適用します。"
+      },
+      {
+        "term": "態",
+        "reading": "タイ",
+        "meaning": "Thái (thái độ, trạng thái)",
+        "example": "誠実な態度で顧客に接する。"
+      },
+      {
+        "term": "推",
+        "reading": "スイ / お・す",
+        "meaning": "Thôi (suy luận, tiến cử, suy đoán)",
+        "example": "過去のデータから需要を推測する。"
+      },
+      {
+        "term": "拡",
+        "reading": "カク",
+        "meaning": "Khuếch (mở rộng, khuếch đại)",
+        "example": "海外市場へ事業を拡大する方針だ。"
+      }
+    ]
+  },
+  {
+    "id": "lib-soumatome-n3-goi",
+    "title": "Nihongo Soumatome N3 Goi - Trọn Bộ 6 Tuần Tinh Gọn",
+    "level": "N3",
+    "category": "goi",
+    "description": "Tập hợp từ vựng N3 phân chia theo chủ đề sinh hoạt hằng ngày, siêu thị, nhà ga, bệnh viện và công sở Nhật Bản.",
+    "official": true,
+    "featured": false,
+    "cards": [
+      {
+        "term": "売り切れる",
+        "reading": "うりきれる",
+        "meaning": "Bán hết sạch (sold out)",
+        "example": "人気の商品は午前中で売り切れてしまった。"
+      },
+      {
+        "term": "間に合う",
+        "reading": "まにあう",
+        "meaning": "Kịp giờ, vừa vặn",
+        "example": "走ったら電車の発車時刻に間に合った。"
+      },
+      {
+        "term": "遠慮する",
+        "reading": "えんりょする",
+        "meaning": "Khách khí, ngần ngại, kiềm chế",
+        "example": "どうぞ遠慮しないでたくさん召し上がってください。"
+      },
+      {
+        "term": "手続き",
+        "reading": "てつづき",
+        "meaning": "Thủ tục hành chính, giấy tờ",
+        "example": "市役所でビザの更新手続きを済ませた。"
+      },
+      {
+        "term": "相談に乗る",
+        "reading": "そうだんにのる",
+        "meaning": "Lắng nghe lời tâm sự / tư vấn",
+        "example": "先輩が親身になって相談に乗ってくれた。"
+      }
+    ]
+  },
+  {
+    "id": "lib-nhk-easy-news",
+    "title": "Đọc Báo NHK News Web Easy & Từ Vựng Thời Sự Mới Nhất",
+    "level": "N3",
+    "category": "dokkai",
+    "description": "Trích xuất tự động qua AI từ bài báo thời sự thực tế: Phân tích ngữ cảnh và phát âm pitch accent chuẩn NHK.",
+    "official": false,
+    "featured": false,
+    "cards": [
+      {
+        "term": "物価高",
+        "reading": "ぶっかだか",
+        "meaning": "Vật giá leo thang, lạm phát",
+        "example": "物価高に対応するため、政府が支援策を発表した。"
+      },
+      {
+        "term": "猛暑日",
+        "reading": "もうしょび",
+        "meaning": "Ngày nắng nóng đỉnh điểm (>35 độ C)",
+        "example": "今年の夏は猛暑日が連続して記録された。"
+      },
+      {
+        "term": "少子化",
+        "reading": "しょうしか",
+        "meaning": "Tỷ lệ sinh giảm, già hóa dân số",
+        "example": "少子化のスピードを緩める取り組みが急務だ。"
+      },
+      {
+        "term": "再生可能エネルギー",
+        "reading": "さいせいかのうえねるぎー",
+        "meaning": "Năng lượng tái tạo",
+        "example": "太陽光発電などの再生可能エネルギーの導入が進む。"
+      }
+    ]
+  },
+  {
+    "id": "lib-business-keigo-n1",
+    "title": "Kính Ngữ Keigo Thương Mại (BJT & JLPT N1)",
+    "level": "N1",
+    "category": "business",
+    "description": "Tôn kính ngữ, khiêm nhường ngữ và văn phong thư tín thương mại chuẩn mực trong các tập đoàn Nhật Bản.",
+    "official": true,
+    "featured": false,
+    "cards": [
+      {
+        "term": "ご高覧",
+        "reading": "ごこうらん",
+        "meaning": "Xem, thưởng lãm (tôn kính ngữ của 見る)",
+        "example": "添付の企画書をご高覧いただけますと幸甚に存じます。"
+      },
+      {
+        "term": "ご査収",
+        "reading": "ごさしゅう",
+        "meaning": "Kiểm tra và tiếp nhận (thường dùng khi đính kèm file)",
+        "example": "最新の見積書をお送りしますので、ご査収のほどお願いいたします。"
+      },
+      {
+        "term": "存じ上げる",
+        "reading": "ぞんじあげる",
+        "meaning": "Biết, nghĩ (khiêm nhường ngữ của 知っている / 思う)",
+        "example": "田中様のお名前は以前より存じ上げておりました。"
+      },
+      {
+        "term": "お取り計らい",
+        "reading": "おとりはからい",
+        "meaning": "Sự sắp xếp, chiếu cố chu đáo từ đối tác",
+        "example": "温かいお取り計らいに心より感謝申し上げます。"
+      },
+      {
+        "term": "恐縮",
+        "reading": "きょうしゅく",
+        "meaning": "Vô cùng áy náy và cảm kích",
+        "example": "お忙しいところ大変恐縮ですが、ご返信をお待ちしております。"
+      }
+    ]
+  },
+  {
+    "id": "lib-minna-n5-core",
+    "title": "Minna no Nihongo 50 Bài N5 - Nền Tảng Cho Người Mới Bắt Đầu",
+    "level": "N5",
+    "category": "kaiwa",
+    "description": "Trọn vẹn hệ thống từ vựng vỡ lòng có ví dụ song ngữ Việt-Nhật, âm thanh minh họa và bảng chữ cái Kana.",
+    "official": true,
+    "featured": false,
+    "cards": [
+      {
+        "term": "初めまして",
+        "reading": "はじめまして",
+        "meaning": "Rất vui được gặp bạn lần đầu",
+        "example": "初めまして、ナムと申します。ベトナムから来ました。"
+      },
+      {
+        "term": "よろしくお願いします",
+        "reading": "よろしくおねがいします",
+        "meaning": "Rất mong nhận được sự giúp đỡ",
+        "example": "こちらこそ、どうぞよろしくお願いします。"
+      },
+      {
+        "term": "どこ",
+        "reading": "どこ",
+        "meaning": "Ở đâu (từ để hỏi nơi chốn)",
+        "example": "お手洗いはどこですか。"
+      },
+      {
+        "term": "いくら",
+        "reading": "いくら",
+        "meaning": "Bao nhiêu tiền",
+        "example": "このリンゴはいくらですか。"
+      },
+      {
+        "term": "いっしょに",
+        "reading": "いっしょに",
+        "meaning": "Cùng nhau",
+        "example": "いっしょに昼ご飯を食べませんか。"
+      }
+    ]
+  }
+]

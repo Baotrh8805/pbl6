@@ -1,0 +1,388 @@
+import React, { useMemo, useState } from "react";
+import { Link, useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { fetchDeck, createDeck, updateDeck, addCardsBatch } from "@/services/deckService";
+import { fetchFolders } from "@/services/folderService";
+import type { CardDto, Deck } from "@/types/api.types";
+import { useAsync } from "@/lib/useAsync";
+import { Button } from "@/components/ui/Button";
+import { ImportCardsModal } from "@/features/decks/components/ImportCardsModal";
+import { CardRowsEditor } from "@/features/decks/editor/CardRowsEditor";
+import { DeckInfoFields } from "@/features/decks/editor/DeckInfoFields";
+import {
+  createEmptyCard,
+  createEmptyCards,
+  flattenFolders,
+  toEditorCard,
+  toValidCardDtos,
+  type EditorCard,
+} from "@/features/decks/editor/editorCards";
+import { extractErrorMessage } from "@/services/apiClient";
+
+interface DeckEditorPageProps {
+  mode?: "create" | "edit" | "add-cards";
+}
+
+export const DeckEditorPage: React.FC<DeckEditorPageProps> = ({ mode }) => {
+  const { deckId } = useParams();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+
+  const isAddCardsMode =
+    mode === "add-cards" ||
+    location.pathname.endsWith("/add-cards") ||
+    location.pathname.endsWith("/add");
+  const isEditing = mode === "edit" || (!isAddCardsMode && Boolean(deckId));
+
+  // Tải bộ thẻ (nếu sửa / thêm thẻ) và cây thư mục; lỗi tải thư mục thì bỏ qua
+  const deckState = useAsync<Deck | null>(
+    () => (deckId ? fetchDeck(deckId) : Promise.resolve(null)),
+    [deckId]
+  );
+  const { data: folderTree } = useAsync(fetchFolders, []);
+  const folders = useMemo(() => flattenFolders(folderTree ?? []), [folderTree]);
+
+  if (deckId && deckState.loading) {
+    return (
+      <div className="py-16 text-center text-on-surface-variant flex flex-col items-center gap-3">
+        <span aria-hidden="true" className="material-symbols-outlined text-[36px] animate-spin text-primary">
+          progress_activity
+        </span>
+        <p>Đang tải thông tin bộ thẻ...</p>
+      </div>
+    );
+  }
+
+  // Form khởi tạo state từ dữ liệu đã tải; đổi bộ thẻ / chế độ thì key đổi -> form mount lại
+  return (
+    <DeckEditorForm
+      key={`${deckId ?? "new"}:${isAddCardsMode ? "add" : "edit"}`}
+      deckId={deckId}
+      deck={deckState.data ?? null}
+      loadError={deckId ? deckState.error : undefined}
+      initialFolderId={searchParams.get("folderId") || ""}
+      folders={folders}
+      isAddCardsMode={isAddCardsMode}
+      isEditing={isEditing}
+    />
+  );
+};
+
+interface DeckEditorFormProps {
+  deckId?: string;
+  deck: Deck | null;
+  loadError?: string;
+  initialFolderId: string;
+  folders: Array<{ id: string; title: string }>;
+  isAddCardsMode: boolean;
+  isEditing: boolean;
+}
+
+function initialCards(deck: Deck | null, isAddCardsMode: boolean): EditorCard[] {
+  // Chế độ "Thêm thẻ": chỉ hiện ô trống mới, không hiện thẻ cũ
+  if (!deck) return createEmptyCards(isAddCardsMode ? 3 : 5);
+  if (isAddCardsMode || deck.cards.length === 0) return createEmptyCards(3);
+  return deck.cards.map(toEditorCard);
+}
+
+const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
+  deckId,
+  deck,
+  loadError,
+  initialFolderId,
+  folders,
+  isAddCardsMode,
+  isEditing,
+}) => {
+  const navigate = useNavigate();
+
+  const [title, setTitle] = useState(deck?.title ?? "");
+  const [level, setLevel] = useState(deck?.level || "N5");
+  const [description, setDescription] = useState(deck?.description || "");
+  const [folderId, setFolderId] = useState(deck ? deck.folderId || "" : initialFolderId);
+  const [cards, setCards] = useState<EditorCard[]>(() => initialCards(deck, isAddCardsMode));
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(loadError ?? null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Thao tác trên hàng thẻ
+  const handleCardChange = (index: number, field: Exclude<keyof CardDto, "id">, value: string) => {
+    setCards((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const handleAddCard = () => {
+    setCards((prev) => [...prev, createEmptyCard()]);
+  };
+
+  const handleInsertCardAfter = (index: number) => {
+    setCards((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, createEmptyCard());
+      return next;
+    });
+  };
+
+  const handleRemoveCard = (index: number) => {
+    if (cards.length <= 1) {
+      // Chỉ còn 1 thẻ: làm trống thay vì xoá
+      setCards([createEmptyCard()]);
+      return;
+    }
+    setCards((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSwapTermsAndMeanings = () => {
+    if (!window.confirm("Bạn có chắc chắn muốn đảo vị trí giữa Thuật ngữ và Định nghĩa của tất cả thẻ?")) {
+      return;
+    }
+    setCards((prev) =>
+      prev.map((c) => ({
+        ...c,
+        term: c.meaning,
+        meaning: c.term,
+      }))
+    );
+  };
+
+  const handleClearAllCards = () => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa toàn bộ danh sách thẻ để bắt đầu lại không?")) {
+      return;
+    }
+    setCards(createEmptyCards(3));
+  };
+
+  const handleBatchImport = (importedCards: CardDto[]) => {
+    if (importedCards.length === 0) return;
+    setCards((prev) => {
+      // Bỏ các hàng trống trước khi nối thẻ nhập vào
+      const nonEmpty = prev.filter((c) => c.term.trim() || c.meaning.trim());
+      return [...nonEmpty, ...importedCards.map(toEditorCard)];
+    });
+  };
+
+  const handleSave = async (shouldStudyImmediately = false) => {
+    setErrorMessage(null);
+
+    if (!title.trim()) {
+      setErrorMessage("Vui lòng nhập tiêu đề cho bộ thẻ.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    // Chỉ gửi thẻ có Thuật ngữ + Định nghĩa (đã bỏ _key)
+    const validCards = toValidCardDtos(cards);
+
+    if (validCards.length === 0) {
+      setErrorMessage("Bộ thẻ cần có ít nhất 1 thẻ hoàn chỉnh (có Thuật ngữ và Định nghĩa).");
+      return;
+    }
+
+    const info = {
+      title: title.trim(),
+      level,
+      description: description.trim() || undefined,
+      folderId: folderId || null,
+    };
+
+    setIsSaving(true);
+    try {
+      let savedDeckId = deckId;
+      if (isAddCardsMode && deckId) {
+        // Cập nhật thông tin chung mà không gửi cards để không đè thẻ cũ, rồi thêm thẻ mới
+        await updateDeck(deckId, info);
+        await addCardsBatch(deckId, validCards);
+        savedDeckId = deckId;
+      } else if (isEditing && deckId) {
+        const res = await updateDeck(deckId, { ...info, cards: validCards });
+        savedDeckId = res.id;
+      } else {
+        const res = await createDeck({ ...info, cards: validCards });
+        savedDeckId = res.id;
+      }
+
+      if (shouldStudyImmediately && savedDeckId) {
+        navigate(`/decks/${encodeURIComponent(savedDeckId)}/study`);
+      } else if (savedDeckId) {
+        navigate(`/decks/${encodeURIComponent(savedDeckId)}`);
+      } else {
+        navigate("/decks");
+      }
+    } catch (err) {
+      setErrorMessage(extractErrorMessage(err));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const isUpdate = isAddCardsMode || isEditing;
+
+  return (
+    <div className="max-w-5xl mx-auto pb-24 space-y-6">
+      {/* Thanh trên: quay lại + nút lưu */}
+      <div className="sticky top-0 z-30 bg-surface/90 backdrop-blur-md py-3 border-b border-surface-container-high/60 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Link
+            to={deckId ? `/decks/${deckId}` : "/decks"}
+            className="p-2 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors inline-flex items-center"
+            title="Quay lại"
+            aria-label="Quay lại"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[22px]">arrow_back</span>
+          </Link>
+          <div>
+            <h1 className="text-lg md:text-xl font-headline font-bold text-on-surface">
+              {isAddCardsMode
+                ? "Thêm thẻ vào bộ thẻ"
+                : isEditing
+                ? "Chỉnh sửa bộ thẻ"
+                : "Tạo một học phần mới"}
+            </h1>
+            <p className="text-xs text-on-surface-variant hidden sm:block">
+              {isAddCardsMode
+                ? `${title ? `Bộ thẻ: ${title} · ` : ""}${cards.length} thẻ mới · Hỗ trợ tiếng Nhật Furigana & Ví dụ`
+                : `${cards.length} thẻ · Hỗ trợ tiếng Nhật Furigana & Ví dụ`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="md"
+            isLoading={isSaving}
+            disabled={isSaving}
+            onClick={() => handleSave(false)}
+            className="cursor-pointer"
+          >
+            {isUpdate ? "Lưu thay đổi" : "Tạo"}
+          </Button>
+
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            isLoading={isSaving}
+            disabled={isSaving}
+            onClick={() => handleSave(true)}
+            className="cursor-pointer shadow-xs"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">school</span>
+            <span className="hidden sm:inline">Tạo &</span> Ôn luyện
+          </Button>
+        </div>
+      </div>
+
+      {errorMessage && (
+        <div role="alert" className="p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm flex items-start gap-3">
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px] shrink-0">error</span>
+          <div className="flex-1">{errorMessage}</div>
+        </div>
+      )}
+
+      {/* Thông tin chung */}
+      <DeckInfoFields
+        title={title}
+        onTitleChange={setTitle}
+        description={description}
+        onDescriptionChange={setDescription}
+        level={level}
+        onLevelChange={setLevel}
+        folderId={folderId}
+        onFolderIdChange={setFolderId}
+        folders={folders}
+      />
+
+      {/* Thanh công cụ */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface-container-low/40 border border-surface-container-high/60">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsImportModalOpen(true)}
+            className="cursor-pointer bg-surface-container-lowest"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">table_rows</span>
+            + Nhập
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleSwapTermsAndMeanings}
+            className="cursor-pointer"
+            title="Đảo vị trí Thuật ngữ và Định nghĩa"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">swap_horiz</span>
+            Đảo vị trí
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleClearAllCards}
+            className="text-outline hover:text-error cursor-pointer"
+            title="Xóa tất cả các thẻ"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete_sweep</span>
+            Xóa hết
+          </Button>
+        </div>
+
+        <div className="text-xs font-semibold text-outline tracking-wider uppercase">
+          Tổng cộng: {cards.length} thẻ
+        </div>
+      </div>
+
+      <CardRowsEditor
+        cards={cards}
+        onChange={handleCardChange}
+        onInsertAfter={handleInsertCardAfter}
+        onRemove={handleRemoveCard}
+        onAdd={handleAddCard}
+      />
+
+      {/* Thanh lưu cuối trang */}
+      <div className="flex items-center justify-end gap-3 pt-6 border-t border-surface-container-high/80">
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          isLoading={isSaving}
+          disabled={isSaving}
+          onClick={() => handleSave(false)}
+          className="cursor-pointer"
+        >
+          {isUpdate ? "Lưu thay đổi" : "Tạo"}
+        </Button>
+
+        <Button
+          type="button"
+          variant="primary"
+          size="lg"
+          isLoading={isSaving}
+          disabled={isSaving}
+          onClick={() => handleSave(true)}
+          className="cursor-pointer shadow-md"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">school</span>
+          {isUpdate ? "Lưu và ôn luyện" : "Tạo và ôn luyện"}
+        </Button>
+      </div>
+
+      <ImportCardsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImport={handleBatchImport}
+      />
+    </div>
+  );
+};

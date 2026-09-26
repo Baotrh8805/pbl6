@@ -1,11 +1,13 @@
 package com.pbl6.flashcard.controller;
 
+import com.pbl6.flashcard.config.ApiExceptionHandler;
 import com.pbl6.flashcard.dto.folder.FolderRequest;
 import com.pbl6.flashcard.dto.folder.FolderResponse;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.FolderService;
 import jakarta.validation.Valid;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -23,6 +25,20 @@ public class FolderController {
     public FolderController(FolderService folderService) {
         this.folderService = folderService;
     }
+    /**
+     * Hai request tạo trùng tên cùng lúc lọt qua kiểm tra trong service nhưng bị index
+     * uq_folder_name_* chặn ở DB (V1__baseline.sql). Trả 409 thay vì 500. Chỉ bắt đúng index đó:
+     * vi phạm ràng buộc khác không được báo nhầm thành "trùng tên".
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiExceptionHandler.ApiError> onDuplicate(DataIntegrityViolationException e) {
+        String cause = e.getMostSpecificCause().getMessage();
+        if (cause != null && cause.contains("uq_folder_name_")) {
+            return ApiExceptionHandler.error(HttpStatus.CONFLICT, "A folder with this name already exists here");
+        }
+        return new ApiExceptionHandler().onConflict(e);
+    }
+
 // lấy token JWT để biết ai đang gọi API
     private User getCurrentUser(Authentication authentication) {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();

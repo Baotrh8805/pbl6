@@ -11,4 +11,7 @@ import java.util.UUID;
 @Repository
 public interface FolderRepository extends JpaRepository<Folder, UUID> {
     List<Folder> findByUser(User user);
+
+    // 1 query duy nhất cho cả cây -> dựng cây trong RAM, tránh N+1
+    List<Folder> findByUserOrderByTitleAsc(User user);
 }

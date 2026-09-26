@@ -1,92 +1,77 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import axios from "axios";
 
 import { authService } from "@/features/auth/services/authService";
+import type { UserProfile } from "@/features/auth/types/auth.types";
+import { AUTH_EXPIRED_EVENT } from "@/services/apiClient";
+import { tokenStorage } from "@/services/tokenStorage";
+import { AuthContext } from "./authContextValue";
 
-export interface UserProfile {
-  id?: number;
-  email: string;
-  fullName?: string;
-  jlptLevel?: string;
-  isPremium?: boolean;
-}
-
-interface AuthContextType {
-  token: string | null;
-  userEmail: string | null;
-  userProfile: UserProfile | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (token: string, email?: string) => void;
-  logout: () => void;
-  refreshProfile: () => Promise<void>;
-  updateJlptLevel: (newLevel: string) => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const isAuthError = (e: unknown) =>
+  axios.isAxiosError(e) && (e.response?.status === 401 || e.response?.status === 403);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  // Đọc storage ngay lúc khởi tạo state thay vì setState trong effect.
+  const [token, setToken] = useState<string | null>(() => tokenStorage.getToken());
+  const [userEmail, setUserEmail] = useState<string | null>(() => tokenStorage.getEmail());
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => tokenStorage.getToken() !== null);
 
-  const fetchProfile = async () => {
+  const logout = useCallback(() => {
+    tokenStorage.clear();
+    setToken(null);
+    setUserEmail(null);
+    setUserProfile(null);
+  }, []);
+
+  const fetchProfile = useCallback(async () => {
     try {
       const profile = await authService.getProfile();
       setUserProfile(profile);
       if (profile.email) {
         setUserEmail(profile.email);
-        localStorage.setItem("userEmail", profile.email);
+        tokenStorage.setEmail(profile.email);
       }
-    } catch {
-      // Offline fallback: chỉ dùng email thật đã lưu, không bịa trình độ JLPT
-      const savedEmail = localStorage.getItem("userEmail");
+    } catch (e) {
+      // Token hết hạn/không hợp lệ (backend cũ trả 403 thay vì 401) -> đăng xuất hẳn.
+      if (isAuthError(e)) {
+        logout();
+        return;
+      }
+      // Lỗi mạng: chỉ dùng email thật đã lưu, không bịa trình độ JLPT.
+      const savedEmail = tokenStorage.getEmail();
       if (savedEmail) {
         setUserProfile((prev) => prev || { email: savedEmail });
       }
     }
-  };
+  }, [logout]);
 
+  // Có token lưu sẵn: xác minh với server một lần lúc mở app; isLoading giữ ProtectedRoute chờ kết quả.
   useEffect(() => {
-    const savedToken = localStorage.getItem("accessToken");
-    const savedEmail = localStorage.getItem("userEmail");
-    if (savedToken) {
-      setToken(savedToken);
-      setUserEmail(savedEmail);
-      fetchProfile().finally(() => setIsLoading(false));
-    } else {
+    if (!tokenStorage.getToken()) return;
+    const bootstrap = async () => {
+      await fetchProfile();
       setIsLoading(false);
-    }
-  }, []);
+    };
+    void bootstrap();
+  }, [fetchProfile]);
 
-  const login = (newToken: string, email?: string) => {
+  // apiClient báo 401 -> reset state; ProtectedRoute tự chuyển về /login kèm trang đang mở.
+  useEffect(() => {
+    window.addEventListener(AUTH_EXPIRED_EVENT, logout);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, logout);
+  }, [logout]);
+
+  const login = (newToken: string, email?: string, remember?: boolean) => {
+    tokenStorage.save(newToken, email, remember);
     setToken(newToken);
-    localStorage.setItem("accessToken", newToken);
-    if (email) {
-      setUserEmail(email);
-      localStorage.setItem("userEmail", email);
-    }
-    fetchProfile();
+    if (email) setUserEmail(email);
+    void fetchProfile();
   };
 
-  const logout = () => {
-    setToken(null);
-    setUserEmail(null);
-    setUserProfile(null);
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("userEmail");
-  };
-
-  const refreshProfile = async () => {
-    await fetchProfile();
-  };
-
+  // Chỉ đổi trình độ trên UI khi server đã lưu; lỗi ném cho nơi gọi hiển thị.
   const updateJlptLevel = async (newLevel: string) => {
-    try {
-      await authService.updateJlptLevel(newLevel);
-    } catch {
-      // silent fallback
-    }
+    await authService.updateJlptLevel(newLevel);
     setUserProfile((prev) => (prev ? { ...prev, jlptLevel: newLevel } : null));
   };
 
@@ -100,19 +85,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         logout,
-        refreshProfile,
+        refreshProfile: fetchProfile,
         updateJlptLevel,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
 };

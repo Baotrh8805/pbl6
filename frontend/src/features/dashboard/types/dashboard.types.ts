@@ -1,36 +1,16 @@
-export interface UserMetrics {
-  wordsLearned: number;
-  totalTargetWords: number;
-  consolidatedWords: number;
-  studyHoursThisWeek: number;
-  studyHoursDiff: number;
-  quizAccuracy: number | null;
-  dokkaiAccuracy: number | null;
-  bunpouAccuracy: number | null;
-  currentStreak: number;
-  maxStreak: number;
-  srsDueCount: number;
+import type { LearningStats } from "@/lib/learningStats";
+
+/** Người dùng tự đặt, lưu localStorage theo email. Mọi chỉ số còn lại tính từ API. */
+export interface LearningSettings {
   dailyGoalWords: number;
-  creditsUsed: number;
-  totalCredits: number;
+  /** null = tự suy từ trình độ JLPT (getTargetWordsByLevel). */
+  targetWords: number | null;
 }
 
-export interface LessonItem {
-  id: number;
-  title: string;
-  tag: string;
-  tagBg: string;
-  tagColor: string;
-  time: string;
-  description: string;
-  progressText: string;
-  progressPct: number;
-  status: "in_progress" | "completed";
-  actionLabel: string;
-  actionIcon: string;
-  barGradient?: string;
-  barColor?: string;
-  btnVariant?: "primary" | "secondary";
+/** Chỉ số hiển thị trên dashboard = số liệu thật + mục tiêu người dùng đặt. */
+export interface UserMetrics extends LearningStats {
+  totalTargetWords: number;
+  dailyGoalWords: number;
 }
 
 export interface FolderItem {
@@ -40,22 +20,9 @@ export interface FolderItem {
   accessType: "private" | "shared" | "public";
   level: string;
   iconName: string;
-  iconBg: string;
   iconColor: string;
   tagLabel: string;
   tagBg: string;
   tagColor: string;
-  tagIcon?: string;
-  metrics?: { value: string; label: string; highlight?: boolean }[];
-  members?: { type: "avatar" | "text"; src?: string; text?: string; bg?: string }[];
-  metricsRight?: { top: string; sub: string };
-  link: string;
-}
-
-export interface QuickUploadOptions {
-  orientation: "horizontal" | "vertical";
-  autoFurigana: boolean;
-  autoHanViet: boolean;
-  generateQuiz: boolean;
-  targetDeckId?: string;
+  tagIcon: string;
 }

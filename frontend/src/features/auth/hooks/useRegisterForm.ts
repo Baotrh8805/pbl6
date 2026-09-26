@@ -1,10 +1,18 @@
-﻿import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
 import { extractErrorMessage } from "@/services/apiClient";
 
 export const useRegisterForm = () => {
   const navigate = useNavigate();
+  // Hẹn giờ chuyển sang /login: hủy nếu người dùng rời trang trước đó.
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    },
+    []
+  );
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -74,7 +82,7 @@ export const useRegisterForm = () => {
 
       setSuccessMessage(message || "Đăng ký tài khoản thành công!");
       // Automatically navigate to login page after 2 seconds
-      setTimeout(() => {
+      redirectTimer.current = setTimeout(() => {
         navigate("/login", { state: { registeredEmail: email.trim() } });
       }, 1800);
     } catch (err: unknown) {

@@ -1,5 +1,5 @@
 import { apiClient } from "@/services/apiClient";
-import type { AuthRequest, AuthResponse, RegisterRequest } from "../types/auth.types";
+import type { AuthRequest, AuthResponse, RegisterRequest, UserProfile } from "../types/auth.types";
 
 export const authService = {
   /**
@@ -25,23 +25,29 @@ export const authService = {
   /**
    * Lấy thông tin người dùng hiện tại từ JWT
    */
-  async getProfile(): Promise<{
-    id: number;
-    email: string;
-    fullName: string;
-    jlptLevel: string;
-    isPremium: boolean;
-    role: string;
-  }> {
-    const response = await apiClient.get("/auth/me");
+  async getProfile(): Promise<UserProfile> {
+    const response = await apiClient.get<UserProfile>("/auth/me");
     return response.data;
   },
 
   /**
    * Cập nhật cấp độ JLPT cho người dùng
    */
-  async updateJlptLevel(jlptLevel: string): Promise<any> {
-    const response = await apiClient.put("/auth/jlpt-level", { jlptLevel });
+  async updateJlptLevel(jlptLevel: string): Promise<UserProfile> {
+    const response = await apiClient.put<UserProfile>("/auth/jlpt-level", { jlptLevel });
+    return response.data;
+  },
+
+  async updateProfile(fullName: string): Promise<void> {
+    await apiClient.put("/auth/profile", { fullName });
+  },
+
+  /**
+   * Mật khẩu cũ được backend xác minh; client chỉ chuyển tiếp.
+   * Backend thu hồi mọi token cũ và trả token mới cho phiên hiện tại.
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<AuthResponse> {
+    const response = await apiClient.put<AuthResponse>("/auth/password", { currentPassword, newPassword });
     return response.data;
   },
 };

@@ -28,11 +28,14 @@ function freePort(port) {
     }
 }
 
-freePort(8080);
-freePort(5173);
+// BE_PORT phải khớp proxy trong frontend/vite.config.ts (mặc định 8080).
+// 8081 là cổng các lần chạy tay trước đây hay dùng -> dọn luôn để không còn instance thứ hai
+// cùng chạy migration/seed trên một DB.
+const bePort = process.env.BE_PORT ?? "8080";
+for (const port of new Set([bePort, "8081", "5173"])) freePort(port);
 
 const procs = [
-    ["BE", "mvn spring-boot:run", "backend-core"],
+    ["BE", `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${bePort}`, "backend-core"],
     ["FE", "npm run dev", "frontend"],
 ].map(([tag, cmd, cwd]) => {
     // shell: true vì trên Windows mvn/npm là file .cmd, spawn trực tiếp sẽ EINVAL

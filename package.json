@@ -4,6 +4,8 @@
     "type": "module",
     "scripts": {
         "dev": "node dev.mjs",
-        "smoke": "node smoke-auth.mjs"
+        "smoke": "node smoke-auth.mjs",
+        "smoke:crud": "node smoke-crud.mjs",
+        "e2e": "node e2e.mjs"
     }
 }

@@ -6,6 +6,8 @@ interface LearningKpiGridProps {
   currentLevel: string;
   metrics: UserMetrics;
   onOpenEditMetrics: () => void;
+  /** Đang tải số liệu thật: hiện "…" thay vì số 0 gây hiểu nhầm. */
+  loading?: boolean;
 }
 
 export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
@@ -13,6 +15,7 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
   currentLevel,
   metrics,
   onOpenEditMetrics,
+  loading = false,
 }) => {
   // Tính % hoàn thành từ vựng
   const wordsPct =
@@ -21,6 +24,13 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
       : 0;
 
   const wordsRemaining = Math.max(0, metrics.totalTargetWords - metrics.wordsLearned);
+
+  // Sparkline 7 ngày: trục x chia đều 2..78, trục y 2..24 theo ngày nhiều thẻ nhất.
+  const weekTotal = metrics.reviewsLast7Days.reduce((a, b) => a + b, 0);
+  const weekMax = Math.max(1, ...metrics.reviewsLast7Days);
+  const sparkPath = metrics.reviewsLast7Days
+    .map((v, i) => `${i === 0 ? "M" : "L"}${(2 + i * 12.67).toFixed(1)} ${(24 - (v / weekMax) * 22).toFixed(1)}`)
+    .join(" ");
 
   // Định dạng ngày hiện tại
   const today = new Date();
@@ -58,16 +68,17 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {/* Quick Edit Metrics button */}
           <button
+            type="button"
             onClick={onOpenEditMetrics}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-lowest text-primary hover:bg-surface-container font-label-md text-label-md border border-surface-container-high/60 shadow-xs cursor-pointer transition-colors"
-            title="Nhấp để tùy chỉnh các chỉ số"
+            title="Đặt trình độ và mục tiêu học mỗi ngày"
           >
-            <span className="material-symbols-outlined text-[16px] text-secondary">tune</span>
-            <span className="font-semibold">Tùy chỉnh chỉ số</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-secondary">tune</span>
+            <span className="font-semibold">Mục tiêu học tập</span>
           </button>
 
           <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-xl border border-surface-container-high/40">
-            <span className="material-symbols-outlined text-primary text-[18px]">calendar_today</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-primary text-[18px]">calendar_today</span>
             <span className="font-label-md text-label-md text-on-surface font-medium whitespace-nowrap">
               {formattedDate}
             </span>
@@ -86,7 +97,7 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">
-                  {metrics.wordsLearned.toLocaleString()}
+                  {loading ? "…" : metrics.wordsLearned.toLocaleString()}
                 </span>
                 <span className="font-label-md text-label-md text-outline">
                   / {metrics.totalTargetWords.toLocaleString()} từ
@@ -94,7 +105,7 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
               </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shrink-0">
-              <span className="material-symbols-outlined text-[22px]">translate</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[22px]">translate</span>
             </div>
           </div>
           <div className="mt-space-md space-y-1.5">
@@ -115,59 +126,46 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Thoi Gian Hoc */}
+        {/* Card 2: Số thẻ ôn 7 ngày qua (tính từ /reviews) */}
         <div className="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow border border-surface-container-high/40">
           <div className="flex items-start justify-between">
             <div className="space-y-1">
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-                Thời Gian Tuần Này
+                Thẻ Đã Ôn 7 Ngày Qua
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">
-                  {metrics.studyHoursThisWeek.toFixed(1)}
+                  {loading ? "…" : weekTotal.toLocaleString()}
                 </span>
-                <span className="font-label-md text-label-md text-outline">giờ</span>
+                <span className="font-label-md text-label-md text-outline">thẻ</span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-secondary shrink-0">
-              <span className="material-symbols-outlined text-[22px]">hourglass_top</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[22px]">event_repeat</span>
             </div>
           </div>
-          <div className="mt-space-md flex items-end justify-between">
+          <div className="mt-space-md flex items-end justify-between gap-2">
             <div className="flex items-center gap-1 text-secondary font-label-sm text-label-sm bg-secondary-fixed/30 px-2 py-0.5 rounded font-semibold whitespace-nowrap">
-              <span className="material-symbols-outlined text-[14px]">trending_up</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">today</span>
               <span>
-                {metrics.studyHoursDiff >= 0
-                  ? `+${metrics.studyHoursDiff.toFixed(1)} giờ vs tuần trước`
-                  : `${metrics.studyHoursDiff.toFixed(1)} giờ vs tuần trước`}
+                Hôm nay {metrics.reviewedToday}/{metrics.dailyGoalWords}
               </span>
             </div>
-            {/* SVG sparkline chart */}
-            <svg className="w-20 h-7 text-secondary shrink-0" fill="none" viewBox="0 0 80 28">
-              {metrics.studyHoursThisWeek > 0 ? (
+            {/* Sparkline từ số thẻ mỗi ngày; không có dữ liệu thì vẽ nét đứt */}
+            <svg
+              className="w-20 h-7 text-secondary shrink-0"
+              fill="none"
+              viewBox="0 0 80 28"
+              role="img"
+              aria-label={`Số thẻ ôn 7 ngày: ${metrics.reviewsLast7Days.join(", ")}`}
+            >
+              {weekTotal > 0 ? (
                 <>
-                  <path
-                    d="M2 24 L14 18 L26 21 L38 12 L50 14 L62 6 L78 2"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2.5"
-                  ></path>
-                  <path
-                    d="M2 24 L14 18 L26 21 L38 12 L50 14 L62 6 L78 2 V 28 H 2 Z"
-                    fill="currentColor"
-                    fillOpacity="0.12"
-                  ></path>
+                  <path d={sparkPath} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
+                  <path d={`${sparkPath} V 28 H 2 Z`} fill="currentColor" fillOpacity="0.12" />
                 </>
               ) : (
-                <path
-                  d="M2 24 L78 24"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                  strokeDasharray="4 4"
-                  opacity="0.5"
-                ></path>
+                <path d="M2 24 L78 24" stroke="currentColor" strokeLinecap="round" strokeWidth="2" strokeDasharray="4 4" opacity="0.5" />
               )}
             </svg>
           </div>
@@ -196,20 +194,20 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
               </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary-container shrink-0">
-              <span className="material-symbols-outlined text-[22px]">verified</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[22px]">verified</span>
             </div>
           </div>
           <div className="mt-space-md flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-secondary shrink-0"></span>
+              <span aria-hidden="true" className="w-2 h-2 rounded-full bg-secondary shrink-0"></span>
               <span className="font-label-sm text-label-sm text-on-surface-variant font-medium whitespace-nowrap">
-                Dokkai: {metrics.dokkaiAccuracy !== null ? `${metrics.dokkaiAccuracy}%` : "--"}
+                Số bài: {metrics.quizCount}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-primary-container shrink-0"></span>
+              <span aria-hidden="true" className="w-2 h-2 rounded-full bg-primary-container shrink-0"></span>
               <span className="font-label-sm text-label-sm text-on-surface-variant font-medium whitespace-nowrap">
-                Goi/Bunpou: {metrics.bunpouAccuracy !== null ? `${metrics.bunpouAccuracy}%` : "--"}
+                Bài gần nhất: {metrics.lastQuizPct !== null ? `${metrics.lastQuizPct}%` : "--"}
               </span>
             </div>
           </div>
@@ -224,7 +222,7 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="font-headline-lg text-headline-lg font-bold text-tertiary-container tracking-tight flex items-center gap-1">
-                  {metrics.currentStreak} <span className="text-xl">🔥</span>
+                  {metrics.currentStreak} <span aria-hidden="true" className="text-xl">🔥</span>
                 </span>
                 <span className="font-label-md text-label-md text-outline">
                   {metrics.currentStreak > 0 ? "ngày liên tiếp" : "bắt đầu hôm nay"}
@@ -233,6 +231,7 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
             </div>
             <div className="w-10 h-10 rounded-lg bg-tertiary-fixed flex items-center justify-center text-tertiary shrink-0">
               <span
+                aria-hidden="true"
                 className="material-symbols-outlined text-[22px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
               >

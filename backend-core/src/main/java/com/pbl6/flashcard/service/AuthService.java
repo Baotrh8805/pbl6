@@ -34,7 +34,7 @@ public class AuthService {
 
     public AuthResponse login(AuthRequest request) {
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(User.normalizeEmail(request.getEmail()), request.getPassword())
         );
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -44,12 +44,13 @@ public class AuthService {
     }
 
     public User register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String email = User.normalizeEmail(request.getEmail());
+        if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("Email đã được sử dụng!");
         }
 
         User user = new User();
-        user.setEmail(request.getEmail());
+        user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setFullName(request.getFullName());
         user.setRole(Role.USER);
@@ -60,7 +61,7 @@ public class AuthService {
     }
 
     public User getCurrentUser(String email) {
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmail(User.normalizeEmail(email))
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng: " + email));
     }
 
@@ -68,5 +69,32 @@ public class AuthService {
         User user = getCurrentUser(email);
         user.setJlptLevel(newLevel);
         return userRepository.save(user);
+    }
+
+    public User updateProfile(String email, String fullName) {
+        User user = getCurrentUser(email);
+        user.setFullName(fullName);
+        return userRepository.save(user);
+    }
+
+    /**
+     * Mật khẩu cũ phải được kiểm tra ở server; client không được phép bỏ qua bước này.
+     * Mọi token phát hành trước đó bị thu hồi; trả token mới để phiên hiện tại dùng tiếp.
+     */
+    public AuthResponse changePassword(String email, String currentPassword, String newPassword) {
+        User user = getCurrentUser(email);
+        if (currentPassword == null || currentPassword.isEmpty()) {
+            throw new IllegalArgumentException("Mật khẩu hiện tại không được để trống!");
+        }
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("Mật khẩu hiện tại không đúng!");
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new IllegalArgumentException("Mật khẩu mới phải từ 6 ký tự!");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordChangedAt(java.time.Instant.now());
+        userRepository.save(user);
+        return new AuthResponse(tokenProvider.generateToken(new CustomUserDetails(user)));
     }
 }

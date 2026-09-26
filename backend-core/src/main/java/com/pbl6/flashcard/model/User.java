@@ -36,7 +36,17 @@ public class User {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    /** Token có iat trước mốc này bị từ chối (đổi mật khẩu = đăng xuất mọi phiên cũ). */
+    @JsonIgnore
+    @Column(name = "password_changed_at")
+    private java.time.Instant passwordChangedAt;
+
     public User() {}
+
+    /** Email so khớp không phân biệt hoa thường: lưu và tra cứu luôn ở dạng này. */
+    public static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(java.util.Locale.ROOT);
+    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -58,6 +68,9 @@ public class User {
 
     public Role getRole() { return role; }
     public void setRole(Role role) { this.role = role; }
+
+    public java.time.Instant getPasswordChangedAt() { return passwordChangedAt; }
+    public void setPasswordChangedAt(java.time.Instant passwordChangedAt) { this.passwordChangedAt = passwordChangedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

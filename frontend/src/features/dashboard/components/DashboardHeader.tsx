@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { UserMetrics } from "../types/dashboard.types";
-import { getLevelDescription } from "../services/dashboardService";
+import { getLevelDescription } from "../lib/dashboardUtils";
 
 interface DashboardHeaderProps {
   displayName: string;
@@ -22,6 +22,26 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   onLogout,
 }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Menu tài khoản: đóng khi bấm ra ngoài hoặc nhấn Esc.
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && e.target instanceof Node && !menuRef.current.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setUserMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [userMenuOpen]);
 
   // Avatar chữ cái đầu từ tên thật (không dùng ảnh stock)
   const initials = displayName
@@ -42,7 +62,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             className="md:hidden p-1.5 rounded-lg text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
             aria-label="Mở menu"
           >
-            <span className="material-symbols-outlined text-[24px]">menu</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[24px]">menu</span>
           </button>
 
           {/* Logo */}
@@ -56,20 +76,20 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
         {/* Right: Quick Badges + User Profile */}
         <div className="flex items-center gap-space-sm shrink-0">
-          {/* Streak Badge */}
+          {/* Streak: tính từ lịch sử ôn/thi, chỉ hiển thị */}
           <div
-            onClick={onOpenEditMetrics}
-            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm whitespace-nowrap cursor-pointer hover:bg-surface-container-high transition-colors"
-            title="Nhấp để tùy chỉnh chuỗi học tập"
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm whitespace-nowrap"
+            title="Số ngày học liên tiếp"
           >
-            <span className="material-symbols-outlined text-tertiary-container text-[16px]">
+            <span aria-hidden="true" className="material-symbols-outlined text-tertiary-container text-[16px]">
               local_fire_department
             </span>
             <span className="text-on-surface font-semibold">{metrics.currentStreak} Ngày</span>
           </div>
 
-          {/* JLPT Level Dropdown Badge */}
-          <div
+          {/* JLPT Level Badge */}
+          <button
+            type="button"
             onClick={onOpenEditMetrics}
             className="hidden lg:flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface font-label-sm text-label-sm cursor-pointer hover:bg-surface-container-highest transition-colors whitespace-nowrap"
             title="Nhấp để đổi trình độ JLPT của bạn"
@@ -77,16 +97,17 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             <span className="font-label-sm text-label-sm font-semibold">
               {currentLevel} - {getLevelDescription(currentLevel)}
             </span>
-            <span className="material-symbols-outlined text-[16px] text-outline">arrow_drop_down</span>
-          </div>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-outline">arrow_drop_down</span>
+          </button>
 
           {/* User Profile + Logout */}
-          <div className="relative pl-space-xs">
+          <div ref={menuRef} className="relative pl-space-xs">
             <button
               type="button"
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               aria-label="Mở menu tài khoản"
               aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
               className="flex items-center gap-space-xs cursor-pointer select-none p-1 rounded-lg hover:bg-surface-container-low transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <div className="hidden text-right xl:block">
@@ -119,26 +140,28 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
                 <div className="py-1">
                   <button
+                    type="button"
                     onClick={() => {
                       setUserMenuOpen(false);
                       onOpenEditMetrics();
                     }}
                     className="w-full text-left px-3 py-2 rounded-lg text-xs font-label-md text-on-surface hover:bg-surface-container flex items-center gap-2 cursor-pointer font-medium"
                   >
-                    <span className="material-symbols-outlined text-[16px] text-secondary">tune</span>
-                    <span>Tùy chỉnh chỉ số học tập</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-secondary">tune</span>
+                    <span>Mục tiêu học tập</span>
                   </button>
                 </div>
 
                 <div className="pt-1 border-t border-surface-container">
                   <button
+                    type="button"
                     onClick={() => {
                       setUserMenuOpen(false);
                       onLogout();
                     }}
                     className="w-full text-left px-3 py-2 rounded-lg text-xs font-label-md text-error hover:bg-error-container/20 flex items-center gap-2 font-medium cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[16px]">logout</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">logout</span>
                     <span>Đăng xuất</span>
                   </button>
                 </div>

@@ -1,4 +1,9 @@
-﻿import axios, { AxiosError } from "axios";
+// Import tương đối + đuôi .ts để scripts/selfCheck.ts chạy được bằng node (node không hiểu alias @/).
+import axios, { AxiosError } from "axios";
+import { tokenStorage } from "./tokenStorage.ts";
+
+/** AuthProvider nghe sự kiện này để reset state; ProtectedRoute tự đưa về /login. */
+export const AUTH_EXPIRED_EVENT = "auth:expired";
 
 // Base API client pointing to Vite proxy (/api -> http://localhost:8080)
 export const apiClient = axios.create({
@@ -10,27 +15,23 @@ export const apiClient = axios.create({
 });
 
 // Request interceptor to attach JWT token
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("accessToken");
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+apiClient.interceptors.request.use((config) => {
+  const token = tokenStorage.getToken();
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
-// Response interceptor to handle unauthorized 401
+// 401 trên request CÓ gửi token = phiên hết hạn/bị thu hồi -> đăng xuất.
+// Request không kèm token (vd. sai mật khẩu ở /auth/login) cũng trả 401 nhưng không phải hết phiên.
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Clear token if expired/unauthorized and not already on auth page
-      if (!window.location.pathname.startsWith("/login") && !window.location.pathname.startsWith("/register")) {
-        localStorage.removeItem("accessToken");
-        window.location.href = "/login";
-      }
+    const sentToken = !!error.config?.headers?.Authorization;
+    if (error.response?.status === 401 && sentToken) {
+      tokenStorage.clear();
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     }
     return Promise.reject(error);
   }
@@ -53,6 +54,9 @@ export function extractErrorMessage(error: unknown): string {
       if ("error" in data && typeof data.error === "string") {
         return data.error;
       }
+    }
+    if (error.response?.status === 401) {
+      return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
     }
     if (error.response?.status === 403) {
       return "Bạn không có quyền thực hiện thao tác này.";
