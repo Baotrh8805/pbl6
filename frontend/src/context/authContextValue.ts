@@ -8,7 +8,8 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   /** `remember` bỏ trống = giữ nơi lưu hiện tại (dùng khi đổi mật khẩu nhận token mới). */
-  login: (token: string, email?: string, remember?: boolean) => void;
+  login: (token: string, refreshToken: string, email?: string, remember?: boolean) => void;
+  /** Đăng xuất: thu hồi phiên ở server (không chờ) rồi xoá phiên trên máy này. */
   logout: () => void;
   refreshProfile: () => Promise<void>;
   updateJlptLevel: (newLevel: string) => Promise<void>;

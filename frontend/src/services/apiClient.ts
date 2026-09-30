@@ -1,5 +1,5 @@
 // Import tương đối + đuôi .ts để scripts/selfCheck.ts chạy được bằng node (node không hiểu alias @/).
-import axios, { AxiosError } from "axios";
+import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { tokenStorage } from "./tokenStorage.ts";
 
 /** AuthProvider nghe sự kiện này để reset state; ProtectedRoute tự đưa về /login. */
@@ -29,7 +29,39 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// 401 trên request CÓ gửi token = phiên hết hạn/bị thu hồi -> đăng xuất.
+/** Request đã được gửi lại sau khi làm mới token: không làm mới lần hai (tránh lặp vô hạn). */
+type RetriableConfig = InternalAxiosRequestConfig & { _retried?: boolean };
+
+// Nhiều request cùng dính 401 một lúc chỉ gọi làm mới một lần, tất cả chờ chung kết quả.
+let refreshing: Promise<string> | null = null;
+
+/**
+ * Đổi refresh token lấy access token mới. Dùng axios trần (không qua apiClient) để 401 của chính request này
+ * không kích hoạt lại interceptor. Refresh token bị từ chối (hết 3 ngày / đã thu hồi) -> ném lỗi có response;
+ * lỗi mạng -> ném lỗi không có response (giữ nguyên phiên, người dùng thử lại được).
+ */
+function refreshAccessToken(): Promise<string> {
+  refreshing ??= axios
+    .post<{ accessToken: string }>(`${apiClient.defaults.baseURL}/auth/refresh`, {
+      refreshToken: tokenStorage.getRefreshToken(),
+    })
+    .then((res) => {
+      tokenStorage.setToken(res.data.accessToken);
+      return res.data.accessToken;
+    })
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
+
+function expireSession() {
+  tokenStorage.clear();
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+}
+
+// 401 trên request CÓ gửi token = access token hết hạn/bị thu hồi -> thử làm mới bằng refresh token rồi gửi lại.
+// Làm mới thất bại vì refresh token bị từ chối -> đăng xuất. Lỗi mạng khi làm mới -> giữ phiên.
 // Request không kèm token (vd. sai mật khẩu ở /auth/login) cũng trả 401 nhưng không phải hết phiên.
 apiClient.interceptors.response.use(
   (response) => {
@@ -39,13 +71,26 @@ apiClient.interceptors.response.use(
     }
     return response;
   },
-  (error: AxiosError) => {
-    const sentToken = !!error.config?.headers?.Authorization;
-    if (error.response?.status === 401 && sentToken) {
-      tokenStorage.clear();
-      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  async (error: AxiosError) => {
+    const config = error.config as RetriableConfig | undefined;
+    const sentToken = !!config?.headers?.Authorization;
+    if (error.response?.status !== 401 || !sentToken || !config) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+    if (config._retried || !tokenStorage.getRefreshToken()) {
+      expireSession();
+      return Promise.reject(error);
+    }
+    try {
+      const token = await refreshAccessToken();
+      config._retried = true;
+      config.headers.Authorization = `Bearer ${token}`;
+      return apiClient(config);
+    } catch (refreshError) {
+      const rejected = axios.isAxiosError(refreshError) && !!refreshError.response;
+      if (rejected) expireSession();
+      return Promise.reject(rejected ? error : refreshError);
+    }
   }
 );
 

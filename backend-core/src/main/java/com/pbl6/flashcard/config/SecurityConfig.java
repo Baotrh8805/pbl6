@@ -53,7 +53,8 @@ public class SecurityConfig {
                         // trên tài khoản đang đăng nhập -> phải có token, thiếu token là 401 chứ không
                         // phải NPE 500.
                         .requestMatchers("/api/auth/login", "/api/auth/register",
-                                "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+                                "/api/auth/forgot-password", "/api/auth/reset-password",
+                                "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll() // Mở khóa
                                                                                                               // Swagger
                         .requestMatchers("/error").permitAll()

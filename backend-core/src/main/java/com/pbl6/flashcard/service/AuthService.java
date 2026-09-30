@@ -7,7 +7,6 @@ import com.pbl6.flashcard.model.Role;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.repository.UserRepository;
 import com.pbl6.flashcard.security.CustomUserDetails;
-import com.pbl6.flashcard.security.JwtTokenProvider;
 
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -21,18 +20,18 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 
 public class AuthService {
-    public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository, PasswordEncoder passwordEncoder, JwtTokenProvider tokenProvider) {
+    public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository, PasswordEncoder passwordEncoder, RefreshTokenService refreshTokens) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.tokenProvider = tokenProvider;
+        this.refreshTokens = refreshTokens;
     }
 
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider tokenProvider;
+    private final RefreshTokenService refreshTokens;
 
     public static final String EMAIL_TAKEN = "Email đã được sử dụng!";
 
@@ -43,8 +42,7 @@ public class AuthService {
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        String jwt = tokenProvider.generateToken((CustomUserDetails) authentication.getPrincipal());
-        return new AuthResponse(jwt);
+        return refreshTokens.issueTokens(((CustomUserDetails) authentication.getPrincipal()).getUser());
     }
 
     public User register(RegisterRequest request) {
@@ -83,7 +81,7 @@ public class AuthService {
 
     /**
      * Mật khẩu cũ phải được kiểm tra ở server; client không được phép bỏ qua bước này.
-     * Mọi token phát hành trước đó bị thu hồi; trả token mới để phiên hiện tại dùng tiếp.
+     * Mọi token phát hành trước đó (cả refresh token ở thiết bị khác) bị thu hồi; trả cặp token mới để phiên hiện tại dùng tiếp.
      */
     public AuthResponse changePassword(String email, String currentPassword, String newPassword) {
         // Rỗng / độ dài đã được PasswordChangeRequest kiểm tra ở controller
@@ -94,6 +92,7 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPasswordChangedAt(java.time.Instant.now());
         userRepository.save(user);
-        return new AuthResponse(tokenProvider.generateToken(new CustomUserDetails(user)));
+        refreshTokens.revokeAll(user.getId());
+        return refreshTokens.issueTokens(user);
     }
 }

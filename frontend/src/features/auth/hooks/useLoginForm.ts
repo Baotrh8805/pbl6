@@ -46,7 +46,7 @@ export const useLoginForm = () => {
     setIsLoading(true);
     try {
       const response = await authService.login({ email: email.trim(), password });
-      login(response.accessToken, email.trim(), rememberMe);
+      login(response.accessToken, response.refreshToken, email.trim(), rememberMe);
       // ProtectedRoute lưu trang đang mở vào state.from -> đăng nhập xong quay lại đúng trang đó.
       const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
       navigate(from && from !== "/login" ? from : "/", { replace: true });

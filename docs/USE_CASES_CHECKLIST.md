@@ -5,10 +5,10 @@
 
 | Sprint | Số UC | Xong | Một phần | Còn lại |
 | :--- | :---: | :---: | :---: | :---: |
-| Sprint 1 (UC-01 → UC-16) | 16 | 6 | 2 | 8 (chủ yếu AI: upload, OCR, NLP, sinh thẻ) |
+| Sprint 1 (UC-01 → UC-16) | 16 | 7 | 1 | 8 (chủ yếu AI: upload, OCR, NLP, sinh thẻ) |
 | Sprint 2 (UC-17 → UC-29) | 13 | 5 | 0 | 8 |
 | Sprint 3 (UC-30 → UC-42) | 13 | 0 | 0 | 13 |
-| **Tổng** | **42** | **11** | **2** | **29** |
+| **Tổng** | **42** | **12** | **1** | **29** |
 
 Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm vừa làm vừa học hiệu quả mà không bị ngợp, công việc được chia làm 3 Sprint:
 
@@ -19,7 +19,7 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 
 ### Phân hệ 1: Quản lý tài khoản (Auth & Profiles)
 - [ ] UC-01: Đăng ký tài khoản (Email / Google OAuth). *(đã có Email; chưa có Google OAuth)*
-- [ ] UC-02: Đăng nhập & cấp JWT Access/Refresh Token. *(đã có JWT Access Token; chưa có Refresh Token)*
+- [x] UC-02: Đăng nhập & cấp JWT Access/Refresh Token. *(access token 15 phút + refresh token hạn trượt 3 ngày: không vào web quá 3 ngày thì tự đăng xuất; có đăng xuất thu hồi phiên)*
 - [x] UC-03: Quản lý thông tin cá nhân & trình độ JLPT hiện tại.
 - [x] UC-04: Đổi mật khẩu / Khôi phục tài khoản. *(quên mật khẩu gửi email thật khi đã cấu hình SMTP, xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp); chưa cấu hình thì link chỉ ghi vào log backend)*
 

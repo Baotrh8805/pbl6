@@ -17,12 +17,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(() => tokenStorage.getToken() !== null);
 
-  const logout = useCallback(() => {
+  // Chỉ xoá phiên trên máy này (dùng khi server đã báo phiên hết hạn nên không cần gọi lại server).
+  const clearSession = useCallback(() => {
     tokenStorage.clear();
     setToken(null);
     setUserEmail(null);
     setUserProfile(null);
   }, []);
+
+  const logout = useCallback(() => {
+    const refreshToken = tokenStorage.getRefreshToken();
+    // Thu hồi ở server để refresh token bị đánh cắp không dùng tiếp được; lỗi mạng không chặn đăng xuất.
+    if (refreshToken) void authService.logout(refreshToken).catch(() => {});
+    clearSession();
+  }, [clearSession]);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -35,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       // Token hết hạn/không hợp lệ (backend cũ trả 403 thay vì 401) -> đăng xuất hẳn.
       if (isAuthError(e)) {
-        logout();
+        clearSession();
         return;
       }
       // Lỗi mạng: chỉ dùng email thật đã lưu, không bịa trình độ JLPT.
@@ -44,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUserProfile((prev) => prev || { email: savedEmail });
       }
     }
-  }, [logout]);
+  }, [clearSession]);
 
   // Có token lưu sẵn: xác minh với server một lần lúc mở app; isLoading giữ ProtectedRoute chờ kết quả.
   useEffect(() => {
@@ -58,12 +66,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // apiClient báo 401 -> reset state; ProtectedRoute tự chuyển về /login kèm trang đang mở.
   useEffect(() => {
-    window.addEventListener(AUTH_EXPIRED_EVENT, logout);
-    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, logout);
-  }, [logout]);
+    window.addEventListener(AUTH_EXPIRED_EVENT, clearSession);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, clearSession);
+  }, [clearSession]);
 
-  const login = (newToken: string, email?: string, remember?: boolean) => {
-    tokenStorage.save(newToken, email, remember);
+  const login = (newToken: string, refreshToken: string, email?: string, remember?: boolean) => {
+    tokenStorage.save(newToken, refreshToken, email, remember);
     setToken(newToken);
     if (email) setUserEmail(email);
     void fetchProfile();

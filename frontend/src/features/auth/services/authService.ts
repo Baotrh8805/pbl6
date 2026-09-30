@@ -4,7 +4,7 @@ import type { AuthRequest, AuthResponse, RegisterRequest, UserProfile } from "..
 export const authService = {
   /**
    * Đăng nhập người dùng qua email và password
-   * Trả về accessToken và tokenType: "Bearer"
+   * Trả về accessToken (15 phút), refreshToken (hạn trượt 3 ngày) và tokenType: "Bearer"
    */
   async login(credentials: AuthRequest): Promise<AuthResponse> {
     const response = await apiClient.post<AuthResponse>("/auth/login", credentials);
@@ -19,6 +19,11 @@ export const authService = {
   async register(payload: RegisterRequest): Promise<string> {
     const response = await apiClient.post<string>("/auth/register", payload);
     return response.data;
+  },
+
+  /** Thu hồi refresh token của phiên này ở server. Gọi kèm request không cần access token (có thể đã hết hạn). */
+  async logout(refreshToken: string): Promise<void> {
+    await apiClient.post("/auth/logout", { refreshToken });
   },
 
   /**

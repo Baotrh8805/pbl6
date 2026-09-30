@@ -16,7 +16,7 @@ Cập nhật 30/09/2026 theo commit `0d90c0f`. Tiến độ: [TEAM_GUIDELINES.md
 | Bộ thẻ mẫu của Thư viện | `db/migration/R__seed_system_decks.sql` |
 | API công khai (không cần đăng nhập) | `config/SecurityConfig.java` |
 | Định dạng lỗi JSON `{status, error, message}` | `config/ApiExceptionHandler.java` |
-| Đăng ký / đăng nhập / hồ sơ / đổi & quên mật khẩu | `controller/AuthController.java`, `service/AuthService.java`, `service/PasswordResetService.java` |
+| Đăng ký / đăng nhập / hồ sơ / đổi & quên mật khẩu | `controller/AuthController.java`, `service/AuthService.java`, `service/RefreshTokenService.java` (refresh token hạn trượt), `service/PasswordResetService.java`. Frontend: `services/apiClient.ts` (tự làm mới token khi 401), `services/tokenStorage.ts` |
 | Chống dò mật khẩu, chặn tạo tài khoản hàng loạt | `security/AttemptLimiter.java` (+ `LoginAttemptLimiter`, `RegisterRateLimiter`) |
 | Thư mục lồng nhau + chia sẻ thư mục | `controller/FolderController.java`, `service/FolderService.java`, `repository/FolderRepository.java` (`isSharedWith`) |
 | Bộ thẻ, thẻ, chia sẻ bộ thẻ, quyền truy cập | `controller/StudyController.java`, `service/DeckService.java` (`access(...)`) |
@@ -60,11 +60,11 @@ Chủ > được chia sẻ riêng bộ thẻ (`deck_shares`: VIEWER/EDITOR) > b�
 
 ### Migration (Flyway)
 `V1` baseline · `V2` ràng buộc & độ dài cột · `V3` thư viện, chia sẻ bộ thẻ, chấm sao · `V4` chia sẻ thư mục ·
-`V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `R__seed_system_decks` bộ thẻ mẫu.
+`V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `V7` refresh token · `R__seed_system_decks` bộ thẻ mẫu.
 
 ### Test
 `mvn test` chạy 55 test (unit + tích hợp `*IT.java`) trên Postgres nhúng (không cần Docker / Supabase).
-Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderShareIT`, `QuizAttemptIT`, `PasswordResetIT`,
+Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderShareIT`, `QuizAttemptIT`, `PasswordResetIT`, `RefreshTokenIT`,
 `AuthValidationIT`, `RegisterRateLimitIT`.
 `npm run e2e` (thư mục gốc) chạy smoke test HTTP trên backend thật + Postgres nhúng.
 

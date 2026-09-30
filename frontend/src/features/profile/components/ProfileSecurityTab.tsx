@@ -42,9 +42,9 @@ export const ProfileSecurityTab: React.FC = () => {
         setSaving(true);
         setStatus(null);
         try {
-            const { accessToken } = await authService.changePassword(current, next);
-            // Token cũ đã bị thu hồi ở server -> dùng token mới để không bị đăng xuất
-            login(accessToken);
+            const { accessToken, refreshToken } = await authService.changePassword(current, next);
+            // Token cũ (mọi thiết bị) đã bị thu hồi ở server -> dùng cặp token mới để không bị đăng xuất
+            login(accessToken, refreshToken);
             form.reset();
             setShowPw(false);
             setStatus({ type: "success", text: "Đổi mật khẩu thành công." });

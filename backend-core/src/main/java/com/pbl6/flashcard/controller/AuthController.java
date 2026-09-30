@@ -8,9 +8,11 @@ import com.pbl6.flashcard.dto.ResetPasswordRequest;
 import com.pbl6.flashcard.dto.JlptLevelRequest;
 import com.pbl6.flashcard.dto.PasswordChangeRequest;
 import com.pbl6.flashcard.dto.ProfileRequest;
+import com.pbl6.flashcard.dto.RefreshRequest;
 import com.pbl6.flashcard.dto.RegisterRequest;
 import com.pbl6.flashcard.service.AuthService;
 import com.pbl6.flashcard.service.PasswordResetService;
+import com.pbl6.flashcard.service.RefreshTokenService;
 import com.pbl6.flashcard.security.AttemptLimiter;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.security.LoginAttemptLimiter;
@@ -30,17 +32,20 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/auth")
 public class AuthController {
     public AuthController(AuthService authService, LoginAttemptLimiter loginLimiter,
-                          RegisterRateLimiter registerLimiter, PasswordResetService passwordReset) {
+                          RegisterRateLimiter registerLimiter, PasswordResetService passwordReset,
+                          RefreshTokenService refreshTokens) {
         this.authService = authService;
         this.loginLimiter = loginLimiter;
         this.registerLimiter = registerLimiter;
         this.passwordReset = passwordReset;
+        this.refreshTokens = refreshTokens;
     }
 
     private final AuthService authService;
     private final LoginAttemptLimiter loginLimiter;
     private final RegisterRateLimiter registerLimiter;
     private final PasswordResetService passwordReset;
+    private final RefreshTokenService refreshTokens;
     /** Xin link đặt lại mật khẩu: tối đa 5 lần / 15 phút cho mỗi (IP, email) -> không spam hộp thư người khác. */
     private final AttemptLimiter forgotLimiter = new AttemptLimiter(5, java.time.Duration.ofMinutes(15));
 
@@ -117,6 +122,19 @@ public class AuthController {
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest body) {
         passwordReset.reset(body.token(), body.newPassword());
         return ResponseEntity.ok(java.util.Map.of("message", "Đặt lại mật khẩu thành công. Hãy đăng nhập bằng mật khẩu mới."));
+    }
+
+    /** Đổi refresh token còn hạn lấy access token mới (và lùi hạn phiên). Không cần access token: nó có thể đã hết hạn. */
+    @PostMapping("/refresh")
+    public AuthResponse refresh(@Valid @RequestBody RefreshRequest body) {
+        return refreshTokens.refresh(body.refreshToken());
+    }
+
+    /** Đăng xuất: thu hồi refresh token của phiên này. Luôn 204 để không lộ token có tồn tại hay không. */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest body) {
+        refreshTokens.revoke(body.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")

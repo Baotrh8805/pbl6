@@ -1,4 +1,16 @@
-# Nhật ký thay đổi: Ổn định nền tảng theo kế hoạch MoSCoW
+# Nhật ký thay đổi
+
+## 30/09/2026: Refresh token, tự đăng xuất sau 3 ngày không hoạt động (UC-02)
+- **Backend** (`V7__refresh_tokens`): `POST /api/auth/login` trả thêm `refreshToken`; `POST /api/auth/refresh` đổi lấy
+  access token mới và lùi hạn phiên thêm 3 ngày; `POST /api/auth/logout` thu hồi phiên. Access token rút từ 3 ngày
+  xuống 15 phút (`jwt.expiration`); hạn refresh token là `jwt.refresh-expiration` (mặc định `P3D`).
+  Đổi / đặt lại mật khẩu thu hồi refresh token ở mọi thiết bị. DB chỉ lưu SHA-256 của token.
+- **Frontend**: `apiClient` gặp 401 thì tự gọi làm mới một lần rồi gửi lại request; chỉ đăng xuất khi refresh token
+  bị từ chối (quá 3 ngày / đã thu hồi), lỗi mạng thì giữ phiên. Nút đăng xuất gọi `/auth/logout`.
+- **API đổi**: `AuthResponse` có thêm `refreshToken`; `login()` của `AuthContext` nhận thêm tham số `refreshToken`.
+- Test: `RefreshTokenIT` (6 test); `smoke-auth.mjs` kiểm tra refresh / logout.
+
+# Ổn định nền tảng theo kế hoạch MoSCoW
 *Ngày: 29/09/2026*
 
 ## Must have

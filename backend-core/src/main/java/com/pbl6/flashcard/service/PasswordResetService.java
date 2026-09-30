@@ -28,7 +28,7 @@ import java.util.HexFormat;
 
 /**
  * Quên mật khẩu: gửi link chứa token ngẫu nhiên (dùng 1 lần, hết hạn sau {@link #TTL}); DB chỉ lưu SHA-256.
- * Đặt lại xong: token cũ bị thu hồi như đổi mật khẩu (passwordChangedAt) -> mọi phiên cũ đăng xuất.
+ * Đặt lại xong: token cũ bị thu hồi như đổi mật khẩu (passwordChangedAt + refresh token) -> mọi phiên cũ đăng xuất.
  * Không cấu hình SMTP (spring.mail.host): link được ghi vào log để dev dùng - KHÔNG dùng cách này khi triển khai thật.
  */
 @Service
@@ -41,18 +41,21 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenService refreshTokens;
     private final ObjectProvider<JavaMailSender> mailSender;
     private final String frontendUrl;
     private final String mailFrom;
     private final SecureRandom random = new SecureRandom();
 
     public PasswordResetService(UserRepository userRepository, PasswordResetTokenRepository tokenRepository,
-                                PasswordEncoder passwordEncoder, ObjectProvider<JavaMailSender> mailSender,
+                                PasswordEncoder passwordEncoder, RefreshTokenService refreshTokens,
+                                ObjectProvider<JavaMailSender> mailSender,
                                 @Value("${app.frontend-url}") String frontendUrl,
                                 @Value("${app.mail.from}") String mailFrom) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
+        this.refreshTokens = refreshTokens;
         this.mailSender = mailSender;
         this.frontendUrl = frontendUrl.replaceAll("/+$", "");
         this.mailFrom = mailFrom;
@@ -82,6 +85,7 @@ public class PasswordResetService {
         user.setPasswordChangedAt(Instant.now());
         userRepository.save(user);
         tokenRepository.deleteByUserId(user.getId());
+        refreshTokens.revokeAll(user.getId());
     }
 
     private void send(String to, String link) {

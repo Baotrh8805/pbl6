@@ -10,14 +10,14 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
 Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất: [30-9.md](Progress/30-9.md)).
 
 ### Tiến độ hiện tại (Cập nhật 30/09/2026, commit `0d90c0f` trên nhánh `Backend`):
-- **Tổng tiến độ toàn dự án:** ~**30%** (11/42 use case xong, 2 làm một phần)
-- **Sprint 1 (Nền tảng & MVP):** ~**45%** (6/16 xong, 2 một phần). Phần còn thiếu chủ yếu là AI (upload, OCR, sinh thẻ), lùi sang sau theo quyết định của nhóm.
+- **Tổng tiến độ toàn dự án:** ~**31%** (12/42 use case xong, 1 làm một phần)
+- **Sprint 1 (Nền tảng & MVP):** ~**48%** (7/16 xong, 1 một phần). Phần còn thiếu chủ yếu là AI (upload, OCR, sinh thẻ), lùi sang sau theo quyết định của nhóm.
 - **Sprint 2:** ~**40%** (5/13: quiz, SRS, Thư viện cộng đồng). **Sprint 3:** chưa bắt đầu.
 - **Chất lượng:** 55 test backend đạt; CI chạy test backend + lint/build/selfcheck frontend cho mọi push/PR.
 
 | Phân hệ | Use Cases | Trạng thái hiện tại | Thành phần phụ trách |
 | :--- | :--- | :---: | :--- |
-| **Phân hệ 1: Tài khoản & Auth** | UC-01 -> UC-04 | 🟢 85% | Xong: đăng ký email, đăng nhập JWT, hồ sơ & JLPT, đổi mật khẩu, quên mật khẩu qua email. Chưa có: Google OAuth, Refresh Token. |
+| **Phân hệ 1: Tài khoản & Auth** | UC-01 -> UC-04 | 🟢 85% | Xong: đăng ký email, đăng nhập JWT + Refresh Token (không vào web 3 ngày thì tự đăng xuất), hồ sơ & JLPT, đổi mật khẩu, quên mật khẩu qua email. Chưa có: Google OAuth. |
 | **Phân hệ 2: Xử lý tài liệu & NLP** | UC-05 -> UC-10 | 🟡 15% | `ai-service`: prototype tách từ / Furigana / Hán-Việt (từ điển mẫu). OCR mock. Chưa upload file, backend chưa gọi AI service. |
 | **Phân hệ 3: Sinh học liệu AI** | UC-11 -> UC-13 | 🟡 33% | Sửa thẻ thủ công (UC-13) xong. Chưa tích hợp LLM sinh thẻ / ví dụ. |
 | **Phân hệ 4: Quản lý & Chia sẻ Bộ thẻ** | UC-14 -> UC-16, UC-27 -> UC-29 | 🟢 85% | Xong: CRUD bộ thẻ / thẻ, thư mục lồng nhau, chia sẻ bộ thẻ & thư mục, Thư viện cộng đồng (tìm, chấm sao, lưu bản sao). Chưa có: xuất Anki/CSV (UC-29). |
@@ -32,7 +32,7 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 3. **Thử giao diện trên trình duyệt** các màn hình vừa đổi: trình soạn bộ thẻ, thư mục & chia sẻ, quiz, quên / đặt lại mật khẩu.
 4. **Cấu hình SMTP** để gửi email quên mật khẩu thật. Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp).
 5. **Nhánh `Frontend` / `dev`**: cập nhật theo API đã đổi (quiz cần `attemptId`, `GET /api/decks` không còn trả bộ thẻ cộng đồng). Chi tiết ở [Progress/30-9.md](Progress/30-9.md).
-6. Việc sau: phân hệ AI (upload, OCR, sinh thẻ), xuất Anki/CSV (UC-29), Google OAuth & Refresh Token.
+6. Việc sau: phân hệ AI (upload, OCR, sinh thẻ), xuất Anki/CSV (UC-29), Google OAuth.
 
 ---
 

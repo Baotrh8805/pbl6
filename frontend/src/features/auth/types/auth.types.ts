@@ -5,6 +5,8 @@ export interface AuthRequest {
 
 export interface AuthResponse {
   accessToken: string;
+  /** Hạn trượt 3 ngày: không vào web quá 3 ngày thì phải đăng nhập lại. */
+  refreshToken: string;
   tokenType: string;
 }
 
