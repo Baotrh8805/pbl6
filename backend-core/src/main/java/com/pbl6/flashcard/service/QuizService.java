@@ -16,11 +16,18 @@ import java.util.Random;
 public final class QuizService {
 
     public static final int OPTIONS = 4;
+    /** Thời gian làm mỗi câu (client hiển thị đồng hồ theo số này). */
+    public static final int SECONDS_PER_QUESTION = 30;
+    /** Bù độ trễ mạng khi client tự nộp lúc hết giờ. */
+    public static final int GRACE_SECONDS = 60;
 
     private QuizService() {}
 
     /** Một câu hỏi gửi cho client — không có trường nào chỉ ra đáp án đúng. */
     public record Question(String cardId, String term, String reading, List<String> options) {}
+
+    /** Đề đã phát: nộp bài phải kèm attemptId (null khi bộ thẻ không có thẻ nào). */
+    public record Paper(java.util.UUID attemptId, int timeLimitSeconds, List<Question> questions) {}
 
     public record Graded(int score, int total, List<String> wrongCardIds) {}
 
@@ -46,19 +53,21 @@ public final class QuizService {
     }
 
     /**
+     * Chấm trên đúng các câu server đã phát: câu không trả lời = sai, cardId lạ trong answers bị bỏ qua.
      * @param meanings cardId -> nghĩa đúng, lấy từ DB của đúng bộ thẻ
+     * @param issued   cardId các câu đã phát (QuizAttempt)
      * @param answers  cardId -> nghĩa người dùng chọn (dữ liệu không đáng tin)
      */
-    public static Graded grade(Map<String, String> meanings, Map<String, String> answers) {
+    public static Graded grade(Map<String, String> meanings, List<String> issued, Map<String, String> answers) {
         int score = 0;
         int total = 0;
         List<String> wrong = new ArrayList<>();
-        for (Map.Entry<String, String> entry : answers.entrySet()) {
-            String correct = meanings.get(entry.getKey());
-            if (correct == null) continue; // cardId lạ (không thuộc bộ thẻ) -> bỏ qua
+        for (String cardId : issued) {
+            String correct = meanings.get(cardId);
+            if (correct == null) continue; // thẻ đã bị xoá sau khi phát đề -> không tính
             total++;
-            if (correct.equals(entry.getValue())) score++;
-            else wrong.add(entry.getKey());
+            if (correct.equals(answers.get(cardId))) score++;
+            else wrong.add(cardId);
         }
         return new Graded(score, total, wrong);
     }

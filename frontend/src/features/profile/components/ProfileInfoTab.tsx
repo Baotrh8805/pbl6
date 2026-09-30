@@ -5,7 +5,8 @@ import { authService } from "@/features/auth/services/authService";
 import { extractErrorMessage } from "@/services/apiClient";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { getLevelDescription, getTargetWordsByLevel, JLPT_LEVELS } from "@/features/dashboard/lib/dashboardUtils";
+import { getLevelDescription, getTargetWordsByLevel } from "@/features/dashboard/lib/dashboardUtils";
+import { JLPT_LEVELS } from "@/lib/deckUtils";
 import { DAILY_GOAL_PRESETS, isValidDailyGoal } from "../lib/profileUtils";
 import { SectionCard, StatusMessage, type Status } from "./ProfileUi";
 

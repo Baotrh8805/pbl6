@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DecksPage } from "@/pages/DecksPage";
 import { DeckDetailPage } from "@/pages/DeckDetailPage";
@@ -47,6 +48,9 @@ export const AppRoutes: React.FC = () => {
         }
       />
 
+      {/* Mở từ link trong email: không bọc PublicRoute để người đang đăng nhập vẫn đặt lại được */}
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+
       {/* Protected Routes: layout lồng, Outlet giữ Header/Sidebar không remount */}
       <Route
         element={
@@ -63,7 +67,6 @@ export const AppRoutes: React.FC = () => {
         <Route path="/decks/:deckId" element={<DeckDetailPage />} />
         <Route path="/decks/:deckId/edit" element={<DeckEditorPage mode="edit" />} />
         <Route path="/decks/:deckId/add-cards" element={<DeckEditorPage mode="add-cards" />} />
-        <Route path="/decks/:deckId/add" element={<DeckEditorPage mode="add-cards" />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
         <Route path="/profile" element={<ProfilePage />} />

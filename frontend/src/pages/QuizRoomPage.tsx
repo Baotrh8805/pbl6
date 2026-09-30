@@ -1,14 +1,27 @@
 import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchDecks } from "@/services/deckService";
-import { fetchQuiz, fetchQuizResults } from "@/services/studyService";
-import { secondsLeft } from "@/lib/deckUtils";
+import { fetchQuizPreview, fetchQuizResults } from "@/services/studyService";
+import { JLPT_LEVELS, secondsLeft } from "@/lib/deckUtils";
+import { calcQuizAccuracy } from "@/lib/learningStats";
 import type { Deck, Question, QuizResult } from "@/types/api.types";
 import { extractErrorMessage } from "@/services/apiClient";
 import { useAsync } from "@/lib/useAsync";
 import { Ruby } from "@/lib/ja";
 
-const SECONDS_PER_Q = 30;
+const SECONDS_PER_Q = 30; // QuizService.SECONDS_PER_QUESTION
+
+/** Nhãn mức nắm vững từ độ chính xác thật; chưa có bài thi thì nói rõ. */
+const masteryLabel = (accuracy: number | null): { title: string; hint: string } =>
+    accuracy === null
+        ? { title: "Chưa có dữ liệu", hint: "Làm bài thi đầu tiên để đánh giá" }
+        : accuracy >= 90
+          ? { title: "Vững vàng", hint: "Sẵn sàng thử bộ thẻ khó hơn" }
+          : accuracy >= 70
+            ? { title: "Khá", hint: "Ôn lại các câu sai để củng cố" }
+            : accuracy >= 50
+              ? { title: "Cần ôn thêm", hint: "Nên ôn SRS trước khi thi lại" }
+              : { title: "Cần ôn nhiều", hint: "Học lại thẻ rồi quay lại thi" };
 
 export const QuizRoomPage: React.FC = () => {
     const { data, error, loading } = useAsync(
@@ -40,7 +53,7 @@ export const QuizRoomPage: React.FC = () => {
         setSampleQuestions([]);
         setPreviewDeckId(deckId);
         try {
-            const questions = await fetchQuiz(deckId, 2);
+            const questions = await fetchQuizPreview(deckId, 2);
             if (latestPreview.current === deckId) setSampleQuestions(questions);
         } catch (e) {
             if (latestPreview.current === deckId) setPreviewError(extractErrorMessage(e));
@@ -76,10 +89,11 @@ export const QuizRoomPage: React.FC = () => {
     // Lọc theo level nếu người dùng chọn
     const filteredDecks = selectedLevel ? decks.filter((d: Deck) => d.level === selectedLevel) : decks;
 
-    // Tính toán thống kê từ lịch sử làm bài
+    // Thống kê từ 10 bài gần nhất (server chấm). Chưa có bài nào -> không bịa số.
     const totalSolved = results.reduce((acc: number, r: QuizResult) => acc + r.total, 0);
     const totalScore = results.reduce((acc: number, r: QuizResult) => acc + r.score, 0);
-    const accuracyRate = totalSolved > 0 ? Math.round((totalScore / totalSolved) * 100) : 88;
+    const accuracyRate = calcQuizAccuracy(results);
+    const mastery = masteryLabel(accuracyRate);
 
     return (
         <section className="flex flex-col gap-space-lg pb-space-xl">
@@ -138,20 +152,16 @@ export const QuizRoomPage: React.FC = () => {
                         </div>
                         <div className="my-space-xs flex items-baseline gap-2">
                             <span className="font-headline-lg text-headline-lg text-primary font-bold">
-                                {accuracyRate}%
-                            </span>
-                            <span className="inline-flex items-center gap-0.5 font-label-sm text-label-sm text-secondary font-semibold">
-                                <span className="material-symbols-outlined text-[14px]">trending_up</span>
-                                +3.2%
+                                {accuracyRate === null ? "—" : `${accuracyRate}%`}
                             </span>
                         </div>
                         <div className="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-secondary h-full rounded-full" style={{ width: `${accuracyRate}%` }} />
+                            <div className="bg-secondary h-full rounded-full" style={{ width: `${accuracyRate ?? 0}%` }} />
                         </div>
                         <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
                             {results.length > 0
                                 ? `Dựa trên ${results.length} bài thi gần nhất`
-                                : "Chỉ số trung bình chuẩn JLPT"}
+                                : "Chưa có bài thi nào"}
                         </span>
                     </div>
 
@@ -167,16 +177,15 @@ export const QuizRoomPage: React.FC = () => {
                         </div>
                         <div className="my-space-xs flex items-baseline gap-2">
                             <span className="font-headline-lg text-headline-lg text-primary font-bold">
-                                {totalSolved > 0 ? totalSolved : "20"}
+                                {totalSolved}
                             </span>
                             <span className="font-label-sm text-label-sm text-on-surface-variant">câu</span>
                         </div>
                         <div className="text-on-surface-variant font-label-sm text-label-sm">
-                            Đúng: <span className="text-secondary font-bold">{totalScore > 0 ? totalScore : 18}</span>{" "}
-                            câu
+                            Đúng: <span className="text-secondary font-bold">{totalScore}</span> câu
                         </div>
                         <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
-                            Tích lũy qua các kỳ thi
+                            Trong 10 bài thi gần nhất
                         </span>
                     </div>
 
@@ -184,25 +193,21 @@ export const QuizRoomPage: React.FC = () => {
                     <div className="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-sm flex flex-col justify-between">
                         <div className="flex items-center justify-between">
                             <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">
-                                Thời gian / câu
+                                Thời gian cho mỗi câu
                             </span>
                             <span className="p-1.5 rounded-lg bg-surface-container text-primary flex items-center justify-center">
                                 <span className="material-symbols-outlined text-[18px]">timer</span>
                             </span>
                         </div>
                         <div className="my-space-xs flex items-baseline gap-2">
-                            <span className="font-headline-lg text-headline-lg text-primary font-bold">30</span>
-                            <span className="font-label-sm text-label-sm text-on-surface-variant">giây</span>
-                            <span className="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface">
-                                Chuẩn JLPT: &lt;45s
+                            <span className="font-headline-lg text-headline-lg text-primary font-bold">
+                                {SECONDS_PER_Q}
                             </span>
+                            <span className="font-label-sm text-label-sm text-on-surface-variant">giây</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <div className="h-1 flex-1 bg-secondary rounded-full" />
-                            <div className="h-1 flex-1 bg-secondary rounded-full" />
-                            <div className="h-1 flex-1 bg-surface-container-high rounded-full" />
-                        </div>
-                        <span className="font-label-sm text-label-sm text-secondary mt-2">Tốc độ phản xạ tốt</span>
+                        <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
+                            Hết giờ bài tự nộp; câu bỏ trống tính là sai
+                        </span>
                     </div>
 
                     {/* Stat 4: Mastery Status */}
@@ -217,15 +222,15 @@ export const QuizRoomPage: React.FC = () => {
                         </div>
                         <div className="my-space-xs">
                             <div className="font-headline-sm text-headline-sm text-primary font-bold">
-                                JLPT Moji &amp; Goi
+                                {mastery.title}
                             </div>
                             <div className="font-label-sm text-label-sm text-secondary font-semibold flex items-center gap-1 mt-0.5">
                                 <span className="material-symbols-outlined text-[14px]">verified</span>
-                                Vững vàng (Tier A+)
+                                {mastery.hint}
                             </div>
                         </div>
                         <span className="font-label-sm text-label-sm text-outline mt-2">
-                            Sẵn sàng cho bài thi mới
+                            Theo độ chính xác 10 bài gần nhất
                         </span>
                     </div>
                 </div>
@@ -244,7 +249,7 @@ export const QuizRoomPage: React.FC = () => {
                         >
                             Tất cả đề ({decks.length})
                         </button>
-                        {["N5", "N4", "N3", "N2", "N1"].map((lvl) => (
+                        {JLPT_LEVELS.map((lvl) => (
                             <button
                                 key={lvl}
                                 type="button"
@@ -404,8 +409,10 @@ export const QuizRoomPage: React.FC = () => {
                                     {results.map((r: QuizResult) => {
                                         const pct = r.total ? Math.round((r.score / r.total) * 100) : 0;
                                         return (
-                                            <tr key={r.createdAt} className="hover:bg-surface-container-low/40">
-                                                <td className="p-3 font-semibold text-primary">{r.deckId}</td>
+                                            <tr key={`${r.deckId}-${r.createdAt}`} className="hover:bg-surface-container-low/40">
+                                                <td className="p-3 font-semibold text-primary">
+                                                    {r.deckTitle ?? decks.find((d) => d.id === r.deckId)?.title ?? "Bộ thẻ"}
+                                                </td>
                                                 <td className="p-3 font-bold">
                                                     {r.score}/{r.total}
                                                 </td>
@@ -425,7 +432,7 @@ export const QuizRoomPage: React.FC = () => {
                                                 </td>
                                                 <td className="p-3 text-right">
                                                     <Link
-                                                        to={`/decks/${r.deckId}/quiz`}
+                                                        to={`/decks/${encodeURIComponent(r.deckId)}/quiz`}
                                                         className="px-3 py-1 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-primary font-label-md font-semibold text-label-sm inline-block transition-colors"
                                                     >
                                                         Thi lại

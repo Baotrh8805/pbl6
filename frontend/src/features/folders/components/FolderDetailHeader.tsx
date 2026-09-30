@@ -32,6 +32,15 @@ export const FolderDetailHeader: React.FC<FolderDetailHeaderProps> = ({
   onEdit,
 }) => {
   const navigate = useNavigate();
+  // Thư mục người khác chia sẻ / public: chỉ xem & học
+  const readOnly = folder.access === "viewer";
+  const accessLabel = readOnly
+    ? `Chia sẻ bởi ${folder.ownerName ?? "người khác"} · Chỉ xem`
+    : folder.accessType === "public"
+      ? "Ai có link đều xem được"
+      : folder.accessType === "shared"
+        ? "Đã chia sẻ"
+        : "Thư mục cá nhân";
 
   return (
     <div className="space-y-4">
@@ -46,9 +55,9 @@ export const FolderDetailHeader: React.FC<FolderDetailHeaderProps> = ({
           className="inline-flex items-center gap-1 hover:text-primary transition-colors cursor-pointer hover:underline font-medium"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-            folder_special
+            {readOnly ? "folder_shared" : "folder_special"}
           </span>
-          Thư mục của tôi
+          {readOnly ? "Được chia sẻ với tôi" : "Thư mục của tôi"}
         </button>
         {breadcrumbs.map((bc, idx) => {
           const isLast = idx === breadcrumbs.length - 1;
@@ -102,9 +111,9 @@ export const FolderDetailHeader: React.FC<FolderDetailHeaderProps> = ({
               )}
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-surface-container text-on-surface-variant font-medium flex items-center gap-1">
                 <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-                  lock
+                  {readOnly ? "visibility" : folder.accessType === "private" || !folder.accessType ? "lock" : "share"}
                 </span>
-                Thư mục cá nhân
+                {accessLabel}
               </span>
             </div>
             <p className="font-body-sm text-sm text-on-surface-variant max-w-2xl">
@@ -122,7 +131,8 @@ export const FolderDetailHeader: React.FC<FolderDetailHeaderProps> = ({
           </div>
         </div>
 
-        {/* Thao tác thư mục */}
+        {/* Thao tác thư mục (chỉ chủ thư mục) */}
+        {!readOnly && (
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Button
             variant="outline"
@@ -185,6 +195,7 @@ export const FolderDetailHeader: React.FC<FolderDetailHeaderProps> = ({
             </span>
           </button>
         </div>
+        )}
       </div>
     </div>
   );

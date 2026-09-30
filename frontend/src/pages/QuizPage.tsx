@@ -6,7 +6,7 @@ import type { QuizGrade, Question } from "@/types/api.types";
 import { Ruby } from "@/lib/ja";
 import { extractErrorMessage } from "@/services/apiClient";
 
-const SECONDS_PER_QUESTION = 30;
+const SECONDS_PER_QUESTION = 30; // QuizService.SECONDS_PER_QUESTION (server giữ hạn giờ thật)
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -14,6 +14,7 @@ export const QuizPage: React.FC = () => {
     const { deckId = "" } = useParams(); // server kiểm quyền bộ thẻ, sai thì 404
     const [size, setSize] = useState(10);
     const [questions, setQuestions] = useState<Question[] | null>(null);
+    const [attemptId, setAttemptId] = useState<string | null>(null);
     const [deadline, setDeadline] = useState(0);
     const [now, setNow] = useState(() => Date.now());
     const [index, setIndex] = useState(0);
@@ -29,16 +30,17 @@ export const QuizPage: React.FC = () => {
         setBusy(true);
         setError("");
         try {
-            const qs = await fetchQuiz(deckId, size);
-            if (qs.length === 0) {
+            const paper = await fetchQuiz(deckId, size);
+            if (!paper.attemptId || paper.questions.length === 0) {
                 setError("Bộ thẻ này chưa có câu hỏi nào.");
                 return;
             }
-            setQuestions(qs);
+            setQuestions(paper.questions);
+            setAttemptId(paper.attemptId);
             setAnswers({});
             setIndex(0);
             setResult(null);
-            setDeadline(Date.now() + qs.length * SECONDS_PER_QUESTION * 1000);
+            setDeadline(Date.now() + paper.timeLimitSeconds * 1000);
         } catch (e) {
             setError(extractErrorMessage(e));
         } finally {
@@ -46,14 +48,12 @@ export const QuizPage: React.FC = () => {
         }
     };
 
+    // Luôn nộp, kể cả bài trống: server ghi kết quả của lượt làm (câu bỏ trống = sai).
     const finish = async (submitted: Record<string, string>) => {
-        if (Object.keys(submitted).length === 0) {
-            setResult({ score: 0, total: questions?.length ?? 0, wrong: {} });
-            return;
-        }
+        if (!attemptId) return;
         setBusy(true);
         try {
-            setResult(await submitQuiz(deckId, submitted)); // chấm ở server
+            setResult(await submitQuiz(deckId, attemptId, submitted)); // chấm ở server
             setError("");
         } catch (e) {
             setError(extractErrorMessage(e)); // giữ nguyên bài làm để bấm nộp lại
@@ -126,6 +126,11 @@ export const QuizPage: React.FC = () => {
                     <h1 className="font-headline-sm text-headline-sm font-bold">
                         {result.score}/{result.total} câu đúng ({pct}%)
                     </h1>
+                    {result.expired && (
+                        <p role="alert" className="text-error text-label-md">
+                            Bài nộp sau khi hết giờ nên không được chấm và được ghi 0 điểm.
+                        </p>
+                    )}
                     {/* ponytail: thanh tiến độ bằng div, không biểu đồ.
                         Nâng cấp khi cần so sánh nhiều lần làm: thêm thư viện chart. */}
                     <div className="h-3 rounded-full bg-surface-container-high overflow-hidden">
@@ -163,6 +168,7 @@ export const QuizPage: React.FC = () => {
                             type="button"
                             onClick={() => {
                                 setQuestions(null);
+                                setAttemptId(null);
                                 setResult(null);
                             }}
                             className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold"
@@ -190,7 +196,8 @@ export const QuizPage: React.FC = () => {
                     </Link>
                     <h1 className="font-headline-sm text-headline-sm font-bold">Kiểm tra nhanh</h1>
                     <p className="text-body-sm text-on-surface-variant">
-                        {SECONDS_PER_QUESTION} giây/câu, hết giờ tự nộp.
+                        {SECONDS_PER_QUESTION} giây/câu, hết giờ tự nộp. Câu bỏ trống tính là sai; rời trang giữa
+                        chừng thì lượt làm được ghi 0 điểm.
                     </p>
 
                     <label className="flex flex-col gap-1 text-label-md">
@@ -249,7 +256,7 @@ export const QuizPage: React.FC = () => {
                     <legend className="sr-only">Chọn nghĩa đúng</legend>
                     {current.options.map((option, i) => (
                         <button
-                            key={option}
+                            key={`${i}-${option}`}
                             type="button"
                             onClick={() => choose(option)}
                             disabled={busy}

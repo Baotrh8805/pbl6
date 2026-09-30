@@ -1,8 +1,6 @@
 import type { FolderNode } from "@/types/api.types";
 import type { FolderItem, LearningSettings } from "../types/dashboard.types";
 
-export const JLPT_LEVELS = ["N5", "N4", "N3", "N2", "N1"] as const;
-
 export const getTargetWordsByLevel = (level: string): number => {
   switch (level) {
     case "N1":

@@ -6,10 +6,11 @@ export interface FolderCardProps {
   decksCount?: number;
   flashcardsCount?: number;
   onOpen: (folder: FolderNode) => void;
-  onAddDeck: (folder: FolderNode) => void;
-  onShare: (folder: FolderNode) => void;
-  onEdit: (folder: FolderNode) => void;
-  onDelete: (folder: FolderNode) => void;
+  // Không cần với thư mục người khác chia sẻ (access = viewer): thẻ chỉ cho mở
+  onAddDeck?: (folder: FolderNode) => void;
+  onShare?: (folder: FolderNode) => void;
+  onEdit?: (folder: FolderNode) => void;
+  onDelete?: (folder: FolderNode) => void;
 }
 
 const menuItemClass =
@@ -60,10 +61,13 @@ export const FolderCard: React.FC<FolderCardProps> = ({
     }
   };
 
-  const runMenuAction = (action: (folder: FolderNode) => void) => {
+  const runMenuAction = (action?: (folder: FolderNode) => void) => {
     setMenuOpen(false);
-    action(folder);
+    action?.(folder);
   };
+
+  // Thư mục người khác chia sẻ: chỉ xem, không sửa / chia sẻ / thêm bộ thẻ
+  const readOnly = folder.access === "viewer";
 
   const subfoldersCount = folder.children?.length ?? 0;
 
@@ -104,6 +108,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
             )}
 
             {/* Menu tuỳ chọn */}
+            {!readOnly && (
             <div className="relative" ref={menuRef}>
               <button
                 ref={menuButtonRef}
@@ -164,6 +169,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
 
@@ -175,6 +181,12 @@ export const FolderCard: React.FC<FolderCardProps> = ({
           <p className="font-body-sm text-xs text-on-surface-variant line-clamp-2 mt-1">
             {folder.description || "Thư mục tổ chức tài liệu và bộ thẻ học tập."}
           </p>
+          {folder.ownerName && (
+            <p className="text-[11px] text-outline mt-1 flex items-center gap-1">
+              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">person</span>
+              Chia sẻ bởi {folder.ownerName}
+            </p>
+          )}
         </div>
 
         {/* 3 ô số liệu */}
@@ -201,9 +213,15 @@ export const FolderCard: React.FC<FolderCardProps> = ({
         className="pt-3 mt-3 border-t border-surface-container-high/50 flex items-center justify-between gap-2"
         onClick={(e) => e.stopPropagation()}
       >
+        {readOnly ? (
+          <span className="text-[11px] font-semibold text-secondary flex items-center gap-1">
+            <span aria-hidden="true" className="material-symbols-outlined text-[15px]">visibility</span>
+            Chỉ xem & học
+          </span>
+        ) : (
         <button
           type="button"
-          onClick={() => onShare(folder)}
+          onClick={() => onShare?.(folder)}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-semibold text-xs transition-colors cursor-pointer"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -211,11 +229,13 @@ export const FolderCard: React.FC<FolderCardProps> = ({
           </span>
           <span>Chia sẻ</span>
         </button>
+        )}
 
         <div className="flex items-center gap-1.5">
+          {!readOnly && (
           <button
             type="button"
-            onClick={() => onAddDeck(folder)}
+            onClick={() => onAddDeck?.(folder)}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-container text-on-primary font-semibold text-xs hover:brightness-110 transition-all cursor-pointer shadow-2xs"
             title="Thêm bộ thẻ có sẵn hoặc từ thư viện vào thư mục này"
           >
@@ -224,6 +244,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
             </span>
             <span>+ Thêm thẻ</span>
           </button>
+          )}
           <button
             type="button"
             onClick={() => onOpen(folder)}

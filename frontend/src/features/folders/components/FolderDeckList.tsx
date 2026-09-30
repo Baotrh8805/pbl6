@@ -44,7 +44,7 @@ const FolderDeckItem: React.FC<{
           )}
         </div>
 
-        <Link to={`/decks/${deck.id}`} className="block mt-2 group-hover:underline">
+        <Link to={deckPath} className="block mt-2 group-hover:underline">
           <h3 className="font-semibold text-sm text-on-surface group-hover:text-primary transition-colors">
             {deck.title}
           </h3>
@@ -137,6 +137,8 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
   onDeleteDeck,
 }) => {
   const navigate = useNavigate();
+  // Thư mục người khác chia sẻ: chỉ xem & học, không thêm bộ thẻ
+  const readOnly = folder.access === "viewer";
 
   return (
     <div className="space-y-3 pt-2">
@@ -147,6 +149,7 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
           </span>
           Bộ thẻ trong thư mục này ({decks.length})
         </h2>
+        {!readOnly && (
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -159,6 +162,7 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
             Thêm bộ thẻ có sẵn
           </button>
         </div>
+        )}
       </div>
 
       {loading ? (
@@ -182,10 +186,13 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
             <p className="font-semibold text-sm text-on-surface">
               Thư mục "{folder.title}" chưa có bộ thẻ nào.
             </p>
+            {!readOnly && (
             <p className="text-xs text-on-surface-variant mt-0.5">
               Thêm bộ thẻ đã có của bạn hoặc sao chép các bộ thẻ chất lượng cao từ Thư viện.
             </p>
+            )}
           </div>
+          {!readOnly && (
           <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
             <Button
               variant="outline"
@@ -219,6 +226,7 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
               Khám phá Thư viện
             </Link>
           </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-md">

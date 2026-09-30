@@ -9,12 +9,15 @@ export interface FolderGridProps {
   metrics: FolderMetrics;
   /** Đang ở trong thư mục -> đổi tiêu đề thành "Thư mục con". */
   isNested: boolean;
-  onAddFolder: () => void;
+  /** Ghi đè tiêu đề mặc định (vd. "Được chia sẻ với tôi"). */
+  title?: string;
+  /** Không truyền = không cho thêm (thư mục người khác chia sẻ). */
+  onAddFolder?: () => void;
   onOpen: (folder: FolderNode) => void;
-  onAddDeck: (folder: FolderNode) => void;
-  onShare: (folder: FolderNode) => void;
-  onEdit: (folder: FolderNode) => void;
-  onDelete: (folder: FolderNode) => void;
+  onAddDeck?: (folder: FolderNode) => void;
+  onShare?: (folder: FolderNode) => void;
+  onEdit?: (folder: FolderNode) => void;
+  onDelete?: (folder: FolderNode) => void;
 }
 
 // Lưới thẻ thư mục (thư mục gốc hoặc thư mục con).
@@ -22,6 +25,7 @@ export const FolderGrid: React.FC<FolderGridProps> = ({
   folders,
   metrics,
   isNested,
+  title,
   onAddFolder,
   ...cardHandlers
 }) => (
@@ -31,8 +35,9 @@ export const FolderGrid: React.FC<FolderGridProps> = ({
         <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
           folder
         </span>
-        {isNested ? `Thư mục con (${folders.length})` : `Thư mục của bạn (${folders.length})`}
+        {title ?? (isNested ? "Thư mục con" : "Thư mục của bạn")} ({folders.length})
       </h2>
+      {onAddFolder && (
       <button
         type="button"
         onClick={onAddFolder}
@@ -43,6 +48,7 @@ export const FolderGrid: React.FC<FolderGridProps> = ({
         </span>
         Thêm thư mục
       </button>
+      )}
     </div>
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-md">

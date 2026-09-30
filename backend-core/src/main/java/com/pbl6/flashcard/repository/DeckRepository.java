@@ -15,17 +15,18 @@ import java.util.UUID;
 
 @Repository
 public interface DeckRepository extends JpaRepository<Deck, String> {
-    // Bộ thẻ của user + bộ thẻ public (Thư viện) + bộ thẻ được chia sẻ.
+    // "Bộ thẻ của tôi": bộ thẻ mình sở hữu (gồm bản đã lưu từ Cộng đồng) + bộ được chia sẻ qua email.
+    // Bộ thẻ public của người khác chỉ nằm ở Thư viện cộng đồng (LibraryService), không nằm ở đây.
     // EntityGraph: lấy luôn thẻ trong cùng query, tránh N+1 (1 query thẻ cho mỗi deck).
     @EntityGraph(attributePaths = "cards")
-    @Query("SELECT DISTINCT d FROM Deck d WHERE d.ownerId = :uid OR d.visibility = 'public' "
+    @Query("SELECT DISTINCT d FROM Deck d WHERE d.ownerId = :uid "
             + "OR EXISTS (SELECT 1 FROM DeckShare s WHERE s.deckId = d.id AND s.userId = :uid) ORDER BY d.title ASC")
-    List<Deck> findReadableWithCards(@Param("uid") Long uid);
+    List<Deck> findPersonalWithCards(@Param("uid") Long uid);
 
+    /** Bộ thẻ trong 1 thư mục; mọi bộ thẻ trong thư mục đều thuộc chủ thư mục (DeckService.ownedFolder). */
     @EntityGraph(attributePaths = "cards")
-    @Query("SELECT DISTINCT d FROM Deck d WHERE d.folder.id = :folderId AND (d.ownerId = :uid OR d.visibility = 'public' "
-            + "OR EXISTS (SELECT 1 FROM DeckShare s WHERE s.deckId = d.id AND s.userId = :uid)) ORDER BY d.title ASC")
-    List<Deck> findReadableInFolderWithCards(@Param("folderId") UUID folderId, @Param("uid") Long uid);
+    @Query("SELECT DISTINCT d FROM Deck d WHERE d.folder.id = :folderId ORDER BY d.title ASC")
+    List<Deck> findInFolderWithCards(@Param("folderId") UUID folderId);
 
     /** Khoá dòng deck khi ghi: 2 request thêm thẻ song song không lấy trùng position. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

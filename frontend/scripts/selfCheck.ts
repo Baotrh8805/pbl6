@@ -10,7 +10,8 @@ import {
   sortDecksByLevel,
 } from "../src/lib/deckUtils.ts";
 import { categoryLabel, formatCompactCount } from "../src/features/library/components/libraryOptions.ts";
-import { parseQuestions } from "../src/services/studyService.ts";
+import { parseQuestions, parseQuizPaper } from "../src/services/studyService.ts";
+import { parseImportText, unescapeDelimiter } from "../src/features/decks/editor/importParser.ts";
 import {
   calcLearningStats,
   calcQuizAccuracy,
@@ -61,6 +62,20 @@ async function runSelfCheck() {
     "Must extract nested message from JSON error response"
   );
 
+  // 2b. JSON error body đọc dưới dạng text (responseType "text")
+  const jsonTextAxiosError = {
+    isAxiosError: true,
+    response: {
+      status: 400,
+      data: '{"status":400,"error":"Bad Request","message":"Email đã được sử dụng!"}',
+    },
+  };
+  assertStrictEqual(
+    extractErrorMessage(jsonTextAxiosError),
+    "Email đã được sử dụng!",
+    "Must parse JSON error body received as text"
+  );
+
   // 3. Fallback generic error
   const genericError = new Error("Lỗi kết nối mạng");
   const extracted3 = extractErrorMessage(genericError);
@@ -96,6 +111,25 @@ async function runSelfCheck() {
   ]);
   assertStrictEqual(questions.length, 1, "Chỉ giữ câu hỏi đủ lựa chọn");
   assertStrictEqual(questions[0].cardId, "c1", "Giữ đúng câu hợp lệ");
+  const paper = parseQuizPaper({
+    attemptId: "a-1",
+    timeLimitSeconds: 60,
+    questions: [{ cardId: "c1", term: "水", reading: null, options: ["nước", "lửa"] }],
+  });
+  assertStrictEqual(paper.attemptId, "a-1", "Giữ attemptId của lượt làm");
+  assertStrictEqual(paper.questions.length, 1, "Đề hợp lệ");
+  assertStrictEqual(parseQuizPaper(null).attemptId, null, "Response hỏng -> không có lượt làm");
+  assertStrictEqual(parseQuizPaper([]).questions.length, 0, "Response kiểu cũ (mảng) -> đề trống");
+
+  // 7b. Nhập thẻ từ văn bản dán vào
+  const blankLineSep = unescapeDelimiter("\\n\\n");
+  assertStrictEqual(blankLineSep, "\n\n", "\\n gõ trong ô tuỳ chỉnh = xuống dòng thật");
+  const imported = parseImportText("犬\tいぬ\tcon chó\r\n\r\n猫\tmèo\r\n\r\n鳥", "\t", blankLineSep);
+  assertStrictEqual(imported.length, 3, "Tách thẻ theo dòng trống, kể cả xuống dòng kiểu Windows");
+  assertStrictEqual(imported[0].reading, "いぬ", "3 cột = thuật ngữ, cách đọc, nghĩa");
+  assertStrictEqual(imported[1].meaning, "mèo", "2 cột = thuật ngữ, nghĩa");
+  assertStrictEqual(imported[2].meaning, "", "1 cột: giữ lại, nghĩa trống để bổ sung");
+  assertStrictEqual(parseImportText("a\tb", "\t", "").length, 0, "Dấu phân cách rỗng không làm treo/lỗi");
 
   // 8. Sắp xếp lộ trình học tập theo thứ bậc JLPT N5 -> N1
   const unsortedDecks = [

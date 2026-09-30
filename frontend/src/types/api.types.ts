@@ -112,6 +112,17 @@ export interface FolderNode {
     metadata?: string | null;
     parentId?: string | null;
     children?: FolderNode[];
+    /** owner: thư mục của mình; viewer: người khác chia sẻ / public (chỉ xem & học). */
+    access?: "owner" | "viewer";
+    /** Tên chủ thư mục, chỉ có khi access = viewer. */
+    ownerName?: string | null;
+}
+
+/** FolderShareRepository.Member: người được xem thư mục. */
+export interface FolderMember {
+    userId: number;
+    email: string;
+    fullName: string | null;
 }
 
 export type FolderAccess = "private" | "shared" | "public";
@@ -135,16 +146,27 @@ export interface Question {
     options: string[];
 }
 
+/** QuizService.Paper: đề đã phát; nộp bài phải kèm attemptId (null = bộ thẻ trống). */
+export interface QuizPaper {
+    attemptId: string | null;
+    timeLimitSeconds: number;
+    questions: Question[];
+}
+
 /** DeckService.QuizOutcome */
 export interface QuizGrade {
     score: number;
     total: number;
     wrong: Record<string, string>; // cardId -> nghĩa đúng
+    /** Nộp sau hạn giờ: bài không được chấm, ghi 0 điểm. */
+    expired?: boolean;
 }
 
 /** model.QuizResult (10 kết quả gần nhất). */
 export interface QuizResult {
     deckId: string;
+    /** QuizResultRepository.View: có sẵn tên, kể cả bộ thẻ Thư viện không nằm trong "Bộ thẻ của tôi". */
+    deckTitle?: string;
     score: number;
     total: number;
     createdAt: string; // ISO

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Link, useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchDeck, createDeck, updateDeck, addCardsBatch } from "@/services/deckService";
 import { fetchFolders } from "@/services/folderService";
 import type { CardDto, Deck } from "@/types/api.types";
@@ -26,12 +26,8 @@ interface DeckEditorPageProps {
 export const DeckEditorPage: React.FC<DeckEditorPageProps> = ({ mode }) => {
   const { deckId } = useParams();
   const [searchParams] = useSearchParams();
-  const location = useLocation();
 
-  const isAddCardsMode =
-    mode === "add-cards" ||
-    location.pathname.endsWith("/add-cards") ||
-    location.pathname.endsWith("/add");
+  const isAddCardsMode = mode === "add-cards";
   const isEditing = mode === "edit" || (!isAddCardsMode && Boolean(deckId));
 
   // Tải bộ thẻ (nếu sửa / thêm thẻ) và cây thư mục; lỗi tải thư mục thì bỏ qua
@@ -53,13 +49,26 @@ export const DeckEditorPage: React.FC<DeckEditorPageProps> = ({ mode }) => {
     );
   }
 
+  // Không mở form khi chưa tải được bộ thẻ: form trống + "Lưu" sẽ gửi danh sách thẻ mới
+  // và server xoá toàn bộ thẻ cũ cùng lịch sử ôn tập.
+  if (deckId && !deckState.data) {
+    return (
+      <div role="alert" className="py-16 text-center flex flex-col items-center gap-3">
+        <span aria-hidden="true" className="material-symbols-outlined text-[36px] text-error">error</span>
+        <p className="text-on-surface">{deckState.error || "Không tìm thấy bộ thẻ."}</p>
+        <Link to="/decks" className="text-primary font-semibold hover:underline">
+          Quay lại danh sách bộ thẻ
+        </Link>
+      </div>
+    );
+  }
+
   // Form khởi tạo state từ dữ liệu đã tải; đổi bộ thẻ / chế độ thì key đổi -> form mount lại
   return (
     <DeckEditorForm
       key={`${deckId ?? "new"}:${isAddCardsMode ? "add" : "edit"}`}
       deckId={deckId}
       deck={deckState.data ?? null}
-      loadError={deckId ? deckState.error : undefined}
       initialFolderId={searchParams.get("folderId") || ""}
       folders={folders}
       isAddCardsMode={isAddCardsMode}
@@ -71,7 +80,6 @@ export const DeckEditorPage: React.FC<DeckEditorPageProps> = ({ mode }) => {
 interface DeckEditorFormProps {
   deckId?: string;
   deck: Deck | null;
-  loadError?: string;
   initialFolderId: string;
   folders: Array<{ id: string; title: string }>;
   isAddCardsMode: boolean;
@@ -85,10 +93,22 @@ function initialCards(deck: Deck | null, isAddCardsMode: boolean): EditorCard[] 
   return deck.cards.map(toEditorCard);
 }
 
+function infoChanged(
+  deck: Deck,
+  info: { title: string; level: string; description?: string; folderId: string | null }
+): boolean {
+  return (
+    deck.title !== info.title ||
+    deck.level !== info.level ||
+    (deck.description || undefined) !== info.description ||
+    // Người không phải chủ không thấy thư mục (folderId luôn null) và cũng không đổi được
+    (deck.access === "owner" && (deck.folderId || null) !== info.folderId)
+  );
+}
+
 const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   deckId,
   deck,
-  loadError,
   initialFolderId,
   folders,
   isAddCardsMode,
@@ -104,7 +124,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   const [cards, setCards] = useState<EditorCard[]>(() => initialCards(deck, isAddCardsMode));
 
   const [isSaving, setIsSaving] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(loadError ?? null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Thao tác trên hàng thẻ
@@ -201,9 +221,12 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
     try {
       let savedDeckId = deckId;
       if (isAddCardsMode && deckId) {
-        // Cập nhật thông tin chung mà không gửi cards để không đè thẻ cũ, rồi thêm thẻ mới
-        await updateDeck(deckId, info);
+        // Thêm thẻ trước (thao tác chính); thông tin chung chỉ ghi khi thật sự đổi và không gửi cards
+        // để không đè thẻ cũ. Hai request tách rời -> giảm tối đa request thứ hai.
         await addCardsBatch(deckId, validCards);
+        if (deck && infoChanged(deck, info)) {
+          await updateDeck(deckId, info);
+        }
         savedDeckId = deckId;
       } else if (isEditing && deckId) {
         const res = await updateDeck(deckId, { ...info, cards: validCards });

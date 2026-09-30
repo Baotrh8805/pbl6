@@ -27,16 +27,20 @@ class DeckAccessTest {
         Deck privateDeck = deck(999L, Deck.PRIVATE);
         Deck publicDeck = deck(999L, Deck.PUBLIC);
 
-        assertEquals(Optional.of(Access.OWNER), DeckService.access(999L, privateDeck, null));
+        assertEquals(Optional.of(Access.OWNER), DeckService.access(999L, privateDeck, null, false));
         // Deck riêng của người khác, không được chia sẻ -> không có quyền
-        assertEquals(Optional.empty(), DeckService.access(1L, privateDeck, null));
-        assertEquals(Optional.empty(), DeckService.access(null, publicDeck, null));
+        assertEquals(Optional.empty(), DeckService.access(1L, privateDeck, null, false));
+        assertEquals(Optional.empty(), DeckService.access(null, publicDeck, null, false));
         // Public -> ai cũng xem, không ai ngoài chủ được sửa
-        assertEquals(Optional.of(Access.VIEWER), DeckService.access(1L, publicDeck, null));
+        assertEquals(Optional.of(Access.VIEWER), DeckService.access(1L, publicDeck, null, false));
         // Chia sẻ quyết định mức quyền; quyền sửa được giữ cả trên deck public
-        assertEquals(Optional.of(Access.VIEWER), DeckService.access(1L, privateDeck, DeckShare.VIEWER));
-        assertEquals(Optional.of(Access.EDITOR), DeckService.access(1L, privateDeck, DeckShare.EDITOR));
-        assertEquals(Optional.of(Access.EDITOR), DeckService.access(1L, publicDeck, DeckShare.EDITOR));
+        assertEquals(Optional.of(Access.VIEWER), DeckService.access(1L, privateDeck, DeckShare.VIEWER, false));
+        assertEquals(Optional.of(Access.EDITOR), DeckService.access(1L, privateDeck, DeckShare.EDITOR, false));
+        assertEquals(Optional.of(Access.EDITOR), DeckService.access(1L, publicDeck, DeckShare.EDITOR, false));
+        // Nằm trong thư mục được chia sẻ -> chỉ xem; quyền sửa riêng của deck vẫn thắng
+        assertEquals(Optional.of(Access.VIEWER), DeckService.access(1L, privateDeck, null, true));
+        assertEquals(Optional.of(Access.EDITOR), DeckService.access(1L, privateDeck, DeckShare.EDITOR, true));
+        assertEquals(Optional.of(Access.OWNER), DeckService.access(999L, privateDeck, null, true));
     }
 
     @Test

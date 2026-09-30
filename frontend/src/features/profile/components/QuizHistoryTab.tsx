@@ -97,8 +97,8 @@ export const QuizHistoryTab: React.FC = () => {
         );
     }
 
-    const deckCell = (deckId: string) => {
-        const title = deckTitles.get(deckId);
+    const deckCell = (r: QuizResult) => {
+        const title = r.deckTitle ?? deckTitles.get(r.deckId);
         return title ?? <span className="italic text-outline">Bộ thẻ không còn tồn tại</span>;
     };
 
@@ -132,7 +132,7 @@ export const QuizHistoryTab: React.FC = () => {
                     <tbody>
                         {rows.map((r, i) => (
                             <tr key={`${r.deckId}-${r.createdAt}-${i}`} className="border-t border-surface-container-high">
-                                <td className="px-space-md py-3 text-on-surface">{deckCell(r.deckId)}</td>
+                                <td className="px-space-md py-3 text-on-surface">{deckCell(r)}</td>
                                 <td className="px-space-md py-3">
                                     <ScoreBadge r={r} />
                                 </td>
@@ -149,7 +149,7 @@ export const QuizHistoryTab: React.FC = () => {
                     {rows.map((r, i) => (
                         <li key={`${r.deckId}-${r.createdAt}-${i}`} className="p-space-md flex items-start justify-between gap-space-sm">
                             <div className="min-w-0">
-                                <p className="text-body-md text-on-surface break-words">{deckCell(r.deckId)}</p>
+                                <p className="text-body-md text-on-surface break-words">{deckCell(r)}</p>
                                 <p className="text-body-sm text-on-surface-variant">{formatTime(r.createdAt)}</p>
                             </div>
                             <ScoreBadge r={r} />

@@ -1,6 +1,5 @@
 import React from "react";
-
-const JLPT_LEVELS = ["N5", "N4", "N3", "N2", "N1"];
+import { JLPT_LEVELS } from "@/lib/deckUtils";
 
 const labelClass = "block text-xs font-semibold uppercase tracking-wider text-outline mb-1.5";
 const selectClass =

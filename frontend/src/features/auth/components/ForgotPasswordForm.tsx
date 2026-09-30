@@ -1,43 +1,73 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Mail, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { ComingSoonBadge } from "@/components/ui/Modal";
+import { authService } from "@/features/auth/services/authService";
+import { extractErrorMessage } from "@/services/apiClient";
 
-// ponytail: backend chưa có API khôi phục mật khẩu (gửi mail + token đặt lại) -> form bị khóa.
-// Nâng cấp khi có POST /auth/forgot-password: bỏ `disabled` và gọi authService, không mô phỏng "đã gửi".
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Gửi email chứa link đặt lại mật khẩu (POST /auth/forgot-password). Server luôn trả cùng một thông báo.
 export const ForgotPasswordForm: React.FC = () => {
+  const [email, setEmail] = useState("");
+  const [fieldError, setFieldError] = useState<string | undefined>();
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [sentMessage, setSentMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setApiError(null);
+    if (!EMAIL_RE.test(email.trim())) {
+      setFieldError("Email không đúng định dạng");
+      return;
+    }
+    setFieldError(undefined);
+    setLoading(true);
+    try {
+      setSentMessage(await authService.forgotPassword(email.trim()));
+    } catch (err) {
+      setApiError(extractErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-4 text-left" noValidate>
-      <div className="flex items-center gap-2">
-        <ComingSoonBadge />
-        <p className="font-body text-xs text-on-surface-variant leading-relaxed">
-          Chức năng khôi phục mật khẩu qua email đang được phát triển.
-        </p>
-      </div>
-
-      <p className="font-body text-xs text-on-surface-variant leading-relaxed">
-        Nếu quên mật khẩu, vui lòng liên hệ quản trị viên để được hỗ trợ đặt lại. Nếu vẫn nhớ mật khẩu cũ, bạn có
-        thể đổi mật khẩu trong Trang cá nhân sau khi đăng nhập.
-      </p>
-
-      <fieldset disabled className="flex flex-col gap-4 opacity-70">
-        <Input
-          id="forgot-email"
-          name="email"
-          type="email"
-          label="Email tài khoản"
-          placeholder="tenban@example.com"
-          leftIcon={<Mail className="w-4 h-4" />}
-        />
-
-        <div className="pt-2">
-          <Button type="submit" variant="primary" size="lg" className="w-full font-headline">
-            Gửi liên kết khôi phục
-          </Button>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-left" noValidate>
+      {sentMessage ? (
+        <div role="status" className="p-3.5 rounded-lg bg-secondary/10 text-secondary text-xs border border-secondary/30">
+          {sentMessage} Hãy kiểm tra cả thư mục Spam.
         </div>
-      </fieldset>
+      ) : (
+        <>
+          {apiError && (
+            <div role="alert" className="p-3.5 rounded-lg bg-error-container text-error text-xs border border-error/20">
+              {apiError}
+            </div>
+          )}
+          <Input
+            id="forgot-email"
+            name="email"
+            type="email"
+            label="Email tài khoản"
+            placeholder="tenban@example.com"
+            autoComplete="email"
+            maxLength={255}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={fieldError}
+            leftIcon={<Mail className="w-4 h-4" />}
+          />
+
+          <div className="pt-2">
+            <Button type="submit" variant="primary" size="lg" isLoading={loading} className="w-full font-headline">
+              Gửi liên kết khôi phục
+            </Button>
+          </div>
+        </>
+      )}
 
       <div className="pt-4 text-center text-xs text-on-surface-variant border-t border-outline-variant/30">
         <Link

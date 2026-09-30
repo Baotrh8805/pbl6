@@ -12,13 +12,12 @@ export const authService = {
   },
 
   /**
-   * Đăng ký người dùng mới
-   * Backend Spring Boot AuthController.registerUser() trả về plain text "Đăng ký tài khoản thành công!"
+   * Đăng ký người dùng mới. Thành công: plain text "Đăng ký tài khoản thành công!"
+   * (axios để nguyên chuỗi khi không parse được JSON); lỗi: JSON {status, error, message}.
+   * Không đặt responseType "text": lỗi JSON sẽ thành chuỗi thô hiện lên giao diện.
    */
   async register(payload: RegisterRequest): Promise<string> {
-    const response = await apiClient.post<string>("/auth/register", payload, {
-      responseType: "text",
-    });
+    const response = await apiClient.post<string>("/auth/register", payload);
     return response.data;
   },
 
@@ -40,6 +39,18 @@ export const authService = {
 
   async updateProfile(fullName: string): Promise<void> {
     await apiClient.put("/auth/profile", { fullName });
+  },
+
+  /** Luôn trả cùng một thông báo (không lộ email nào đã đăng ký). */
+  async forgotPassword(email: string): Promise<string> {
+    const response = await apiClient.post<{ message: string }>("/auth/forgot-password", { email });
+    return response.data.message;
+  },
+
+  /** Token lấy từ link trong email; đặt lại xong mọi phiên đăng nhập cũ bị thu hồi. */
+  async resetPassword(token: string, newPassword: string): Promise<string> {
+    const response = await apiClient.post<{ message: string }>("/auth/reset-password", { token, newPassword });
+    return response.data.message;
   },
 
   /**

@@ -3,15 +3,14 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { extractErrorMessage } from "@/services/apiClient";
-import type { Deck, Card, DeckDto, CardDto } from "@/types/api.types";
+import type { Card, CardDto } from "@/types/api.types";
+import { JLPT_LEVELS } from "@/lib/deckUtils";
 
 // Cùng kiểu với <Input> để select/textarea khớp ô nhập bên cạnh (labelClass/fieldClass dùng kiểu khác).
 const fieldLabelClass = "text-xs font-semibold font-headline text-on-surface tracking-wide";
 const selectClass =
   "w-full font-body text-sm text-on-surface bg-surface-container-lowest border border-outline-variant hover:border-outline focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-lg px-3.5 py-2.5 outline-none transition-all";
 const textareaClass = `${selectClass} resize-none placeholder:text-outline/70`;
-
-const JLPT_LEVELS = ["N5", "N4", "N3", "N2", "N1"];
 
 const FormError: React.FC<{ message: string | null }> = ({ message }) =>
   message ? (
@@ -26,171 +25,6 @@ interface FormBaseProps {
   onClose: () => void;
   onSavingChange: (saving: boolean) => void;
 }
-
-// ==========================================
-// 1. DeckModal (Tạo & Sửa Bộ Thẻ)
-// ==========================================
-export interface DeckModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  initialDeck?: Deck | null;
-  defaultFolderId?: string;
-  folders?: Array<{ id: string; title: string }>;
-  onSave: (data: DeckDto) => Promise<void>;
-}
-
-export const DeckModal: React.FC<DeckModalProps> = ({
-  isOpen,
-  onClose,
-  initialDeck,
-  defaultFolderId,
-  folders = [],
-  onSave,
-}) => {
-  const formId = useId();
-  const [isLoading, setIsLoading] = useState(false);
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={initialDeck ? "Chỉnh sửa bộ thẻ" : "Tạo bộ thẻ mới"}
-      icon={initialDeck ? "edit_note" : "library_add"}
-      closeOnBackdrop={!isLoading}
-      footer={
-        <>
-          <Button type="button" variant="outline" size="md" onClick={onClose} disabled={isLoading}>
-            Hủy
-          </Button>
-          <Button type="submit" form={formId} variant="primary" size="md" isLoading={isLoading}>
-            {initialDeck ? "Cập nhật" : "Tạo bộ thẻ"}
-          </Button>
-        </>
-      }
-    >
-      <DeckForm
-        formId={formId}
-        initialDeck={initialDeck}
-        defaultFolderId={defaultFolderId}
-        folders={folders}
-        onSave={onSave}
-        onClose={onClose}
-        onSavingChange={setIsLoading}
-      />
-    </Modal>
-  );
-};
-
-interface DeckFormProps extends FormBaseProps {
-  initialDeck?: Deck | null;
-  defaultFolderId?: string;
-  folders: Array<{ id: string; title: string }>;
-  onSave: (data: DeckDto) => Promise<void>;
-}
-
-const DeckForm: React.FC<DeckFormProps> = ({
-  formId,
-  initialDeck,
-  defaultFolderId,
-  folders,
-  onSave,
-  onClose,
-  onSavingChange,
-}) => {
-  const [title, setTitle] = useState(initialDeck?.title ?? "");
-  const [level, setLevel] = useState(initialDeck?.level || "N5");
-  const [description, setDescription] = useState(initialDeck?.description || "");
-  const [folderId, setFolderId] = useState(initialDeck ? initialDeck.folderId || "" : defaultFolderId || "");
-  const [error, setError] = useState<string | null>(null);
-  const titleId = useId();
-  const levelId = useId();
-  const folderSelectId = useId();
-  const descId = useId();
-
-  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    onSavingChange(true);
-    setError(null);
-    try {
-      await onSave({
-        title: title.trim(),
-        level,
-        description: description.trim() || undefined,
-        folderId: folderId || null,
-      });
-      onClose();
-    } catch (err) {
-      setError(extractErrorMessage(err));
-    } finally {
-      onSavingChange(false);
-    }
-  };
-
-  return (
-    <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <FormError message={error} />
-
-      <Input
-        id={titleId}
-        label="Tên bộ thẻ"
-        required
-        placeholder="VD: Từ vựng IT N3, 500 chữ Hán N2..."
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-      />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5 text-left">
-          <label htmlFor={levelId} className={fieldLabelClass}>
-            Trình độ JLPT <span className="text-tertiary ml-1">*</span>
-          </label>
-          <select id={levelId} value={level} onChange={(e) => setLevel(e.target.value)} className={selectClass}>
-            {JLPT_LEVELS.map((lvl) => (
-              <option key={lvl} value={lvl}>
-                {lvl}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1.5 text-left">
-          <label htmlFor={folderSelectId} className={fieldLabelClass}>
-            Thư mục (không bắt buộc)
-          </label>
-          <select
-            id={folderSelectId}
-            value={folderId}
-            onChange={(e) => setFolderId(e.target.value)}
-            className={selectClass}
-          >
-            <option value="">-- Chưa phân loại --</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5 text-left">
-        <label htmlFor={descId} className={fieldLabelClass}>
-          Mô tả
-        </label>
-        <textarea
-          id={descId}
-          rows={3}
-          placeholder="Mô tả nội dung, mục tiêu của bộ thẻ..."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className={textareaClass}
-        />
-      </div>
-    </form>
-  );
-};
 
 // ==========================================
 // 2. CardModal (Thêm & Sửa Thẻ Flashcard)
@@ -405,7 +239,8 @@ const FolderForm: React.FC<FolderFormProps> = ({
 }) => {
   const isEdit = !!folder;
   const [title, setTitle] = useState(folder?.title ?? "");
-  const [level, setLevel] = useState(folder?.level ?? "N5");
+  // "" = không chọn trình độ (không bắt buộc). Khi sửa, gửi "" để server xoá trình độ cũ.
+  const [level, setLevel] = useState(folder?.level ?? "");
   const [description, setDescription] = useState(folder?.description ?? "");
   const [parentId, setParentId] = useState(folder?.parentId ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -423,7 +258,7 @@ const FolderForm: React.FC<FolderFormProps> = ({
     try {
       await onSave({
         title: title.trim(),
-        level,
+        level: isEdit ? level : level || undefined,
         description: description.trim() || undefined,
         parentId: isEdit ? parentId || null : parentFolder?.id || null,
       });
@@ -487,6 +322,7 @@ const FolderForm: React.FC<FolderFormProps> = ({
           Trình độ JLPT (không bắt buộc)
         </label>
         <select id={levelId} value={level} onChange={(e) => setLevel(e.target.value)} className={selectClass}>
+          <option value="">— Không chọn —</option>
           {JLPT_LEVELS.map((lvl) => (
             <option key={lvl} value={lvl}>
               {lvl}

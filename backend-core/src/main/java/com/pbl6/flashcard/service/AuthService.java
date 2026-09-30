@@ -14,7 +14,9 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 
@@ -32,6 +34,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
 
+    public static final String EMAIL_TAKEN = "Email đã được sử dụng!";
+
     public AuthResponse login(AuthRequest request) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(User.normalizeEmail(request.getEmail()), request.getPassword())
@@ -46,13 +50,13 @@ public class AuthService {
     public User register(RegisterRequest request) {
         String email = User.normalizeEmail(request.getEmail());
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email đã được sử dụng!");
+            throw new IllegalArgumentException(EMAIL_TAKEN);
         }
 
         User user = new User();
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setFullName(request.getFullName());
+        user.setFullName(request.getFullName().trim());
         user.setRole(Role.USER);
         user.setJlptLevel("N5");
         user.setIsPremium(false);
@@ -62,7 +66,7 @@ public class AuthService {
 
     public User getCurrentUser(String email) {
         return userRepository.findByEmail(User.normalizeEmail(email))
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng: " + email));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng."));
     }
 
     public User updateJlptLevel(String email, String newLevel) {
@@ -82,15 +86,10 @@ public class AuthService {
      * Mọi token phát hành trước đó bị thu hồi; trả token mới để phiên hiện tại dùng tiếp.
      */
     public AuthResponse changePassword(String email, String currentPassword, String newPassword) {
+        // Rỗng / độ dài đã được PasswordChangeRequest kiểm tra ở controller
         User user = getCurrentUser(email);
-        if (currentPassword == null || currentPassword.isEmpty()) {
-            throw new IllegalArgumentException("Mật khẩu hiện tại không được để trống!");
-        }
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException("Mật khẩu hiện tại không đúng!");
-        }
-        if (newPassword == null || newPassword.length() < 6) {
-            throw new IllegalArgumentException("Mật khẩu mới phải từ 6 ký tự!");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPasswordChangedAt(java.time.Instant.now());

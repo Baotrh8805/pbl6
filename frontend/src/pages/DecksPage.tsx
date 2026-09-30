@@ -2,43 +2,15 @@ import React, { useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { fetchDecks, deleteDeck, moveDeckToFolder } from "@/services/deckService";
 import { fetchFolders, createFolder, updateFolder, deleteFolder } from "@/services/folderService";
-import { canEditDeck, deckSourceLabel, moveTargets } from "@/lib/deckUtils";
+import { canEditDeck, deckSourceLabel, moveTargets, JLPT_LEVELS as LEVELS } from "@/lib/deckUtils";
 import type { Deck, FolderNode, FolderDto } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
 import { Button } from "@/components/ui/Button";
 import { FolderModal } from "@/features/decks/components/DeckModals";
 import { AddExistingDeckModal } from "@/features/decks/components/AddExistingDeckModal";
 import { useDialog } from "@/components/ui/dialogContext";
+import { findFolder, getBreadcrumbs } from "@/features/folders/components/folderTree";
 
-const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
-
-// Helper tìm thư mục trong cây
-function findFolder(tree: FolderNode[], id: string): FolderNode | null {
-    for (const f of tree) {
-        if (f.id === id) return f;
-        if (f.children?.length) {
-            const found = findFolder(f.children, id);
-            if (found) return found;
-        }
-    }
-    return null;
-}
-
-// Helper lấy danh sách tổ tiên phục vụ Breadcrumbs
-function getBreadcrumbs(tree: FolderNode[], targetId: string): FolderNode[] {
-    function search(nodes: FolderNode[], trail: FolderNode[]): FolderNode[] | null {
-        for (const node of nodes) {
-            const currentTrail = [...trail, node];
-            if (node.id === targetId) return currentTrail;
-            if (node.children?.length) {
-                const found = search(node.children, currentTrail);
-                if (found) return found;
-            }
-        }
-        return null;
-    }
-    return search(tree, []) || [];
-}
 
 export const DecksPage: React.FC = () => {
     const navigate = useNavigate();

@@ -39,7 +39,8 @@ class DeckPerformanceIT extends IntegrationTest {
 
         JsonNode decks = read(call(get("/api/decks"), token, null).andExpect(status().isOk()));
 
-        assertTrue(decks.size() >= 16, "6 deck của user + 10 deck public của Thư viện");
+        // "Bộ thẻ của tôi" chỉ có deck của mình: deck public của Thư viện nằm ở /api/library
+        assertEquals(6, decks.size());
         // 1 query nạp user trong JWT filter + 1 query quyền được chia sẻ + 1 query deck kèm thẻ.
         // Không phụ thuộc số deck (N+1 cũ: 1 + số deck).
         assertTrue(stats.getPrepareStatementCount() <= 3, "số query: " + stats.getPrepareStatementCount());

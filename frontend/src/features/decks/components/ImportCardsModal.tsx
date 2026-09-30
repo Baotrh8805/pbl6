@@ -2,6 +2,7 @@ import React, { useState, useMemo, useId } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import type { CardDto } from "@/types/api.types";
+import { parseImportText, unescapeDelimiter } from "@/features/decks/editor/importParser";
 
 export interface ImportCardsModalProps {
   isOpen: boolean;
@@ -44,76 +45,21 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
   const effectiveTermDefDelim = useMemo(() => {
     if (termDefDelimType === "tab") return "\t";
     if (termDefDelimType === "comma") return ",";
-    return customTermDefDelim || "\t";
+    return unescapeDelimiter(customTermDefDelim) || "\t";
   }, [termDefDelimType, customTermDefDelim]);
 
   const effectiveCardDelim = useMemo(() => {
     if (cardDelimType === "newline") return "\n";
     if (cardDelimType === "semicolon") return ";";
-    return customCardDelim || "\n";
+    return unescapeDelimiter(customCardDelim) || "\n";
   }, [cardDelimType, customCardDelim]);
 
-  // Realtime parse cards from rawText
-  const parsedCards: CardDto[] = useMemo(() => {
-    if (!rawText.trim()) return [];
-
-    // Normalize Windows/Mac line endings if newline delimiter
-    let text = rawText;
-    if (effectiveCardDelim === "\n") {
-      text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    }
-
-    const rawRows = text.split(effectiveCardDelim);
-    const result: CardDto[] = [];
-
-    for (const row of rawRows) {
-      const trimmedRow = row.trim();
-      if (!trimmedRow) continue;
-
-      const tokens = trimmedRow
-        .split(effectiveTermDefDelim)
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0);
-
-      if (tokens.length === 0) continue;
-
-      if (tokens.length === 1) {
-        // Only 1 token: put in term, meaning empty
-        result.push({
-          term: tokens[0],
-          reading: null,
-          meaning: "",
-          example: null,
-        });
-      } else if (tokens.length === 2) {
-        // [term, meaning]
-        result.push({
-          term: tokens[0],
-          reading: null,
-          meaning: tokens[1],
-          example: null,
-        });
-      } else if (tokens.length === 3) {
-        // [term, reading, meaning]
-        result.push({
-          term: tokens[0],
-          reading: tokens[1],
-          meaning: tokens[2],
-          example: null,
-        });
-      } else {
-        // [term, reading, meaning, ...example]
-        result.push({
-          term: tokens[0],
-          reading: tokens[1],
-          meaning: tokens[2],
-          example: tokens.slice(3).join(" "),
-        });
-      }
-    }
-
-    return result;
-  }, [rawText, effectiveTermDefDelim, effectiveCardDelim]);
+  const parsedCards: CardDto[] = useMemo(
+    () => parseImportText(rawText, effectiveTermDefDelim, effectiveCardDelim),
+    [rawText, effectiveTermDefDelim, effectiveCardDelim]
+  );
+  // Dòng thiếu định nghĩa vẫn được đưa vào trình soạn để bổ sung, nhưng chưa lưu được nếu để trống
+  const incompleteCount = parsedCards.filter((c) => !c.meaning).length;
 
   const handleConfirmImport = () => {
     if (parsedCards.length === 0) return;
@@ -228,7 +174,7 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
                 aria-label="Ký tự phân cách giữa các thẻ"
                 value={customCardDelim}
                 onChange={(e) => setCustomCardDelim(e.target.value)}
-                placeholder="Ký tự phân cách thẻ"
+                placeholder="Ký tự phân cách thẻ (\n = xuống dòng)"
                 className={customDelimClass}
               />
             )}
@@ -251,6 +197,12 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
             )}
           </div>
 
+          {incompleteCount > 0 && (
+            <p role="status" className="mb-2.5 text-xs text-error">
+              {incompleteCount} dòng chưa có định nghĩa: vẫn được thêm vào trình soạn để bạn bổ sung, thẻ còn
+              trống định nghĩa sẽ không được lưu.
+            </p>
+          )}
           {parsedCards.length === 0 ? (
             <div className="py-8 text-center border-2 border-dashed border-surface-container-high rounded-xl text-on-surface-variant/70 text-sm">
               Chưa có dữ liệu. Hãy dán văn bản vào ô trên để xem trước danh sách thẻ.

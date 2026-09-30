@@ -5,15 +5,19 @@ import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.deck.DeckRequest.Card;
 import com.pbl6.flashcard.dto.deck.DeckResponse;
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
+import com.pbl6.flashcard.dto.deck.QuizSubmission;
+import com.pbl6.flashcard.dto.deck.ReviewRequest;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
 import com.pbl6.flashcard.repository.DeckShareRepository;
-import com.pbl6.flashcard.model.QuizResult;
+import com.pbl6.flashcard.repository.QuizResultRepository;
 import com.pbl6.flashcard.model.Review;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.DeckService;
 import com.pbl6.flashcard.service.QuizService;
-import com.pbl6.flashcard.service.SrsService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +26,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /** HTTP <-> DeckService. User id lấy thẳng từ principal (JwtAuthenticationFilter đã nạp), không query lại. */
@@ -109,7 +112,7 @@ public class StudyController {
     @PostMapping("/decks/{deckId}/cards/batch")
     public ResponseEntity<List<CardResponse>> addCardsBatch(@AuthenticationPrincipal CustomUserDetails me,
                                                             @PathVariable String deckId,
-                                                            @RequestBody List<@Valid Card> reqList) {
+                                                            @RequestBody @Size(max = 1000) List<@Valid Card> reqList) {
         return ResponseEntity.status(HttpStatus.CREATED).body(deckService.addCards(uid(me), deckId, reqList));
     }
 
@@ -134,35 +137,37 @@ public class StudyController {
 
     /** Client chỉ gửi cardId + grade; ngày ôn kế tiếp do server quyết định. */
     @PostMapping("/reviews")
-    public ResponseEntity<?> submitReview(@AuthenticationPrincipal CustomUserDetails me,
-                                          @RequestBody Map<String, String> body) {
-        String cardId = body.get("cardId");
-        String grade = body.get("grade");
-        if (cardId == null || !SrsService.isValidGrade(grade)) {
-            return ResponseEntity.badRequest().body("cardId và grade (again|hard|good|easy) là bắt buộc.");
-        }
-        return ResponseEntity.ok(deckService.review(uid(me), cardId, grade));
+    public Review submitReview(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody ReviewRequest body) {
+        return deckService.review(uid(me), body.cardId(), body.grade());
     }
 
-    /** Đề trắc nghiệm; response không chứa đáp án đúng. */
+    /** Phát đề trắc nghiệm + mở lượt làm có hạn giờ; response không chứa đáp án đúng. */
     @GetMapping("/quizzes/{deckId}")
-    public List<QuizService.Question> getQuiz(@AuthenticationPrincipal CustomUserDetails me,
-                                              @PathVariable String deckId,
-                                              @RequestParam(defaultValue = "10") int size) {
+    public QuizService.Paper getQuiz(@AuthenticationPrincipal CustomUserDetails me,
+                                     @PathVariable String deckId,
+                                     @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
         return deckService.quiz(uid(me), deckId, size);
     }
 
-    /** Chấm điểm ở server: client gửi cardId -> nghĩa đã chọn. */
+    /** Câu hỏi mẫu (xem trước đề), không mở lượt làm bài. */
+    @GetMapping("/quizzes/{deckId}/preview")
+    public List<QuizService.Question> previewQuiz(@AuthenticationPrincipal CustomUserDetails me,
+                                                  @PathVariable String deckId,
+                                                  @RequestParam(defaultValue = "2") @Min(1) @Max(5) int size) {
+        return deckService.quizPreview(uid(me), deckId, size);
+    }
+
+    /** Chấm điểm ở server trên đúng các câu đã phát cho lượt làm; mỗi lượt nộp một lần. */
     @PostMapping("/quizzes/{deckId}")
     public DeckService.QuizOutcome submitQuiz(@AuthenticationPrincipal CustomUserDetails me,
                                               @PathVariable String deckId,
-                                              @RequestBody Map<String, String> answers) {
-        return deckService.submitQuiz(uid(me), deckId, answers);
+                                              @Valid @RequestBody QuizSubmission body) {
+        return deckService.submitQuiz(uid(me), deckId, body.attemptId(), body.answers());
     }
 
     /** Lịch sử làm bài để hiển thị ở trang cá nhân. */
     @GetMapping("/quiz-results")
-    public List<QuizResult> myQuizResults(@AuthenticationPrincipal CustomUserDetails me) {
+    public List<QuizResultRepository.View> myQuizResults(@AuthenticationPrincipal CustomUserDetails me) {
         return deckService.recentResults(uid(me));
     }
 

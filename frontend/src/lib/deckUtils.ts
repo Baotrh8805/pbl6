@@ -2,6 +2,9 @@
 import { isDue, type Review } from "./srs.ts";
 import type { Card, Deck, FolderNode } from "../types/api.types.ts";
 
+/** Cấp JLPT theo thứ tự học (dễ -> khó). Nguồn duy nhất cho mọi select / bộ lọc cấp độ. */
+export const JLPT_LEVELS = ["N5", "N4", "N3", "N2", "N1"] as const;
+
 /**
  * Làm phẳng cây thành các đích di chuyển hợp lệ: bỏ `excludeId` và toàn bộ nhánh dưới nó
  * (cùng quy tắc backend chặn ở FolderService.checkMove) để select không hiện lựa chọn chắc chắn lỗi.

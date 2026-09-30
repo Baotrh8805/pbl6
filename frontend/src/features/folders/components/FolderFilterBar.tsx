@@ -1,6 +1,5 @@
 import React, { useId } from "react";
-
-const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
+import { JLPT_LEVELS as LEVELS } from "@/lib/deckUtils";
 
 export interface FolderFilterBarProps {
   query: string;

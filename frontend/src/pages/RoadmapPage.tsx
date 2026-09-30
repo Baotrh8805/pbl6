@@ -1,8 +1,11 @@
 import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { sortDecksByLevel, calcDeckProgress } from "@/lib/deckUtils";
+import { sortDecksByLevel, calcDeckProgress, JLPT_LEVELS } from "@/lib/deckUtils";
 import type { Deck } from "@/types/api.types";
 import { useShell } from "@/components/layout/shellContext";
+
+/** Tỷ lệ thẻ thành thạo để coi một giai đoạn là hoàn thành. */
+const STAGE_DONE_PCT = 80;
 
 export const RoadmapPage: React.FC = () => {
     // Dùng lại bộ thẻ + lịch ôn layout đã tải cho dashboard, không gọi API lần hai.
@@ -39,6 +42,17 @@ export const RoadmapPage: React.FC = () => {
 
     const allCards = decks.flatMap((d) => d.cards);
     const overall = calcDeckProgress(allCards, reviews, now);
+
+    // Mỗi cấp JLPT là một giai đoạn; "Đang học" = cấp đầu tiên (N5 -> N1) có thẻ mà chưa thành thạo đủ.
+    const stages = JLPT_LEVELS.map((level) => {
+        const levelDecks = decks.filter((d) => d.level === level);
+        return {
+            level,
+            deckCount: levelDecks.length,
+            ...calcDeckProgress(levelDecks.flatMap((d) => d.cards), reviews, now),
+        };
+    });
+    const activeStage = stages.findIndex((s) => s.total > 0 && s.pct < STAGE_DONE_PCT);
 
     return (
         <section className="flex flex-col gap-space-lg pb-space-xl">
@@ -132,101 +146,74 @@ export const RoadmapPage: React.FC = () => {
                         />
                     </div>
 
-                    {/* Stage Cards Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-sm">
-                        {/* Giai đoạn 1 */}
-                        <div className="bg-surface-container-low p-space-sm rounded-xl border border-surface-container-high flex flex-col justify-between">
-                            <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="font-label-sm text-[11px] font-bold uppercase text-secondary">
-                                        Giai Đoạn 01
-                                    </span>
-                                    <span className="material-symbols-outlined text-[18px] text-secondary">
-                                        check_circle
-                                    </span>
+                    {/* Giai đoạn theo cấp JLPT: tính từ bộ thẻ + lịch ôn thật, không gán trạng thái cố định */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-space-sm">
+                        {stages.map((s, i) => {
+                            const active = i === activeStage;
+                            const status =
+                                s.total === 0
+                                    ? "Chưa có bộ thẻ"
+                                    : s.pct >= STAGE_DONE_PCT
+                                      ? "Hoàn thành"
+                                      : active
+                                        ? "Đang học"
+                                        : "Đang tích lũy";
+                            return (
+                                <div
+                                    key={s.level}
+                                    className={`p-space-sm rounded-xl border flex flex-col justify-between ${
+                                        active
+                                            ? "bg-primary text-on-primary border-primary-container shadow-sm"
+                                            : s.total === 0
+                                              ? "bg-surface-container-lowest border-surface-container-high opacity-70"
+                                              : "bg-surface-container-low border-surface-container-high"
+                                    }`}
+                                >
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span
+                                                className={`font-label-sm text-[11px] font-bold uppercase ${
+                                                    active ? "text-secondary-container" : "text-on-surface-variant"
+                                                }`}
+                                            >
+                                                Giai Đoạn 0{i + 1}
+                                            </span>
+                                            <span
+                                                className={`material-symbols-outlined text-[18px] ${
+                                                    active ? "text-secondary-container" : s.pct >= STAGE_DONE_PCT ? "text-secondary" : "text-outline"
+                                                }`}
+                                            >
+                                                {s.total > 0 && s.pct >= STAGE_DONE_PCT ? "check_circle" : active ? "school" : "flag"}
+                                            </span>
+                                        </div>
+                                        <h3
+                                            className={`font-label-md text-label-md font-bold mb-1 ${
+                                                active ? "text-on-primary" : "text-primary"
+                                            }`}
+                                        >
+                                            JLPT {s.level}
+                                        </h3>
+                                        <p
+                                            className={`text-body-sm text-[12px] ${
+                                                active ? "text-on-primary-container" : "text-on-surface-variant"
+                                            }`}
+                                        >
+                                            {s.deckCount} bộ thẻ · {s.mastered}/{s.total} thẻ thành thạo
+                                        </p>
+                                    </div>
+                                    <div
+                                        className={`pt-2 mt-2 border-t flex items-center justify-between text-label-sm ${
+                                            active ? "border-primary-container/60" : "border-surface-container"
+                                        }`}
+                                    >
+                                        <span className={active ? "text-secondary-container font-semibold" : "text-secondary font-bold"}>
+                                            {s.total > 0 ? `${s.pct}%` : "—"}
+                                        </span>
+                                        <span className={active ? "text-on-primary-container" : "text-outline"}>{status}</span>
+                                    </div>
                                 </div>
-                                <h3 className="font-label-md text-label-md font-bold text-primary mb-1">
-                                    Nền Tảng N5
-                                </h3>
-                                <p className="text-body-sm text-[12px] text-on-surface-variant">
-                                    Từ vựng đời sống, chào hỏi và sinh hoạt hằng ngày.
-                                </p>
-                            </div>
-                            <div className="pt-2 mt-2 border-t border-surface-container flex items-center justify-between text-label-sm">
-                                <span className="text-secondary font-bold">Căn bản</span>
-                                <span className="text-outline">Hoàn thành</span>
-                            </div>
-                        </div>
-
-                        {/* Giai đoạn 2 */}
-                        <div className="bg-primary text-on-primary p-space-sm rounded-xl border border-primary-container shadow-sm flex flex-col justify-between relative overflow-hidden">
-                            <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="font-label-sm text-[11px] font-bold uppercase text-secondary-container">
-                                        Giai Đoạn 02 • Trọng Tâm
-                                    </span>
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-label-sm font-bold bg-secondary-container text-on-secondary-container">
-                                        Đang học
-                                    </span>
-                                </div>
-                                <h3 className="font-label-md text-label-md font-bold text-on-primary mb-1">
-                                    N4 Xã Hội &amp; Công Việc
-                                </h3>
-                                <p className="text-body-sm text-[12px] text-on-primary-container">
-                                    Từ vựng kinh tế, công nghiệp và giao tiếp công sở.
-                                </p>
-                            </div>
-                            <div className="pt-2 mt-2 border-t border-primary-container/60 flex items-center justify-between text-label-sm">
-                                <span className="text-secondary-container font-semibold">Tiến trình {overall.pct}%</span>
-                                <span className="text-on-primary-container">SRS Active</span>
-                            </div>
-                        </div>
-
-                        {/* Giai đoạn 3 */}
-                        <div className="bg-surface-container-lowest p-space-sm rounded-xl border border-surface-container-high opacity-85 flex flex-col justify-between">
-                            <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="font-label-sm text-[11px] font-bold uppercase text-on-surface-variant">
-                                        Giai Đoạn 03
-                                    </span>
-                                    <span className="material-symbols-outlined text-[18px] text-outline">lock</span>
-                                </div>
-                                <h3 className="font-label-md text-label-md font-bold text-primary mb-1">
-                                    N3 Đọc Hiểu &amp; Chuyên Ngành
-                                </h3>
-                                <p className="text-body-sm text-[12px] text-on-surface-variant">
-                                    Văn bản kỹ thuật CNTT, đoản văn và ngữ pháp trung cấp.
-                                </p>
-                            </div>
-                            <div className="pt-2 mt-2 border-t border-surface-container flex items-center justify-between text-label-sm text-outline">
-                                <span>Kế tiếp</span>
-                                <span>Mở khóa sau N4</span>
-                            </div>
-                        </div>
-
-                        {/* Giai đoạn 4 */}
-                        <div className="bg-surface-container-lowest p-space-sm rounded-xl border border-surface-container-high opacity-70 flex flex-col justify-between">
-                            <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="font-label-sm text-[11px] font-bold uppercase text-outline">
-                                        Giai Đoạn 04
-                                    </span>
-                                    <span className="material-symbols-outlined text-[18px] text-outline">
-                                        military_tech
-                                    </span>
-                                </div>
-                                <h3 className="font-label-md text-label-md font-bold text-primary mb-1">
-                                    Luyện Thi Đề Tổng Hợp
-                                </h3>
-                                <p className="text-body-sm text-[12px] text-on-surface-variant">
-                                    Mô phỏng áp lực phòng thi thật với đồng hồ đếm ngược.
-                                </p>
-                            </div>
-                            <div className="pt-2 mt-2 border-t border-surface-container flex items-center justify-between text-label-sm text-outline">
-                                <span>Chinh phục</span>
-                                <span>Đích đến</span>
-                            </div>
-                        </div>
+                            );
+                        })}
                     </div>
                 </div>
 

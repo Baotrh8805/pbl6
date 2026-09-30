@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { fieldClass, labelClass } from "@/components/ui/formStyles";
 import { extractErrorMessage } from "@/services/apiClient";
 import type { LearningSettings } from "../../types/dashboard.types";
-import { getTargetWordsByLevel, JLPT_LEVELS } from "../../lib/dashboardUtils";
+import { getTargetWordsByLevel } from "../../lib/dashboardUtils";
+import { JLPT_LEVELS } from "@/lib/deckUtils";
 
 interface LearningSettingsModalProps {
   isOpen: boolean;

@@ -5,6 +5,12 @@ import { tokenStorage } from "./tokenStorage.ts";
 /** AuthProvider nghe sự kiện này để reset state; ProtectedRoute tự đưa về /login. */
 export const AUTH_EXPIRED_EVENT = "auth:expired";
 
+/**
+ * Phát sau mỗi request ghi (POST/PUT/DELETE) thành công. AppLayout nghe để tải lại số liệu dùng chung
+ * (dashboard, badge đến hạn, lộ trình) thay vì mỗi trang tự nhớ gọi reloadStats.
+ */
+export const DATA_CHANGED_EVENT = "data:changed";
+
 // Base API client pointing to Vite proxy (/api -> http://localhost:8080)
 export const apiClient = axios.create({
   baseURL: "/api",
@@ -26,7 +32,13 @@ apiClient.interceptors.request.use((config) => {
 // 401 trên request CÓ gửi token = phiên hết hạn/bị thu hồi -> đăng xuất.
 // Request không kèm token (vd. sai mật khẩu ở /auth/login) cũng trả 401 nhưng không phải hết phiên.
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = response.config.method?.toLowerCase();
+    if (method && method !== "get" && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
+    }
+    return response;
+  },
   (error: AxiosError) => {
     const sentToken = !!error.config?.headers?.Authorization;
     if (error.response?.status === 401 && sentToken) {
@@ -43,7 +55,15 @@ apiClient.interceptors.response.use(
  */
 export function extractErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const data = error.response?.data;
+    let data = error.response?.data;
+    // Body lỗi JSON nhưng được đọc dưới dạng text -> parse lại để lấy message thay vì hiện chuỗi thô
+    if (typeof data === "string" && data.trim().startsWith("{")) {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        // không phải JSON: dùng nguyên chuỗi
+      }
+    }
     if (typeof data === "string" && data.trim().length > 0) {
       return data;
     }

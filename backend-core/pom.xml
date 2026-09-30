@@ -54,17 +54,14 @@
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 
-		<!-- Redis Cache -->
+		<!-- Gửi email đặt lại mật khẩu (chỉ bật khi có cấu hình spring.mail.host) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-redis</artifactId>
+			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
 
-		<!-- WebClient để gọi sang Python AI Service -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webflux</artifactId>
-		</dependency>
+		<!-- Redis / WebClient (gọi AI Service): thêm lại khi có code dùng tới. Gọi HTTP đơn giản dùng
+		     RestClient có sẵn trong spring-boot-starter-web, không cần WebFlux. -->
 
 		<!-- JWT Authentication -->
 		<dependency>

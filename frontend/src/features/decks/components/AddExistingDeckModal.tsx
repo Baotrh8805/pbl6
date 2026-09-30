@@ -3,6 +3,7 @@ import { fetchDecks, moveDeckToFolder, cloneDeck, createDeck } from "@/services/
 import { fetchLibrary } from "@/services/libraryService";
 import type { Deck, LibraryDeck } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
+import { JLPT_LEVELS } from "@/lib/deckUtils";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { categoryLabel } from "@/features/library/components/libraryOptions";
 import { Button } from "@/components/ui/Button";
@@ -18,7 +19,6 @@ export interface AddExistingDeckModalProps {
 
 type Tab = "personal" | "library" | "new";
 
-const LEVEL_OPTIONS = ["N5", "N4", "N3", "N2", "N1"];
 
 const tabClass = (active: boolean) =>
   `pb-3 px-4 font-label-md text-sm transition-all border-b-2 font-medium flex items-center gap-2 cursor-pointer ${
@@ -103,20 +103,28 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
     if (selectedDeckIds.size === 0) return;
     setIsSubmitting(true);
     setError(null);
+    const decksToMove = personalDecks.filter((d) => selectedDeckIds.has(d.id));
+    const done = new Set<string>();
     try {
-      const decksToMove = personalDecks.filter((d) => selectedDeckIds.has(d.id));
       for (const deck of decksToMove) {
         if (deck.access === "owner") {
           await moveDeckToFolder(deck, targetFolder.id);
         } else {
-          // Bộ thẻ Thư viện / được chia sẻ: thư mục là của chủ bộ thẻ -> nhân bản vào thư mục
+          // Bộ thẻ được chia sẻ: thư mục là của chủ bộ thẻ -> nhân bản vào thư mục
           await cloneDeck(deck.id, targetFolder.id);
         }
+        done.add(deck.id);
       }
       onSuccess();
       onClose();
     } catch (err) {
-      setError(extractErrorMessage(err));
+      // Mỗi bộ thẻ là 1 request riêng: bộ đã chuyển xong thì bỏ khỏi danh sách và báo trang cha tải lại
+      if (done.size > 0) {
+        setPersonalDecks((prev) => prev.filter((d) => !done.has(d.id)));
+        setSelectedDeckIds((prev) => new Set([...prev].filter((id) => !done.has(id))));
+        onSuccess();
+      }
+      setError(`Đã thêm ${done.size}/${decksToMove.length} bộ thẻ. Lỗi: ${extractErrorMessage(err)}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -283,7 +291,7 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
               className="py-1.5 px-3 rounded-lg bg-surface-container-lowest border border-outline-variant text-sm focus:outline-none focus:border-primary"
             >
               <option value="">Tất cả trình độ</option>
-              {LEVEL_OPTIONS.map((lvl) => (
+              {JLPT_LEVELS.map((lvl) => (
                 <option key={lvl} value={lvl}>
                   JLPT {lvl}
                 </option>
@@ -497,7 +505,7 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
                 onChange={(e) => setNewLevel(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg bg-surface-container-lowest border border-outline-variant text-sm focus:outline-none focus:border-primary"
               >
-                {LEVEL_OPTIONS.map((lvl) => (
+                {JLPT_LEVELS.map((lvl) => (
                   <option key={lvl} value={lvl}>
                     JLPT {lvl}
                   </option>

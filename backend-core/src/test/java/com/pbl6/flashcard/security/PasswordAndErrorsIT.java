@@ -30,7 +30,7 @@ class PasswordAndErrorsIT extends IntegrationTest {
     void missing_current_password_is_a_clear_400() throws Exception {
         call(put("/api/auth/password"), newUser(), Map.of("newPassword", "secret456"))
                 .andExpect(status().isBadRequest())
-                .andExpect(content().string("Mật khẩu hiện tại không được để trống!"));
+                .andExpect(jsonPath("$.message").value("currentPassword: Mật khẩu hiện tại không được để trống"));
     }
 
     @Test
@@ -52,7 +52,7 @@ class PasswordAndErrorsIT extends IntegrationTest {
         String token = newUser();
         JsonNode notFound = read(call(delete("/api/folders/" + UUID.randomUUID()), token, null)
                 .andExpect(status().isNotFound()));
-        assertEquals("Folder not found", notFound.get("message").asText());
+        assertEquals("Không tìm thấy thư mục.", notFound.get("message").asText());
 
         call(delete("/api/folders/not-a-uuid"), token, null).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Tham số 'id' không hợp lệ."));
@@ -61,7 +61,7 @@ class PasswordAndErrorsIT extends IntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Dữ liệu gửi lên không đúng định dạng JSON."));
         call(post("/api/folders"), token, Map.of("title", " ")).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("title: Title is required"));
+                .andExpect(jsonPath("$.message").value("title: Tên thư mục không được để trống"));
         call(get("/api/khong-ton-tai"), token, null).andExpect(status().isNotFound());
     }
 }

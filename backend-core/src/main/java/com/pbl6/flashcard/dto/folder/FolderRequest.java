@@ -10,21 +10,24 @@ import java.util.UUID;
 public class FolderRequest {
 
     // Giới hạn khớp độ dài cột trong Folder.java: tràn cột phải là 400, không phải 500 từ DB.
-    @NotBlank(message = "Title is required")
-    @Size(max = 100, message = "Title must be at most 100 characters")
+    @NotBlank(message = "Tên thư mục không được để trống")
+    @Size(max = 100, message = "Tên thư mục tối đa 100 ký tự")
     private String title;
 
-    @Size(max = 500, message = "Description must be at most 500 characters")
+    @Size(max = 500, message = "Mô tả tối đa 500 ký tự")
     private String description;
 
-    @Pattern(regexp = "private|shared|public", message = "accessType must be private, shared or public")
+    // public = ai đăng nhập và có link đều xem được (xem FolderRepository.isSharedWith)
+    @Pattern(regexp = "private|shared|public", message = "accessType phải là private, shared hoặc public")
     private String accessType; // private, shared, public
 
-    @Pattern(regexp = "N[1-5]", message = "level must be N1..N5")
+    // "" = bỏ trình độ (khi sửa); null = giữ nguyên
+    @Pattern(regexp = "N[1-5]|", message = "Trình độ phải là N1..N5")
     private String level; // N1, N2, N3, N4, N5
     // Boolean: null = "không gửi" -> PUT giữ nguyên trạng thái ghim, không vô tình bỏ ghim.
     private Boolean isPinned;
-    private String metadata; // JSON chuỗi từ Frontend
+    @Size(max = 2000, message = "metadata tối đa 2000 ký tự")
+    private String metadata; // JSON chuỗi từ Frontend (cột TEXT: giới hạn để không nhận payload tuỳ ý)
     private UUID parentId; // null = đặt ở gốc; PUT với parentId khác = move
 
     public FolderRequest() {

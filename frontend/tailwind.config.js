@@ -1,3 +1,5 @@
+import plugin from "tailwindcss/plugin";
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -104,8 +106,12 @@ export default {
         "body-lg": ["'Inter'", "sans-serif"],
         "body-md": ["'Inter'", "sans-serif"],
         "body-sm": ["'Inter'", "sans-serif"],
+        "title-md": ["'Plus Jakarta Sans'", "sans-serif"],
+        japanese: ["'Noto Sans JP'", "'Hiragino Sans'", "'Yu Gothic'", "'Noto Sans'", "sans-serif"],
       },
       fontSize: {
+        "display-sm": ["36px", { lineHeight: "44px", fontWeight: "700" }],
+        "title-md": ["16px", { lineHeight: "24px", fontWeight: "600" }],
         "headline-lg": ["32px", { lineHeight: "40px", fontWeight: "700" }],
         "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
         "headline-sm": ["18px", { lineHeight: "26px", fontWeight: "600" }],
@@ -117,6 +123,23 @@ export default {
       },
       borderRadius: {
         card: "1rem", // 16px
+      },
+      // Các cỡ nhỏ có sẵn ở Tailwind v4 nhưng không có ở 3.4 (code đang dùng)
+      boxShadow: {
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "2xs": "0 1px rgb(0 0 0 / 0.05)",
+      },
+      backdropBlur: {
+        xs: "2px",
+      },
+      keyframes: {
+        fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
+        enter: { from: { opacity: "0", transform: "scale(0.95)" }, to: { opacity: "1", transform: "scale(1)" } },
+      },
+      // animate-in: hiệu ứng mở menu/toast (thay cho plugin tailwindcss-animate, không thêm dependency)
+      animation: {
+        fadeIn: "fadeIn 150ms ease-out",
+        in: "enter 150ms ease-out",
       },
       spacing: {
         "space-xs": "0.25rem",
@@ -131,7 +154,16 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addUtilities }) => {
+      addUtilities({
+        ".scrollbar-none": {
+          "scrollbar-width": "none",
+          "&::-webkit-scrollbar": { display: "none" },
+        },
+      });
+    }),
+  ],
 }
 
 

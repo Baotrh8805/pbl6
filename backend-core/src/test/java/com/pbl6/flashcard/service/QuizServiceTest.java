@@ -44,13 +44,26 @@ class QuizServiceTest {
 
     @Test
     void chamDiemBoQuaCardIdLa() {
-        Map<String, String> meanings = Map.of("c0", "nghĩa0", "c1", "nghĩa1");
-        QuizService.Graded g = QuizService.grade(meanings, Map.of(
+        Map<String, String> meanings = Map.of("c0", "nghĩa0", "c1", "nghĩa1", "c2", "nghĩa2");
+        QuizService.Graded g = QuizService.grade(meanings, List.of("c0", "c1"), Map.of(
                 "c0", "nghĩa0",
                 "c1", "nghĩa-sai",
+                "c2", "nghĩa2", // thẻ của bộ nhưng không nằm trong đề đã phát
                 "hacker", "nghĩa0"));
         assertEquals(1, g.score());
-        assertEquals(2, g.total(), "cardId không thuộc bộ thẻ bị loại khỏi tổng");
+        assertEquals(2, g.total(), "chỉ tính các câu đã phát");
         assertEquals(List.of("c1"), g.wrongCardIds());
+    }
+
+    @Test
+    void cauBoTrongTinhLaSai() {
+        Map<String, String> meanings = Map.of("c0", "nghĩa0", "c1", "nghĩa1", "c2", "nghĩa2");
+        // Chỉ nộp 1 câu đúng không được 1/1 = 100%
+        QuizService.Graded g = QuizService.grade(meanings, List.of("c0", "c1", "c2"), Map.of("c0", "nghĩa0"));
+        assertEquals(1, g.score());
+        assertEquals(3, g.total());
+        assertEquals(List.of("c1", "c2"), g.wrongCardIds());
+        // Thẻ bị xoá sau khi phát đề: không tính vào tổng
+        assertEquals(1, QuizService.grade(Map.of("c0", "nghĩa0"), List.of("c0", "gone"), Map.of()).total());
     }
 }

@@ -5,7 +5,7 @@ import { fieldClass, labelClass } from "@/components/ui/formStyles";
 import { createFolder } from "@/services/folderService";
 import { extractErrorMessage } from "@/services/apiClient";
 import type { FolderAccess } from "@/types/api.types";
-import { JLPT_LEVELS } from "../../lib/dashboardUtils";
+import { JLPT_LEVELS } from "@/lib/deckUtils";
 
 interface CreateFolderModalProps {
   isOpen: boolean;
@@ -15,9 +15,9 @@ interface CreateFolderModalProps {
 }
 
 const ACCESS_OPTIONS: { value: FolderAccess; label: string }[] = [
-  { value: "private", label: "Riêng tư (Chỉ mình bạn)" },
-  { value: "shared", label: "Chia sẻ nhóm" },
-  { value: "public", label: "Công khai cộng đồng" },
+  // "shared" do server tự gán khi mời người xem qua email (nút Chia sẻ), không chọn ở đây
+  { value: "private", label: "Riêng tư (chỉ bạn và người được mời)" },
+  { value: "public", label: "Ai có liên kết đều xem được" },
 ];
 
 const isAccess = (v: string): v is FolderAccess => ACCESS_OPTIONS.some((o) => o.value === v);

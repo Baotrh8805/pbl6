@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
 import { calcLearningStats, EMPTY_STATS } from "@/lib/learningStats";
 import { fetchDecks } from "@/services/deckService";
+import { DATA_CHANGED_EVENT } from "@/services/apiClient";
 import { fetchQuizResultCount, fetchQuizResults, fetchReviews } from "@/services/studyService";
 import type { LearningSettings, UserMetrics } from "@/features/dashboard/types/dashboard.types";
 import {
@@ -47,7 +48,31 @@ export const AppLayout: React.FC = () => {
     const [statsVersion, setStatsVersion] = useState(0);
 
     // Layout sống suốt các trang con; Study/Quiz nằm ngoài layout nên quay lại là remount -> số liệu mới.
-    const stats = useAsync(loadStatsSource, [statsVersion]);
+    const fresh = useAsync(loadStatsSource, [statsVersion]);
+
+    // Mọi thao tác ghi thành công (tạo/sửa/xoá/lưu bản sao...) -> tải lại số liệu. Gộp các request liên tiếp
+    // (vd. thêm nhiều bộ thẻ vào thư mục) thành một lần tải.
+    useEffect(() => {
+        let timer: number | undefined;
+        const onChanged = () => {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(() => setStatsVersion((v) => v + 1), 300);
+        };
+        window.addEventListener(DATA_CHANGED_EVENT, onChanged);
+        return () => {
+            window.clearTimeout(timer);
+            window.removeEventListener(DATA_CHANGED_EVENT, onChanged);
+        };
+    }, []);
+
+    // Đang tải lại: giữ số liệu cũ trên màn hình thay vì nháy về trạng thái "đang tải"
+    const [lastData, setLastData] = useState(fresh.data);
+    if (fresh.data && fresh.data !== lastData) setLastData(fresh.data);
+    const stats = {
+        data: fresh.data ?? lastData,
+        loading: fresh.loading && !lastData,
+        error: fresh.error,
+    };
 
     const metrics: UserMetrics = useMemo(() => {
         const base = stats.data

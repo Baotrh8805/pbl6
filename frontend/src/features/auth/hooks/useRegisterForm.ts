@@ -37,8 +37,11 @@ export const useRegisterForm = () => {
       confirmPassword?: string;
     } = {};
 
+    // Khớp RegisterRequest ở backend
     if (!fullName.trim()) {
       newErrors.fullName = "Họ tên không được để trống";
+    } else if (fullName.trim().length > 100) {
+      newErrors.fullName = "Họ tên tối đa 100 ký tự";
     }
 
     if (!email.trim()) {
@@ -51,6 +54,8 @@ export const useRegisterForm = () => {
       newErrors.password = "Mật khẩu không được để trống";
     } else if (password.length < 6) {
       newErrors.password = "Mật khẩu phải có ít nhất 6 ký tự";
+    } else if (password.length > 72) {
+      newErrors.password = "Mật khẩu tối đa 72 ký tự";
     }
 
     if (!confirmPassword) {

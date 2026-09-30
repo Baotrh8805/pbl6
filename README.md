@@ -36,12 +36,20 @@ Tại thư mục gốc dự án:
 ```bash
 npm run dev      # chạy song song Backend (:8080) và Frontend (:5173)
 npm run smoke    # kiểm chứng register -> login end-to-end qua proxy Vite
+npm run e2e      # smoke test trên Postgres nhúng (không ghi vào Supabase)
 ```
 Log hai tiến trình có tiền tố `[BE]` / `[FE]`. Nhấn Ctrl+C là tắt cả hai.
 Script tự giải phóng cổng 8080/5173 trước khi start, nên không còn lỗi
 `Port 8080 was already in use` do tiến trình mồ côi từ lần chạy trước.
-Yêu cầu: JDK 17+, Maven, Node 18+, và `npm install` trong `frontend/`.
+Yêu cầu: JDK 17+, Maven 3.9+, Node 22.18+, và `npm install` trong `frontend/`.
+Backend cần cấu hình database + `jwt.secret` trước (xem Bước 1), thiếu `jwt.secret` app không khởi động.
 (AI Service chạy riêng — xem Bước 2 bên dưới.)
+
+### Kiểm tra trước khi push (CI chạy lại đúng các lệnh này)
+```bash
+(cd backend-core && mvn test)                   # test tích hợp trên Postgres nhúng
+(cd frontend && npm run lint && npm run build && npm run selfcheck)
+```
 
 ## 🚀 Khởi Động Nhanh Cho Cả Nhóm
 
@@ -55,7 +63,17 @@ Lệnh trên sẽ khởi tạo:
 - **Redis:** Cổng `6379`
 - **Neo4j:** Cổng `7474` (giao diện web: `http://localhost:7474`) và `7687` (Bolt)
 
-*(Nếu nhóm dùng **Supabase Cloud**, chỉ cần điền thông tin Supabase vào file `backend-core/src/main/resources/application.properties`)*
+Trỏ backend vào Postgres cục bộ bằng file `backend-core/src/main/resources/application-local.properties`
+(nằm trong `.gitignore`, không commit):
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/pbl6_db
+spring.datasource.username=postgres
+spring.datasource.password=password123
+jwt.secret=<chuỗi ngẫu nhiên >= 64 byte, ví dụ: openssl rand -base64 64>
+```
+
+*(Nếu nhóm dùng **Supabase Cloud**: xem [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md). Không ghi mật khẩu
+vào `application.properties` vì file này được commit. Bảng do Flyway tự tạo khi backend khởi động, không tạo tay.)*
 
 ---
 
@@ -74,7 +92,7 @@ Truy cập tài liệu API tự động (Swagger): `http://localhost:8000/docs`
 ### Bước 3: Chạy Backend Core (Java Spring Boot)
 ```bash
 cd backend-core
-./mvnw spring-boot:run
+mvn spring-boot:run
 ```
 Backend sẽ khởi động tại: `http://localhost:8080`
 

@@ -103,6 +103,7 @@ export const DashboardPage: React.FC = () => {
         isOpen={!!shareTargetFolder}
         folder={shareTargetFolder}
         onClose={() => setShareTargetFolder(null)}
+        onChanged={() => setRefreshIndex((i) => i + 1)}
       />
 
       <CreateFolderModal

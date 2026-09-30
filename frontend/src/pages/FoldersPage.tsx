@@ -1,7 +1,14 @@
 import React, { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchDecks, deleteDeck, moveDeckToFolder } from "@/services/deckService";
-import { fetchFolders, createFolder, updateFolder, deleteFolder } from "@/services/folderService";
+import {
+  fetchFolders,
+  fetchFolder,
+  fetchSharedFolders,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+} from "@/services/folderService";
 import { moveTargets } from "@/lib/deckUtils";
 import type { FolderNode, Deck, FolderDto } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
@@ -21,7 +28,7 @@ import {
   matchesFilter,
 } from "@/features/folders/components/folderTree";
 
-type FolderRef = { id: string; title: string };
+type FolderRef = { id: string; title: string; accessType?: string | null };
 
 export const FoldersPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
@@ -38,10 +45,22 @@ export const FoldersPage: React.FC = () => {
     fetchFolders,
     [refreshIndex]
   );
-  // Bộ thẻ của thư mục đang mở (hoặc tất cả khi ở gốc để tính số liệu)
+  const { data: sharedFolders } = useAsync(fetchSharedFolders, [refreshIndex]);
+
+  const tree = useMemo(() => folderTree || [], [folderTree]);
+  const ownFolder = useMemo(() => (folderId ? findFolder(tree, folderId) : null), [tree, folderId]);
+  // Không nằm trong cây của mình -> thư mục được chia sẻ / public (mở từ link): tải riêng, server kiểm quyền
+  const foreignId = folderId && !foldersLoading && !ownFolder ? folderId : "";
+  const foreign = useAsync(
+    () => (foreignId ? fetchFolder(foreignId) : Promise.resolve(null)),
+    [foreignId, refreshIndex]
+  );
+
+  // Thư mục của mình: tải mọi bộ thẻ cá nhân 1 lần (đủ để đếm cho cả thư mục con).
+  // Thư mục được chia sẻ: server trả bộ thẻ của đúng thư mục đó.
   const { data: allDecksData, loading: decksLoading, error: decksError } = useAsync(
-    () => fetchDecks(folderId ? folderId : null),
-    [folderId, refreshIndex]
+    () => fetchDecks(foreignId || null),
+    [foreignId, refreshIndex]
   );
 
   // Trạng thái modal
@@ -51,14 +70,11 @@ export const FoldersPage: React.FC = () => {
   const [shareModalFolder, setShareModalFolder] = useState<FolderRef | null>(null);
   const [addExistingFolder, setAddExistingFolder] = useState<FolderRef | null>(null);
 
-  const tree = useMemo(() => folderTree || [], [folderTree]);
-  const currentFolder = useMemo(
-    () => (folderId ? findFolder(tree, folderId) : null),
-    [tree, folderId]
-  );
+  const currentFolder = ownFolder ?? foreign.data ?? null;
+  const readOnly = currentFolder?.access === "viewer";
   const breadcrumbs = useMemo(
-    () => (folderId ? getBreadcrumbs(tree, folderId) : []),
-    [tree, folderId]
+    () => (ownFolder ? getBreadcrumbs(tree, ownFolder.id) : foreign.data ? [foreign.data] : []),
+    [tree, ownFolder, foreign.data]
   );
   const subfolders = useMemo(
     () => (currentFolder ? currentFolder.children || [] : tree),
@@ -81,8 +97,10 @@ export const FoldersPage: React.FC = () => {
   );
   const currentFolderDecks = useMemo(() => {
     if (!currentFolder || !allDecksData) return [];
-    return allDecksData.filter((d) => matchesFilter(d, qParam, levelParam));
-  }, [currentFolder, allDecksData, qParam, levelParam]);
+    return allDecksData.filter(
+      (d) => (readOnly || d.folderId === currentFolder.id) && matchesFilter(d, qParam, levelParam)
+    );
+  }, [currentFolder, readOnly, allDecksData, qParam, levelParam]);
 
   // Tổng số liệu cho header trang gốc
   const totalOrganizedDecks = Object.values(folderMetrics).reduce((acc, cur) => acc + cur.decks, 0);
@@ -90,7 +108,7 @@ export const FoldersPage: React.FC = () => {
 
   // Thao tác thư mục
   const openFolder = (id: string) => setParam("folderId", id);
-  const openShare = (f: FolderRef) => setShareModalFolder({ id: f.id, title: f.title });
+  const openShare = (f: FolderRef) => setShareModalFolder({ id: f.id, title: f.title, accessType: f.accessType });
   const openAddExisting = (f: FolderRef) => setAddExistingFolder({ id: f.id, title: f.title });
 
   const handleOpenCreateFolder = (parent: FolderNode | null = null) => {
@@ -145,7 +163,7 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
       action: () => moveDeckToFolder(deck, null),
     });
 
-  const error = foldersError || decksError;
+  const error = foldersError || foreign.error || decksError;
 
   return (
     <div className="flex flex-col w-full gap-space-lg pb-space-xl">
@@ -194,19 +212,22 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
         </div>
       )}
 
-      {filteredSubfolders.length > 0 && (
-        <FolderGrid
-          folders={filteredSubfolders}
-          metrics={folderMetrics}
-          isNested={!!currentFolder}
-          onAddFolder={() => handleOpenCreateFolder(currentFolder)}
-          onOpen={(f) => openFolder(f.id)}
-          onAddDeck={openAddExisting}
-          onShare={openShare}
-          onEdit={handleEditFolder}
-          onDelete={handleDeleteFolder}
-        />
-      )}
+      {filteredSubfolders.length > 0 &&
+        (readOnly ? (
+          <FolderGrid folders={filteredSubfolders} metrics={folderMetrics} isNested onOpen={(f) => openFolder(f.id)} />
+        ) : (
+          <FolderGrid
+            folders={filteredSubfolders}
+            metrics={folderMetrics}
+            isNested={!!currentFolder}
+            onAddFolder={() => handleOpenCreateFolder(currentFolder)}
+            onOpen={(f) => openFolder(f.id)}
+            onAddDeck={openAddExisting}
+            onShare={openShare}
+            onEdit={handleEditFolder}
+            onDelete={handleDeleteFolder}
+          />
+        ))}
 
       {currentFolder && (
         <FolderDeckList
@@ -226,6 +247,17 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
         />
       )}
 
+      {/* Thư mục người khác chia sẻ cho mình: chỉ xem & học */}
+      {!folderId && sharedFolders && sharedFolders.length > 0 && (
+        <FolderGrid
+          title="Được chia sẻ với tôi"
+          folders={sharedFolders.filter((f) => matchesFilter(f, qParam, levelParam))}
+          metrics={{}}
+          isNested={false}
+          onOpen={(f) => openFolder(f.id)}
+        />
+      )}
+
       <FolderModal
         isOpen={isFolderModalOpen}
         onClose={() => setIsFolderModalOpen(false)}
@@ -239,6 +271,7 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
         isOpen={!!shareModalFolder}
         onClose={() => setShareModalFolder(null)}
         folder={shareModalFolder}
+        onChanged={refresh}
       />
 
       {addExistingFolder && (

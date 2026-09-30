@@ -6,6 +6,7 @@ import { Ruby } from "@/lib/ja";
 import { canSpeak, speak } from "@/lib/speech";
 import { useAsync } from "@/lib/useAsync";
 import { isDue, type Grade } from "@/lib/srs";
+import { extractErrorMessage } from "@/services/apiClient";
 
 const GRADES: { grade: Grade; label: string; key: string; className: string }[] = [
     { grade: "again", label: "Lại", key: "1", className: "bg-error text-on-primary" },
@@ -49,8 +50,9 @@ export const StudyPage: React.FC = () => {
             setQueueState((s) =>
                 s === null ? s : { ...s, ids: g === "again" ? [...s.ids.slice(1), s.ids[0]] : s.ids.slice(1) }
             );
-        } catch {
-            setSaveError("Chưa lưu được kết quả. Kiểm tra mạng rồi bấm lại.");
+        } catch (e) {
+            // Lỗi mạng -> bấm lại; lỗi từ server (mất quyền, thẻ bị xoá...) -> hiện đúng lý do
+            setSaveError(`Chưa lưu được kết quả: ${extractErrorMessage(e)}`);
         } finally {
             setSaving(false);
         }

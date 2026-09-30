@@ -8,6 +8,7 @@ import com.pbl6.flashcard.model.Deck;
 import com.pbl6.flashcard.model.DeckShare;
 import com.pbl6.flashcard.model.Flashcard;
 import com.pbl6.flashcard.model.Folder;
+import com.pbl6.flashcard.model.QuizAttempt;
 import com.pbl6.flashcard.model.QuizResult;
 import com.pbl6.flashcard.model.Review;
 import com.pbl6.flashcard.model.User;
@@ -15,6 +16,7 @@ import com.pbl6.flashcard.repository.DeckRepository;
 import com.pbl6.flashcard.repository.DeckShareRepository;
 import com.pbl6.flashcard.repository.FlashcardRepository;
 import com.pbl6.flashcard.repository.FolderRepository;
+import com.pbl6.flashcard.repository.QuizAttemptRepository;
 import com.pbl6.flashcard.repository.QuizResultRepository;
 import com.pbl6.flashcard.repository.ReviewRepository;
 import com.pbl6.flashcard.repository.UserRepository;
@@ -54,12 +56,13 @@ public class DeckService {
     private final FolderRepository folderRepository;
     private final DeckShareRepository shareRepository;
     private final UserRepository userRepository;
+    private final QuizAttemptRepository attemptRepository;
     private final Random random = new Random();
 
     public DeckService(DeckRepository deckRepository, FlashcardRepository flashcardRepository,
                        ReviewRepository reviewRepository, QuizResultRepository quizResultRepository,
                        FolderRepository folderRepository, DeckShareRepository shareRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository, QuizAttemptRepository attemptRepository) {
         this.deckRepository = deckRepository;
         this.flashcardRepository = flashcardRepository;
         this.reviewRepository = reviewRepository;
@@ -67,6 +70,7 @@ public class DeckService {
         this.folderRepository = folderRepository;
         this.shareRepository = shareRepository;
         this.userRepository = userRepository;
+        this.attemptRepository = attemptRepository;
     }
 
     // ---------- quyền ----------
@@ -79,21 +83,28 @@ public class DeckService {
     }
 
     /**
-     * Chủ > quyền được chia sẻ > public (ai cũng xem). Không có quyền = empty.
+     * Chủ > quyền được chia sẻ > public / nằm trong thư mục được chia sẻ (chỉ xem). Không có quyền = empty.
      * sharePermission: DeckShare.permission của uid trên deck này, null nếu không được chia sẻ.
+     * inSharedFolder: deck nằm trong thư mục (hoặc thư mục con của thư mục) được chia sẻ cho uid / để public.
      */
-    public static Optional<Access> access(Long uid, Deck deck, String sharePermission) {
+    public static Optional<Access> access(Long uid, Deck deck, String sharePermission, boolean inSharedFolder) {
         if (uid == null || deck == null) return Optional.empty();
         if (uid.equals(deck.getOwnerId())) return Optional.of(Access.OWNER);
         if (DeckShare.EDITOR.equals(sharePermission)) return Optional.of(Access.EDITOR);
-        if (DeckShare.VIEWER.equals(sharePermission) || deck.isPublic()) return Optional.of(Access.VIEWER);
+        if (DeckShare.VIEWER.equals(sharePermission) || deck.isPublic() || inSharedFolder) {
+            return Optional.of(Access.VIEWER);
+        }
         return Optional.empty();
     }
 
     private Optional<Access> access(Long uid, Deck deck) {
-        String permission = uid.equals(deck.getOwnerId()) ? null
-                : shareRepository.findByDeckIdAndUserId(deck.getId(), uid).map(DeckShare::getPermission).orElse(null);
-        return access(uid, deck, permission);
+        if (uid.equals(deck.getOwnerId())) return Optional.of(Access.OWNER);
+        String permission = shareRepository.findByDeckIdAndUserId(deck.getId(), uid)
+                .map(DeckShare::getPermission).orElse(null);
+        Optional<Access> direct = access(uid, deck, permission, false);
+        if (direct.isPresent() || deck.getFolder() == null) return direct;
+        // Chỉ hỏi chuỗi thư mục khi không có quyền nào khác (thêm 1 query)
+        return access(uid, deck, permission, folderRepository.isSharedWith(deck.getFolder().getId(), uid));
     }
 
     public static Optional<Flashcard> findCardIn(Deck deck, String cardId) {
@@ -141,17 +152,33 @@ public class DeckService {
 
     // ---------- bộ thẻ ----------
 
+    /**
+     * folderId null: "Bộ thẻ của tôi" (sở hữu + được chia sẻ qua email).
+     * folderId có: bộ thẻ trong thư mục đó, của mình hoặc được chia sẻ (qua thư mục) cho mình; khác = 404.
+     */
     @Transactional(readOnly = true)
     public List<DeckResponse> list(Long uid, UUID folderId) {
-        List<Deck> decks = folderId == null
-                ? deckRepository.findReadableWithCards(uid)
-                : deckRepository.findReadableInFolderWithCards(folderId, uid);
+        boolean viaSharedFolder = false;
+        List<Deck> decks;
+        if (folderId == null) {
+            decks = deckRepository.findPersonalWithCards(uid);
+        } else {
+            Folder folder = folderRepository.findById(folderId).orElseThrow(DeckService::folderNotFound);
+            viaSharedFolder = !uid.equals(folder.getUser().getId());
+            if (viaSharedFolder && !folderRepository.isSharedWith(folderId, uid)) throw folderNotFound();
+            decks = deckRepository.findInFolderWithCards(folderId);
+        }
         // Mọi quyền được chia sẻ của user trong 1 query, không hỏi lại cho từng deck
         Map<String, String> shared = shareRepository.findByUserId(uid).stream()
                 .collect(Collectors.toMap(DeckShare::getDeckId, DeckShare::getPermission));
+        boolean inSharedFolder = viaSharedFolder;
         return decks.stream()
-                .map(d -> DeckResponse.of(d, access(uid, d, shared.get(d.getId())).orElseThrow().json()))
+                .map(d -> DeckResponse.of(d, access(uid, d, shared.get(d.getId()), inSharedFolder).orElseThrow().json()))
                 .toList();
+    }
+
+    private static ResponseStatusException folderNotFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thư mục.");
     }
 
     @Transactional(readOnly = true)
@@ -340,7 +367,9 @@ public class DeckService {
     @Transactional
     public Review review(Long uid, String cardId, String grade) {
         // Chỉ ôn được thẻ trong bộ thẻ mình xem được: không dò/ghi vào thẻ trong deck riêng của người khác
-        if (!flashcardRepository.existsReadableBy(cardId, uid)) {
+        boolean visible = flashcardRepository.findById(cardId)
+                .map(card -> access(uid, card.getDeck()).isPresent()).orElse(false);
+        if (!visible) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thẻ.");
         }
         Instant now = Instant.now();
@@ -354,39 +383,77 @@ public class DeckService {
 
     // ---------- quiz ----------
 
+    /** Phát đề và ghi lượt làm (hạn giờ do server giữ). Bộ thẻ trống: không tạo lượt. */
+    @Transactional
+    public QuizService.Paper quiz(Long uid, String deckId, int size) {
+        Deck deck = readable(uid, deckId);
+        Instant now = Instant.now();
+        closeExpiredAttempts(uid, now);
+        List<QuizService.Question> questions = QuizService.buildQuiz(deck.getCards(), size, random);
+        if (questions.isEmpty()) return new QuizService.Paper(null, 0, questions);
+
+        int limit = questions.size() * QuizService.SECONDS_PER_QUESTION;
+        QuizAttempt attempt = new QuizAttempt(uid, deckId, questions.stream().map(QuizService.Question::cardId).toList(),
+                now, now.plusSeconds(limit + QuizService.GRACE_SECONDS));
+        attemptRepository.save(attempt);
+        return new QuizService.Paper(attempt.getId(), limit, questions);
+    }
+
+    /** Vài câu mẫu để xem trước bộ đề: không mở lượt làm, không tính điểm. */
     @Transactional(readOnly = true)
-    public List<QuizService.Question> quiz(Long uid, String deckId, int size) {
+    public List<QuizService.Question> quizPreview(Long uid, String deckId, int size) {
         return QuizService.buildQuiz(readable(uid, deckId).getCards(), size, random);
     }
 
-    public record QuizOutcome(int score, int total, Map<String, String> wrong) {}
+    /** expired: nộp sau hạn giờ -> bài không được chấm, ghi 0 điểm. */
+    public record QuizOutcome(int score, int total, Map<String, String> wrong, boolean expired) {}
 
-    /** Chấm điểm ở server: client gửi cardId -> nghĩa đã chọn. */
+    /**
+     * Chấm điểm ở server trên đúng các câu đã phát cho lượt làm này; câu bỏ trống = sai.
+     * Mỗi lượt chỉ nộp một lần.
+     */
     @Transactional
-    public QuizOutcome submitQuiz(Long uid, String deckId, Map<String, String> answers) {
+    public QuizOutcome submitQuiz(Long uid, String deckId, UUID attemptId, Map<String, String> answers) {
         Deck deck = readable(uid, deckId);
-        if (answers == null || answers.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bài làm rỗng.");
+        QuizAttempt attempt = attemptRepository.findForUpdate(attemptId)
+                .filter(a -> a.getUserId().equals(uid) && a.getDeckId().equals(deckId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lượt làm bài."));
+        if (attempt.getSubmittedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bài làm này đã được nộp.");
         }
+        Instant now = Instant.now();
+        boolean expired = now.isAfter(attempt.getExpiresAt());
+        return close(attempt, deck, expired ? Map.of() : answers, now, expired);
+    }
+
+    /** Lượt quá hạn chưa nộp (đóng tab, bỏ dở) -> ghi 0 điểm, để không chọn được lượt có lợi. */
+    private void closeExpiredAttempts(Long uid, Instant now) {
+        for (QuizAttempt attempt : attemptRepository.findExpiredOpen(uid, now)) {
+            deckRepository.findById(attempt.getDeckId())
+                    .ifPresent(deck -> close(attempt, deck, Map.of(), now, true));
+        }
+    }
+
+    private QuizOutcome close(QuizAttempt attempt, Deck deck, Map<String, String> answers, Instant now, boolean expired) {
         Map<String, String> meanings = deck.getCards().stream()
                 .collect(Collectors.toMap(Flashcard::getId, Flashcard::getMeaning));
-        QuizService.Graded graded = QuizService.grade(meanings, answers);
-        if (graded.total() == 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bài làm không khớp bộ thẻ này.");
-        }
-        quizResultRepository.save(new QuizResult(uid, deckId, graded.score(), graded.total()));
+        QuizService.Graded graded = QuizService.grade(meanings, attempt.getCardIds(), answers);
+        attempt.setSubmittedAt(now);
+        quizResultRepository.save(new QuizResult(attempt.getUserId(), deck.getId(), graded.score(), graded.total()));
         Map<String, String> wrong = graded.wrongCardIds().stream()
                 .collect(Collectors.toMap(Function.identity(), meanings::get));
-        return new QuizOutcome(graded.score(), graded.total(), wrong);
+        return new QuizOutcome(graded.score(), graded.total(), wrong, expired);
     }
 
-    @Transactional(readOnly = true)
-    public List<QuizResult> recentResults(Long uid) {
-        return quizResultRepository.findTop10ByUserIdOrderByCreatedAtDesc(uid);
+    @Transactional
+    public List<QuizResultRepository.View> recentResults(Long uid) {
+        closeExpiredAttempts(uid, Instant.now());
+        return quizResultRepository.findRecent(uid, org.springframework.data.domain.PageRequest.of(0, 10));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public long countResults(Long uid) {
+        closeExpiredAttempts(uid, Instant.now());
         return quizResultRepository.countByUserId(uid);
     }
 

@@ -1,5 +1,7 @@
 # Bảng Phân Chia 7 Phân Hệ & 42 Use Case Theo 3 Sprint
 
+> Trạng thái cập nhật 29/09/2026 theo code thực tế: `[x]` = đã chạy được và có test; ghi chú in nghiêng = làm một phần.
+
 Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm vừa làm vừa học hiệu quả mà không bị ngợp, công việc được chia làm 3 Sprint:
 
 ---
@@ -8,10 +10,10 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 *Mục tiêu: Hoàn thiện luồng tạo tài khoản, upload tài liệu đơn giản, trích xuất từ vựng và hiển thị flashcard có âm Hán-Việt.*
 
 ### Phân hệ 1: Quản lý tài khoản (Auth & Profiles)
-- [ ] UC-01: Đăng ký tài khoản (Email / Google OAuth).
-- [ ] UC-02: Đăng nhập & cấp JWT Access/Refresh Token.
-- [ ] UC-03: Quản lý thông tin cá nhân & trình độ JLPT hiện tại.
-- [ ] UC-04: Đổi mật khẩu / Khôi phục tài khoản.
+- [ ] UC-01: Đăng ký tài khoản (Email / Google OAuth). *(đã có Email; chưa có Google OAuth)*
+- [ ] UC-02: Đăng nhập & cấp JWT Access/Refresh Token. *(đã có JWT Access Token; chưa có Refresh Token)*
+- [x] UC-03: Quản lý thông tin cá nhân & trình độ JLPT hiện tại.
+- [x] UC-04: Đổi mật khẩu / Khôi phục tài khoản.
 
 ### Phân hệ 2: Tiếp nhận & Xử lý tài liệu (Cơ bản)
 - [ ] UC-05: Tải lên hình ảnh tài liệu tiếng Nhật (JPG/PNG).
@@ -24,12 +26,12 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 ### Phân hệ 3: Sinh học liệu bằng AI (Cơ bản)
 - [ ] UC-11: Tự động sinh bộ Flashcard từ danh sách từ vựng OCR.
 - [ ] UC-12: Tự động tạo ví dụ và dịch nghĩa câu ví dụ.
-- [ ] UC-13: Chỉnh sửa thủ công nội dung Flashcard sau khi AI tạo.
+- [x] UC-13: Chỉnh sửa thủ công nội dung Flashcard sau khi AI tạo. *(sửa thủ công thẻ trong trình soạn / trang bộ thẻ)*
 
 ### Phân hệ 4: Quản lý & Chia sẻ bộ thẻ (Cơ bản)
-- [ ] UC-14: Tạo mới / sửa / xóa Bộ thẻ (Deck).
-- [ ] UC-15: Xem danh sách bộ thẻ cá nhân.
-- [ ] UC-16: Chế độ lật thẻ học từ vựng (Flip Flashcard).
+- [x] UC-14: Tạo mới / sửa / xóa Bộ thẻ (Deck).
+- [x] UC-15: Xem danh sách bộ thẻ cá nhân.
+- [x] UC-16: Chế độ lật thẻ học từ vựng (Flip Flashcard).
 
 ---
 
@@ -39,7 +41,7 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 ### Tiếp nối Phân hệ 2 & 3:
 - [ ] UC-17: OCR tài liệu chữ dọc (Tatechugaki) và xử lý phân đoạn văn bản.
 - [ ] UC-18: Phân loại cấp độ từ vựng/ngữ pháp theo 5 bậc JLPT (N5 - N1).
-- [ ] UC-19: Tự động sinh bài kiểm tra trắc nghiệm (Quiz) từ bộ thẻ.
+- [x] UC-19: Tự động sinh bài kiểm tra trắc nghiệm (Quiz) từ bộ thẻ. *(sinh đề từ bộ thẻ bằng thuật toán, chưa dùng AI)*
 - [ ] UC-20: AI sinh các phương án gây nhiễu (distractors) có căn cứ ngôn ngữ học (dễ nhầm Kanji, cách đọc onyomi/kunyomi).
 - [ ] UC-21: Cơ chế Sinh-rồi-lọc (Generate-then-filter) kiểm tra chất lượng câu hỏi.
 
@@ -47,12 +49,12 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [ ] UC-22: Giao diện vẽ nét Kanji trên màn hình cảm ứng / Canvas.
 - [ ] UC-23: Thuật toán DTW (Dynamic Time Warping) so khớp thứ tự và hình dáng nét viết Kanji.
 - [ ] UC-24: Chấm điểm và đưa ra phản hồi nét viết (đúng nét, sai hướng, sai thứ tự).
-- [ ] UC-25: Làm bài Quiz trắc nghiệm và tính điểm trực tiếp.
-- [ ] UC-26: Thuật toán lặp lại ngắt quãng (Spaced Repetition System - SRS) nhắc ôn từ vựng.
+- [x] UC-25: Làm bài Quiz trắc nghiệm và tính điểm trực tiếp.
+- [x] UC-26: Thuật toán lặp lại ngắt quãng (Spaced Repetition System - SRS) nhắc ôn từ vựng.
 
 ### Tiếp nối Phân hệ 4:
-- [ ] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học.
-- [ ] UC-28: Tìm kiếm và sao chép bộ thẻ của người khác về tài khoản mình.
+- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học.
+- [x] UC-28: Tìm kiếm và sao chép bộ thẻ của người khác về tài khoản mình.
 - [ ] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF).
 
 ---

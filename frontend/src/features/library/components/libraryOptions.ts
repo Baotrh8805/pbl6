@@ -11,7 +11,7 @@ export const CATEGORIES = [
   { id: "business", label: "💼 Thương Mại (BJT)" },
 ];
 
-export const LEVELS = ["N5", "N4", "N3", "N2", "N1"];
+export { JLPT_LEVELS as LEVELS } from "../../../lib/deckUtils.ts";
 
 /** Nhãn chủ đề (mã lưu ở DB, CHECK decks_category_check); null/lạ -> null. */
 export function categoryLabel(id: string | null | undefined): string | null {

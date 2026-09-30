@@ -17,6 +17,13 @@ public class FolderResponse {
     private String metadata;
     private UUID parentId;
     private List<FolderResponse> children = new ArrayList<>();
+    /** Quyền của người gọi: owner | viewer (được chia sẻ hoặc public). */
+    private String access = OWNER;
+    /** Tên chủ thư mục, chỉ có khi người gọi không phải chủ. */
+    private String ownerName;
+
+    public static final String OWNER = "owner";
+    public static final String VIEWER = "viewer";
 
     public FolderResponse() {
     }
@@ -93,5 +100,21 @@ public class FolderResponse {
 
     public void setChildren(List<FolderResponse> children) {
         this.children = children;
+    }
+
+    public String getAccess() {
+        return access;
+    }
+
+    public void setAccess(String access) {
+        this.access = access;
+    }
+
+    public String getOwnerName() {
+        return ownerName;
+    }
+
+    public void setOwnerName(String ownerName) {
+        this.ownerName = ownerName;
     }
 }

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { SectionCard, StatusMessage, type Status } from "./ProfileUi";
 
-const PW_MIN = 6; // AuthService.changePassword
+const PW_MIN = 6; // PasswordChangeRequest (backend)
+const PW_MAX = 72; // BCrypt chỉ dùng 72 byte đầu
 
 export const ProfileSecurityTab: React.FC = () => {
     const { login, logout, userEmail } = useAuth();
@@ -26,8 +27,8 @@ export const ProfileSecurityTab: React.FC = () => {
         // Chặn lỗi hiển nhiên ở client; mật khẩu hiện tại vẫn do server xác minh.
         const clientError = !current
             ? "Vui lòng nhập mật khẩu hiện tại."
-            : next.length < PW_MIN
-              ? `Mật khẩu mới phải từ ${PW_MIN} ký tự.`
+            : next.length < PW_MIN || next.length > PW_MAX
+              ? `Mật khẩu mới phải từ ${PW_MIN} đến ${PW_MAX} ký tự.`
               : next !== confirm
                 ? "Mật khẩu xác nhận không khớp."
                 : next === current

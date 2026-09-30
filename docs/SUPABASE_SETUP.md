@@ -3,77 +3,60 @@
 ## 1. Đăng ký & Tạo dự án trên Supabase
 1. Truy cập [https://supabase.com](https://supabase.com) và đăng nhập (bằng GitHub).
 2. Nhấn **New Project**, đặt tên ví dụ: `pbl6-japanese-platform`.
-3. Lưu lại **Database Password** (Mật khẩu cơ sở dữ liệu).
+3. Lưu lại **Database Password** (Mật khẩu cơ sở dữ liệu). **Không** ghi mật khẩu vào file được commit.
 4. Chọn Region: `Singapore (ap-southeast-1)` để tốc độ mạng từ Việt Nam nhanh nhất.
 
 ---
 
-## 2. Lấy thông tin kết nối cho Java Spring Boot
-1. Trong Dashboard của Supabase, vào mục **Project Settings** -> **Database**.
-2. Tìm phần **Connection string** -> chọn tab **JDBC** hoặc **URI**.
-3. Copy chuỗi kết nối và cập nhật vào `backend-core/src/main/resources/application.properties`:
+## 2. Cấu hình kết nối cho Spring Boot
+Mọi thông tin bí mật nằm trong `backend-core/src/main/resources/application-local.properties`
+(đã có trong `.gitignore`) hoặc biến môi trường. Tuyệt đối không sửa mật khẩu vào `application.properties`.
+
+Trong Dashboard Supabase: **Project Settings -> Database -> Connection string (JDBC)**, rồi tạo file:
+
 ```properties
-spring.datasource.url=jdbc:postgresql://aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
-spring.datasource.username=postgres.xxxxxxx
-spring.datasource.password=[MẬT_KHẨU_BẠN_ĐÃ_ĐẶT]
+# Transaction pooler (cổng 6543): app dùng khi chạy. prepareThreshold=0 là bắt buộc với pooler này.
+spring.datasource.url=jdbc:postgresql://aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0
+spring.datasource.username=postgres.<project-ref>
+spring.datasource.password=<mật khẩu database>
+
+# Session pooler (cổng 5432): chỉ Flyway dùng để chạy migration (cần giữ lock theo phiên).
+app.migration.url=jdbc:postgresql://aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
+
+# Tối thiểu 64 byte, sinh ngẫu nhiên, ví dụ: openssl rand -base64 64
+jwt.secret=<chuỗi bí mật riêng của môi trường>
+
+# Bật Swagger ở máy dev
+springdoc.api-docs.enabled=true
+springdoc.swagger-ui.enabled=true
 ```
+
+Tương đương bằng biến môi trường: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `MIGRATION_DB_URL`, `JWT_SECRET`,
+`SWAGGER_ENABLED`, `CORS_ALLOWED_ORIGINS`.
 
 ---
 
-## 3. Tạo các bảng cơ sở dữ liệu mẫu (SQL Schema)
-Truy cập vào mục **SQL Editor** trong Supabase và chạy đoạn script SQL sau:
+## 3. Schema cơ sở dữ liệu: KHÔNG tạo bảng bằng tay
+Schema do **Flyway** quản lý (`backend-core/src/main/resources/db/migration`). Backend tự chạy migration
+khi khởi động, Hibernate chỉ kiểm tra entity khớp schema (`ddl-auto=validate`).
 
-```sql
--- 1. Bảng Người dùng
-CREATE TABLE IF NOT EXISTS users (
-    id BIGSERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    full_name VARCHAR(100),
-    jlpt_level VARCHAR(10) DEFAULT 'N5',
-    is_premium BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. Bảng Bộ thẻ (Decks)
-CREATE TABLE IF NOT EXISTS decks (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    is_public BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 3. Bảng Thẻ từ vựng (Flashcards)
-CREATE TABLE IF NOT EXISTS flashcards (
-    id BIGSERIAL PRIMARY KEY,
-    deck_id BIGINT REFERENCES decks(id) ON DELETE CASCADE,
-    kanji VARCHAR(100) NOT NULL,
-    furigana VARCHAR(255) NOT NULL,
-    han_viet VARCHAR(255),
-    meaning TEXT NOT NULL,
-    jlpt_level VARCHAR(10),
-    example_sentence TEXT,
-    example_meaning TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- 4. Bảng Kết quả luyện viết Kanji (DTW)
-CREATE TABLE IF NOT EXISTS kanji_practice_logs (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-    kanji VARCHAR(10),
-    score DOUBLE PRECISION,
-    feedback TEXT,
-    practiced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-```
+- Database mới tinh: chỉ cần khởi động backend, Flyway tạo toàn bộ bảng và nạp bộ thẻ Thư viện mẫu.
+- **Không** chạy script SQL tạo bảng nào trong SQL Editor: bảng tạo tay lệch với migration sẽ làm
+  Flyway đánh dấu nhầm baseline và backend không khởi động được.
+- Muốn đổi schema: thêm file `V<n+1>__mo_ta.sql` mới, không sửa file migration đã chạy.
 
 ---
 
-## 4. Cấu hình Supabase Storage (Lưu File Ảnh & Âm Thanh)
+## 4. Đổi mật khẩu database (khi nghi bị lộ)
+1. Dashboard Supabase -> **Project Settings -> Database -> Reset database password**.
+2. Cập nhật `spring.datasource.password` trong `application-local.properties` của từng thành viên
+   (và biến `DB_PASSWORD` trên máy chủ triển khai).
+
+---
+
+## 5. Cấu hình Supabase Storage (dự kiến cho tính năng AI)
+Chưa được code sử dụng. Khi làm OCR / luyện phát âm:
 1. Trong Dashboard Supabase, vào mục **Storage** -> nhấn **New bucket**.
-2. Tạo 2 bucket:
-   - `documents`: Lưu ảnh chụp tài liệu (OCR). Để chế độ **Public** hoặc **Private** tùy nhu cầu.
+2. Tạo 2 bucket (để **Private**):
+   - `documents`: Lưu ảnh chụp tài liệu (OCR).
    - `audio-recordings`: Lưu file `.wav` thu âm luyện phát âm của học viên.

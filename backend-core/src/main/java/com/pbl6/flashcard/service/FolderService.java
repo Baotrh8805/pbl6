@@ -3,8 +3,11 @@ package com.pbl6.flashcard.service;
 import com.pbl6.flashcard.dto.folder.FolderRequest;
 import com.pbl6.flashcard.dto.folder.FolderResponse;
 import com.pbl6.flashcard.model.Folder;
+import com.pbl6.flashcard.model.FolderShare;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.repository.FolderRepository;
+import com.pbl6.flashcard.repository.FolderShareRepository;
+import com.pbl6.flashcard.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +17,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class FolderService {
@@ -25,10 +30,18 @@ public class FolderService {
      */
     public static final int MAX_DEPTH = 50;
 
-    private final FolderRepository folderRepository;
+    static final String NOT_FOUND = "Không tìm thấy thư mục.";
+    static final String DUPLICATE_NAME = "Đã có thư mục cùng tên ở vị trí này.";
 
-    public FolderService(FolderRepository folderRepository) {
+    private final FolderRepository folderRepository;
+    private final FolderShareRepository shareRepository;
+    private final UserRepository userRepository;
+
+    public FolderService(FolderRepository folderRepository, FolderShareRepository shareRepository,
+                         UserRepository userRepository) {
         this.folderRepository = folderRepository;
+        this.shareRepository = shareRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -41,13 +54,13 @@ public class FolderService {
                 request.getTitle(),
                 request.getDescription(),
                 request.getAccessType(),
-                request.getLevel(),
+                request.getLevel() == null || request.getLevel().isEmpty() ? null : request.getLevel(),
                 Boolean.TRUE.equals(request.getIsPinned()),
                 request.getMetadata(),
                 user
         );
         folder.setParent(parent);
-        return mapToResponse(folderRepository.save(folder));
+        return mapToResponse(folderRepository.save(folder), FolderResponse.OWNER);
     }
 
     /** 1 query lấy toàn bộ folder phẳng rồi dựng cây trong RAM -> không N+1. */
@@ -55,15 +68,56 @@ public class FolderService {
     public List<FolderResponse> getUserFolders(User user) {
         List<FolderResponse> flat = new ArrayList<>();
         for (Folder f : folderRepository.findByUserOrderByTitleAsc(user)) {
-            flat.add(mapToResponse(f));
+            flat.add(mapToResponse(f, FolderResponse.OWNER));
         }
         return buildTree(flat);
     }
 
+    /** Một thư mục (kèm cây con) mà user xem được: của mình, được chia sẻ, hoặc public. Khác = 404. */
+    @Transactional(readOnly = true)
+    public FolderResponse getFolder(UUID id, User user) {
+        Folder folder = folderRepository.findById(id).orElseThrow(FolderService::notFound);
+        Long ownerId = folder.getUser().getId();
+        boolean owner = ownerId.equals(user.getId());
+        if (!owner && !folderRepository.isSharedWith(id, user.getId())) throw notFound();
+
+        FolderResponse node = subtrees(ownerId, Set.of(id), owner ? FolderResponse.OWNER : FolderResponse.VIEWER).get(0);
+        if (!owner) {
+            node.setOwnerName(ownerName(folder.getUser()));
+            // Không dẫn người xem lên thư mục cha mà họ không có quyền
+            if (node.getParentId() != null && !folderRepository.isSharedWith(node.getParentId(), user.getId())) {
+                node.setParentId(null);
+            }
+        }
+        return node;
+    }
+
+    /** Thư mục người khác chia sẻ trực tiếp cho mình (kèm cây con). Thư mục nằm trong thư mục cũng được chia sẻ thì chỉ hiện gốc. */
+    @Transactional(readOnly = true)
+    public List<FolderResponse> getSharedWithMe(User user) {
+        Set<UUID> sharedIds = shareRepository.findByUserId(user.getId()).stream()
+                .map(FolderShare::getFolderId).collect(Collectors.toSet());
+        if (sharedIds.isEmpty()) return List.of();
+
+        Map<Long, User> owners = new HashMap<>();
+        for (Folder f : folderRepository.findAllById(sharedIds)) {
+            owners.putIfAbsent(f.getUser().getId(), f.getUser());
+        }
+        List<FolderResponse> result = new ArrayList<>();
+        for (User owner : owners.values()) {
+            for (FolderResponse node : subtrees(owner.getId(), sharedIds, FolderResponse.VIEWER)) {
+                node.setOwnerName(ownerName(owner));
+                node.setParentId(null); // người xem không đi lên được thư mục cha của chủ
+                result.add(node);
+            }
+        }
+        result.sort((a, b) -> a.getTitle().compareToIgnoreCase(b.getTitle()));
+        return result;
+    }
+
     @Transactional
     public FolderResponse updateFolder(UUID id, FolderRequest request, User user) {
-        Folder folder = folderRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Folder not found"));
+        Folder folder = folderRepository.findById(id).orElseThrow(FolderService::notFound);
         requireOwner(folder, user);
 
         List<Folder> all = folderRepository.findByUserOrderByTitleAsc(user);
@@ -75,12 +129,12 @@ public class FolderService {
         folder.setTitle(request.getTitle());
         if (request.getDescription() != null) folder.setDescription(request.getDescription());
         if (request.getAccessType() != null) folder.setAccessType(request.getAccessType());
-        if (request.getLevel() != null) folder.setLevel(request.getLevel());
+        if (request.getLevel() != null) folder.setLevel(request.getLevel().isEmpty() ? null : request.getLevel());
         if (request.getMetadata() != null) folder.setMetadata(request.getMetadata());
         if (request.getIsPinned() != null) folder.setPinned(request.getIsPinned());
         folder.setParent(parent); // PUT với parentId khác = move
 
-        return mapToResponse(folderRepository.save(folder));
+        return mapToResponse(folderRepository.save(folder), FolderResponse.OWNER);
     }
 
     /**
@@ -89,8 +143,7 @@ public class FolderService {
      */
     @Transactional
     public void deleteFolder(UUID id, User user) {
-        Folder folder = folderRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Folder not found"));
+        Folder folder = folderRepository.findById(id).orElseThrow(FolderService::notFound);
         requireOwner(folder, user);
         List<Folder> all = folderRepository.findByUserOrderByTitleAsc(user);
         requireChildrenFitAtRoot(folder, all);
@@ -102,11 +155,68 @@ public class FolderService {
         folderRepository.delete(folder);
     }
 
+    // ---------- chia sẻ (chỉ chủ thư mục) ----------
+
+    @Transactional(readOnly = true)
+    public List<FolderShareRepository.Member> members(UUID id, User user) {
+        requireOwner(folderRepository.findById(id).orElseThrow(FolderService::notFound), user);
+        return shareRepository.findMembers(id);
+    }
+
+    /** Cho người dùng (theo email) quyền xem thư mục; đã có thì giữ nguyên. Trả danh sách sau khi đổi. */
+    @Transactional
+    public List<FolderShareRepository.Member> share(UUID id, String email, User user) {
+        requireOwner(folderRepository.findById(id).orElseThrow(FolderService::notFound), user);
+        User target = userRepository.findByEmail(User.normalizeEmail(email))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Không tìm thấy người dùng với email này."));
+        if (target.getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bạn đã là chủ thư mục này.");
+        }
+        if (shareRepository.findByFolderIdAndUserId(id, target.getId()).isEmpty()) {
+            shareRepository.save(new FolderShare(id, target.getId()));
+        }
+        Folder folder = folderRepository.findById(id).orElseThrow(FolderService::notFound);
+        if (PRIVATE.equals(folder.getAccessType())) folder.setAccessType(SHARED); // nhãn hiển thị
+        return shareRepository.findMembers(id);
+    }
+
+    @Transactional
+    public void unshare(UUID id, Long targetUserId, User user) {
+        Folder folder = folderRepository.findById(id).orElseThrow(FolderService::notFound);
+        requireOwner(folder, user);
+        shareRepository.findByFolderIdAndUserId(id, targetUserId).ifPresent(shareRepository::delete);
+        shareRepository.flush();
+        if (SHARED.equals(folder.getAccessType()) && shareRepository.findMembers(id).isEmpty()) {
+            folder.setAccessType(PRIVATE);
+        }
+    }
+
+    /**
+     * public: ai đăng nhập có link đều xem được. private: chỉ người được mời (nhãn tự thành 'shared' khi còn
+     * người được mời). Tách khỏi PUT /folders/{id} vì PUT đó coi parentId vắng mặt là "chuyển về gốc".
+     */
+    @Transactional
+    public FolderResponse setLinkAccess(UUID id, boolean isPublic, User user) {
+        Folder folder = folderRepository.findById(id).orElseThrow(FolderService::notFound);
+        requireOwner(folder, user);
+        folder.setAccessType(isPublic ? PUBLIC : shareRepository.findMembers(id).isEmpty() ? PRIVATE : SHARED);
+        return mapToResponse(folder, FolderResponse.OWNER);
+    }
+
+    private static final String PRIVATE = "private";
+    private static final String SHARED = "shared";
+    private static final String PUBLIC = "public";
+
     // ---------- ràng buộc ----------
+
+    private static ResponseStatusException notFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND);
+    }
 
     private void requireOwner(Folder folder, User user) {
         if (!folder.getUser().getId().equals(user.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have permission to modify this folder");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ chủ thư mục được thực hiện thao tác này.");
         }
     }
 
@@ -116,9 +226,9 @@ public class FolderService {
             return null;
         }
         Folder parent = folderRepository.findById(parentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Parent folder not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thư mục cha."));
         if (!parent.getUser().getId().equals(user.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Parent folder does not belong to you");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Thư mục cha không thuộc quyền sở hữu của bạn.");
         }
         checkDepth(parentId, selfId, all);
         return parent;
@@ -138,7 +248,7 @@ public class FolderService {
             UUID fParent = f.getParent() == null ? null : f.getParent().getId();
             boolean sameParent = parentId == null ? fParent == null : parentId.equals(fParent);
             if (sameParent && f.getTitle().equalsIgnoreCase(title)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "A folder with this name already exists here");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, DUPLICATE_NAME);
             }
         }
     }
@@ -176,14 +286,14 @@ public class FolderService {
         int parentDepth = 0; // độ sâu của cha mới; 0 = đặt ở gốc
         for (UUID a = newParentId; a != null; a = parentOf.get(a)) {
             if (a.equals(selfId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot move a folder into its own subtree");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể chuyển thư mục vào chính nó hoặc thư mục con của nó.");
             }
             if (++parentDepth > maxDepth) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Folder hierarchy is corrupted (cycle detected)");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Cây thư mục bị lỗi (phát hiện vòng lặp).");
             }
         }
         if (parentDepth + 1 + subtreeHeight(parentOf, selfId) > maxDepth) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Max folder depth is " + maxDepth);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thư mục chỉ lồng được tối đa " + maxDepth + " cấp.");
         }
     }
 
@@ -217,7 +327,40 @@ public class FolderService {
         return roots;
     }
 
-    private FolderResponse mapToResponse(Folder folder) {
+    /**
+     * Cây con của các thư mục {@code ids} thuộc cùng một chủ (1 query cho mọi thư mục của chủ đó).
+     * id nằm dưới một id khác trong tập thì không lặp lại thành gốc riêng.
+     */
+    private List<FolderResponse> subtrees(Long ownerId, Set<UUID> ids, String access) {
+        List<FolderResponse> flat = new ArrayList<>();
+        for (Folder f : folderRepository.findByUser_IdOrderByTitleAsc(ownerId)) {
+            flat.add(mapToResponse(f, access));
+        }
+        Map<UUID, FolderResponse> byId = new HashMap<>();
+        for (FolderResponse f : flat) byId.put(f.getId(), f);
+        buildTree(flat);
+
+        List<FolderResponse> result = new ArrayList<>();
+        for (FolderResponse f : flat) {
+            if (!ids.contains(f.getId())) continue;
+            boolean underAnother = false;
+            int guard = 0;
+            for (UUID a = f.getParentId(); a != null && guard++ < MAX_DEPTH; a = byId.containsKey(a) ? byId.get(a).getParentId() : null) {
+                if (ids.contains(a)) {
+                    underAnother = true;
+                    break;
+                }
+            }
+            if (!underAnother) result.add(f);
+        }
+        return result;
+    }
+
+    private static String ownerName(User owner) {
+        return owner.getFullName() != null && !owner.getFullName().isBlank() ? owner.getFullName() : owner.getEmail();
+    }
+
+    private FolderResponse mapToResponse(Folder folder, String access) {
         FolderResponse response = new FolderResponse();
         response.setId(folder.getId());
         response.setTitle(folder.getTitle());
@@ -227,6 +370,7 @@ public class FolderService {
         response.setPinned(folder.isPinned());
         response.setMetadata(folder.getMetadata());
         response.setParentId(folder.getParent() == null ? null : folder.getParent().getId());
+        response.setAccess(access);
         return response;
     }
 }

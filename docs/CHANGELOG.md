@@ -1,3 +1,31 @@
+# Nhật ký thay đổi: Ổn định nền tảng theo kế hoạch MoSCoW
+*Ngày: 29/09/2026*
+
+## Must have
+- **CI** (`.github/workflows/ci.yml`): `mvn test` + lint / build / self-check frontend cho mọi push & PR.
+- **Chống mất thẻ trong trình soạn**: không mở form khi tải bộ thẻ lỗi (trước đây lưu form trống sẽ xoá toàn bộ thẻ
+  và lịch sử ôn); chế độ "Thêm thẻ" chỉ ghi thông tin bộ thẻ khi có thay đổi.
+- **Validate đầu vào auth / review**: DTO có `@Valid` thay cho body `Map`; giới hạn họ tên 100, mật khẩu 6–72 ký tự;
+  hết lỗi báo nhầm "Email đã được sử dụng" khi họ tên quá dài; lỗi auth trả cùng định dạng JSON.
+- **"Bộ thẻ của tôi"** chỉ gồm bộ thẻ sở hữu (kể cả bản đã lưu) và bộ được chia sẻ; bộ thẻ cộng đồng chỉ ở Thư viện.
+- **Quiz đáng tin**: lượt làm do server phát (`V5__quiz_attempts`), chấm trên mọi câu đã phát, nộp 1 lần, có hạn giờ;
+  bỏ dở quá hạn = 0 điểm. Endpoint xem trước `/quizzes/{id}/preview` không mở lượt làm.
+- Tài liệu: `SUPABASE_SETUP.md` bỏ SQL tạo bảng tay (xung đột Flyway), README sửa lệnh chạy & biến môi trường.
+
+## Should have
+- **Chia sẻ thư mục** (`V4__folder_shares`): mời theo email (xem & học cả cây con), bật/tắt "ai có link đều xem được",
+  mục "Được chia sẻ với tôi".
+- **Quên mật khẩu** (`V6__password_reset_tokens`): link dùng 1 lần, 30 phút; gửi qua SMTP khi có cấu hình.
+- Chặn tạo tài khoản hàng loạt theo IP; lấy IP thật sau reverse proxy (`server.forward-headers-strategy=native`).
+- Số liệu dashboard tự tải lại sau mọi thao tác ghi; bỏ số liệu bịa của người dùng ở Phòng thi & Lộ trình;
+  lịch sử quiz trả kèm tên bộ thẻ.
+- Sửa lỗi giao diện: trình độ thư mục không còn bị ép N5, số liệu thư mục con, dấu phân cách `\n` khi nhập thẻ,
+  các class Tailwind chưa định nghĩa, thông báo lỗi khi ôn tập / thêm nhiều bộ thẻ.
+- Dọn: bỏ dependency Redis / WebFlux chưa dùng, component `DeckModal` không dùng, gom hằng số cấp JLPT,
+  thông báo lỗi thư mục sang tiếng Việt.
+
+---
+
 # Nhật ký thay đổi: Xây dựng API Quản lý Thư mục (Folder)
 *Ngày hoàn thành: 22/09/2026*
 
