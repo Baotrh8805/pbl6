@@ -1,6 +1,14 @@
 # Bảng Phân Chia 7 Phân Hệ & 42 Use Case Theo 3 Sprint
 
-> Trạng thái cập nhật 29/09/2026 theo code thực tế: `[x]` = đã chạy được và có test; ghi chú in nghiêng = làm một phần.
+> Trạng thái cập nhật 30/09/2026 theo code thực tế (commit `0d90c0f`, nhánh `Backend`): `[x]` = đã chạy được và có test;
+> ghi chú in nghiêng = làm một phần. Tổng kết đợt gần nhất: [Progress/30-9.md](Progress/30-9.md).
+
+| Sprint | Số UC | Xong | Một phần | Còn lại |
+| :--- | :---: | :---: | :---: | :---: |
+| Sprint 1 (UC-01 → UC-16) | 16 | 6 | 2 | 8 (chủ yếu AI: upload, OCR, NLP, sinh thẻ) |
+| Sprint 2 (UC-17 → UC-29) | 13 | 5 | 0 | 8 |
+| Sprint 3 (UC-30 → UC-42) | 13 | 0 | 0 | 13 |
+| **Tổng** | **42** | **11** | **2** | **29** |
 
 Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm vừa làm vừa học hiệu quả mà không bị ngợp, công việc được chia làm 3 Sprint:
 
@@ -13,7 +21,7 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [ ] UC-01: Đăng ký tài khoản (Email / Google OAuth). *(đã có Email; chưa có Google OAuth)*
 - [ ] UC-02: Đăng nhập & cấp JWT Access/Refresh Token. *(đã có JWT Access Token; chưa có Refresh Token)*
 - [x] UC-03: Quản lý thông tin cá nhân & trình độ JLPT hiện tại.
-- [x] UC-04: Đổi mật khẩu / Khôi phục tài khoản.
+- [x] UC-04: Đổi mật khẩu / Khôi phục tài khoản. *(quên mật khẩu gửi email thật khi đã cấu hình SMTP, xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp); chưa cấu hình thì link chỉ ghi vào log backend)*
 
 ### Phân hệ 2: Tiếp nhận & Xử lý tài liệu (Cơ bản)
 - [ ] UC-05: Tải lên hình ảnh tài liệu tiếng Nhật (JPG/PNG).
@@ -49,11 +57,11 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [ ] UC-22: Giao diện vẽ nét Kanji trên màn hình cảm ứng / Canvas.
 - [ ] UC-23: Thuật toán DTW (Dynamic Time Warping) so khớp thứ tự và hình dáng nét viết Kanji.
 - [ ] UC-24: Chấm điểm và đưa ra phản hồi nét viết (đúng nét, sai hướng, sai thứ tự).
-- [x] UC-25: Làm bài Quiz trắc nghiệm và tính điểm trực tiếp.
+- [x] UC-25: Làm bài Quiz trắc nghiệm và tính điểm trực tiếp. *(chấm ở server, có hạn giờ, mỗi lượt nộp 1 lần)*
 - [x] UC-26: Thuật toán lặp lại ngắt quãng (Spaced Repetition System - SRS) nhắc ôn từ vựng.
 
 ### Tiếp nối Phân hệ 4:
-- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học.
+- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(kèm chia sẻ bộ thẻ / thư mục qua email, quyền xem & học)*
 - [x] UC-28: Tìm kiếm và sao chép bộ thẻ của người khác về tài khoản mình.
 - [ ] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF).
 

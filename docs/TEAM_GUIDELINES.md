@@ -6,11 +6,14 @@ Tài liệu này quy định các chuẩn mực lập trình, quy trình làm vi
 
 ## 📊 1. Bảng Theo Dõi Tiến Độ Dự Án (Progress Tracker)
 
-Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Sprint chi tiết tại [USE_CASES_CHECKLIST.md](file:///d:/Chap_7/PBL6/Code_final/pbl6/docs/USE_CASES_CHECKLIST.md)).
+Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Sprint chi tiết tại [USE_CASES_CHECKLIST.md](USE_CASES_CHECKLIST.md)).
+Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất: [30-9.md](Progress/30-9.md)).
 
-### Tiến độ hiện tại (Cập nhật 29/09/2026, theo code thực tế):
+### Tiến độ hiện tại (Cập nhật 30/09/2026, commit `0d90c0f` trên nhánh `Backend`):
 - **Tổng tiến độ toàn dự án:** ~**30%** (11/42 use case xong, 2 làm một phần)
-- **Tiến độ Sprint 1 (Nền tảng & MVP):** ~**45%** — phần còn thiếu chủ yếu là AI (upload, OCR, sinh thẻ), lùi sang sau theo quyết định của nhóm.
+- **Sprint 1 (Nền tảng & MVP):** ~**45%** (6/16 xong, 2 một phần). Phần còn thiếu chủ yếu là AI (upload, OCR, sinh thẻ), lùi sang sau theo quyết định của nhóm.
+- **Sprint 2:** ~**40%** (5/13: quiz, SRS, Thư viện cộng đồng). **Sprint 3:** chưa bắt đầu.
+- **Chất lượng:** 55 test backend đạt; CI chạy test backend + lint/build/selfcheck frontend cho mọi push/PR.
 
 | Phân hệ | Use Cases | Trạng thái hiện tại | Thành phần phụ trách |
 | :--- | :--- | :---: | :--- |
@@ -22,6 +25,14 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
 | **Phân hệ 6: Lộ trình & GraphRAG** | UC-34 -> UC-37 | 🔴 5% | Trang Lộ trình hiển thị tiến độ theo cấp JLPT từ dữ liệu thật; chưa có Neo4j / GraphRAG. |
 | **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🔴 0% | Chưa triển khai. |
 | **Giao diện người dùng (Frontend)** | Toàn bộ UI Web | 🟢 | React + Vite: mọi màn hình gọi API thật, trừ tải lên AI (khoá, "Sắp ra mắt"). |
+
+### Việc cần làm tiếp (theo thứ tự ưu tiên)
+1. **Đổi mật khẩu DB Supabase** (đã bị lộ trong lịch sử git), rồi cập nhật `application-local.properties` của từng thành viên. Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#4-đổi-mật-khẩu-database-khi-nghi-bị-lộ).
+2. **Sao lưu DB trước khi chạy backend bản mới**: migration `V4`–`V6` tự chạy trên Supabase ở lần khởi động kế tiếp.
+3. **Thử giao diện trên trình duyệt** các màn hình vừa đổi: trình soạn bộ thẻ, thư mục & chia sẻ, quiz, quên / đặt lại mật khẩu.
+4. **Cấu hình SMTP** để gửi email quên mật khẩu thật. Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp).
+5. **Nhánh `Frontend` / `dev`**: cập nhật theo API đã đổi (quiz cần `attemptId`, `GET /api/decks` không còn trả bộ thẻ cộng đồng). Chi tiết ở [Progress/30-9.md](Progress/30-9.md).
+6. Việc sau: phân hệ AI (upload, OCR, sinh thẻ), xuất Anki/CSV (UC-29), Google OAuth & Refresh Token.
 
 ---
 
@@ -35,7 +46,8 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
 ---
 
 ### B. Quy tắc Java (Spring Boot 3 - `backend-core`)
-- **Phiên bản:** Java 17+, Spring Boot 3.2.x.
+- **Phiên bản:** Java 17+, Spring Boot 3.5.x.
+- **Đổi schema DB:** chỉ qua file Flyway mới `V<n>__mo_ta.sql`, không sửa migration đã chạy, không tạo bảng tay.
 - **Cấu trúc gói:**
   - `model/`: Chứa các JPA Entity tương ứng bảng cơ sở dữ liệu.
   - `repository/`: Kế thừa `JpaRepository<Entity, ID>`, chỉ chứa truy vấn DB.
@@ -48,8 +60,9 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
   - Method/Variable: `camelCase` (vd: `findByEmail`, `accessToken`).
   - Hằng số: `UPPER_SNAKE_CASE` (vd: `JWT_EXPIRATION`).
 - **RESTful API URL:**
-  - Danh từ số nhiều, chữ thường, nối bằng gạch ngang: `/api/v1/flashcards`, `/api/v1/decks`.
-  - Luôn mở khóa Swagger và cập nhật chú thích `@Operation` để Frontend dễ đọc API.
+  - Danh từ số nhiều, chữ thường, nối bằng gạch ngang, theo tiền tố `/api/` đang dùng: `/api/decks`, `/api/folders`, `/api/auth/forgot-password`.
+  - Lỗi trả về định dạng JSON chung `{status, error, message}` (qua `ApiExceptionHandler`), thông báo bằng tiếng Việt.
+  - Swagger tắt mặc định; bật ở máy dev bằng `SWAGGER_ENABLED=true` (hoặc trong `application-local.properties`).
 
 ---
 
@@ -69,7 +82,7 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
 ---
 
 ### D. Quy tắc Frontend (React + TypeScript - `frontend`)
-- **Công nghệ:** React 18/19, TypeScript, Vite, Tailwind CSS hoặc Vanilla CSS theo hệ màu Stitch.
+- **Công nghệ:** React 19, TypeScript, Vite, Tailwind CSS 3 theo hệ màu Stitch.
 - **Hệ màu chuẩn dự án (Lấy từ Stitch Design System "NihonGen AI"):**
   - **Primary (Aizome Indigo):** `#1B2A4A` (Màu xanh chàm chủ đạo).
   - **Secondary (Matcha Jade):** `#059669` (Màu xanh ngọc cho trạng thái nhớ thẻ/thành công).
@@ -83,6 +96,8 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
 
 1. **Phân chia nhánh:**
    - `main`: Nhánh ổn định, chỉ merge code khi đã kiểm thử chạy được cả Backend & AI.
+   - `dev`: Nhánh gộp để thử chung trước khi lên `main`.
+   - `Backend`: Nhánh backend (bản mới nhất gồm cả frontend đã cập nhật theo API mới).
    - `Frontend`: Nhánh chuyên trách xây dựng giao diện người dùng.
    - `backend-feature-...`: Các nhánh làm tính năng backend mới.
 2. **Quy chuẩn đặt tên Commit (Conventional Commits):**

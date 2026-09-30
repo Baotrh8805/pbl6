@@ -2,6 +2,7 @@
 
 Trả lời câu hỏi: **"Muốn sửa hay thêm một tính năng thì vào tệp nào?"**
 Đường dẫn backend viết tắt từ `backend-core/src/main/java/com/pbl6/flashcard/`, frontend từ `frontend/src/`.
+Cập nhật 30/09/2026 theo commit `0d90c0f`. Tiến độ: [TEAM_GUIDELINES.md](TEAM_GUIDELINES.md#-1-bảng-theo-dõi-tiến-độ-dự-án-progress-tracker).
 
 ---
 
@@ -9,7 +10,8 @@ Trả lời câu hỏi: **"Muốn sửa hay thêm một tính năng thì vào t�
 
 | Mục tiêu | Tệp cần mở |
 | :--- | :--- |
-| Cấu hình DB, JWT, CORS, proxy, giới hạn đăng ký, SMTP | `backend-core/src/main/resources/application.properties` (bí mật để trong `application-local.properties` / biến môi trường, xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md)) |
+| Cấu hình DB, JWT, CORS, proxy, giới hạn đăng ký | `backend-core/src/main/resources/application.properties` (bí mật để trong `application-local.properties` / biến môi trường, xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md)) |
+| Gửi email quên mật khẩu (SMTP / Gmail) | `application-local.properties` (`spring.mail.*`), xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp) |
 | Đổi schema DB | Thêm `V<n>__mo_ta.sql` mới trong `backend-core/src/main/resources/db/migration/` (Flyway). **Không** sửa file đã chạy, **không** tạo bảng tay |
 | Bộ thẻ mẫu của Thư viện | `db/migration/R__seed_system_decks.sql` |
 | API công khai (không cần đăng nhập) | `config/SecurityConfig.java` |
@@ -61,7 +63,9 @@ Chủ > được chia sẻ riêng bộ thẻ (`deck_shares`: VIEWER/EDITOR) > b�
 `V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `R__seed_system_decks` bộ thẻ mẫu.
 
 ### Test
-`mvn test` chạy unit test + test tích hợp (`*IT.java`) trên Postgres nhúng (không cần Docker / Supabase).
+`mvn test` chạy 55 test (unit + tích hợp `*IT.java`) trên Postgres nhúng (không cần Docker / Supabase).
+Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderShareIT`, `QuizAttemptIT`, `PasswordResetIT`,
+`AuthValidationIT`, `RegisterRateLimitIT`.
 `npm run e2e` (thư mục gốc) chạy smoke test HTTP trên backend thật + Postgres nhúng.
 
 ---
@@ -99,4 +103,5 @@ Chưa có xác thực, CORS đang mở `*`: phải siết lại trước khi n�
 - `.github/workflows/ci.yml`: CI chạy `mvn test` + lint/build/selfcheck frontend cho mọi push/PR.
 - `dev.mjs` (`npm run dev`), `e2e.mjs` (`npm run e2e`), `smoke-*.mjs`: script chạy thử ở thư mục gốc.
 - `docs/`: [ARCHITECTURE.md](ARCHITECTURE.md), [SUPABASE_SETUP.md](SUPABASE_SETUP.md),
-  [USE_CASES_CHECKLIST.md](USE_CASES_CHECKLIST.md), [TEAM_GUIDELINES.md](TEAM_GUIDELINES.md), [CHANGELOG.md](CHANGELOG.md).
+  [USE_CASES_CHECKLIST.md](USE_CASES_CHECKLIST.md), [TEAM_GUIDELINES.md](TEAM_GUIDELINES.md), [CHANGELOG.md](CHANGELOG.md),
+  [Progress/](Progress/) (tổng kết từng đợt, mới nhất [30-9.md](Progress/30-9.md)).

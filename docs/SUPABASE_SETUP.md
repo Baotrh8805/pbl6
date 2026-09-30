@@ -54,7 +54,31 @@ khi khởi động, Hibernate chỉ kiểm tra entity khớp schema (`ddl-auto=v
 
 ---
 
-## 5. Cấu hình Supabase Storage (dự kiến cho tính năng AI)
+## 5. Gửi email quên mật khẩu (SMTP)
+Chưa cấu hình thì link đặt lại mật khẩu chỉ được ghi vào log backend (dòng WARN), đủ dùng khi dev.
+Muốn gửi email thật (ví dụ Gmail), thêm vào `application-local.properties`:
+
+```properties
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=<email gửi>@gmail.com
+spring.mail.password=<App password 16 ký tự, không phải mật khẩu Gmail>
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+app.mail.from=<email gửi>@gmail.com
+app.frontend-url=http://localhost:5173
+```
+
+- App password: bật **2-Step Verification** cho tài khoản Google, rồi tạo tại https://myaccount.google.com/apppasswords.
+- **Không** đặt `spring.mail.host` trong `application.properties`, kể cả để trống: có key này là backend bật gửi mail
+  thật và không còn ghi link ra log.
+- Trên máy chủ: dùng biến môi trường `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT`, `SPRING_MAIL_USERNAME`,
+  `SPRING_MAIL_PASSWORD`, `SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH`, `SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE`,
+  `MAIL_FROM`, và `FRONTEND_URL` = địa chỉ frontend thật (nếu không, link trong email trỏ về localhost).
+
+---
+
+## 6. Cấu hình Supabase Storage (dự kiến cho tính năng AI)
 Chưa được code sử dụng. Khi làm OCR / luyện phát âm:
 1. Trong Dashboard Supabase, vào mục **Storage** -> nhấn **New bucket**.
 2. Tạo 2 bucket (để **Private**):
