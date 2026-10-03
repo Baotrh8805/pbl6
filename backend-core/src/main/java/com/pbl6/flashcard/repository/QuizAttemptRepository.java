@@ -21,6 +21,11 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
     @Query("SELECT a FROM QuizAttempt a WHERE a.id = :id")
     Optional<QuizAttempt> findForUpdate(@Param("id") UUID id);
 
+    /** Lượt đang mở (chưa nộp, chưa quá hạn) của user với bộ thẻ này; tối đa một nhờ unique index V9. */
+    @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.deckId = :deckId AND a.submittedAt IS NULL "
+            + "AND a.expiresAt >= :now")
+    Optional<QuizAttempt> findOpen(@Param("uid") Long uid, @Param("deckId") String deckId, @Param("now") Instant now);
+
     /** Lượt quá hạn chưa nộp của user (khoá để không chốt điểm 2 lần). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.submittedAt IS NULL AND a.expiresAt < :now")

@@ -23,10 +23,15 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
             + "OR EXISTS (SELECT 1 FROM DeckShare s WHERE s.deckId = d.id AND s.userId = :uid) ORDER BY d.title ASC")
     List<Deck> findPersonalWithCards(@Param("uid") Long uid);
 
-    /** Bộ thẻ trong 1 thư mục; mọi bộ thẻ trong thư mục đều thuộc chủ thư mục (DeckService.ownedFolder). */
+    /** Bộ thẻ trong 1 thư mục (chính nó, không gồm thư mục con); mọi bộ thẻ trong thư mục đều thuộc chủ thư mục (DeckService.ownedFolder). */
     @EntityGraph(attributePaths = "cards")
     @Query("SELECT DISTINCT d FROM Deck d WHERE d.folder.id = :folderId ORDER BY d.title ASC")
     List<Deck> findInFolderWithCards(@Param("folderId") UUID folderId);
+
+    /** Bộ thẻ trong nhiều thư mục cùng lúc (cả cây con của một thư mục), cùng chủ. */
+    @EntityGraph(attributePaths = "cards")
+    @Query("SELECT DISTINCT d FROM Deck d WHERE d.folder.id IN :folderIds ORDER BY d.title ASC")
+    List<Deck> findInFoldersWithCards(@Param("folderIds") java.util.Collection<UUID> folderIds);
 
     /** Khoá dòng deck khi ghi: 2 request thêm thẻ song song không lấy trùng position. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

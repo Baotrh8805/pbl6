@@ -118,15 +118,10 @@ export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sample
               <span className="block font-headline-md text-headline-md text-primary font-bold">
                 {sampleCard.reading}
               </span>
-              <span className="block font-body-sm text-body-sm text-on-surface-variant mt-1">
+              <span className="block font-body-sm text-body-sm text-on-surface-variant mt-1 whitespace-pre-line">
                 {sampleCard.meaning}
               </span>
             </span>
-            {sampleCard.example && (
-              <span className="block p-2.5 rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface">
-                <span className="block text-primary font-medium">{sampleCard.example}</span>
-              </span>
-            )}
             <span className="flex items-center justify-between text-[11px] text-on-surface-variant font-label-sm pt-1">
               <span className="flex items-center gap-1">
                 <span aria-hidden="true" className="material-symbols-outlined text-[14px]">volume_up</span> Tokyo

@@ -159,18 +159,13 @@ const PreviewBody: React.FC<{ description?: string; cards: CardDto[] }> = ({ des
             ) : (
               /* Mặt sau */
               <div className="text-center py-4 space-y-2.5">
-                <h3 className="text-xl font-bold text-primary font-headline">
+                <h3 className="text-xl font-bold text-primary font-headline whitespace-pre-line">
                   {currentCard.meaning}
                 </h3>
                 {currentCard.reading && (
                   <p className="text-xs text-on-surface-variant">
                     Đọc: <span className="font-medium">{currentCard.reading}</span>
                   </p>
-                )}
-                {currentCard.example && (
-                  <div className="p-2.5 rounded-lg bg-surface-container/60 text-xs text-left mt-2">
-                    <p className="text-primary font-medium">{currentCard.example}</p>
-                  </div>
                 )}
               </div>
             )}

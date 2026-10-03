@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchDecks } from "@/services/deckService";
 import { fetchQuizPreview, fetchQuizResults } from "@/services/studyService";
 import { JLPT_LEVELS, secondsLeft } from "@/lib/deckUtils";
-import { calcQuizAccuracy } from "@/lib/learningStats";
+import { calcQuizAccuracy, examResultsOnly } from "@/lib/learningStats";
 import type { Deck, Question, QuizResult } from "@/types/api.types";
 import { extractErrorMessage } from "@/services/apiClient";
 import { useAsync } from "@/lib/useAsync";
@@ -90,8 +90,10 @@ export const QuizRoomPage: React.FC = () => {
     const filteredDecks = selectedLevel ? decks.filter((d: Deck) => d.level === selectedLevel) : decks;
 
     // Thống kê từ 10 bài gần nhất (server chấm). Chưa có bài nào -> không bịa số.
-    const totalSolved = results.reduce((acc: number, r: QuizResult) => acc + r.total, 0);
-    const totalScore = results.reduce((acc: number, r: QuizResult) => acc + r.score, 0);
+    // Chỉ bài thi (exam): luyện tập thấy đáp án ngay nên không đưa vào số liệu trình độ.
+    const examResults = examResultsOnly(results);
+    const totalSolved = examResults.reduce((acc: number, r: QuizResult) => acc + r.total, 0);
+    const totalScore = examResults.reduce((acc: number, r: QuizResult) => acc + r.score, 0);
     const accuracyRate = calcQuizAccuracy(results);
     const mastery = masteryLabel(accuracyRate);
 
@@ -159,8 +161,8 @@ export const QuizRoomPage: React.FC = () => {
                             <div className="bg-secondary h-full rounded-full" style={{ width: `${accuracyRate ?? 0}%` }} />
                         </div>
                         <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
-                            {results.length > 0
-                                ? `Dựa trên ${results.length} bài thi gần nhất`
+                            {examResults.length > 0
+                                ? `Dựa trên ${examResults.length} bài thi gần nhất`
                                 : "Chưa có bài thi nào"}
                         </span>
                     </div>

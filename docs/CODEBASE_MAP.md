@@ -19,10 +19,10 @@ Cập nhật 30/09/2026 theo commit `0d90c0f`. Tiến độ: [TEAM_GUIDELINES.md
 | Đăng ký / đăng nhập / hồ sơ / đổi & quên mật khẩu | `controller/AuthController.java`, `service/AuthService.java`, `service/RefreshTokenService.java` (refresh token hạn trượt), `service/PasswordResetService.java`. Frontend: `services/apiClient.ts` (tự làm mới token khi 401), `services/tokenStorage.ts` |
 | Chống dò mật khẩu, chặn tạo tài khoản hàng loạt | `security/AttemptLimiter.java` (+ `LoginAttemptLimiter`, `RegisterRateLimiter`) |
 | Thư mục lồng nhau + chia sẻ thư mục | `controller/FolderController.java`, `service/FolderService.java`, `repository/FolderRepository.java` (`isSharedWith`) |
-| Bộ thẻ, thẻ, chia sẻ bộ thẻ, quyền truy cập | `controller/StudyController.java`, `service/DeckService.java` (`access(...)`) |
+| Bộ thẻ, thẻ, chia sẻ bộ thẻ, quyền truy cập | `controller/DeckController.java`, `service/DeckService.java` (`access(...)`) |
 | Thư viện cộng đồng (tìm, lọc, chấm sao) | `controller/LibraryController.java`, `service/LibraryService.java`, `repository/DeckRepository.java` |
-| Thuật toán ôn tập SRS | `service/SrsService.java` (server) — `frontend/src/lib/srs.ts` chỉ đọc lịch |
-| Quiz: sinh đề, chấm điểm, lượt làm có hạn giờ | `service/QuizService.java`, `service/DeckService.java` (`quiz`, `submitQuiz`), `model/QuizAttempt.java` |
+| Ôn tập SRS | thuật toán: `service/SrsService.java` (hàm thuần); lưu / đọc tiến độ: `service/ReviewService.java`, `controller/StudyController.java` — `frontend/src/lib/srs.ts` chỉ đọc lịch |
+| Quiz: sinh đề, chấm điểm, lượt làm có hạn giờ | sinh đề / chấm từng câu: `service/QuizService.java` (hàm thuần); lượt làm, hạn giờ, ghi điểm: `service/QuizAttemptService.java`, `controller/StudyController.java`, `model/QuizAttempt.java` |
 | Gọi API từ frontend | `frontend/src/services/*.ts`, `features/auth/services/authService.ts` |
 | Kiểu dữ liệu khớp DTO backend | `frontend/src/types/api.types.ts` |
 | Route trang | `frontend/src/routes/AppRoutes.tsx` |
@@ -77,7 +77,7 @@ Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderSha
 | `pages/` | Mỗi route một trang (Dashboard, Decks, Folders, Library, DeckDetail/Editor, Study, Quiz, QuizRoom, Roadmap, Profile, Login/Register/Forgot/ResetPassword) |
 | `features/<miền>/` | Component + helper theo miền: `auth`, `dashboard`, `decks`, `folders`, `library`, `profile` |
 | `components/` | Layout (`AppLayout`, `AuthLayout`) và UI dùng chung (`Button`, `Input`, `Modal`, `DialogProvider`) |
-| `lib/` | Hàm thuần: `deckUtils` (gồm `JLPT_LEVELS`), `learningStats`, `srs`, `useAsync`, `speech` |
+| `lib/` | Hàm thuần: `deckUtils` (gồm `JLPT_LEVELS`), `learningStats`, `srs`, `useAsync` (tham số `reload` để tải lại ngầm), `textUtils` (`getInitials`), `speech` |
 | `services/` | `apiClient` (gắn JWT, 401 -> đăng xuất, phát `data:changed` sau request ghi), các service gọi API |
 
 Kiểm tra: `npm run lint`, `npm run build`, `npm run selfcheck` (`scripts/selfCheck.ts`, cần Node >= 22.18).

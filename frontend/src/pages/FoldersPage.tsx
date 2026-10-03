@@ -57,7 +57,7 @@ export const FoldersPage: React.FC = () => {
   );
 
   // Thư mục của mình: tải mọi bộ thẻ cá nhân 1 lần (đủ để đếm cho cả thư mục con).
-  // Thư mục được chia sẻ: server trả bộ thẻ của đúng thư mục đó.
+  // Thư mục được chia sẻ: server trả bộ thẻ của cả cây con (để đếm số liệu thư mục con).
   const { data: allDecksData, loading: decksLoading, error: decksError } = useAsync(
     () => fetchDecks(foreignId || null),
     [foreignId, refreshIndex]
@@ -98,9 +98,9 @@ export const FoldersPage: React.FC = () => {
   const currentFolderDecks = useMemo(() => {
     if (!currentFolder || !allDecksData) return [];
     return allDecksData.filter(
-      (d) => (readOnly || d.folderId === currentFolder.id) && matchesFilter(d, qParam, levelParam)
+      (d) => d.folderId === currentFolder.id && matchesFilter(d, qParam, levelParam)
     );
-  }, [currentFolder, readOnly, allDecksData, qParam, levelParam]);
+  }, [currentFolder, allDecksData, qParam, levelParam]);
 
   // Tổng số liệu cho header trang gốc
   const totalOrganizedDecks = Object.values(folderMetrics).reduce((acc, cur) => acc + cur.decks, 0);

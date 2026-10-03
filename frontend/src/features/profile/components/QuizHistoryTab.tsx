@@ -25,6 +25,7 @@ const ScoreBadge: React.FC<{ r: QuizResult }> = ({ r }) => {
         >
             {r.score}/{r.total}
             {pct !== null && ` · ${pct}%`}
+            {r.mode === "practice" && <span className="ml-1.5 font-normal">· Luyện tập</span>}
         </span>
     );
 };
@@ -108,7 +109,7 @@ export const QuizHistoryTab: React.FC = () => {
                 <StatCard icon="assignment" label="Số bài đã làm" value={String(metrics.quizCount)} />
                 <StatCard
                     icon="percent"
-                    label="Độ chính xác (10 bài gần nhất)"
+                    label="Độ chính xác bài thi (10 bài gần nhất)"
                     value={metrics.quizAccuracy === null ? "—" : `${metrics.quizAccuracy.toLocaleString("vi-VN")}%`}
                 />
                 <StatCard

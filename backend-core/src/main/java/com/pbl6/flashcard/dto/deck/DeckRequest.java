@@ -25,7 +25,7 @@ public record DeckRequest(
             @Size(max = 255) String id,
             @NotBlank @Size(max = 200) String term,
             @Size(max = 200) String reading,
-            @NotBlank @Size(max = 500) String meaning,
-            @Size(max = 1000) String example
+            // Nội dung nhiều dòng (định nghĩa, ví dụ, ghi chú); dòng đầu là định nghĩa chính
+            @NotBlank @Size(max = 2000) String meaning
     ) {}
 }

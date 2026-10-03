@@ -40,6 +40,29 @@ const Field: React.FC<{
   </div>
 );
 
+// Ô nội dung nhiều dòng: định nghĩa, ví dụ, ghi chú. Xuống dòng bằng Enter.
+const TextAreaField: React.FC<{
+  id: string;
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}> = ({ id, label, value, placeholder, onChange }) => (
+  <div>
+    <textarea
+      id={id}
+      rows={5}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={`${inputBase} px-3.5 py-2.5 text-base min-h-[8.5rem] resize-y whitespace-pre-wrap [field-sizing:content]`}
+    />
+    <label htmlFor={id} className={captionClass}>
+      {label}
+    </label>
+  </div>
+);
+
 // Danh sách hàng thẻ kiểu Quizlet + nút "Thêm thẻ" cuối danh sách.
 export const CardRowsEditor: React.FC<CardRowsEditorProps> = ({
   cards,
@@ -85,7 +108,7 @@ export const CardRowsEditor: React.FC<CardRowsEditorProps> = ({
               </div>
             </div>
 
-            {/* 2 cột: Thuật ngữ + Cách đọc | Định nghĩa + Ví dụ */}
+            {/* 2 cột: Thuật ngữ + Cách đọc | Nội dung (định nghĩa, ví dụ, ghi chú) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-3">
                 <Field
@@ -106,24 +129,13 @@ export const CardRowsEditor: React.FC<CardRowsEditorProps> = ({
                 />
               </div>
 
-              <div className="space-y-3">
-                <Field
-                  id={`${idBase}-meaning`}
-                  label="Định nghĩa (Tiếng Việt)"
-                  value={card.meaning}
-                  placeholder="Định nghĩa tiếng Việt (bắt buộc)"
-                  className="px-3.5 py-2.5 text-base font-medium"
-                  onChange={(v) => onChange(idx, "meaning", v)}
-                />
-                <Field
-                  id={`${idBase}-example`}
-                  label="Ví dụ minh họa"
-                  value={card.example || ""}
-                  placeholder="Câu ví dụ minh họa..."
-                  className="px-3.5 py-2 text-sm"
-                  onChange={(v) => onChange(idx, "example", v)}
-                />
-              </div>
+              <TextAreaField
+                id={`${idBase}-meaning`}
+                label="Nội dung (định nghĩa, ví dụ, ghi chú)"
+                value={card.meaning}
+                placeholder={"Dòng đầu là định nghĩa chính (bắt buộc).\nCó thể thêm định nghĩa khác, ví dụ, ghi chú ở các dòng sau..."}
+                onChange={(v) => onChange(idx, "meaning", v)}
+              />
             </div>
           </div>
         );

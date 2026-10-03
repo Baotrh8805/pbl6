@@ -10,8 +10,9 @@ import {
   sortDecksByLevel,
 } from "../src/lib/deckUtils.ts";
 import { categoryLabel, formatCompactCount } from "../src/features/library/components/libraryOptions.ts";
-import { parseQuestions, parseQuizPaper } from "../src/services/studyService.ts";
+import { parseAttemptState, parseQuestions } from "../src/services/studyService.ts";
 import { parseImportText, unescapeDelimiter } from "../src/features/decks/editor/importParser.ts";
+import { swapCardColumns } from "../src/features/decks/editor/editorCards.ts";
 import {
   calcLearningStats,
   calcQuizAccuracy,
@@ -19,6 +20,7 @@ import {
   dayKey,
   lastReviewedAt,
 } from "../src/lib/learningStats.ts";
+import { flattenFolders } from "../src/features/folders/components/folderTree.ts";
 import { getInitials, isValidDailyGoal, parseProfileTab, scoreTone } from "../src/features/profile/lib/profileUtils.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
@@ -111,15 +113,24 @@ async function runSelfCheck() {
   ]);
   assertStrictEqual(questions.length, 1, "Chỉ giữ câu hỏi đủ lựa chọn");
   assertStrictEqual(questions[0].cardId, "c1", "Giữ đúng câu hợp lệ");
-  const paper = parseQuizPaper({
+  const attemptState = parseAttemptState({
     attemptId: "a-1",
-    timeLimitSeconds: 60,
-    questions: [{ cardId: "c1", term: "水", reading: null, options: ["nước", "lửa"] }],
+    deckId: "d",
+    mode: "practice",
+    timeLimitSeconds: 0,
+    serverNow: "2026-10-02T00:00:00Z",
+    questions: [
+      { cardId: "c1", term: "水", reading: null, options: ["nước", "lửa"], chosen: "lửa", feedback: { correct: false, correctAnswer: "nước", explanation: "ví dụ" } },
+      { cardId: "c2", term: "火", options: ["chỉ một lựa chọn"] },
+    ],
   });
-  assertStrictEqual(paper.attemptId, "a-1", "Giữ attemptId của lượt làm");
-  assertStrictEqual(paper.questions.length, 1, "Đề hợp lệ");
-  assertStrictEqual(parseQuizPaper(null).attemptId, null, "Response hỏng -> không có lượt làm");
-  assertStrictEqual(parseQuizPaper([]).questions.length, 0, "Response kiểu cũ (mảng) -> đề trống");
+  assertStrictEqual(attemptState?.attemptId, "a-1", "Giữ attemptId của lượt làm");
+  assertStrictEqual(attemptState?.questions.length, 1, "Chỉ giữ câu hỏi đủ lựa chọn");
+  assertStrictEqual(attemptState?.questions[0].feedback?.correctAnswer, "nước", "Giữ phản hồi từng câu");
+  assertStrictEqual(attemptState?.questions[0].chosen, "lửa", "Giữ đáp án đã chọn để khôi phục");
+  assertStrictEqual(parseAttemptState(null), null, "Response hỏng -> không dựng được lượt làm");
+  assertStrictEqual(parseAttemptState([]), null, "Response kiểu cũ (mảng) -> không dựng được lượt làm");
+  assertStrictEqual(parseAttemptState({ questions: [] })?.mode, "exam", "Thiếu mode -> exam (chế độ chặt hơn)");
 
   // 7b. Nhập thẻ từ văn bản dán vào
   const blankLineSep = unescapeDelimiter("\\n\\n");
@@ -129,6 +140,11 @@ async function runSelfCheck() {
   assertStrictEqual(imported[0].reading, "いぬ", "3 cột = thuật ngữ, cách đọc, nghĩa");
   assertStrictEqual(imported[1].meaning, "mèo", "2 cột = thuật ngữ, nghĩa");
   assertStrictEqual(imported[2].meaning, "", "1 cột: giữ lại, nghĩa trống để bổ sung");
+  const multi = parseImportText("犬\tいぬ\tcon chó\tChó nhà\t犬が好きです。", "\t", "\n\n");
+  assertStrictEqual(multi[0].meaning, "con chó\nChó nhà\n犬が好きです。", "Cột 3+ gộp thành nội dung nhiều dòng");
+  const swapped = swapCardColumns({ _key: "k", term: "水", reading: "みず", meaning: "nước\nVí dụ: 水を飲む" });
+  assertStrictEqual(swapped.term, "nước", "Đảo cột: dòng đầu của nội dung thành thuật ngữ");
+  assertStrictEqual(swapped.meaning, "水\nみず\nVí dụ: 水を飲む", "Đảo cột: không mất chữ nào");
   assertStrictEqual(parseImportText("a\tb", "\t", "").length, 0, "Dấu phân cách rỗng không làm treo/lỗi");
 
   // 8. Sắp xếp lộ trình học tập theo thứ bậc JLPT N5 -> N1
@@ -142,8 +158,8 @@ async function runSelfCheck() {
 
   // 9. Tính tiến độ bộ thẻ và thẻ đến hạn ôn
   const mockCards = [
-    { id: "c1", term: "水", reading: "みず", meaning: "nước", example: null },
-    { id: "c2", term: "火", reading: "ひ", meaning: "lửa", example: null },
+    { id: "c1", term: "水", reading: "みず", meaning: "nước" },
+    { id: "c2", term: "火", reading: "ひ", meaning: "lửa" },
   ];
   const mockReviews = {
     c1: { cardId: "c1", reps: 5, intervalDays: 30, ease: 2.5, dueAt: "2024-12-01T00:00:00.000Z" }, // mastered, due
@@ -210,6 +226,7 @@ async function runSelfCheck() {
   assertStrictEqual(calcQuizAccuracy([]), null, "Chưa thi -> null, không phải 0%");
   const qr = (score: number, total: number) => ({ deckId: "x", score, total, createdAt: todayDate.toISOString() });
   // (5 + 10) / (5 + 20) = 60% -> gộp theo tổng câu, không lấy trung bình 100% và 50%.
+  assertStrictEqual(calcQuizAccuracy([qr(5, 5), { ...qr(0, 10), mode: "practice" }]), 100, "Luyện tập không tính vào độ chính xác bài thi");
   assertStrictEqual(calcQuizAccuracy([qr(5, 5), qr(10, 20)]), 60, "Độ chính xác gộp theo tổng số câu");
   assertStrictEqual(calcQuizAccuracy([qr(2, 3)]), 66.7, "Làm tròn 1 chữ số thập phân");
 
@@ -224,7 +241,7 @@ async function runSelfCheck() {
     title: "T",
     level: "N5",
     description: null,
-    cards: ["c1", "c2", "c3"].map((id) => ({ id, term: id, reading: null, meaning: id, example: null })),
+    cards: ["c1", "c2", "c3"].map((id) => ({ id, term: id, reading: null, meaning: id })),
   };
   const stats = calcLearningStats([statsDeck], { c1: good, c2: again }, [qr(3, 4)], todayDate);
   assertStrictEqual(stats.wordsLearned, 2, "2 thẻ đã chấm");
@@ -247,6 +264,16 @@ async function runSelfCheck() {
   assertStrictEqual(parseProfileTab("hack"), "info", "Tab lạ -> mặc định info");
   assertStrictEqual(isValidDailyGoal(500), true, "500 là giới hạn trên");
   assertStrictEqual(isValidDailyGoal(0) || isValidDailyGoal(2.5) || isValidDailyGoal(501), false, "Ngoài 1–500 hoặc lẻ -> sai");
+
+  // Cây thư mục -> danh sách phẳng: độ sâu để thụt lề, đường dẫn "Cha / Con" cho ô chọn
+  const flat = flattenFolders([
+    { id: "a", title: "Cha", children: [{ id: "b", title: "Con", children: [] }] },
+    { id: "c", title: "Khác", children: [] },
+  ] as never);
+  assertStrictEqual(flat.map((f) => f.id).join(","), "a,b,c", "Duyệt sâu, giữ thứ tự");
+  assertStrictEqual(flat[1].depth, 1, "Thư mục con có depth 1");
+  assertStrictEqual(flat[1].path, "Cha / Con", "path nối tên cha và con");
+  assertStrictEqual(flat[2].path, "Khác", "Thư mục gốc: path = tên");
 
   console.log(" All self-check assertions passed successfully!");
 }

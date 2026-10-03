@@ -58,7 +58,15 @@ class FolderShareIT extends IntegrationTest {
 
         JsonNode inChild = read(call(get("/api/decks").param("folderId", child), bob, null).andExpect(status().isOk()));
         assertEquals("viewer", inChild.get(0).get("access").asText());
-        assertTrue(inChild.get(0).get("folderId").isNull(), "người xem không thấy thư mục của chủ");
+        assertEquals(child, inChild.get(0).get("folderId").asText(), "xem thư mục được chia sẻ: có folderId để đếm theo thư mục con");
+        assertTrue(read(call(get(deckUrl), bob, null)).get("folderId").isNull(), "ngoài danh sách đó, người xem không thấy thư mục của chủ");
+
+        // Xem thư mục cha được chia sẻ: có cả bộ thẻ của thư mục con (để đếm số liệu thư mục con)
+        JsonNode inParent = read(call(get("/api/decks").param("folderId", parent), bob, null).andExpect(status().isOk()));
+        assertEquals(1, inParent.size());
+        assertEquals(deck.get("id").asText(), inParent.get(0).get("id").asText());
+        // Chủ xem thư mục cha: vẫn chỉ thấy bộ thẻ nằm thẳng trong đó (không đổi hành vi)
+        assertEquals(0, read(call(get("/api/decks").param("folderId", parent), alice, null)).size());
         call(post("/api/reviews"), bob, Map.of("cardId", cardId, "grade", "good")).andExpect(status().isOk());
         call(post(deckUrl + "/clone"), bob, Map.of()).andExpect(status().isCreated());
 

@@ -1,46 +1,161 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { fetchQuiz, submitQuiz } from "@/services/studyService";
-import { secondsLeft } from "@/lib/deckUtils";
-import type { QuizGrade, Question } from "@/types/api.types";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { isAxiosError } from "axios";
+import {
+    createQuizAttempt,
+    fetchOpenQuizAttempt,
+    fetchQuizAttempt,
+    saveQuizAnswer,
+    submitQuizAttempt,
+} from "@/services/studyService";
+import type { QuizAttemptState, QuizFeedback, QuizMode, QuizQuestionState } from "@/types/api.types";
 import { Ruby } from "@/lib/ja";
 import { extractErrorMessage } from "@/services/apiClient";
 
 const SECONDS_PER_QUESTION = 30; // QuizService.SECONDS_PER_QUESTION (server giữ hạn giờ thật)
+const GRACE_SECONDS = 60; // QuizService.GRACE_SECONDS: expiresAt của server đã cộng sẵn khoảng bù này
+const MAX_SAVE_TRIES = 3;
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const modeLabel = (m: QuizMode) => (m === "practice" ? "Làm từng câu" : "Làm hết bài thi");
+
+type SaveState = "saved" | "saving" | "error";
+
+const shell = "min-h-screen bg-surface text-on-surface px-gutter py-space-lg";
+const primaryBtn =
+    "px-4 py-2.5 min-h-11 rounded-lg bg-primary text-on-primary font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2";
+const secondaryBtn =
+    "px-4 py-2.5 min-h-11 rounded-lg bg-surface-container-high font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+
+/** Lỗi do trạng thái lượt làm (đã nộp / hết giờ / không còn): tải lại từ server thay vì thử lại. */
+const isStateConflict = (e: unknown) => isAxiosError(e) && (e.response?.status === 409 || e.response?.status === 404);
+
+/** Khối phản hồi một câu: chữ + biểu tượng (không chỉ dựa vào màu). */
+const FeedbackBlock: React.FC<{ q: QuizQuestionState; feedback: QuizFeedback; chosen: string | null }> = ({
+    q,
+    feedback,
+    chosen,
+}) => (
+    <div
+        className={`rounded-lg p-space-sm border ${
+            feedback.correct
+                ? "bg-secondary-container/40 border-secondary"
+                : "bg-error-container/30 border-error/40"
+        }`}
+    >
+        <p className={`font-label-md font-semibold ${feedback.correct ? "text-secondary" : "text-error"}`}>
+            <span aria-hidden="true" className="material-symbols-outlined align-middle text-[18px] mr-1">
+                {feedback.correct ? "check_circle" : "cancel"}
+            </span>
+            {feedback.correct ? "Chính xác" : chosen ? "Chưa đúng" : "Chưa trả lời"}
+        </p>
+        {!feedback.correct && (
+            <p className="text-body-sm mt-1">
+                Đáp án đúng: <strong>{feedback.correctAnswer}</strong>
+            </p>
+        )}
+        {!feedback.correct && chosen && (
+            <p className="text-body-sm text-on-surface-variant">Bạn chọn: {chosen}</p>
+        )}
+        {feedback.explanation && (
+            <p lang="ja" className="text-body-sm text-on-surface-variant mt-2 whitespace-pre-line">
+                {feedback.explanation}
+            </p>
+        )}
+        <span className="sr-only">{q.term}</span>
+    </div>
+);
 
 export const QuizPage: React.FC = () => {
     const { deckId = "" } = useParams(); // server kiểm quyền bộ thẻ, sai thì 404
+    const [params, setParams] = useSearchParams();
+    const attemptParam = params.get("attempt");
+
     const [size, setSize] = useState(10);
-    const [questions, setQuestions] = useState<Question[] | null>(null);
-    const [attemptId, setAttemptId] = useState<string | null>(null);
+    const [mode, setMode] = useState<QuizMode>("practice");
+    const [attempt, setAttempt] = useState<QuizAttemptState | null>(null);
+    const [openAttempt, setOpenAttempt] = useState<QuizAttemptState | null>(null);
+    const [answers, setAnswers] = useState<Record<string, string>>({});
+    const [feedbacks, setFeedbacks] = useState<Record<string, QuizFeedback>>({});
+    const [index, setIndex] = useState(0);
     const [deadline, setDeadline] = useState(0);
     const [now, setNow] = useState(() => Date.now());
-    const [index, setIndex] = useState(0);
-    const [answers, setAnswers] = useState<Record<string, string>>({});
-    const [result, setResult] = useState<QuizGrade | null>(null);
+    const [saveState, setSaveState] = useState<SaveState>("saved");
+    const [confirmSubmit, setConfirmSubmit] = useState(false);
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
+    const [loading, setLoading] = useState(true);
 
-    const running = questions !== null && result === null;
-    const left = running ? secondsLeft(deadline, now) : 0;
+    const nextRef = useRef<HTMLButtonElement>(null);
 
-    const start = async () => {
+    const running = attempt !== null && !attempt.finished;
+    const isExam = attempt?.mode === "exam";
+    const left = running && isExam ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0;
+
+    /** Dựng giao diện từ trạng thái server (nguồn sự thật): đáp án đã chọn, phản hồi, câu đang làm, giờ còn lại. */
+    const load = useCallback((state: QuizAttemptState) => {
+        const chosen: Record<string, string> = {};
+        const fb: Record<string, QuizFeedback> = {};
+        for (const q of state.questions) {
+            if (q.chosen !== null) chosen[q.cardId] = q.chosen;
+            if (q.feedback) fb[q.cardId] = q.feedback;
+        }
+        setAttempt(state);
+        setAnswers(chosen);
+        setFeedbacks(fb);
+        const firstOpen = state.questions.findIndex((q) => q.chosen === null);
+        setIndex(state.mode === "practice" && !state.finished && firstOpen >= 0 ? firstOpen : 0);
+        // Giờ còn lại tính theo đồng hồ server (expiresAt - serverNow), không phụ thuộc đồng hồ máy người dùng.
+        if (state.mode === "exam" && state.expiresAt) {
+            const remainMs = Date.parse(state.expiresAt) - Date.parse(state.serverNow) - GRACE_SECONDS * 1000;
+            setDeadline(Date.now() + remainMs);
+        }
+        setConfirmSubmit(false);
+        setError("");
+        setSaveState("saved");
+    }, []);
+
+    // Vào trang: có ?attempt= thì khôi phục đúng lượt đó (kể cả xem lại bài đã nộp), không thì hỏi server có bài dở không.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                if (attemptParam) {
+                    const state = await fetchQuizAttempt(attemptParam);
+                    if (!cancelled && state?.attemptId) {
+                        load(state);
+                        return;
+                    }
+                }
+                const open = await fetchOpenQuizAttempt(deckId);
+                if (!cancelled) setOpenAttempt(open?.attemptId ? open : null);
+            } catch {
+                // Không khôi phục được (404, mạng): về màn bắt đầu, người dùng vẫn bắt đầu bài mới được.
+                if (!cancelled && attemptParam) setParams({}, { replace: true });
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+        // Chỉ chạy lúc mở trang: các lần đổi ?attempt= sau đó do chính trang này đặt.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deckId]);
+
+    const start = async (m: QuizMode) => {
         setBusy(true);
         setError("");
         try {
-            const paper = await fetchQuiz(deckId, size);
-            if (!paper.attemptId || paper.questions.length === 0) {
+            const state = await createQuizAttempt(deckId, size, m);
+            if (!state?.attemptId || state.questions.length === 0) {
                 setError("Bộ thẻ này chưa có câu hỏi nào.");
                 return;
             }
-            setQuestions(paper.questions);
-            setAttemptId(paper.attemptId);
-            setAnswers({});
-            setIndex(0);
-            setResult(null);
-            setDeadline(Date.now() + paper.timeLimitSeconds * 1000);
+            setOpenAttempt(null);
+            load(state);
+            setParams({ attempt: state.attemptId }, { replace: true });
         } catch (e) {
             setError(extractErrorMessage(e));
         } finally {
@@ -48,61 +163,129 @@ export const QuizPage: React.FC = () => {
         }
     };
 
-    // Luôn nộp, kể cả bài trống: server ghi kết quả của lượt làm (câu bỏ trống = sai).
-    const finish = async (submitted: Record<string, string>) => {
-        if (!attemptId) return;
+    const resume = () => {
+        if (!openAttempt?.attemptId) return;
+        load(openAttempt);
+        setParams({ attempt: openAttempt.attemptId }, { replace: true });
+        setOpenAttempt(null);
+    };
+
+    /** Tải lại trạng thái từ server (khi server báo lượt đã đóng/hết giờ, hoặc sau khi nộp để xem đáp án). */
+    const syncFromServer = async (attemptId: string) => {
+        const state = await fetchQuizAttempt(attemptId);
+        if (state?.attemptId) load(state);
+    };
+
+    // ---------- exam: tự lưu tuần tự ----------
+    // Hàng đợi tuần tự: các lần lưu đến server đúng thứ tự người dùng chọn, không đè nhau.
+    const queue = useRef<Promise<void>>(Promise.resolve());
+    const pending = useRef(0);
+    const failed = useRef(false);
+
+    const enqueueSave = (attemptId: string, cardId: string, option: string) => {
+        pending.current++;
+        setSaveState("saving");
+        queue.current = queue.current.then(async () => {
+            let ok = false;
+            for (let i = 0; i < MAX_SAVE_TRIES && !ok; i++) {
+                try {
+                    await saveQuizAnswer(attemptId, cardId, option);
+                    ok = true;
+                } catch (e) {
+                    if (isStateConflict(e)) break; // lượt đã đóng: thử lại vô ích
+                    await sleep(500 * 2 ** i);
+                }
+            }
+            pending.current--;
+            if (!ok) failed.current = true;
+            if (pending.current === 0) setSaveState(failed.current ? "error" : "saved");
+        });
+    };
+
+    // Đồng hồ + tự nộp khi hết giờ (exam).
+    useEffect(() => {
+        if (!running || !isExam) return;
+        const id = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(id);
+    }, [running, isExam]);
+
+    // Chỉ cảnh báo đóng tab khi còn đáp án chưa lên server; còn lại bài đã được lưu và khôi phục được.
+    useEffect(() => {
+        if (!running || saveState === "saved") return;
+        const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+        window.addEventListener("beforeunload", warn);
+        return () => window.removeEventListener("beforeunload", warn);
+    }, [running, saveState]);
+
+    const finish = async () => {
+        if (!attempt?.attemptId) return;
         setBusy(true);
+        setError("");
         try {
-            setResult(await submitQuiz(deckId, attemptId, submitted)); // chấm ở server
-            setError("");
+            await queue.current; // chờ các lần tự lưu đang bay xong rồi mới chốt
+            // exam: gửi kèm bản đầy đủ để bù chỗ tự lưu thất bại; server vẫn chấm trên bản đã lưu nếu quá hạn
+            await submitQuizAttempt(attempt.attemptId, isExam ? answers : undefined);
+            await syncFromServer(attempt.attemptId);
         } catch (e) {
-            setError(extractErrorMessage(e)); // giữ nguyên bài làm để bấm nộp lại
+            setError(extractErrorMessage(e)); // giữ nguyên bài làm, nộp lại an toàn (server idempotent)
         } finally {
             setBusy(false);
         }
     };
 
-    // Đồng hồ + tự nộp khi hết giờ.
-    useEffect(() => {
-        if (!running) return;
-        const id = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(id);
-    }, [running]);
-
-    // Chỉ tự nộp một lần; nộp lỗi thì người dùng bấm "Nộp lại", không gửi lại mỗi giây.
     const autoSubmitted = useRef(false);
-    // Ref giữ bản finish mới nhất (kèm bài làm hiện tại) để effect hết giờ không phụ thuộc vào answers.
-    const submitLatest = useRef<() => void>(() => {});
+    const finishLatest = useRef<() => void>(() => {});
     useEffect(() => {
-        submitLatest.current = () => void finish(answers);
+        finishLatest.current = () => void finish();
     });
     useEffect(() => {
-        if (!running) {
+        if (!running || !isExam) {
             autoSubmitted.current = false;
             return;
         }
-        if (!busy && !autoSubmitted.current && secondsLeft(deadline, now) === 0) {
+        if (!busy && !autoSubmitted.current && left === 0 && deadline > 0) {
             autoSubmitted.current = true;
-            submitLatest.current();
+            finishLatest.current();
         }
-    }, [running, busy, deadline, now]);
+    }, [running, isExam, busy, left, deadline]);
 
-    // Đang làm dở mà đóng tab: cảnh báo để không mất bài.
-    useEffect(() => {
-        if (!running) return;
-        const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-        window.addEventListener("beforeunload", warn);
-        return () => window.removeEventListener("beforeunload", warn);
-    }, [running]);
+    // ---------- chọn đáp án ----------
+    const current = running && attempt ? attempt.questions[index] : undefined;
 
-    const current = running ? questions[index] : undefined;
+    const choose = async (option: string) => {
+        if (!current || !attempt?.attemptId || busy) return;
+        const cardId = current.cardId;
+        if (attempt.mode === "practice") {
+            if (feedbacks[cardId]) return; // đã khoá
+            setBusy(true);
+            setError("");
+            try {
+                const res = await saveQuizAnswer(attempt.attemptId, cardId, option);
+                setAnswers((a) => ({ ...a, [cardId]: option }));
+                if (res.feedback) setFeedbacks((f) => ({ ...f, [cardId]: res.feedback! }));
+                setTimeout(() => nextRef.current?.focus(), 0); // đưa focus tới "Câu tiếp" để đọc phản hồi rồi đi tiếp
+            } catch (e) {
+                if (isStateConflict(e)) void syncFromServer(attempt.attemptId);
+                else setError(extractErrorMessage(e)); // không hiện phản hồi trước khi server xác nhận
+            } finally {
+                setBusy(false);
+            }
+            return;
+        }
+        // exam: chọn lại cùng đáp án = bỏ chọn; lưu ngầm, không phản hồi
+        const next = answers[cardId] === option ? "" : option;
+        setAnswers((a) => {
+            const copy = { ...a };
+            if (next) copy[cardId] = next;
+            else delete copy[cardId];
+            return copy;
+        });
+        enqueueSave(attempt.attemptId, cardId, next);
+    };
 
-    const choose = (option: string) => {
-        if (!current || !questions || busy) return;
-        const next = { ...answers, [current.cardId]: option };
-        setAnswers(next);
-        if (index + 1 < questions.length) setIndex(index + 1);
-        else void finish(next);
+    const skip = async () => {
+        if (!current || !attempt?.attemptId || busy || feedbacks[current.cardId]) return;
+        await choose("");
     };
 
     // Phím 1..n chọn đáp án.
@@ -112,73 +295,73 @@ export const QuizPage: React.FC = () => {
             const el = e.target as HTMLElement | null;
             if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
             const i = Number(e.key) - 1;
-            if (i >= 0 && i < current.options.length) choose(current.options[i]);
+            if (i >= 0 && i < current.options.length) void choose(current.options[i]);
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     });
 
-    if (result) {
-        const pct = result.total ? Math.round((result.score / result.total) * 100) : 0;
+    const backToStart = () => {
+        setAttempt(null);
+        setAnswers({});
+        setFeedbacks({});
+        setParams({}, { replace: true });
+        void fetchOpenQuizAttempt(deckId)
+            .then((o) => setOpenAttempt(o?.attemptId ? o : null))
+            .catch(() => setOpenAttempt(null));
+    };
+
+    // ---------- giao diện ----------
+    if (loading) {
         return (
-            <section className="min-h-screen bg-surface text-on-surface px-gutter py-space-lg">
+            <section className={shell} aria-busy="true" aria-live="polite">
+                <p className="max-w-md mx-auto text-on-surface-variant">Đang tải...</p>
+            </section>
+        );
+    }
+
+    // Đã nộp: tổng kết + xem lại toàn bộ đáp án và lời giải
+    if (attempt?.finished) {
+        const total = attempt.total ?? attempt.questions.length;
+        const score = attempt.score ?? 0;
+        const pct = total ? Math.round((score / total) * 100) : 0;
+        return (
+            <section className={shell}>
                 <div className="max-w-2xl mx-auto flex flex-col gap-space-lg">
                     <h1 className="font-headline-sm text-headline-sm font-bold">
-                        {result.score}/{result.total} câu đúng ({pct}%)
+                        {score}/{total} câu đúng ({pct}%)
                     </h1>
-                    {result.expired && (
+                    <p className="text-label-md text-on-surface-variant">
+                        {modeLabel(attempt.mode)}
+                        {attempt.mode === "practice" && " · không tính vào độ chính xác bài thi"}
+                    </p>
+                    {attempt.expired && (
                         <p role="alert" className="text-error text-label-md">
-                            Bài nộp sau khi hết giờ nên không được chấm và được ghi 0 điểm.
+                            Đã hết thời gian: chỉ các đáp án lưu trước giờ hết hạn được tính.
                         </p>
                     )}
-                    {/* ponytail: thanh tiến độ bằng div, không biểu đồ.
-                        Nâng cấp khi cần so sánh nhiều lần làm: thêm thư viện chart. */}
                     <div className="h-3 rounded-full bg-surface-container-high overflow-hidden">
                         <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
                     </div>
-
-                    {Object.keys(result.wrong).length > 0 && (
-                        <div>
-                            <h2 className="font-title-md text-title-md font-semibold mb-2">Cần ôn lại</h2>
-                            <ul className="flex flex-col gap-2">
-                                {questions
-                                    ?.filter((q) => q.cardId in result.wrong)
-                                    .map((q) => (
-                                        <li
-                                            key={q.cardId}
-                                            className="p-space-sm rounded-lg bg-surface-container-lowest border border-surface-container-high"
-                                        >
-                                            <div className="text-title-md">
-                                                <Ruby term={q.term} reading={q.reading ?? undefined} />
-                                            </div>
-                                            <div className="text-body-sm text-on-surface-variant">
-                                                Đáp án đúng: {result.wrong[q.cardId]}
-                                            </div>
-                                            <div className="text-body-sm text-error">
-                                                Bạn chọn: {answers[q.cardId] ?? "(bỏ trống)"}
-                                            </div>
-                                        </li>
-                                    ))}
-                            </ul>
-                        </div>
-                    )}
-
+                    <ol className="flex flex-col gap-3">
+                        {attempt.questions.map((q, i) => (
+                            <li
+                                key={q.cardId}
+                                className="p-space-sm rounded-lg bg-surface-container-lowest border border-surface-container-high flex flex-col gap-2"
+                            >
+                                <div className="text-title-md">
+                                    <span className="text-outline text-label-md mr-2">{i + 1}.</span>
+                                    <Ruby term={q.term} reading={q.reading ?? undefined} />
+                                </div>
+                                {q.feedback && <FeedbackBlock q={q} feedback={q.feedback} chosen={q.chosen} />}
+                            </li>
+                        ))}
+                    </ol>
                     <div className="flex gap-space-sm">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setQuestions(null);
-                                setAttemptId(null);
-                                setResult(null);
-                            }}
-                            className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold"
-                        >
+                        <button type="button" onClick={backToStart} className={primaryBtn}>
                             Làm lại
                         </button>
-                        <Link
-                            to={`/decks/${deckId}`}
-                            className="px-4 py-2.5 rounded-lg bg-surface-container-high font-label-md font-semibold"
-                        >
+                        <Link to={`/decks/${deckId}`} className={`${secondaryBtn} inline-flex items-center`}>
                             Về bộ thẻ
                         </Link>
                     </div>
@@ -187,42 +370,83 @@ export const QuizPage: React.FC = () => {
         );
     }
 
-    if (!questions || !current) {
+    // Màn bắt đầu: chọn chế độ, hoặc tiếp tục bài đang làm dở
+    if (!attempt || !current) {
         return (
-            <section className="min-h-screen bg-surface text-on-surface px-gutter py-space-lg">
+            <section className={shell}>
                 <div className="max-w-md mx-auto flex flex-col gap-space-md">
                     <Link to={`/decks/${deckId}`} className="text-label-md text-primary hover:underline">
                         ← Về bộ thẻ
                     </Link>
                     <h1 className="font-headline-sm text-headline-sm font-bold">Kiểm tra nhanh</h1>
-                    <p className="text-body-sm text-on-surface-variant">
-                        {SECONDS_PER_QUESTION} giây/câu, hết giờ tự nộp. Câu bỏ trống tính là sai; rời trang giữa
-                        chừng thì lượt làm được ghi 0 điểm.
-                    </p>
+
+                    {openAttempt && (
+                        <div role="region" aria-label="Bài đang làm dở" className="rounded-lg border border-primary/40 bg-primary/5 p-space-sm flex flex-col gap-2">
+                            <p className="text-body-sm">
+                                Bạn có bài <strong>{modeLabel(openAttempt.mode)}</strong> đang làm dở (
+                                {openAttempt.questions.filter((q) => q.chosen !== null).length}/
+                                {openAttempt.questions.length} câu đã trả lời).
+                            </p>
+                            <button type="button" onClick={resume} className={primaryBtn}>
+                                Tiếp tục bài đang làm
+                            </button>
+                            <p className="text-label-sm text-on-surface-variant">
+                                Muốn làm bài mới, hãy tiếp tục và nộp bài này trước. Bài dở sẽ được chấm theo các câu đã trả lời.
+                            </p>
+                        </div>
+                    )}
+
+                    <fieldset className="flex flex-col gap-2" disabled={busy || openAttempt !== null}>
+                        <legend className="text-label-md mb-1">Chọn cách làm</legend>
+                        {(["practice", "exam"] as const).map((m) => (
+                            <label
+                                key={m}
+                                className={`flex items-start gap-3 p-space-sm rounded-lg border cursor-pointer ${
+                                    mode === m ? "border-primary bg-primary/5" : "border-surface-container-high"
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="quiz-mode"
+                                    checked={mode === m}
+                                    onChange={() => setMode(m)}
+                                    className="mt-1"
+                                />
+                                <span>
+                                    <span className="block font-semibold">{modeLabel(m)}</span>
+                                    <span className="block text-body-sm text-on-surface-variant">
+                                        {m === "practice"
+                                            ? "Trả lời câu nào thấy ngay đáp án đúng và lời giải của câu đó. Không giới hạn giờ; kết quả không tính vào độ chính xác bài thi."
+                                            : `${SECONDS_PER_QUESTION} giây/câu, sửa đáp án được tới khi nộp. Đáp án đúng và lời giải chỉ hiện sau khi nộp bài. Hết giờ tự nộp; câu bỏ trống tính là sai.`}
+                                    </span>
+                                </span>
+                            </label>
+                        ))}
+                    </fieldset>
 
                     <label className="flex flex-col gap-1 text-label-md">
                         <span>Số câu</span>
                         <select
                             value={size}
                             onChange={(e) => setSize(Number(e.target.value))}
-                            className="p-2.5 rounded-lg bg-surface-container-lowest border border-surface-container-high"
+                            disabled={busy || openAttempt !== null}
+                            className="p-2.5 min-h-11 rounded-lg bg-surface-container-lowest border border-surface-container-high"
                         >
                             <option value={10}>10 câu</option>
                             <option value={20}>20 câu</option>
+                            <option value={50}>50 câu</option>
                         </select>
                     </label>
-
                     {error && (
                         <p role="alert" className="text-error text-label-md">
                             {error}
                         </p>
                     )}
-
                     <button
                         type="button"
-                        onClick={() => void start()}
-                        disabled={busy}
-                        className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold disabled:opacity-60"
+                        onClick={() => void start(mode)}
+                        disabled={busy || openAttempt !== null}
+                        className={primaryBtn}
                     >
                         {busy ? "Đang tạo đề..." : "Bắt đầu"}
                     </button>
@@ -231,51 +455,203 @@ export const QuizPage: React.FC = () => {
         );
     }
 
+    // Đang làm bài
+    const total = attempt.questions.length;
+    const feedback = feedbacks[current.cardId] ?? null;
+    const chosen = answers[current.cardId] ?? null;
+    const answeredCount = Object.keys(answers).length;
+    const unanswered = total - answeredCount;
+    const isLast = index + 1 >= total;
+    const practiceDone = !isExam && answeredCount >= total;
+
     return (
-        <section className="min-h-screen bg-surface text-on-surface px-gutter py-space-lg">
+        <section className={`${shell} pb-28`}>
             <div className="max-w-2xl mx-auto flex flex-col gap-space-lg">
-                <div className="flex items-center justify-between text-label-md text-on-surface-variant">
+                <div className="flex items-center justify-between gap-2 text-label-md text-on-surface-variant">
                     <span>
-                        Câu {index + 1}/{questions.length}
+                        Câu {index + 1}/{total} · {modeLabel(attempt.mode)}
                     </span>
-                    {/* Dưới 30s đổi màu bằng class, không cần state riêng */}
-                    {/* role="timer" không tự đọc mỗi giây; chỉ báo cho screen reader ở vài mốc. */}
-                    <span role="timer" className={left <= 30 ? "text-error font-semibold" : ""}>
-                        Còn {mmss(left)}
-                    </span>
-                    <span aria-live="assertive" className="sr-only">
-                        {left === 60 || left === 30 || left === 10 ? `Còn ${left} giây` : ""}
-                    </span>
+                    {isExam ? (
+                        <>
+                            {/* role="timer" không tự đọc mỗi giây; chỉ báo cho screen reader ở vài mốc. */}
+                            <span role="timer" className={left <= 30 ? "text-error font-semibold" : ""}>
+                                Còn {mmss(left)}
+                            </span>
+                            <span aria-live="assertive" className="sr-only">
+                                {left === 60 || left === 30 || left === 10 ? `Còn ${left} giây` : ""}
+                            </span>
+                        </>
+                    ) : (
+                        <span>
+                            Đã trả lời {answeredCount}/{total}
+                        </span>
+                    )}
                 </div>
+
+                {isExam && (
+                    <nav aria-label="Danh sách câu hỏi" className="flex gap-1.5 overflow-x-auto pb-1">
+                        {attempt.questions.map((q, i) => (
+                            <button
+                                key={q.cardId}
+                                type="button"
+                                onClick={() => setIndex(i)}
+                                aria-label={`Câu ${i + 1}${answers[q.cardId] ? ", đã làm" : ", chưa làm"}`}
+                                aria-current={i === index ? "step" : undefined}
+                                className={`shrink-0 w-11 h-11 rounded-lg text-label-md font-semibold border ${
+                                    i === index
+                                        ? "border-primary bg-primary text-on-primary"
+                                        : answers[q.cardId]
+                                          ? "border-primary/40 bg-primary/10"
+                                          : "border-surface-container-high bg-surface-container-lowest"
+                                }`}
+                            >
+                                {i + 1}
+                            </button>
+                        ))}
+                    </nav>
+                )}
 
                 <h1 lang="ja" className="text-display-sm font-bold text-center">
                     <Ruby term={current.term} reading={current.reading ?? undefined} />
                 </h1>
 
-                <fieldset className="flex flex-col gap-2">
-                    <legend className="sr-only">Chọn nghĩa đúng</legend>
-                    {current.options.map((option, i) => (
-                        <button
-                            key={`${i}-${option}`}
-                            type="button"
-                            onClick={() => choose(option)}
-                            disabled={busy}
-                            className="text-left p-space-sm rounded-lg bg-surface-container-lowest border border-surface-container-high hover:bg-surface-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
-                        >
-                            <kbd className="text-label-sm text-outline mr-2">{i + 1}</kbd>
-                            {option}
-                        </button>
-                    ))}
-                </fieldset>
+                <div role="radiogroup" aria-label="Chọn nghĩa đúng" className="flex flex-col gap-2">
+                    {current.options.map((option, i) => {
+                        const isChosen = chosen === option;
+                        const isCorrect = feedback?.correctAnswer === option;
+                        const revealed = feedback !== null;
+                        const tone = revealed
+                            ? isCorrect
+                                ? "border-secondary bg-secondary-container/40"
+                                : isChosen
+                                  ? "border-error bg-error-container/30"
+                                  : "border-surface-container-high opacity-70"
+                            : isChosen
+                              ? "border-primary bg-primary/10"
+                              : "border-surface-container-high bg-surface-container-lowest hover:bg-surface-container";
+                        return (
+                            <button
+                                key={`${i}-${option}`}
+                                type="button"
+                                role="radio"
+                                aria-checked={isChosen}
+                                onClick={() => void choose(option)}
+                                disabled={busy || revealed}
+                                className={`text-left p-space-sm min-h-11 rounded-lg border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${tone}`}
+                            >
+                                <kbd className="text-label-sm text-outline mr-2">{i + 1}</kbd>
+                                {option}
+                                {revealed && isCorrect && <span className="sr-only"> (đáp án đúng)</span>}
+                                {revealed && isChosen && !isCorrect && <span className="sr-only"> (bạn chọn, chưa đúng)</span>}
+                            </button>
+                        );
+                    })}
+                </div>
 
+                {/* Phản hồi từng câu (practice): vùng live để trình đọc màn hình đọc kết quả ngay */}
+                <div aria-live="polite">{feedback && <FeedbackBlock q={current} feedback={feedback} chosen={chosen} />}</div>
+
+                {!isExam && !feedback && (
+                    <button type="button" onClick={() => void skip()} disabled={busy} className={`${secondaryBtn} self-start`}>
+                        Bỏ qua câu này
+                    </button>
+                )}
+
+                {isExam && (
+                    <p aria-live="polite" className="text-label-sm text-on-surface-variant">
+                        {saveState === "saving" && "Đang lưu..."}
+                        {saveState === "saved" && "Đã lưu"}
+                        {saveState === "error" && "Chưa lưu được một số đáp án. Đáp án vẫn được gửi lại khi nộp bài."}
+                    </p>
+                )}
+
+                {confirmSubmit && unanswered > 0 && (
+                    <p role="alert" className="text-label-md text-error">
+                        Còn {unanswered} câu chưa làm (tính là sai). Bấm "Nộp bài" lần nữa để nộp.
+                    </p>
+                )}
                 {error && (
                     <p role="alert" className="text-error text-label-md">
                         {error}{" "}
-                        <button type="button" onClick={() => void finish(answers)} disabled={busy} className="underline disabled:opacity-60">
+                        <button type="button" onClick={() => void finish()} disabled={busy} className="underline disabled:opacity-60">
                             Nộp lại
                         </button>
                     </p>
                 )}
+            </div>
+
+            {/* Thanh hành động cố định ở đáy: dễ chạm bằng ngón cái trên điện thoại */}
+            <div className="fixed bottom-0 inset-x-0 bg-surface/95 border-t border-surface-container-high px-gutter py-space-sm">
+                <div className="max-w-2xl mx-auto flex items-center justify-between gap-space-sm">
+                    {isExam ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                                disabled={index === 0}
+                                className={secondaryBtn}
+                            >
+                                Câu trước
+                            </button>
+                            {isLast ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (unanswered > 0 && !confirmSubmit) setConfirmSubmit(true);
+                                        else void finish();
+                                    }}
+                                    disabled={busy}
+                                    className={primaryBtn}
+                                >
+                                    {busy ? "Đang nộp..." : "Nộp bài"}
+                                </button>
+                            ) : (
+                                <div className="flex gap-space-sm">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (unanswered > 0 && !confirmSubmit) setConfirmSubmit(true);
+                                            else void finish();
+                                        }}
+                                        disabled={busy}
+                                        className={secondaryBtn}
+                                    >
+                                        Nộp bài
+                                    </button>
+                                    <button type="button" onClick={() => setIndex((i) => i + 1)} className={primaryBtn}>
+                                        Câu sau
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <span className="text-label-sm text-on-surface-variant">
+                                {feedback ? "Xem lời giải rồi sang câu tiếp" : "Chọn một đáp án"}
+                            </span>
+                            {practiceDone && feedback ? (
+                                <button ref={nextRef} type="button" onClick={() => void finish()} disabled={busy} className={primaryBtn}>
+                                    {busy ? "Đang chấm..." : "Xem kết quả"}
+                                </button>
+                            ) : (
+                                <button
+                                    ref={nextRef}
+                                    type="button"
+                                    onClick={() =>
+                                        setIndex((i) => {
+                                            const n = attempt.questions.findIndex((q, k) => k > i && answers[q.cardId] === undefined);
+                                            return n >= 0 ? n : Math.min(total - 1, i + 1);
+                                        })
+                                    }
+                                    disabled={!feedback || isLast}
+                                    className={primaryBtn}
+                                >
+                                    Câu tiếp
+                                </button>
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
         </section>
     );

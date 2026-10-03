@@ -21,7 +21,8 @@ export const DeckDetailPage: React.FC = () => {
     const [refreshIndex, setRefreshIndex] = useState(0);
     const { data, error, loading } = useAsync(
         async () => ({ deck: await fetchDeck(deckId), reviews: await fetchReviews() }),
-        [deckId, refreshIndex]
+        [deckId],
+        refreshIndex // sửa / xoá thẻ xong tải lại ngầm, không nháy "Đang tải"
     );
 
     // Modal states
@@ -225,14 +226,9 @@ export const DeckDetailPage: React.FC = () => {
                                     <div className="text-title-md font-semibold">
                                         <Ruby term={card.term} reading={card.reading ?? undefined} />
                                     </div>
-                                    <div className="text-body-sm text-on-surface-variant mt-0.5">
+                                    <div className="text-body-sm text-on-surface-variant mt-0.5 whitespace-pre-line">
                                         {card.meaning}
                                     </div>
-                                    {card.example && (
-                                        <div lang="ja" className="text-body-sm text-outline mt-1 italic">
-                                            {card.example}
-                                        </div>
-                                    )}
                                 </div>
 
                                 <div className="flex items-center gap-1 shrink-0">

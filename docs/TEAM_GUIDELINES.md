@@ -53,7 +53,10 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
   - `repository/`: Kế thừa `JpaRepository<Entity, ID>`, chỉ chứa truy vấn DB.
   - `dto/`: Request/Response Payload, có gắn validation annotations (`@NotBlank`, `@Email`, `@Size`).
   - `service/`: Chứa toàn bộ nghiệp vụ (Business Logic). Không viết query DB hay parse HTTP tại đây.
-  - `controller/`: Chỉ đón nhận HTTP Request, gọi Service và trả về `ResponseEntity<?>`.
+  - `controller/`: Chỉ đón nhận HTTP Request, gọi Service và trả về kết quả. **Không import `repository/`, không trả entity ra ngoài** (dùng DTO trong `dto/`); không chứa nghiệp vụ như đếm số lần thử, đổi lỗi, kiểm tra quyền.
+  - Lỗi nghiệp vụ do Service ném `ResponseStatusException` (kèm thông báo tiếng Việt); `ApiExceptionHandler` đổi thành JSON `{status, error, message}`.
+  - Thuật toán thuần (`SrsService`, `QuizService`) giữ dạng hàm tĩnh, không chạm DB, có unit test riêng; phần truy cập DB đi kèm nằm ở service riêng (`ReviewService`, `QuizAttemptService`).
+  - Mỗi controller một nhóm tài nguyên (`DeckController`, `StudyController`, `FolderController`...); một service không nên dài quá ~400 dòng, quá thì tách theo nghiệp vụ.
   - `config/` & `security/`: Cấu hình hệ thống, Spring Security, JWT.
 - **Đặt tên (Naming):**
   - Class/Interface: `PascalCase` (vd: `FlashcardService`, `UserRepository`).
@@ -95,14 +98,16 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 ## 🌿 3. Quy Trình Làm Việc Trên Git (Git Workflow)
 
 1. **Phân chia nhánh:**
-   - `main`: Nhánh ổn định, chỉ merge code khi đã kiểm thử chạy được cả Backend & AI.
-   - `dev`: Nhánh gộp để thử chung trước khi lên `main`.
-   - `Backend`: Nhánh backend (bản mới nhất gồm cả frontend đã cập nhật theo API mới).
-   - `Frontend`: Nhánh chuyên trách xây dựng giao diện người dùng.
-   - `backend-feature-...`: Các nhánh làm tính năng backend mới.
+   - `main`: Nhánh ổn định. Chỉ nhận merge từ `dev` khi CI xanh và Backend + Frontend chạy được cùng nhau (phần AI chỉ bắt buộc khi thay đổi có đụng tới AI).
+   - `dev`: Nhánh gộp để thử chung trước khi lên `main`. **Mỗi task tách nhánh từ `dev`** và quay lại `dev` qua Pull Request.
+   - `Backend` / `Frontend`: nhánh tích hợp theo mảng (đang dùng); nhánh mới ưu tiên theo mẫu bên dưới.
+   - `backend-feature-<ten-ngan>` / `frontend-feature-<ten-ngan>`: làm tính năng mới (vd: `backend-feature-refresh-token`).
+   - `backend-fix-<ten-ngan>` / `frontend-fix-<ten-ngan>`: sửa lỗi.
+   - `docs-<ten-ngan>`: chỉ sửa tài liệu.
 2. **Quy chuẩn đặt tên Commit (Conventional Commits):**
    - `feat: <nội dung>`: Thêm tính năng mới (vd: `feat: them api crud deck cho hoc vien`).
    - `fix: <nội dung>`: Sửa lỗi (vd: `fix: sua loi het han jwt token`).
+   - Ghi mã use case trong ngoặc khi có (vd: `feat: them refresh token (UC-02)`). Mỗi commit một việc, không gom nhiều việc không liên quan.
    - `docs: <nội dung>`: Cập nhật tài liệu (vd: `docs: cap nhat huong dan ket noi supabase`).
    - `refactor: <nội dung>`: Tối ưu, cơ cấu lại code mà không đổi logic.
 3. **Trước khi Push code lên GitHub:**
@@ -110,4 +115,11 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
      - Backend: `mvn test` (test tích hợp chạy trên Postgres nhúng, không cần Supabase)
      - Frontend: `npm run lint && npm run build && npm run selfcheck`
      - CI (`.github/workflows/ci.yml`) chạy lại đúng các lệnh này cho mọi push / pull request.
-     - AI: Chạy thử `uvicorn` không báo lỗi cú pháp.
+     - AI: `python -m compileall -q ai-service/app` (CI cũng chạy) và chạy thử `uvicorn` không báo lỗi.
+4. **Pull Request & review:**
+   - PR vào `dev`, tiêu đề theo quy ước commit. Mô tả nêu: mã UC, đã đổi gì, cách kiểm chứng (test nào, đã bấm thử màn hình nào).
+   - Cần **ít nhất 1 người khác duyệt** (không tự duyệt PR của mình) và **CI xanh** mới được merge; merge xong xoá nhánh.
+   - Người duyệt kiểm: đúng cấu trúc thư mục / quy tắc đặt tên ở mục 2, không lộ bí mật, có test cho logic mới, không thêm dependency khi chưa cần.
+   - **Đổi API** (thêm / đổi field, đổi endpoint): ghi vào mục "API đã đổi" của `docs/Progress/` để nhánh khác cập nhật theo.
+   - **Thêm migration** (`V<n>__...sql`): nêu rõ trong PR; trước khi chạy backend mới trên Supabase phải sao lưu DB và báo cả nhóm.
+   - Cập nhật `docs/USE_CASES_CHECKLIST.md`, bảng tiến độ ở mục 1 và `docs/CHANGELOG.md` trong cùng PR hoàn thành một use case.

@@ -139,12 +139,7 @@ export const StudyPage: React.FC = () => {
                     <div aria-live="polite" className="mt-space-md min-h-16">
                         {revealed ? (
                             <>
-                                <p className="text-title-md font-semibold">{current.meaning}</p>
-                                {current.example && (
-                                    <p lang="ja" className="text-body-md text-on-surface-variant mt-1">
-                                        {current.example}
-                                    </p>
-                                )}
+                                <p className="text-title-md font-semibold whitespace-pre-line">{current.meaning}</p>
                             </>
                         ) : (
                             <button

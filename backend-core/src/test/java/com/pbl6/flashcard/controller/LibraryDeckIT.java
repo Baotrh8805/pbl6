@@ -55,9 +55,14 @@ class LibraryDeckIT extends IntegrationTest {
             for (int i = 0; i < old.get("cards").size(); i++) {
                 JsonNode o = old.get("cards").get(i), c = cards.get(i);
                 assertEquals(id + "-" + (i + 1), c.get("id").asText());
-                for (String field : List.of("term", "reading", "meaning", "example")) {
+                for (String field : List.of("term", "reading")) {
                     assertEquals(o.get(field), c.get(field), id + " thẻ " + (i + 1) + "." + field);
                 }
+                // Ví dụ cũ được gộp vào cuối nội dung, không mất chữ nào
+                String example = o.get("example").isNull() ? "" : o.get("example").asText();
+                String expected = o.get("meaning").asText() + (example.isBlank() ? "" : "\n\n" + example);
+                assertEquals(expected, c.get("meaning").asText(), id + " thẻ " + (i + 1) + ".meaning");
+                assertFalse(c.has("example"));
             }
         }
         // Chỉ 1 bộ nổi bật, banner trả kèm thẻ mẫu = thẻ đầu tiên

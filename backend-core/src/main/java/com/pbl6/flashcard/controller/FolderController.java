@@ -1,11 +1,11 @@
 package com.pbl6.flashcard.controller;
 
 import com.pbl6.flashcard.config.ApiExceptionHandler;
+import com.pbl6.flashcard.dto.folder.FolderMemberResponse;
 import com.pbl6.flashcard.dto.folder.FolderRequest;
 import com.pbl6.flashcard.dto.folder.FolderResponse;
 import com.pbl6.flashcard.dto.folder.FolderShareRequest;
 import com.pbl6.flashcard.model.User;
-import com.pbl6.flashcard.repository.FolderShareRepository;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.FolderService;
 import jakarta.validation.Valid;
@@ -98,13 +98,13 @@ public class FolderController {
     // ---------- chia sẻ (chỉ chủ thư mục) ----------
 
     @GetMapping("/{id}/shares")
-    public List<FolderShareRepository.Member> shares(@PathVariable UUID id, Authentication authentication) {
+    public List<FolderMemberResponse> shares(@PathVariable UUID id, Authentication authentication) {
         return folderService.members(id, getCurrentUser(authentication));
     }
 
     /** Mời người dùng (theo email) xem thư mục; trả danh sách sau khi thêm. */
     @PutMapping("/{id}/shares")
-    public List<FolderShareRepository.Member> share(@PathVariable UUID id, @Valid @RequestBody FolderShareRequest req,
+    public List<FolderMemberResponse> share(@PathVariable UUID id, @Valid @RequestBody FolderShareRequest req,
                                                     Authentication authentication) {
         return folderService.share(id, req.email(), getCurrentUser(authentication));
     }

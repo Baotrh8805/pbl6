@@ -5,6 +5,7 @@ import type { FolderNode, LibraryDeck } from "@/types/api.types";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { extractErrorMessage } from "@/services/apiClient";
+import { flattenFolders } from "@/features/folders/components/folderTree";
 
 export interface SaveToFolderModalProps {
   isOpen: boolean;
@@ -12,24 +13,6 @@ export interface SaveToFolderModalProps {
   deck: LibraryDeck | null;
   onSaved?: (folderId: string | null) => void;
 }
-
-interface FolderOption {
-  id: string;
-  title: string;
-  depth: number;
-}
-
-// Duỗi cây thư mục thành danh sách phẳng kèm độ sâu để thụt lề.
-const flattenFolders = (nodes: FolderNode[], depth = 0): FolderOption[] => {
-  const list: FolderOption[] = [];
-  for (const node of nodes) {
-    list.push({ id: node.id, title: node.title, depth });
-    if (node.children?.length) {
-      list.push(...flattenFolders(node.children, depth + 1));
-    }
-  }
-  return list;
-};
 
 // Ô chọn là radio thật (ẩn) bọc trong label -> bàn phím/đọc màn hình dùng được.
 const optionClass = (selected: boolean) =>

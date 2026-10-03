@@ -4,6 +4,8 @@ import com.pbl6.flashcard.model.PasswordResetToken;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.repository.PasswordResetTokenRepository;
 import com.pbl6.flashcard.repository.UserRepository;
+import com.pbl6.flashcard.security.AttemptLimiter;
+import com.pbl6.flashcard.security.LoginAttemptLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -46,6 +48,7 @@ public class PasswordResetService {
     private final String frontendUrl;
     private final String mailFrom;
     private final SecureRandom random = new SecureRandom();
+    private final AttemptLimiter forgotLimiter = new AttemptLimiter(5, Duration.ofMinutes(15));
 
     public PasswordResetService(UserRepository userRepository, PasswordResetTokenRepository tokenRepository,
                                 PasswordEncoder passwordEncoder, RefreshTokenService refreshTokens,
@@ -61,9 +64,18 @@ public class PasswordResetService {
         this.mailFrom = mailFrom;
     }
 
-    /** Email không tồn tại cũng không báo lỗi: không cho dò email nào đã đăng ký. */
+    /**
+     * Email không tồn tại cũng không báo lỗi: không cho dò email nào đã đăng ký.
+     * Tối đa 5 lần / 15 phút cho mỗi (IP, email) -> không spam hộp thư người khác.
+     */
     @Transactional
-    public void requestReset(String email) {
+    public void requestReset(String email, String ip) {
+        String key = LoginAttemptLimiter.key(ip, User.normalizeEmail(email));
+        if (forgotLimiter.isBlocked(key)) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau 15 phút.");
+        }
+        forgotLimiter.record(key);
         userRepository.findByEmail(User.normalizeEmail(email)).ifPresent(user -> {
             tokenRepository.deleteByUserId(user.getId()); // link mới thay link cũ
             byte[] raw = new byte[32];

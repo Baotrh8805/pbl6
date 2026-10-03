@@ -25,6 +25,21 @@ class QuizServiceTest {
     }
 
     @Test
+    void headlineLayDongDauKhongRong() {
+        assertEquals("định nghĩa 1", QuizService.headline("\n  định nghĩa 1  \n\nVí dụ: ...\nGhi chú"));
+        assertEquals("", QuizService.headline("  \n "));
+    }
+
+    @Test
+    void luaChonQuizChiGomDongDauCuaNoiDung() {
+        List<Flashcard> list = cards(4);
+        list.forEach(c -> c.setMeaning(c.getMeaning() + "\n\nVí dụ dài dòng"));
+        for (QuizService.Question q : QuizService.buildQuiz(list, 4, new Random(1))) {
+            q.options().forEach(o -> assertFalse(o.contains("\n") || o.contains("Ví dụ"), o));
+        }
+    }
+
+    @Test
     void deTronDuAppAnVaKhongLoDapAn() {
         List<QuizService.Question> quiz = QuizService.buildQuiz(cards(10), 5, new Random(1));
         assertEquals(5, quiz.size());

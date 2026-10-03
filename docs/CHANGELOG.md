@@ -10,6 +10,21 @@
 - **API đổi**: `AuthResponse` có thêm `refreshToken`; `login()` của `AuthContext` nhận thêm tham số `refreshToken`.
 - Test: `RefreshTokenIT` (6 test); `smoke-auth.mjs` kiểm tra refresh / logout.
 
+## 30/09/2026: Sửa lỗi tồn đọng và đưa code về đúng guideline
+- **Lỗi**: thư mục được chia sẻ nay hiện đúng số bộ thẻ / số thẻ của thư mục con (`GET /api/decks?folderId=` của thư mục
+  được chia sẻ trả bộ thẻ của cả cây con, kèm `folderId`); trang chi tiết bộ thẻ không còn nháy "Đang tải" sau khi sửa thẻ
+  (`useAsync` có tham số `reload`).
+- **Cấu trúc backend**: `AuthController` chỉ còn nhận / trả, giới hạn số lần thử và đổi lỗi chuyển vào `AuthService` /
+  `PasswordResetService`; API trả DTO (`UserResponse`, `ReviewResponse`, `ShareMemberResponse`, `FolderMemberResponse`,
+  `QuizResultResponse`, `QuizOutcomeResponse`) thay vì entity / record của repository; `StudyController` tách thành
+  `DeckController` (bộ thẻ, thẻ, chia sẻ) và `StudyController` (ôn tập, quiz); `DeckService` tách `ReviewService`,
+  `QuizAttemptService`. URL và JSON giữ nguyên, trừ ngoại lệ ở mục "API đã đổi".
+- **API đã đổi**: bộ thẻ trong danh sách của thư mục được chia sẻ có `folderId` (trước đây luôn `null` với người xem);
+  các endpoint khác vẫn `null`.
+- **Frontend**: gom `getInitials` (`lib/textUtils.ts`) và `flattenFolders` (`folderTree.ts`) về một bản.
+- **CI**: thêm job kiểm cú pháp `ai-service` (`python -m compileall`). **Guideline**: thêm quy trình PR / review, mẫu
+  tên nhánh, quy tắc controller / service / DTO.
+
 # Ổn định nền tảng theo kế hoạch MoSCoW
 *Ngày: 29/09/2026*
 

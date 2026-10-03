@@ -6,8 +6,8 @@ export interface Card {
     id: string;
     term: string;
     reading: string | null;
+    /** Nội dung nhiều dòng: định nghĩa, ví dụ, ghi chú. Dòng đầu = định nghĩa chính (Quiz dùng làm đáp án). */
     meaning: string;
-    example: string | null;
     position?: number | null;
 }
 
@@ -38,7 +38,6 @@ export interface CardDto {
     term: string;
     reading?: string | null;
     meaning: string;
-    example?: string | null;
 }
 
 /** DeckRequest (dùng chung cho POST và PUT /decks). */
@@ -146,11 +145,46 @@ export interface Question {
     options: string[];
 }
 
-/** QuizService.Paper: đề đã phát; nộp bài phải kèm attemptId (null = bộ thẻ trống). */
-export interface QuizPaper {
+/** practice = làm từng câu (thấy đáp án ngay); exam = làm hết bài rồi nộp. */
+export type QuizMode = "practice" | "exam";
+
+/** QuizAttemptDtos.Feedback: chỉ có khi server cho phép xem đáp án câu đó. */
+export interface QuizFeedback {
+    correct: boolean;
+    correctAnswer: string;
+    /** Phần nội dung thẻ sau dòng đầu (định nghĩa phụ, ví dụ, ghi chú). */
+    explanation: string | null;
+}
+
+/** QuizAttemptDtos.QuestionState: chosen = đáp án đã lưu ở server ("" = bỏ qua). */
+export interface QuizQuestionState extends Question {
+    chosen: string | null;
+    feedback: QuizFeedback | null;
+}
+
+/**
+ * QuizAttemptDtos.AttemptState: toàn bộ trạng thái một lượt làm (server là nguồn sự thật).
+ * attemptId = null: bộ thẻ trống. timeLimitSeconds = 0: không giới hạn giờ.
+ */
+export interface QuizAttemptState {
     attemptId: string | null;
+    deckId: string;
+    mode: QuizMode;
+    resumed: boolean;
+    finished: boolean;
+    expired: boolean;
+    score: number | null;
+    total: number | null;
     timeLimitSeconds: number;
-    questions: Question[];
+    expiresAt: string | null; // ISO
+    serverNow: string; // ISO
+    questions: QuizQuestionState[];
+}
+
+/** QuizAttemptDtos.AnswerResponse */
+export interface QuizAnswerResult {
+    feedback: QuizFeedback | null;
+    answered: number;
 }
 
 /** DeckService.QuizOutcome */
@@ -169,5 +203,7 @@ export interface QuizResult {
     deckTitle?: string;
     score: number;
     total: number;
+    /** Bản ghi cũ không có mode: coi là exam. */
+    mode?: QuizMode;
     createdAt: string; // ISO
 }

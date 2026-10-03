@@ -1,4 +1,4 @@
-import type { Card, CardDto, FolderNode } from "@/types/api.types";
+import type { Card, CardDto } from "@/types/api.types";
 
 // Hàng thẻ trong trình soạn: thêm _key ổn định phía client để làm React key
 // (hàng có thể thêm/xoá/chèn giữa). _key không bao giờ gửi lên API.
@@ -8,7 +8,7 @@ let keyCounter = 0;
 const nextKey = () => `card-${++keyCounter}`;
 
 export function createEmptyCard(): EditorCard {
-  return { _key: nextKey(), term: "", reading: "", meaning: "", example: "" };
+  return { _key: nextKey(), term: "", reading: "", meaning: "" };
 }
 
 export function createEmptyCards(count: number): EditorCard[] {
@@ -23,8 +23,19 @@ export function toEditorCard(card: Card | CardDto): EditorCard {
     term: card.term,
     reading: card.reading || "",
     meaning: card.meaning,
-    example: card.example || "",
   };
+}
+
+/**
+ * Đảo 2 cột: cột trái (Thuật ngữ + Cách đọc) <-> cột phải (Nội dung).
+ * Dòng đầu của nội dung thành Thuật ngữ; Thuật ngữ, Cách đọc và các dòng còn lại gộp thành nội dung mới.
+ * Không mất chữ nào.
+ */
+export function swapCardColumns(card: EditorCard): EditorCard {
+  const [first = "", ...rest] = card.meaning.split("\n");
+  const reading = card.reading?.trim() ?? "";
+  const meaning = [card.term, reading, ...rest].filter((l) => l.trim().length > 0).join("\n");
+  return { ...card, term: first.trim(), reading: "", meaning };
 }
 
 /** Bỏ _key, trim và loại hàng thiếu Thuật ngữ/Định nghĩa trước khi gửi API. */
@@ -35,18 +46,6 @@ export function toValidCardDtos(cards: EditorCard[]): CardDto[] {
       term: c.term.trim(),
       reading: c.reading?.trim() || null,
       meaning: c.meaning.trim(),
-      example: c.example?.trim() || null,
     }))
     .filter((c) => c.term.length > 0 && c.meaning.length > 0);
-}
-
-export function flattenFolders(nodes: FolderNode[], prefix = ""): Array<{ id: string; title: string }> {
-  let result: Array<{ id: string; title: string }> = [];
-  for (const node of nodes) {
-    result.push({ id: node.id, title: prefix ? `${prefix} / ${node.title}` : node.title });
-    if (node.children?.length) {
-      result = result.concat(flattenFolders(node.children, prefix ? `${prefix} / ${node.title}` : node.title));
-    }
-  }
-  return result;
 }

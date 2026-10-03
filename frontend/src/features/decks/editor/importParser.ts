@@ -10,7 +10,7 @@ export function unescapeDelimiter(raw: string): string {
 
 /**
  * Văn bản dán vào (Excel, Anki, Quizlet...) -> danh sách thẻ.
- * Mỗi thẻ: [thuật ngữ, nghĩa] | [thuật ngữ, cách đọc, nghĩa] | [thuật ngữ, cách đọc, nghĩa, ví dụ...].
+ * Mỗi thẻ: [thuật ngữ, nghĩa] | [thuật ngữ, cách đọc, nghĩa] | [thuật ngữ, cách đọc, nghĩa, ví dụ...] (từ cột 3 gộp thành nội dung nhiều dòng).
  * Dòng chỉ có 1 cột vẫn được giữ (nghĩa rỗng) để người dùng bổ sung trong trình soạn.
  */
 export function parseImportText(rawText: string, termDefDelim: string, cardDelim: string): CardDto[] {
@@ -28,15 +28,15 @@ export function parseImportText(rawText: string, termDefDelim: string, cardDelim
     if (tokens.length === 0) continue;
 
     if (tokens.length === 1) {
-      result.push({ term: tokens[0], reading: null, meaning: "", example: null });
+      result.push({ term: tokens[0], reading: null, meaning: "" });
     } else if (tokens.length === 2) {
-      result.push({ term: tokens[0], reading: null, meaning: tokens[1], example: null });
+      result.push({ term: tokens[0], reading: null, meaning: tokens[1] });
     } else {
       result.push({
         term: tokens[0],
         reading: tokens[1],
-        meaning: tokens[2],
-        example: tokens.length > 3 ? tokens.slice(3).join(" ") : null,
+        // Cột từ thứ 3 trở đi (định nghĩa, ví dụ...) gộp vào nội dung, mỗi cột một dòng
+        meaning: tokens.slice(2).join("\n"),
       });
     }
   }

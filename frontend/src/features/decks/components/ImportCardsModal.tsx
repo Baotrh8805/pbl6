@@ -215,8 +215,7 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
                     <th className="py-2.5 px-3 w-12 text-center">#</th>
                     <th className="py-2.5 px-3 w-1/4">Thuật ngữ / Kanji</th>
                     <th className="py-2.5 px-3 w-1/4">Cách đọc (Furigana)</th>
-                    <th className="py-2.5 px-3 w-1/4">Định nghĩa</th>
-                    <th className="py-2.5 px-3">Câu ví dụ</th>
+                    <th className="py-2.5 px-3">Nội dung</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-high/50 bg-surface-container-lowest">
@@ -226,8 +225,7 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
                       <td className="py-2 px-3 text-center text-outline font-medium">{idx + 1}</td>
                       <td className="py-2 px-3 font-semibold text-on-surface font-japanese">{c.term}</td>
                       <td className="py-2 px-3 text-on-surface-variant font-japanese">{c.reading || "—"}</td>
-                      <td className="py-2 px-3 text-on-surface font-medium">{c.meaning || "—"}</td>
-                      <td className="py-2 px-3 text-on-surface-variant text-[11px] truncate max-w-xs">{c.example || "—"}</td>
+                      <td className="py-2 px-3 text-on-surface font-medium whitespace-pre-line line-clamp-3">{c.meaning || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

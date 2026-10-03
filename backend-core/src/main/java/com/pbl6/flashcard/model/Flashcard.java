@@ -20,11 +20,9 @@ public class Flashcard {
 
     private String reading;
 
-    @Column(nullable = false, length = 500)
+    /** Nội dung nhiều dòng: dòng đầu = định nghĩa chính, các dòng sau = định nghĩa phụ / ví dụ / ghi chú. */
+    @Column(nullable = false, columnDefinition = "text")
     private String meaning;
-
-    @Column(length = 1000)
-    private String example;
 
     private Integer position;
 
@@ -44,9 +42,6 @@ public class Flashcard {
 
     public String getMeaning() { return meaning; }
     public void setMeaning(String meaning) { this.meaning = meaning; }
-
-    public String getExample() { return example; }
-    public void setExample(String example) { this.example = example; }
 
     public Integer getPosition() { return position; }
     public void setPosition(Integer position) { this.position = position; }

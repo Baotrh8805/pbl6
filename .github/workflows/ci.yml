@@ -1,5 +1,5 @@
 # Chặn code hỏng trước khi vào nhánh chung: test backend (Postgres nhúng, không cần Supabase)
-# + type-check, lint, build và self-check của frontend.
+# + type-check, lint, build và self-check của frontend + kiểm cú pháp ai-service.
 name: CI
 
 on:
@@ -38,3 +38,13 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run selfcheck
+
+  ai-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      # Chỉ biên dịch để bắt lỗi cú pháp, không cài thư viện / không chạy service
+      - run: python -m compileall -q ai-service/app

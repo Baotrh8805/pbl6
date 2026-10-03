@@ -22,7 +22,7 @@ class DeckCardsIT extends IntegrationTest {
                 .andExpect(status().isCreated()));
 
         call(post("/api/decks/" + deck.get("id").asText() + "/cards/batch"), token, List.of(
-                Map.of("term", " 開発 ", "reading", " かいはつ ", "meaning", " phát triển ", "example", " Ví dụ 1 "),
+                Map.of("term", " 開発 ", "reading", " かいはつ ", "meaning", " phát triển\n\nVí dụ 1\nGhi chú "),
                 Map.of("term", " 設計 ", "meaning", " thiết kế ")))
                 .andExpect(status().isCreated());
 
@@ -31,7 +31,9 @@ class DeckCardsIT extends IntegrationTest {
         assertEquals(2, cards.get(1).get("position").asInt());
         assertEquals("開発", cards.get(1).get("term").asText());
         assertEquals("かいはつ", cards.get(1).get("reading").asText());
-        assertEquals("Ví dụ 1", cards.get(1).get("example").asText());
+        // Xuống dòng bên trong được giữ nguyên, chỉ trim hai đầu
+        assertEquals("phát triển\n\nVí dụ 1\nGhi chú",cards.get(1).get("meaning").asText());
+        assertFalse(cards.get(1).has("example"));
         assertEquals(3, cards.get(2).get("position").asInt());
         assertTrue(cards.get(2).get("reading").isNull());
     }

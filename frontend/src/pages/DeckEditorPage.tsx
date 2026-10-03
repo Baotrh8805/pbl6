@@ -11,11 +11,12 @@ import { DeckInfoFields } from "@/features/decks/editor/DeckInfoFields";
 import {
   createEmptyCard,
   createEmptyCards,
-  flattenFolders,
   toEditorCard,
+  swapCardColumns,
   toValidCardDtos,
   type EditorCard,
 } from "@/features/decks/editor/editorCards";
+import { flattenFolders } from "@/features/folders/components/folderTree";
 import { extractErrorMessage } from "@/services/apiClient";
 import { useDialog } from "@/components/ui/dialogContext";
 
@@ -36,7 +37,10 @@ export const DeckEditorPage: React.FC<DeckEditorPageProps> = ({ mode }) => {
     [deckId]
   );
   const { data: folderTree } = useAsync(fetchFolders, []);
-  const folders = useMemo(() => flattenFolders(folderTree ?? []), [folderTree]);
+  const folders = useMemo(
+    () => flattenFolders(folderTree ?? []).map((f) => ({ id: f.id, title: f.path })),
+    [folderTree]
+  );
 
   if (deckId && deckState.loading) {
     return (
@@ -159,18 +163,12 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
 
   const handleSwapTermsAndMeanings = async () => {
     const ok = await dialog.confirm({
-      title: "Đảo thuật ngữ và định nghĩa?",
-      message: "Thuật ngữ và định nghĩa của tất cả thẻ sẽ đổi chỗ cho nhau. Bấm lần nữa để đảo lại.",
+      title: "Đảo cột Thuật ngữ và Nội dung?",
+      message: "Cột trái (Thuật ngữ + Cách đọc) và cột phải (Nội dung) của tất cả thẻ sẽ đổi chỗ cho nhau: dòng đầu của nội dung thành Thuật ngữ, còn Thuật ngữ và Cách đọc cũ được đưa vào đầu Nội dung.",
       confirmLabel: "Đảo vị trí",
     });
     if (!ok) return;
-    setCards((prev) =>
-      prev.map((c) => ({
-        ...c,
-        term: c.meaning,
-        meaning: c.term,
-      }))
-    );
+    setCards((prev) => prev.map(swapCardColumns));
   };
 
   const handleClearAllCards = async () => {
@@ -350,7 +348,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
             size="sm"
             onClick={handleSwapTermsAndMeanings}
             className="cursor-pointer"
-            title="Đảo vị trí Thuật ngữ và Định nghĩa"
+            title="Đảo cột Thuật ngữ và Nội dung"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">swap_horiz</span>
             Đảo vị trí

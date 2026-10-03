@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { UserMetrics } from "../types/dashboard.types";
 import { getLevelDescription } from "../lib/dashboardUtils";
+import { getInitials } from "@/lib/textUtils";
 
 interface DashboardHeaderProps {
   displayName: string;
@@ -44,12 +45,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   }, [userMenuOpen]);
 
   // Avatar chữ cái đầu từ tên thật (không dùng ảnh stock)
-  const initials = displayName
-    .trim()
-    .split(/\s+/)
-    .slice(-2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
+  const initials = getInitials(displayName);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(4,21,52,0.05)] border-b border-surface-container-high/40">

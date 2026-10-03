@@ -40,12 +40,7 @@ export function formatCompactCount(value: number): string {
   return String(value);
 }
 
-/** Chữ cái đầu làm avatar tác giả (không lưu ảnh đại diện). */
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] ?? "?").slice(0, 2);
-  return letters.toUpperCase();
-}
+export { getInitials as initials } from "../../../lib/textUtils.ts";
 
 export function getLevelBadgeClass(lvl: string): string {
   switch (lvl) {

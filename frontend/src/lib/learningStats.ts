@@ -64,11 +64,18 @@ export const calcStreaks = (days: Set<string>, today: Date): { current: number; 
     return { current, max: Math.max(max, current) };
 };
 
-/** Độ chính xác gộp = tổng câu đúng / tổng câu, không lấy trung bình % từng bài (bài 5 câu và 20 câu khác trọng số). */
+/** Chỉ bài thi (exam) phản ánh trình độ; luyện tập thấy đáp án ngay nên không tính. Bản ghi cũ không có mode = exam. */
+export const examResultsOnly = (results: QuizResult[]): QuizResult[] => results.filter((r) => r.mode !== "practice");
+
+/**
+ * Độ chính xác gộp = tổng câu đúng / tổng câu, không lấy trung bình % từng bài (bài 5 câu và 20 câu khác trọng số).
+ * Chỉ tính bài thi, không tính luyện tập.
+ */
 export const calcQuizAccuracy = (results: QuizResult[]): number | null => {
-    const total = results.reduce((s, r) => s + r.total, 0);
+    const exams = examResultsOnly(results);
+    const total = exams.reduce((s, r) => s + r.total, 0);
     if (total === 0) return null;
-    const score = results.reduce((s, r) => s + r.score, 0);
+    const score = exams.reduce((s, r) => s + r.score, 0);
     return Math.round((score / total) * 1000) / 10; // 1 chữ số thập phân
 };
 
