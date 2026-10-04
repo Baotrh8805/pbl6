@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -74,6 +75,7 @@ public class QuizAttemptService {
     @Transactional
     public AttemptState create(Long uid, String deckId, int size, String mode) {
         Deck deck = deckService.readable(uid, deckId);
+        attemptRepository.lockCreate(Objects.hash(uid, deckId));
         Instant now = Instant.now();
         closeExpiredAttempts(uid, now);
 

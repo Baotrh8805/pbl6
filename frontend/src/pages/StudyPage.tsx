@@ -7,6 +7,7 @@ import { canSpeak, speak } from "@/lib/speech";
 import { useAsync } from "@/lib/useAsync";
 import { isDue, type Grade } from "@/lib/srs";
 import { extractErrorMessage } from "@/services/apiClient";
+import { CardContent } from "@/features/decks/components/CardContent";
 
 const GRADES: { grade: Grade; label: string; key: string; className: string }[] = [
     { grade: "again", label: "Lại", key: "1", className: "bg-error text-on-primary" },
@@ -139,7 +140,9 @@ export const StudyPage: React.FC = () => {
                     <div aria-live="polite" className="mt-space-md min-h-16">
                         {revealed ? (
                             <>
-                                <p className="text-title-md font-semibold whitespace-pre-line">{current.meaning}</p>
+                                <p>
+                                    <CardContent text={current.meaning} headClassName="text-title-md font-semibold" restClassName="text-body-md font-normal text-on-surface-variant mt-1" />
+                                </p>
                             </>
                         ) : (
                             <button

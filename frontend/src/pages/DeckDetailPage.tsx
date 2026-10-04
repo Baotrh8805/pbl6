@@ -12,6 +12,8 @@ import { CardModal } from "@/features/decks/components/DeckModals";
 import { ShareDeckModal } from "@/features/decks/components/ShareDeckModal";
 import { canEditDeck, deckSourceLabel } from "@/lib/deckUtils";
 import { useDialog } from "@/components/ui/dialogContext";
+import { CardContent } from "@/features/decks/components/CardContent";
+import { DeckRatings } from "@/features/decks/components/DeckRatings";
 
 export const DeckDetailPage: React.FC = () => {
     const { deckId = "" } = useParams();
@@ -226,8 +228,12 @@ export const DeckDetailPage: React.FC = () => {
                                     <div className="text-title-md font-semibold">
                                         <Ruby term={card.term} reading={card.reading ?? undefined} />
                                     </div>
-                                    <div className="text-body-sm text-on-surface-variant mt-0.5 whitespace-pre-line">
-                                        {card.meaning}
+                                    <div className="text-body-sm text-on-surface-variant mt-0.5">
+                                        <CardContent
+                                            text={card.meaning}
+                                            headClassName=""
+                                            restClassName="text-label-md text-outline mt-1"
+                                        />
                                     </div>
                                 </div>
 
@@ -277,6 +283,9 @@ export const DeckDetailPage: React.FC = () => {
                     </ul>
                 )}
             </div>
+
+            {/* Đánh giá: chỉ bộ thẻ public (chủ chỉ xem, không tự chấm) */}
+            {deck.visibility === "public" && <DeckRatings deckId={deck.id} isOwner={isOwner} />}
 
             {/* Card Add/Edit Modal */}
             <CardModal

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import type { CardDto } from "@/types/api.types";
+import { CardContent } from "./CardContent";
 
 export interface DeckPreviewModalProps {
   isOpen: boolean;
@@ -159,8 +160,12 @@ const PreviewBody: React.FC<{ description?: string; cards: CardDto[] }> = ({ des
             ) : (
               /* Mặt sau */
               <div className="text-center py-4 space-y-2.5">
-                <h3 className="text-xl font-bold text-primary font-headline whitespace-pre-line">
-                  {currentCard.meaning}
+                <h3>
+                  <CardContent
+                    text={currentCard.meaning}
+                    headClassName="text-xl font-bold text-primary font-headline"
+                    restClassName="text-xs font-normal text-on-surface-variant text-left mt-2 p-2.5 rounded-lg bg-surface-container/60"
+                  />
                 </h3>
                 {currentCard.reading && (
                   <p className="text-xs text-on-surface-variant">

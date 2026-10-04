@@ -1,5 +1,5 @@
 import { apiClient } from "./apiClient.ts";
-import type { LibraryPage, LibraryRating } from "../types/api.types.ts";
+import type { DeckRatings, LibraryPage, LibraryRating } from "../types/api.types.ts";
 
 export interface LibraryQuery {
     q?: string;
@@ -19,5 +19,14 @@ export const fetchLibrary = async (query: LibraryQuery = {}): Promise<LibraryPag
     return (await apiClient.get<LibraryPage>("/library/decks", { params })).data;
 };
 
-export const rateLibraryDeck = async (deckId: string, stars: number): Promise<LibraryRating> =>
-    (await apiClient.put<LibraryRating>(`/library/decks/${encodeURIComponent(deckId)}/rating`, { stars })).data;
+const ratingUrl = (deckId: string) => `/library/decks/${encodeURIComponent(deckId)}/rating`;
+
+/** Chấm lại ghi đè cả sao lẫn bình luận (comment null = xoá bình luận). */
+export const rateLibraryDeck = async (deckId: string, stars: number, comment: string | null): Promise<LibraryRating> =>
+    (await apiClient.put<LibraryRating>(ratingUrl(deckId), { stars, comment })).data;
+
+export const deleteMyRating = async (deckId: string): Promise<LibraryRating> =>
+    (await apiClient.delete<LibraryRating>(ratingUrl(deckId))).data;
+
+export const fetchDeckRatings = async (deckId: string, page = 0, size = 10): Promise<DeckRatings> =>
+    (await apiClient.get<DeckRatings>(`${ratingUrl(deckId)}s`, { params: { page, size } })).data;

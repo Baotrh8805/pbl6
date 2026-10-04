@@ -25,6 +25,15 @@ class QuizServiceTest {
     }
 
     @Test
+    void boTheQuaNhoKhongRaCauHoiThieuLuaChon() {
+        assertEquals(0, QuizService.buildQuiz(cards(1), 5, new Random(1)).size(), "1 thẻ: không có lựa chọn nhiễu");
+        List<Flashcard> same = cards(3);
+        same.forEach(c -> c.setMeaning("cùng nghĩa"));
+        assertEquals(0, QuizService.buildQuiz(same, 5, new Random(1)).size(), "mọi thẻ cùng nghĩa");
+        QuizService.buildQuiz(cards(2), 5, new Random(1)).forEach(q -> assertEquals(2, q.options().size()));
+    }
+
+    @Test
     void headlineLayDongDauKhongRong() {
         assertEquals("định nghĩa 1", QuizService.headline("\n  định nghĩa 1  \n\nVí dụ: ...\nGhi chú"));
         assertEquals("", QuizService.headline("  \n "));

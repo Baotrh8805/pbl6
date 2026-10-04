@@ -1,6 +1,7 @@
 package com.pbl6.flashcard.service;
 
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
+import com.pbl6.flashcard.dto.library.DeckRatingsResponse;
 import com.pbl6.flashcard.dto.library.LibraryDeckResponse;
 import com.pbl6.flashcard.dto.library.LibraryDeckResponse.Featured;
 import com.pbl6.flashcard.model.Deck;
@@ -62,15 +63,44 @@ public class LibraryService {
 
     /** Chấm sao bộ thẻ public của người khác; chấm lại thì ghi đè. */
     @Transactional
-    public LibraryDeckResponse.Rating rate(Long uid, String deckId, int stars) {
-        Deck deck = deckRepository.findById(deckId).filter(Deck::isPublic)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bộ thẻ."));
+    public LibraryDeckResponse.Rating rate(Long uid, String deckId, int stars, String comment) {
+        Deck deck = publicDeck(deckId);
         if (uid.equals(deck.getOwnerId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể tự đánh giá bộ thẻ của mình.");
         }
-        ratingRepository.upsert(deckId, uid, (short) stars);
+        String cleaned = comment == null || comment.isBlank() ? null : comment.strip();
+        ratingRepository.upsert(deckId, uid, (short) stars, cleaned);
         DeckRatingRepository.Summary s = ratingRepository.summary(deckId);
         return new LibraryDeckResponse.Rating(LibraryDeckResponse.round1(s.getRating()), s.getRatingsCount(), stars);
+    }
+
+    /** Xoá đánh giá của chính mình; chưa đánh giá thì 404. */
+    @Transactional
+    public LibraryDeckResponse.Rating deleteMyRating(Long uid, String deckId) {
+        publicDeck(deckId);
+        if (ratingRepository.deleteMine(deckId, uid) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Bạn chưa đánh giá bộ thẻ này.");
+        }
+        DeckRatingRepository.Summary s = ratingRepository.summary(deckId);
+        return new LibraryDeckResponse.Rating(LibraryDeckResponse.round1(s.getRating()), s.getRatingsCount(), 0);
+    }
+
+    /** Tổng hợp + danh sách đánh giá của bộ thẻ public (chủ bộ thẻ cũng xem được). */
+    @Transactional(readOnly = true)
+    public DeckRatingsResponse ratings(Long uid, String deckId, int page, int size) {
+        publicDeck(deckId);
+        DeckRatingRepository.Summary s = ratingRepository.summary(deckId);
+        DeckRatingsResponse.Mine mine = ratingRepository.findByDeckIdAndUserId(deckId, uid)
+                .map(r -> new DeckRatingsResponse.Mine(r.getStars(), r.getComment())).orElse(null);
+        List<DeckRatingsResponse.Item> items = ratingRepository.findRows(deckId, uid, size, page * size)
+                .stream().map(DeckRatingsResponse.Item::of).toList();
+        return new DeckRatingsResponse(LibraryDeckResponse.round1(s.getRating()), s.getRatingsCount(), mine, items,
+                page, size);
+    }
+
+    private Deck publicDeck(String deckId) {
+        return deckRepository.findById(deckId).filter(Deck::isPublic)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bộ thẻ."));
     }
 
     private static String nz(String s) {

@@ -21,6 +21,12 @@ public class DeckRating {
     @Column(nullable = false)
     private Short stars;
 
+    @Column(length = 500)
+    private String comment;
+
+    @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+    private Instant createdAt;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -30,5 +36,7 @@ public class DeckRating {
     public String getDeckId() { return deckId; }
     public Long getUserId() { return userId; }
     public Short getStars() { return stars; }
+    public String getComment() { return comment; }
+    public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

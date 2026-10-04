@@ -1,6 +1,7 @@
 package com.pbl6.flashcard.controller;
 
 import com.pbl6.flashcard.dto.deck.DeckRequest;
+import com.pbl6.flashcard.dto.library.DeckRatingsResponse;
 import com.pbl6.flashcard.dto.library.LibraryDeckResponse;
 import com.pbl6.flashcard.dto.library.RatingRequest;
 import com.pbl6.flashcard.security.CustomUserDetails;
@@ -43,6 +44,19 @@ public class LibraryController {
     @PutMapping("/decks/{deckId}/rating")
     public LibraryDeckResponse.Rating rate(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String deckId,
                                            @Valid @RequestBody RatingRequest req) {
-        return libraryService.rate(me.getUser().getId(), deckId, req.stars());
+        return libraryService.rate(me.getUser().getId(), deckId, req.stars(), req.comment());
+    }
+
+    @DeleteMapping("/decks/{deckId}/rating")
+    public LibraryDeckResponse.Rating deleteRating(@AuthenticationPrincipal CustomUserDetails me,
+                                                   @PathVariable String deckId) {
+        return libraryService.deleteMyRating(me.getUser().getId(), deckId);
+    }
+
+    @GetMapping("/decks/{deckId}/ratings")
+    public DeckRatingsResponse ratings(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String deckId,
+                                       @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
+                                       @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
+        return libraryService.ratings(me.getUser().getId(), deckId, page, size);
     }
 }

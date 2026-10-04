@@ -13,6 +13,8 @@ import { categoryLabel, formatCompactCount } from "../src/features/library/compo
 import { parseAttemptState, parseQuestions } from "../src/services/studyService.ts";
 import { parseImportText, unescapeDelimiter } from "../src/features/decks/editor/importParser.ts";
 import { swapCardColumns } from "../src/features/decks/editor/editorCards.ts";
+import { splitContent } from "../src/lib/cardContent.ts";
+import { RATING_COMMENT_MAX, commentCharsLeft, formatRatingAverage, normalizeComment } from "../src/lib/ratingUtils.ts";
 import {
   calcLearningStats,
   calcQuizAccuracy,
@@ -142,6 +144,10 @@ async function runSelfCheck() {
   assertStrictEqual(imported[2].meaning, "", "1 cột: giữ lại, nghĩa trống để bổ sung");
   const multi = parseImportText("犬\tいぬ\tcon chó\tChó nhà\t犬が好きです。", "\t", "\n\n");
   assertStrictEqual(multi[0].meaning, "con chó\nChó nhà\n犬が好きです。", "Cột 3+ gộp thành nội dung nhiều dòng");
+  const parts = splitContent("\n  định nghĩa 1  \r\n\nví dụ A\nghi chú\n");
+  assertStrictEqual(parts.head, "định nghĩa 1", "Dòng không rỗng đầu tiên là định nghĩa chính");
+  assertStrictEqual(parts.rest, "ví dụ A\nghi chú", "Phần còn lại giữ xuống dòng, bỏ dòng trống đầu/cuối");
+  assertStrictEqual(splitContent("   ").head, "", "Nội dung rỗng không lỗi");
   const swapped = swapCardColumns({ _key: "k", term: "水", reading: "みず", meaning: "nước\nVí dụ: 水を飲む" });
   assertStrictEqual(swapped.term, "nước", "Đảo cột: dòng đầu của nội dung thành thuật ngữ");
   assertStrictEqual(swapped.meaning, "水\nみず\nVí dụ: 水を飲む", "Đảo cột: không mất chữ nào");
@@ -274,6 +280,15 @@ async function runSelfCheck() {
   assertStrictEqual(flat[1].depth, 1, "Thư mục con có depth 1");
   assertStrictEqual(flat[1].path, "Cha / Con", "path nối tên cha và con");
   assertStrictEqual(flat[2].path, "Khác", "Thư mục gốc: path = tên");
+
+  // Đánh giá bộ thẻ: trung bình 1 chữ số, bình luận tối đa 500, trống = null
+  assertStrictEqual(formatRatingAverage(4.5), "4.5", "Trung bình hiển thị 1 chữ số");
+  assertStrictEqual(formatRatingAverage(4), "4.0", "Số nguyên vẫn có .0");
+  assertStrictEqual(formatRatingAverage(null), "—", "Chưa có lượt nào");
+  assertStrictEqual(normalizeComment("  hay  "), "hay", "Cắt khoảng trắng");
+  assertStrictEqual(normalizeComment("   "), null, "Toàn khoảng trắng = không có bình luận");
+  assertStrictEqual(commentCharsLeft("a".repeat(RATING_COMMENT_MAX)), 0, "Đủ 500 ký tự còn 0");
+  assertStrictEqual(commentCharsLeft("a".repeat(RATING_COMMENT_MAX + 1)), -1, "Vượt 500 ký tự là âm");
 
   console.log(" All self-check assertions passed successfully!");
 }

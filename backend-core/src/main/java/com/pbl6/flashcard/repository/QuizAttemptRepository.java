@@ -21,6 +21,13 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
     @Query("SELECT a FROM QuizAttempt a WHERE a.id = :id")
     Optional<QuizAttempt> findForUpdate(@Param("id") UUID id);
 
+    /**
+     * Khoá tư vấn theo giao dịch: các yêu cầu "Bắt đầu" song song của cùng user + bộ thẻ xếp hàng, yêu cầu sau thấy
+     * lượt do yêu cầu trước vừa tạo và trả lại nó (thay vì đụng unique index rồi báo lỗi).
+     */
+    @Query(value = "SELECT CAST(pg_advisory_xact_lock(:key) AS text)", nativeQuery = true)
+    String lockCreate(@Param("key") long key);
+
     /** Lượt đang mở (chưa nộp, chưa quá hạn) của user với bộ thẻ này; tối đa một nhờ unique index V9. */
     @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.deckId = :deckId AND a.submittedAt IS NULL "
             + "AND a.expiresAt >= :now")

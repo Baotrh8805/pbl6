@@ -84,10 +84,15 @@ export const QuizPage: React.FC = () => {
     const [saveState, setSaveState] = useState<SaveState>("saved");
     const [confirmSubmit, setConfirmSubmit] = useState(false);
     const [error, setError] = useState("");
+    const [notice, setNotice] = useState("");
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
 
     const nextRef = useRef<HTMLButtonElement>(null);
+    // Hàng đợi tự lưu tuần tự (exam): các lần lưu lên server đúng thứ tự người dùng chọn, không đè nhau.
+    const queue = useRef<Promise<void>>(Promise.resolve());
+    const pending = useRef(0);
+    const failedCards = useRef<Set<string>>(new Set()); // câu có lần lưu gần nhất thất bại; lưu lại thành công thì bỏ
 
     const running = attempt !== null && !attempt.finished;
     const isExam = attempt?.mode === "exam";
@@ -113,6 +118,8 @@ export const QuizPage: React.FC = () => {
         }
         setConfirmSubmit(false);
         setError("");
+        setNotice("");
+        failedCards.current.clear();
         setSaveState("saved");
     }, []);
 
@@ -150,11 +157,15 @@ export const QuizPage: React.FC = () => {
         try {
             const state = await createQuizAttempt(deckId, size, m);
             if (!state?.attemptId || state.questions.length === 0) {
-                setError("Bộ thẻ này chưa có câu hỏi nào.");
+                setError("Bộ thẻ cần ít nhất 2 thẻ có nghĩa khác nhau để tạo câu hỏi trắc nghiệm.");
                 return;
             }
             setOpenAttempt(null);
             load(state);
+            if (state.resumed) {
+                // Đã có lượt đang mở (vd. ở tab khác): không tạo lượt mới, nói rõ để người dùng không tưởng đang ở chế độ vừa chọn
+                setNotice(`Bạn đang có bài ${modeLabel(state.mode).toLowerCase()} chưa nộp nên đã tiếp tục bài đó.`);
+            }
             setParams({ attempt: state.attemptId }, { replace: true });
         } catch (e) {
             setError(extractErrorMessage(e));
@@ -178,9 +189,6 @@ export const QuizPage: React.FC = () => {
 
     // ---------- exam: tự lưu tuần tự ----------
     // Hàng đợi tuần tự: các lần lưu đến server đúng thứ tự người dùng chọn, không đè nhau.
-    const queue = useRef<Promise<void>>(Promise.resolve());
-    const pending = useRef(0);
-    const failed = useRef(false);
 
     const enqueueSave = (attemptId: string, cardId: string, option: string) => {
         pending.current++;
@@ -197,8 +205,9 @@ export const QuizPage: React.FC = () => {
                 }
             }
             pending.current--;
-            if (!ok) failed.current = true;
-            if (pending.current === 0) setSaveState(failed.current ? "error" : "saved");
+            if (ok) failedCards.current.delete(cardId);
+            else failedCards.current.add(cardId);
+            if (pending.current === 0) setSaveState(failedCards.current.size > 0 ? "error" : "saved");
         });
     };
 
@@ -272,15 +281,22 @@ export const QuizPage: React.FC = () => {
             }
             return;
         }
-        // exam: chọn lại cùng đáp án = bỏ chọn; lưu ngầm, không phản hồi
-        const next = answers[cardId] === option ? "" : option;
+        // exam: lưu ngầm, không phản hồi. Chọn lại đúng đáp án đang chọn thì không làm gì (radio không tự bỏ chọn);
+        // muốn xoá đáp án dùng nút "Xoá lựa chọn".
+        if (answers[cardId] === option) return;
+        setAnswers((a) => ({ ...a, [cardId]: option }));
+        enqueueSave(attempt.attemptId, cardId, option);
+    };
+
+    const clearAnswer = () => {
+        if (!current || !attempt?.attemptId || !answers[current.cardId]) return;
+        const cardId = current.cardId;
         setAnswers((a) => {
             const copy = { ...a };
-            if (next) copy[cardId] = next;
-            else delete copy[cardId];
+            delete copy[cardId];
             return copy;
         });
-        enqueueSave(attempt.attemptId, cardId, next);
+        enqueueSave(attempt.attemptId, cardId, "");
     };
 
     const skip = async () => {
@@ -557,6 +573,12 @@ export const QuizPage: React.FC = () => {
                     </button>
                 )}
 
+                {isExam && chosen && (
+                    <button type="button" onClick={clearAnswer} className={`${secondaryBtn} self-start`}>
+                        Xoá lựa chọn
+                    </button>
+                )}
+
                 {isExam && (
                     <p aria-live="polite" className="text-label-sm text-on-surface-variant">
                         {saveState === "saving" && "Đang lưu..."}
@@ -568,6 +590,11 @@ export const QuizPage: React.FC = () => {
                 {confirmSubmit && unanswered > 0 && (
                     <p role="alert" className="text-label-md text-error">
                         Còn {unanswered} câu chưa làm (tính là sai). Bấm "Nộp bài" lần nữa để nộp.
+                    </p>
+                )}
+                {notice && (
+                    <p role="status" className="text-label-md rounded-lg bg-primary/10 p-space-sm">
+                        {notice}
                     </p>
                 )}
                 {error && (

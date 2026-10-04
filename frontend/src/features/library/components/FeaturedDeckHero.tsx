@@ -1,6 +1,7 @@
 import React from "react";
 import type { Card, LibraryDeck } from "@/types/api.types";
 import { formatCompactCount, initials } from "./libraryOptions";
+import { CardContent } from "@/features/decks/components/CardContent";
 
 interface FeaturedDeckHeroProps {
   deck: LibraryDeck;
@@ -118,8 +119,12 @@ export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sample
               <span className="block font-headline-md text-headline-md text-primary font-bold">
                 {sampleCard.reading}
               </span>
-              <span className="block font-body-sm text-body-sm text-on-surface-variant mt-1 whitespace-pre-line">
-                {sampleCard.meaning}
+              <span className="block font-body-sm text-body-sm text-on-surface-variant mt-1">
+                <CardContent
+                  text={sampleCard.meaning}
+                  headClassName="font-medium"
+                  restClassName="text-xs mt-1 line-clamp-3"
+                />
               </span>
             </span>
             <span className="flex items-center justify-between text-[11px] text-on-surface-variant font-label-sm pt-1">

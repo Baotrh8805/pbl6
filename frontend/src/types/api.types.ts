@@ -100,6 +100,25 @@ export interface LibraryRating {
     myRating: number;
 }
 
+/** DeckRatingsResponse.Item */
+export interface DeckRatingItem {
+    displayName: string;
+    stars: number;
+    comment: string | null;
+    updatedAt: string;
+    mine: boolean;
+}
+
+/** DeckRatingsResponse: tổng hợp + đánh giá của mình (null nếu chưa chấm) + một trang đánh giá */
+export interface DeckRatings {
+    rating: number | null;
+    ratingsCount: number;
+    mine: { stars: number; comment: string | null } | null;
+    items: DeckRatingItem[];
+    page: number;
+    size: number;
+}
+
 /** FolderResponse */
 export interface FolderNode {
     id: string;

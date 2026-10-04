@@ -62,6 +62,7 @@ public final class QuizService {
         return buildItems(cards, size, random).stream().map(Item::toQuestion).toList();
     }
 
+    /** Một câu hợp lệ cần ít nhất 2 lựa chọn khác nhau, nên bộ thẻ cần tối thiểu 2 thẻ có nghĩa khác nhau. */
     public static List<Item> buildItems(List<Flashcard> cards, int size, Random random) {
         List<Flashcard> pool = new ArrayList<>(cards);
         Collections.shuffle(pool, random);
@@ -76,6 +77,8 @@ public final class QuizService {
                 if (options.size() >= OPTIONS) break;
                 if (!other.getId().equals(card.getId())) options.add(headline(other.getMeaning()));
             }
+            // Bộ thẻ chỉ có 1 thẻ / mọi thẻ cùng nghĩa: không ra được câu trắc nghiệm hợp lệ -> bỏ câu này
+            if (options.size() < 2) continue;
             List<String> shuffled = new ArrayList<>(options);
             Collections.shuffle(shuffled, random);
             items.add(new Item(card.getId(), card.getTerm(), card.getReading(), shuffled,

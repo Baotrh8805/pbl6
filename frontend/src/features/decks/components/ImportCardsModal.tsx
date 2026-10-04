@@ -225,7 +225,10 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
                       <td className="py-2 px-3 text-center text-outline font-medium">{idx + 1}</td>
                       <td className="py-2 px-3 font-semibold text-on-surface font-japanese">{c.term}</td>
                       <td className="py-2 px-3 text-on-surface-variant font-japanese">{c.reading || "—"}</td>
-                      <td className="py-2 px-3 text-on-surface font-medium whitespace-pre-line line-clamp-3">{c.meaning || "—"}</td>
+                      <td className="py-2 px-3 text-on-surface font-medium">
+                        {/* line-clamp đặt trên <td> làm ô mất kiểu table-cell: phải bọc div bên trong */}
+                        <div className="whitespace-pre-line line-clamp-3">{c.meaning || "—"}</div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

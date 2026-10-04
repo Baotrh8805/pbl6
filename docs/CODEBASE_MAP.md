@@ -41,6 +41,13 @@ Chủ > được chia sẻ riêng bộ thẻ (`deck_shares`: VIEWER/EDITOR) > b�
   Bộ thẻ public của người khác chỉ có ở `GET /api/library/decks`.
 - `GET /api/decks?folderId=`: bộ thẻ trong thư mục của mình hoặc thư mục được chia sẻ cho mình.
 
+### Đánh giá bộ thẻ (Thư viện, bộ thẻ public)
+- `PUT /api/library/decks/{id}/rating` `{stars 1-5, comment?<=500}`: một đánh giá mỗi người mỗi bộ thẻ (unique
+  `deck_id,user_id`), gửi lại = sửa cả sao lẫn bình luận. Không tự chấm bộ của mình (400), bộ không public = 404.
+- `DELETE /api/library/decks/{id}/rating`: xoá đánh giá của mình.
+- `GET /api/library/decks/{id}/ratings?page&size`: trung bình, số lượt, `mine`, danh sách mới nhất trước.
+  FE: `DeckRatings` (hiển thị) + `DeckRatingForm` (form), dùng ở `DeckDetailPage` và `LibraryPreviewModal`.
+
 ### Thư mục
 - `GET /api/folders` (cây của mình), `GET /api/folders/shared` (người khác chia sẻ), `GET /api/folders/{id}`.
 - Chia sẻ: `GET|PUT /api/folders/{id}/shares`, `DELETE /api/folders/{id}/shares/{userId}`,
@@ -60,7 +67,7 @@ Chủ > được chia sẻ riêng bộ thẻ (`deck_shares`: VIEWER/EDITOR) > b�
 
 ### Migration (Flyway)
 `V1` baseline · `V2` ràng buộc & độ dài cột · `V3` thư viện, chia sẻ bộ thẻ, chấm sao · `V4` chia sẻ thư mục ·
-`V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `V7` refresh token · `R__seed_system_decks` bộ thẻ mẫu.
+`V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `V7` refresh token · `V10` bình luận đánh giá · `R__seed_system_decks` bộ thẻ mẫu.
 
 ### Test
 `mvn test` chạy 55 test (unit + tích hợp `*IT.java`) trên Postgres nhúng (không cần Docker / Supabase).

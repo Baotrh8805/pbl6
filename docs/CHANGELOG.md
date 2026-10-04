@@ -1,5 +1,15 @@
 # Nhật ký thay đổi
 
+## 03/10/2026: Đánh giá bộ thẻ có bình luận
+- **Backend** (`V10__deck_rating_comments`): bảng `deck_ratings` có sẵn từ V3 nay thêm `comment` (<= 500 ký tự, CHECK) và
+  `created_at`; vẫn một đánh giá mỗi người mỗi bộ thẻ (UNIQUE `deck_id,user_id`). Thêm `GET /api/library/decks/{id}/ratings`
+  (tổng hợp + `mine` + danh sách phân trang, tên hiển thị = `full_name` hoặc phần trước `@` của email) và
+  `DELETE /api/library/decks/{id}/rating`.
+- **API đổi**: `PUT .../rating` nhận thêm `comment` (tuỳ chọn); gửi lại mà không có `comment` sẽ xoá bình luận cũ.
+- **Frontend**: `DeckRatings` + `DeckRatingForm` + `RatingStars` dùng ở trang chi tiết bộ thẻ (bộ public) và hộp xem trước
+  Thư viện; `lib/ratingUtils.ts` có kiểm tra trong `selfCheck`.
+- Test: `DeckRatingIT` (4 test); `MigrationUpgradePathTest` chạy qua V10.
+
 ## 30/09/2026: Refresh token, tự đăng xuất sau 3 ngày không hoạt động (UC-02)
 - **Backend** (`V7__refresh_tokens`): `POST /api/auth/login` trả thêm `refreshToken`; `POST /api/auth/refresh` đổi lấy
   access token mới và lùi hạn phiên thêm 3 ngày; `POST /api/auth/logout` thu hồi phiên. Access token rút từ 3 ngày
