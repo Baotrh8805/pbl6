@@ -14,8 +14,8 @@ import type {
 export const fetchReviews = async (): Promise<Record<string, Review>> =>
     parseReviews((await apiClient.get("/reviews")).data);
 
-export const submitReview = async (cardId: string, grade: Grade): Promise<void> => {
-    await apiClient.post("/reviews", { cardId, grade });
+export const submitReview = async (cardId: string, grade: Grade, cram = false): Promise<void> => {
+    await apiClient.post("/reviews", { cardId, grade, cram });
 };
 
 // Response là ranh giới không đáng tin: câu hỏi hỏng thì bỏ, không để trang trắng.

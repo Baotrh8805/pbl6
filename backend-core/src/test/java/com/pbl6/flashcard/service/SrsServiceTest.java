@@ -28,13 +28,26 @@ class SrsServiceTest {
 
         double easeTruoc = card.getEase();
         SrsService.schedule(card, "again", NOW);
-        assertEquals(0, card.getIntervalDays(), "'Lại' reset interval");
-        assertEquals(0, card.getReps(), "'Lại' reset chuỗi ôn");
+        assertEquals(1, card.getIntervalDays(), "'Lại' giữ 30% khoảng ôn (3 -> 1), tối thiểu 1 ngày");
+        assertEquals(2, card.getReps(), "'Lại' không xoá chuỗi ôn");
         assertTrue(card.getEase() < easeTruoc, "'Lại' hạ ease");
-        assertTrue(card.getDueAt().isAfter(NOW), "'Lại' hẹn lại trong phiên, không để dueAt ở quá khứ");
+        assertTrue(card.getDueAt().isAfter(NOW), "'Lại' hẹn lại, không để dueAt ở quá khứ");
+
+        card.setIntervalDays(100);
+        SrsService.schedule(card, "again", NOW);
+        assertEquals(30, card.getIntervalDays(), "Thẻ đã vững quên một lần vẫn giữ 30% khoảng ôn");
 
         for (int i = 0; i < 20; i++) SrsService.schedule(card, "again", NOW);
         assertEquals(SrsService.MIN_EASE, card.getEase(), 1e-9, "ease có sàn 1.3");
+    }
+
+    @Test
+    void easeKetOSanTuHoiPhucKhiOnTot() {
+        Review card = SrsService.newReview(1L, "n5-1", NOW);
+        card.setEase(SrsService.MIN_EASE);
+        card.setIntervalDays(10);
+        for (int i = 0; i < 10; i++) SrsService.schedule(card, "good", NOW);
+        assertTrue(card.getEase() > 2.0, "Mean reversion: ôn 'Tốt' liên tục kéo ease khỏi sàn 1.3");
     }
 
     @Test

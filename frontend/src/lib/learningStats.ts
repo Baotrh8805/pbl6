@@ -5,7 +5,7 @@ import { MASTERED_INTERVAL_DAYS } from "./deckUtils.ts";
 import type { Deck, QuizResult } from "../types/api.types.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** SrsService.schedule: "again" hẹn ôn lại sau 10 phút, các mức khác sau intervalDays ngày. */
+/** Thẻ vừa được tạo (intervalDays = 0, chưa chấm): coi như vừa chấm 10 phút trước. Sau mỗi lần chấm intervalDays >= 1. */
 const AGAIN_DELAY_MS = 10 * 60 * 1000;
 
 export interface LearningStats {
@@ -36,7 +36,7 @@ const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMon
 
 /**
  * Suy ngược thời điểm chấm gần nhất: server đặt dueAt = lúc chấm + intervalDays ngày
- * (hoặc + 10 phút với "again", khi đó intervalDays = 0).
+ * ("again" cũng vậy: intervalDays còn 30%, tối thiểu 1 ngày).
  */
 export const lastReviewedAt = (r: Review): Date =>
     new Date(Date.parse(r.dueAt) - (r.intervalDays > 0 ? r.intervalDays * DAY_MS : AGAIN_DELAY_MS));

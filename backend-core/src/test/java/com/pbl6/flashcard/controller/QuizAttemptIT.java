@@ -105,6 +105,24 @@ class QuizAttemptIT extends IntegrationTest {
     }
 
     @Test
+    void only_practice_answers_move_the_srs_schedule_exam_does_not() throws Exception {
+        String token = newUser();
+        JsonNode practice = create(token, "practice", 5);
+        JsonNode q = practice.get("questions").get(0);
+        String card = q.get("cardId").asText();
+        answerOk(token, practice.get("attemptId").asText(), card, correct(token, card));
+        JsonNode reviews = read(call(get("/api/reviews"), token, null).andExpect(status().isOk()));
+        assertEquals(1, reviews.size(), "practice trả lời đúng -> thẻ có lịch ôn");
+        assertEquals(1, reviews.get(0).get("intervalDays").asInt(), "đúng = 'Tốt' lần đầu = 1 ngày");
+
+        String other = newUser();
+        JsonNode exam = create(other, "exam", 5);
+        String examCard = exam.get("questions").get(0).get("cardId").asText();
+        answerOk(other, exam.get("attemptId").asText(), examCard, correct(other, examCard));
+        assertEquals(0, read(call(get("/api/reviews"), other, null)).size(), "exam không đụng lịch ôn");
+    }
+
+    @Test
     void starting_again_resumes_the_open_attempt_with_the_same_questions() throws Exception {
         String token = newUser();
         JsonNode first = create(token, "exam", 5);

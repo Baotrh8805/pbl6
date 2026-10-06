@@ -48,7 +48,7 @@ public class StudyController {
     /** Client chỉ gửi cardId + grade; ngày ôn kế tiếp do server quyết định. */
     @PostMapping("/reviews")
     public ReviewResponse submitReview(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody ReviewRequest body) {
-        return reviewService.review(uid(me), body.cardId(), body.grade());
+        return reviewService.review(uid(me), body.cardId(), body.grade(), Boolean.TRUE.equals(body.cram()));
     }
 
     /** Câu hỏi mẫu (xem trước đề), không mở lượt làm bài. */

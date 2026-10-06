@@ -53,12 +53,14 @@ public class QuizAttemptService {
     private final QuizAttemptRepository attemptRepository;
     private final QuizResultRepository quizResultRepository;
     private final QuizRateLimiter rateLimiter;
+    private final ReviewService reviewService;
     private final ObjectMapper json;
     private final Random random = new Random();
 
     public QuizAttemptService(DeckService deckService, QuizAttemptRepository attemptRepository,
                               QuizResultRepository quizResultRepository, QuizRateLimiter rateLimiter,
-                              ObjectMapper json) {
+                              ReviewService reviewService, ObjectMapper json) {
+        this.reviewService = reviewService;
         this.deckService = deckService;
         this.attemptRepository = attemptRepository;
         this.quizResultRepository = quizResultRepository;
@@ -154,6 +156,7 @@ public class QuizAttemptService {
             String chosen = blank ? "" : option;
             answers.put(cardId, chosen);
             attempt.setAnswers(write(answers));
+            reviewService.fromQuiz(uid, cardId, item.correct().equals(chosen)); // chỉ practice; exam không đụng lịch ôn
             return new AnswerResponse(feedback(item, chosen), answers.size());
         }
 

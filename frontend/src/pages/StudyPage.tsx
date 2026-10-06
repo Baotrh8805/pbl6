@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { fetchDeck } from "@/services/deckService";
 import { fetchReviews, submitReview } from "@/services/studyService";
 import { Ruby } from "@/lib/ja";
@@ -18,6 +18,7 @@ const GRADES: { grade: Grade; label: string; key: string; className: string }[] 
 
 export const StudyPage: React.FC = () => {
     const { deckId = "" } = useParams(); // deckId từ URL: server kiểm quyền, sai thì 404
+    const cram = useSearchParams()[0].get("cram") === "1"; // Học nhanh: ôn cả bộ, không đổi lịch dài hạn
     const { data, error, loading } = useAsync(
         async () => ({ deck: await fetchDeck(deckId), reviews: await fetchReviews() }),
         [deckId]
@@ -34,7 +35,7 @@ export const StudyPage: React.FC = () => {
         const now = new Date();
         setQueueState({
             deckId,
-            ids: data.deck.cards.filter((c) => isDue(data.reviews[c.id], now)).map((c) => c.id),
+            ids: data.deck.cards.filter((c) => cram || isDue(data.reviews[c.id], now)).map((c) => c.id),
         });
     }
 
@@ -45,7 +46,7 @@ export const StudyPage: React.FC = () => {
         if (!current || saving) return;
         setSaving(true);
         try {
-            await submitReview(current.id, g); // lưu từng thẻ: thoát giữa chừng không mất tiến độ
+            await submitReview(current.id, g, cram); // lưu từng thẻ: thoát giữa chừng không mất tiến độ
             setSaveError("");
             setRevealed(false);
             setQueueState((s) =>

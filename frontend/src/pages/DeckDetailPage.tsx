@@ -132,6 +132,13 @@ export const DeckDetailPage: React.FC = () => {
                                 Học {dueCount > 0 ? `(${dueCount})` : "lại"}
                             </Link>
                             <Link
+                                to={`/decks/${deck.id}/study?cram=1`}
+                                title="Ôn lại toàn bộ thẻ ngay, không đổi lịch ôn dài hạn"
+                                className="px-4 py-2.5 rounded-lg bg-surface-container-high text-on-surface font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-opacity"
+                            >
+                                Học nhanh
+                            </Link>
+                            <Link
                                 to={`/decks/${deck.id}/quiz`}
                                 className="px-4 py-2.5 rounded-lg bg-surface-container-high text-on-surface font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-opacity"
                             >

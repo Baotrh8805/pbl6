@@ -9,5 +9,6 @@ public record ReviewRequest(
         @NotBlank(message = "cardId là bắt buộc") @Size(max = 255) String cardId,
         @NotBlank(message = "grade là bắt buộc")
         @Pattern(regexp = "again|hard|good|easy", message = "grade phải là again|hard|good|easy")
-        String grade
+        String grade,
+        Boolean cram // true = phiên "Học nhanh": chỉ ghi nhật ký, không đổi lịch ôn
 ) {}

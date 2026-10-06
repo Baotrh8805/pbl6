@@ -25,6 +25,12 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     void insertIfAbsent(@Param("uid") Long uid, @Param("cardId") String cardId, @Param("reps") int reps,
                         @Param("intervalDays") int intervalDays, @Param("ease") double ease, @Param("dueAt") Instant dueAt);
 
+    @Modifying
+    @Query(value = "INSERT INTO review_logs (user_id, card_id, grade, source) VALUES (:uid, :cardId, :grade, :source)",
+            nativeQuery = true)
+    void log(@Param("uid") Long uid, @Param("cardId") String cardId, @Param("grade") String grade,
+             @Param("source") String source);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM Review r WHERE r.userId = :uid AND r.cardId = :cardId")
     Optional<Review> findForUpdate(@Param("uid") Long uid, @Param("cardId") String cardId);
