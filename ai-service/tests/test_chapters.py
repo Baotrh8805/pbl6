@@ -231,3 +231,10 @@ def test_ocr_toc_two_entries_per_line_without_page_numbers():
     # nhãn phần bỏ qua rút gọn về từ khoá khi dòng OCR có đuôi rác
     r2 = split_chapters_ex(chr(10).join(["How to use this book本志的使用方法0|科", "第1課", "あ", "第2課", "い"]), None)
     assert r2.skipped == ["How to use"]
+
+
+def test_leading_chapter_with_toc_like_title_dropped():
+    lines = ["1日目-6日目 7日目", "学習の流れ", "テスト", "1日目 アパート", "チラシ", "家賃", "2日目 引っ越し", "段ボール", "3日目 友人", "招く"]
+    r = split_chapters_ex(chr(10).join(lines), None)
+    assert [c.title for c in r.chapters] == ["1日目 アパート", "2日目 引っ越し", "3日目 友人"]
+    assert "1日目-6日目 7日目" in r.skipped

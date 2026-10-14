@@ -255,15 +255,20 @@ def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
             body = preamble + "\n" + body  # preamble không có tiếng Nhật → dồn vào chương 1
             start = 0
         chapters.append(Chapter(len(chapters) + 1, title, body, start, end))
-    # Các chương đứng đầu mà thân còn chứa dòng tên phần đầu sách (mục nhập cuối của mục lục OCR ôm luôn trang
-    # "cách dùng sách") cũng là phần đầu sách -> bỏ, dừng ở chương đầu tiên không có dấu hiệu đó.
-    while chapters and chapters[0].title != INTRO_TITLE:
-        marks = [m for ln in chapters[0].text.split(chr(10)) if (m := _marker(ln, _FRONT_MATTER))]
-        if not marks:
-            break
-        skipped.append(chapters[0].title)
-        skipped.extend(m for m in marks if m not in skipped)
-        chapters.pop(0)
+    # Phần đầu sách liền khối ở đầu: mục lục OCR rác, mục nhập cuối của mục lục ôm luôn trang "cách dùng sách"...
+    # -> bỏ mọi chương tới chương CUỐI CÙNG còn chứa dòng tên phần đầu sách, miễn sau đó vẫn còn >= 2 chương thật.
+    fm = [k for k, c in enumerate(chapters)
+          if c.title != INTRO_TITLE and len(chapters) - k - 1 >= 2
+          and any(_marker(ln, _FRONT_MATTER) for ln in c.text.split(chr(10)))]
+    if fm:
+        cut = max(fm) + 1
+        for c in chapters[:cut]:
+            skipped.append(c.title)
+            skipped.extend(m for ln in c.text.split(chr(10)) if (m := _marker(ln, _FRONT_MATTER)) and m not in skipped)
+        chapters = chapters[cut:]
+    # Chương dẫn đầu có tiêu đề dạng mục lục (chứa mốc thứ hai / số trang, vd. "1日目-6日目 7日目") = sơ đồ / mục lục còn sót
+    while len(chapters) > 2 and chapters[0].title != INTRO_TITLE and _toc_like(chapters[0].title):
+        skipped.append(chapters.pop(0).title)
     for i, c in enumerate(chapters, start=1):
         c.index = i
     if len(chapters) < 2:
