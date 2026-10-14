@@ -49,14 +49,23 @@ Xoá lộ trình = xoá kế hoạch + job bóc tách ẩn; **thư mục / bộ 
 
 Chỉ chạy khi `ExtractionOptions.splitChapters = true` (lộ trình bật sẵn; bóc tách thường không bật).
 
-- Dòng là tiêu đề khi (≤ 80 ký tự, không kết thúc `。！？!?`) **và**: là block DOCX có `heading`, hoặc khớp
+- Dòng ứng viên tiêu đề khi (≤ 80 ký tự, không kết thúc `。！？!?`) **và** khớp
   `^第\s*(\d{1,3}|[一二三四五六七八九十百]{1,4})\s*(課|章|部|節|回|話|単元)…`, hoặc
   `^(Lesson|Unit|Chapter|Part|Section|Bài|Chương|Phần|Mục|レッスン|ユニット)\s*\d{1,3}…` (không phân biệt hoa thường, nhận số
   fullwidth). Dòng `1.` / `１．` **không** là tiêu đề.
-- `chaptersDetected` = số tiêu đề ≥ 2. Không nhận ra → một chương, văn bản **nguyên vẹn**; backend dùng thuật toán chia theo ngày (mục 4).
+- **Loại câu văn**: dòng chứa `、` hoặc `。` ở bất kỳ đâu không phải tiêu đề; phần sau số phải ≤ 50 ký tự và không bắt đầu
+  bằng `で|に|の|は|が|を|目` (trợ từ dính vào số: `第3章では…`, `第2回目の授業で…`).
+- **Xếp hạng họ từ khoá**: hạng 1 = `課|章|単元|Bài|Chương|Lesson|Unit|Chapter|レッスン|ユニット`; hạng 2 =
+  `部|節|回|話|Phần|Mục|Part|Section`. Chỉ tách theo **họ hạng cao nhất xuất hiện ≥ 2 lần** (hạng 1 nếu có ≥ 2, không thì
+  hạng 2 nếu có ≥ 2); dòng của họ hạng thấp hơn **ở lại trong thân chương** ("Bài 1 / Phần 1 / Phần 2 / Bài 2" → 2 chương).
+- **DOCX** (hạng 0, ưu tiên hơn regex khi khớp ≥ 2 dòng): chỉ dùng heading ở **cấp nhỏ nhất** (gần 1 nhất) xuất hiện ≥ 2
+  lần; cấp sâu hơn (vd. H2 `語彙`/`文法` lặp ở mỗi bài) ở lại trong thân. Tập so khớp dựng từ dòng đầu của các block cấp đó.
+- `chaptersDetected` = số tiêu đề được chọn ≥ 2. Không nhận ra → một chương, văn bản **nguyên vẹn**; backend dùng thuật toán chia theo ngày (mục 4).
 - Nhận ra: thân chương = các dòng giữa hai tiêu đề (bỏ dòng tiêu đề, vì `split_sentences` vốn xoá nó và `第1課` sẽ thành
   từ vựng `課`); tiêu đề chương = cả dòng (cắt 100 ký tự). Phần trước tiêu đề đầu: có tiếng Nhật → chương "Mở đầu", không thì
   gộp vào chương 1. Trang PDF **không** là chương.
+- Backend `buildDraft`: chương trong `stats.chapters` **không có item nào** bị gộp (bỏ hàng, đánh lại `position` 1..n)
+  ngay khi dựng bản nháp, nên bản nháp không hiện chương rỗng và khớp với kết quả `activate`.
 - Phân tích **từng chương**, rồi gộp trùng toàn tài liệu theo lần xuất hiện đầu (từ ở chương 1 và 5 → chỉ chương 1,
   `frequency` cộng dồn). Giới hạn 600 từ / 100 mẫu ngữ pháp tính cho cả tài liệu.
 - Đầu ra: `item.chapter`, `stats.chaptersDetected`, `stats.chapters[{index, title, vocab, grammar}]`; `/text` trả thêm
@@ -102,7 +111,10 @@ today{date, dayIndex, state, tasks[{chapterId, chapterTitle, deckId, fromPos, to
 DRAFT: `cardCount` và dải ngày tính **sống** từ item `selected` + `allocate`; ACTIVE: chốt trong DB.
 
 Liên quan: `GET /api/extractions` **không** liệt kê job của lộ trình; `DELETE /api/extractions/{id}` với job lộ trình → 409
-(xoá qua `DELETE /api/learning-paths/{id}`).
+(xoá qua `DELETE /api/learning-paths/{id}`). Các thao tác sửa job bóc tách (`PUT /text`, `POST /rerun`, `POST /enrich`,
+`PATCH /items`, `POST /decks`) với job lộ trình → 409 "Lượt này thuộc một lộ trình học, hãy thao tác từ trang lộ trình."
+(`rerun` xoá item → rỗng mọi chương nháp); sửa item đi qua `PATCH /api/learning-paths/{id}/items`.
+ACTIVE đổi `totalDays`: chỉ chia lại cho chương còn bộ thẻ; chương có bộ thẻ đã xoá giữ dải cũ, không chiếm ngày.
 
 ## 6. Dữ liệu (`V13__learning_paths.sql`)
 

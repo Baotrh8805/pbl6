@@ -215,6 +215,16 @@ public class ExtractionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, JOB_NOT_FOUND));
     }
 
+    /** Như owned, nhưng job của lộ trình học chỉ được sửa qua trang lộ trình (rerun xoá item -> rỗng chương). */
+    private ExtractionJob ownedEditable(Long uid, UUID id) {
+        ExtractionJob job = owned(uid, id);
+        if (ExtractionJob.PURPOSE_LEARNING_PATH.equals(job.getPurpose())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Lượt này thuộc một lộ trình học, hãy thao tác từ trang lộ trình.");
+        }
+        return job;
+    }
+
     @Transactional(readOnly = true)
     public List<ExtractionJobResponse> list(Long uid) {
         return jobs.findTop50ByUserIdAndPurposeOrderByCreatedAtDesc(uid, ExtractionJob.PURPOSE_EXTRACTION).stream().map(j -> ExtractionJobResponse.of(j, false)).toList();
@@ -239,7 +249,7 @@ public class ExtractionService {
 
     /** Người dùng sửa văn bản OCR -> chạy lại từ ANALYZE. Không chạy khi job đang xử lý. */
     public ExtractionJobResponse updateText(Long uid, UUID id, String text) {
-        ExtractionJob job = owned(uid, id);
+        ExtractionJob job = ownedEditable(uid, id);
         requireIdle(job);
         job.setExtractedText(text);
         job.setStatus(ExtractionJob.QUEUED);
@@ -251,7 +261,7 @@ public class ExtractionService {
     }
 
     public ExtractionJobResponse rerun(Long uid, UUID id) {
-        ExtractionJob job = owned(uid, id);
+        ExtractionJob job = ownedEditable(uid, id);
         requireIdle(job);
         if (job.getExtractedText() == null || job.getExtractedText().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -270,7 +280,7 @@ public class ExtractionService {
 
     /** Chạy lại riêng bước dịch nghĩa VN (Gemini hết quota / lỗi). Không tính vào hạn mức ngày, không phân tích lại. */
     public ExtractionJobResponse reEnrich(Long uid, UUID id) {
-        ExtractionJob job = owned(uid, id);
+        ExtractionJob job = ownedEditable(uid, id);
         requireIdle(job);
         if (!ExtractionJob.DONE.equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lượt này chưa hoàn tất, không thể dịch lại.");
@@ -305,7 +315,18 @@ public class ExtractionService {
 
     @Transactional
     public List<ExtractionItemResponse> patchItems(Long uid, UUID id, List<ItemPatch> patches) {
+        ownedEditable(uid, id);
+        return applyPatches(id, patches);
+    }
+
+    /** Dùng cho LearningPathService (bản nháp lộ trình): cho phép job purpose = learning_path. */
+    @Transactional
+    public List<ExtractionItemResponse> patchPathItems(Long uid, UUID id, List<ItemPatch> patches) {
         owned(uid, id);
+        return applyPatches(id, patches);
+    }
+
+    private List<ExtractionItemResponse> applyPatches(UUID id, List<ItemPatch> patches) {
         Map<UUID, ExtractionItem> byId = items.findByJobIdOrderByPositionAsc(id).stream()
                 .collect(Collectors.toMap(ExtractionItem::getId, Function.identity()));
         for (ItemPatch p : patches) {
@@ -344,7 +365,7 @@ public class ExtractionService {
     /** Mỗi loại (từ vựng / ngữ pháp) có item được chọn và có spec -> một bộ thẻ qua DeckService (cùng quy tắc, cùng kiểm tra). */
     @Transactional
     public List<DeckResponse> createDecks(Long uid, UUID id, CreateDecks req) {
-        ExtractionJob job = owned(uid, id);
+        ExtractionJob job = ownedEditable(uid, id);
         if (!ExtractionJob.DONE.equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lượt bóc tách chưa hoàn tất.");
         }

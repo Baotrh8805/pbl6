@@ -222,11 +222,17 @@ public class LearningPathService {
             byNo.put(index, c.getId());
         }
         rows.sort(Comparator.comparingInt(LearningPathChapter::getPosition));
-        chapters.saveAll(rows);
         UUID first = rows.get(0).getId();
+        Set<UUID> used = new HashSet<>();
         for (ExtractionItem i : all) {
             i.setChapterId(i.getChapterNo() != null ? byNo.getOrDefault(i.getChapterNo(), first) : first);
+            used.add(i.getChapterId());
         }
+        // Chương không có item nào (vd. tiêu đề "Bài 1" ngay trước "Phần 1") -> gộp vào chương kề (không có item để
+        // chuyển nên chỉ cần bỏ), để bản nháp không hiện chương rỗng và khớp với kết quả kích hoạt.
+        rows.removeIf(c -> !used.contains(c.getId()));
+        renumber(rows);
+        chapters.saveAll(rows);
     }
 
     /**
@@ -339,7 +345,9 @@ public class LearningPathService {
         if (req.totalDays() != null && req.totalDays() != path.getTotalDays()) {
             path.setTotalDays(req.totalDays());
             if (LearningPath.ACTIVE.equals(path.getStatus())) {
-                List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
+                // chương mất bộ thẻ không còn gì để học: không chiếm ngày, giữ dải cũ
+                List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id).stream()
+                        .filter(c -> c.getDeckId() != null).toList();
                 List<Integer> counts = rows.stream().map(c -> c.getCardCount() != null ? c.getCardCount() : 0).toList();
                 writeRanges(rows, LearningPathScheduler.allocate(counts, path.getTotalDays()));
             }
@@ -390,7 +398,7 @@ public class LearningPathService {
     public List<ExtractionItemResponse> patchItems(Long uid, UUID id, List<ItemPatch> patches) {
         LearningPath path = owned(uid, id);
         requireDraft(path);
-        return extraction.patchItems(uid, requireJobId(path), patches);
+        return extraction.patchPathItems(uid, requireJobId(path), patches);
     }
 
     private static UUID requireJobId(LearningPath path) {

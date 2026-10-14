@@ -559,6 +559,69 @@ class LearningPathIT extends IntegrationTest {
     }
 
     @Test
+    void extraction_endpoints_refuse_path_job_but_path_items_patch_works() throws Exception {
+        String token = newUser();
+        JsonNode draft = draftPath(token, "5", null);
+        String id = draft.get("id").asText();
+        String jobId = draft.get("jobId").asText();
+        String c1 = draft.get("chapters").get(0).get("id").asText();
+        String itemId = read(call(get(BASE + id + "/chapters/" + c1 + "/items"), token, null)
+                .andExpect(status().isOk())).get(0).get("id").asText();
+        String ext = "/api/extractions/" + jobId;
+        String msg = "Lượt này thuộc một lộ trình học, hãy thao tác từ trang lộ trình.";
+
+        JsonNode res = read(call(post(ext + "/rerun"), token, null).andExpect(status().isConflict()));
+        assertEquals(msg, res.get("message").asText(), res.toString());
+        call(put(ext + "/text"), token, Map.of("text", "第1課\nあ。")).andExpect(status().isConflict());
+        call(post(ext + "/enrich"), token, null).andExpect(status().isConflict());
+        call(patch(ext + "/items"), token, List.of(Map.of("id", itemId, "selected", false)))
+                .andExpect(status().isConflict());
+        call(post(ext + "/decks"), token, Map.of("vocab", Map.of("title", "x"))).andExpect(status().isConflict());
+
+        // Bản nháp còn nguyên 2 chương; sửa item qua lộ trình vẫn chạy
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", itemId, "selected", false)))
+                .andExpect(status().isOk());
+        JsonNode after = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(2, after.get("chapters").size());
+        assertEquals(11, after.get("chapters").get(0).get("cardCount").asInt());
+    }
+
+    @Test
+    void draft_folds_chapters_without_items() throws Exception {
+        List<AiDtos.Item> list = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) list.add(vocab(i, "語" + i, i <= 2 ? 1 : 3, false));
+        stubAnalyze(list, Map.of("vocab", 4, "grammar", 0, "chaptersDetected", true, "chapters", List.of(
+                Map.of("index", 1, "title", "Bài 1"), Map.of("index", 2, "title", "Bài 2"),
+                Map.of("index", 3, "title", "Bài 3"))));
+        String token = newUser();
+        JsonNode ch = draftPath(token, "4", null).get("chapters");
+        assertEquals(2, ch.size(), ch.toString());
+        assertEquals("Bài 1", ch.get(0).get("title").asText());
+        assertEquals("Bài 3", ch.get(1).get("title").asText());
+        assertEquals(1, ch.get(0).get("position").asInt());
+        assertEquals(2, ch.get(1).get("position").asInt());
+        assertEquals(2, ch.get(1).get("cardCount").asInt());
+    }
+
+    @Test
+    void active_total_days_change_skips_deleted_deck_chapters() throws Exception {
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
+        String d1 = active.get("chapters").get(0).get("deckId").asText();
+        call(delete("/api/decks/" + d1), token, null).andExpect(status().isNoContent());
+
+        JsonNode four = read(call(patch(BASE + id), token, Map.of("totalDays", 4)).andExpect(status().isOk()));
+        JsonNode c1 = four.get("chapters").get(0);
+        JsonNode c2 = four.get("chapters").get(1);
+        // chương mất bộ thẻ giữ dải cũ (1–6), không chiếm ngày; chương còn lại dùng hết 4 ngày
+        assertEquals(1, c1.get("dayFrom").asInt());
+        assertEquals(6, c1.get("dayTo").asInt());
+        assertEquals(1, c2.get("dayFrom").asInt());
+        assertEquals(4, c2.get("dayTo").asInt());
+    }
+
+    @Test
     void listener_never_breaks_job() throws Exception {
         // stats.chapters sai kiểu -> buildDraft ném -> lộ trình FAILED, job vẫn DONE
         stubAnalyze(chapterItems(), Map.of("vocab", 20, "grammar", 1, "chaptersDetected", true, "chapters", "oops"));
