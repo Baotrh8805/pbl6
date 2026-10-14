@@ -197,6 +197,7 @@ def _flaky(fails, code):
 def no_sleep(monkeypatch):
     monkeypatch.setattr(gemini, "_sleep", lambda s: None)
     monkeypatch.setattr(gemini, "_cooldown_until", 0.0)  # cầu dao quota là trạng thái module, không để rò giữa các test
+    monkeypatch.setattr(gemini, "_primary_quota_until", 0.0)
 
 
 def test_retries_503_then_succeeds(fake_client):
@@ -280,3 +281,27 @@ def test_quota_cooldown_skips_calls_until_expiry(fake_client, monkeypatch):
     clock["t"] += gemini.COOLDOWN_S + 1
     fake_client(lambda c, cfg: "ok")
     assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+
+
+def test_primary_quota_goes_straight_to_fallback_next_calls(fake_client, monkeypatch):
+    # Model chính 429 nhưng model dự phòng chạy được: lượt sau không thử lại model chính nữa (OCR 18 trang scan
+    # không thể tốn 2+4+8 s mỗi trang), đi thẳng dự phòng cho tới hết thời gian nguội.
+    clock = {"t": 5000.0}
+    monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+
+    box = {}
+
+    def primary_429_fallback_ok(contents, cfg):
+        if box["models"].calls[-1]["model"] == "fallback-model":
+            return "ok"
+        raise _Boom(429)
+
+    models = box["models"] = fake_client(primary_429_fallback_ok)
+    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+    assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
+    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+    assert [c["model"] for c in models.calls[5:]] == ["fallback-model"]  # không gọi model chính
+    clock["t"] += gemini.COOLDOWN_S + 1
+    gemini.vision_transcribe(b"png", "image/png", "auto")
+    assert models.calls[6]["model"] == gemini.MODEL  # hết thời gian nguội -> thử lại model chính

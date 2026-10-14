@@ -26,7 +26,8 @@ TOTAL_BUDGET_S = 150
 # Hết quota / quá tải sau khi đã thử lại hết -> tạm ngưng gọi Gemini COOLDOWN_S giây (mọi lượt gọi: OCR từng trang,
 # dịch nghĩa) để một tài liệu 18 trang scan không chờ 14 s x 18 trang vô ích.
 COOLDOWN_S = 120
-_cooldown_until = 0.0
+_cooldown_until = 0.0        # cả model chính lẫn dự phòng đều hỏng -> không gọi Gemini
+_primary_quota_until = 0.0   # chỉ model chính hết quota -> đi thẳng model dự phòng, không thử lại model chính
 _sleep = time.sleep   # tách ra để test thay bằng no-op
 _now = time.monotonic  # tách ra để test giả lập lượt gọi treo lâu
 
@@ -79,19 +80,25 @@ def _map_error(exc: Exception) -> GeminiError:
 def _generate(contents: Any, config: Optional[dict] = None) -> str:
     """Gọi model chính, thử lại theo RETRY_DELAYS khi 429/503, rồi một lần ở model dự phòng (nếu đặt).
     Lỗi cuối cùng được raise nguyên `reason` để router/backend ghi `quota` / `error`."""
-    global _cooldown_until
+    global _cooldown_until, _primary_quota_until
     if _now() < _cooldown_until:
         raise GeminiError("quota", "Gemini quota exceeded (đang tạm ngưng gọi)", retryable=True)
     client = _get_client()
     from google.genai import types
     cfg = types.GenerateContentConfig(**(config or {}))
-    plans: list[tuple[str, tuple[int, ...]]] = [(MODEL, RETRY_DELAYS)]
     fallback = settings.GEMINI_FALLBACK_MODEL
-    if fallback and fallback != MODEL:
-        plans.append((fallback, ()))
+    if fallback and fallback != MODEL and _now() < _primary_quota_until:
+        plans: list[tuple[str, tuple[int, ...]]] = [(fallback, ())]  # model chính vừa hết quota -> dự phòng ngay
+    else:
+        plans = [(MODEL, RETRY_DELAYS)]
+        if fallback and fallback != MODEL:
+            plans.append((fallback, ()))
     last: Optional[GeminiError] = None
     started = _now()
     for model, delays in plans:
+        if model != MODEL and last is not None and last.retryable:
+            _primary_quota_until = _now() + COOLDOWN_S  # chuyển sang dự phòng: các lượt sau bỏ qua model chính
+            logger.warning("gemini: model chính %s, dùng model dự phòng %s trong %ss", last, model, COOLDOWN_S)
         for attempt in range(len(delays) + 1):
             if last is not None and _now() - started + TIMEOUT_MS / 1000 > TOTAL_BUDGET_S:
                 logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, TOTAL_BUDGET_S)
