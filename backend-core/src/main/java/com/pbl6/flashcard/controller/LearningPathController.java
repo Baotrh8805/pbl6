@@ -1,6 +1,11 @@
 package com.pbl6.flashcard.controller;
 
+import com.pbl6.flashcard.dto.extraction.ExtractionItemResponse;
+import com.pbl6.flashcard.dto.extraction.ExtractionRequests.ItemPatch;
+import com.pbl6.flashcard.dto.learningpath.LearningPathRequests;
 import com.pbl6.flashcard.dto.learningpath.LearningPathResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.LearningPathService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -83,5 +88,52 @@ public class LearningPathController {
                                     @RequestParam(required = false)
                                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return service.get(uid(me), id, service.today(date));
+    }
+
+    /** {title?, totalDays?, startDate?}: DRAFT hoặc ACTIVE (đổi số ngày -> chia lại dải). */
+    @PatchMapping("/{id}")
+    public LearningPathResponse patch(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
+                                      @Valid @RequestBody LearningPathRequests.Patch req) {
+        return service.patch(uid(me), id, req);
+    }
+
+    @PatchMapping("/{id}/chapters/{cid}")
+    public LearningPathResponse patchChapter(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
+                                             @PathVariable UUID cid,
+                                             @Valid @RequestBody LearningPathRequests.ChapterPatch req) {
+        return service.patchChapter(uid(me), id, cid, req);
+    }
+
+    @PostMapping("/{id}/chapters/{cid}/merge-up")
+    public LearningPathResponse mergeUp(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
+                                        @PathVariable UUID cid) {
+        return service.mergeUp(uid(me), id, cid);
+    }
+
+    @PatchMapping("/{id}/items")
+    public List<ExtractionItemResponse> patchItems(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
+                                                   @RequestBody @Size(max = 1000) List<@Valid ItemPatch> patches) {
+        return service.patchItems(uid(me), id, patches);
+    }
+
+    @GetMapping("/{id}/chapters/{cid}/items")
+    public List<ExtractionItemResponse> chapterItems(@AuthenticationPrincipal CustomUserDetails me,
+                                                     @PathVariable UUID id, @PathVariable UUID cid) {
+        return service.chapterItems(uid(me), id, cid);
+    }
+
+    /** {startDate?, totalDays?}. 201: thư mục + bộ thẻ mỗi chương đã tạo, lộ trình ACTIVE. */
+    @PostMapping("/{id}/activate")
+    public ResponseEntity<LearningPathResponse> activate(@AuthenticationPrincipal CustomUserDetails me,
+                                                         @PathVariable UUID id,
+                                                         @Valid @RequestBody(required = false) LearningPathRequests.Activate req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.activate(uid(me), id, req));
+    }
+
+    /** Xoá kế hoạch + job bóc tách ẩn; thư mục / bộ thẻ / lịch ôn giữ nguyên. */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id) {
+        service.delete(uid(me), id);
+        return ResponseEntity.noContent().build();
     }
 }

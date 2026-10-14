@@ -1,12 +1,18 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.dto.deck.DeckRequest;
+import com.pbl6.flashcard.dto.extraction.ExtractionItemResponse;
 import com.pbl6.flashcard.dto.extraction.ExtractionOptions;
+import com.pbl6.flashcard.dto.extraction.ExtractionRequests.ItemPatch;
+import com.pbl6.flashcard.dto.folder.FolderRequest;
 import com.pbl6.flashcard.dto.learningpath.LearningPathChapterResponse;
+import com.pbl6.flashcard.dto.learningpath.LearningPathRequests;
 import com.pbl6.flashcard.dto.learningpath.LearningPathResponse;
 import com.pbl6.flashcard.dto.learningpath.LearningPathResponse.JobSummary;
 import com.pbl6.flashcard.dto.learningpath.LearningPathResponse.Today;
 import com.pbl6.flashcard.model.ExtractionItem;
 import com.pbl6.flashcard.model.ExtractionJob;
+import com.pbl6.flashcard.model.Folder;
 import com.pbl6.flashcard.model.LearningPath;
 import com.pbl6.flashcard.model.LearningPathChapter;
 import com.pbl6.flashcard.model.User;
@@ -38,8 +44,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -296,6 +305,208 @@ public class LearningPathService {
         return toResponse(owned(uid, id), today, true);
     }
 
+    // ---------- sửa bản nháp ----------
+
+    private static void requireDraft(LearningPath path) {
+        if (!LearningPath.DRAFT.equals(path.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Chỉ sửa được khi lộ trình đang ở bước xem trước.");
+        }
+    }
+
+    private LearningPathChapter ownedChapter(LearningPath path, UUID cid) {
+        return chapters.findById(cid).filter(c -> path.getId().equals(c.getPathId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy chương."));
+    }
+
+    private static String requireTitle(String title, String message) {
+        String t = ExtractionWorker.cut(title, MAX_TITLE);
+        if (t == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+        return t;
+    }
+
+    /** Tên / số ngày / ngày bắt đầu. DRAFT: dải ngày tính sống. ACTIVE đổi số ngày: chia lại trên số thẻ đã chốt. */
+    @Transactional
+    public LearningPathResponse patch(Long uid, UUID id, LearningPathRequests.Patch req) {
+        LearningPath path = owned(uid, id);
+        if (LearningPath.PROCESSING.equals(path.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Lộ trình đang được xử lý.");
+        }
+        if (LearningPath.FAILED.equals(path.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lộ trình đã lỗi, hãy tạo lại.");
+        }
+        if (req.title() != null) path.setTitle(requireTitle(req.title(), "Tên lộ trình không được để trống."));
+        if (req.startDate() != null) path.setStartDate(req.startDate());
+        if (req.totalDays() != null && req.totalDays() != path.getTotalDays()) {
+            path.setTotalDays(req.totalDays());
+            if (LearningPath.ACTIVE.equals(path.getStatus())) {
+                List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
+                List<Integer> counts = rows.stream().map(c -> c.getCardCount() != null ? c.getCardCount() : 0).toList();
+                writeRanges(rows, LearningPathScheduler.allocate(counts, path.getTotalDays()));
+            }
+        }
+        return toResponse(path, today(null), true);
+    }
+
+    private static void writeRanges(List<LearningPathChapter> rows, List<DayRange> ranges) {
+        for (int i = 0; i < rows.size(); i++) {
+            rows.get(i).setDayFrom(ranges.get(i).dayFrom());
+            rows.get(i).setDayTo(ranges.get(i).dayTo());
+        }
+    }
+
+    @Transactional
+    public LearningPathResponse patchChapter(Long uid, UUID id, UUID cid, LearningPathRequests.ChapterPatch req) {
+        LearningPath path = owned(uid, id);
+        requireDraft(path);
+        ownedChapter(path, cid).setTitle(requireTitle(req.title(), "Tên chương không được để trống."));
+        return toResponse(path, today(null), true);
+    }
+
+    /** Gộp chương vào chương đứng trước: chuyển item, xoá chương, đánh lại position 1..n. */
+    @Transactional
+    public LearningPathResponse mergeUp(Long uid, UUID id, UUID cid) {
+        LearningPath path = owned(uid, id);
+        requireDraft(path);
+        LearningPathChapter chapter = ownedChapter(path, cid);
+        List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
+        int idx = rows.indexOf(chapter);
+        if (idx <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chương đầu tiên không có chương trước để gộp.");
+        }
+        UUID target = rows.get(idx - 1).getId();
+        items.findByChapterIdOrderByPositionAsc(cid).forEach(i -> i.setChapterId(target));
+        rows.remove(idx);
+        chapters.delete(chapter);
+        renumber(rows);
+        return toResponse(path, today(null), true);
+    }
+
+    private static void renumber(List<LearningPathChapter> rows) {
+        for (int i = 0; i < rows.size(); i++) rows.get(i).setPosition(i + 1);
+    }
+
+    /** Chọn / bỏ chọn / sửa item: chuyển cho ExtractionService (cùng kiểm tra). Trả mọi item của job. */
+    @Transactional
+    public List<ExtractionItemResponse> patchItems(Long uid, UUID id, List<ItemPatch> patches) {
+        LearningPath path = owned(uid, id);
+        requireDraft(path);
+        return extraction.patchItems(uid, requireJobId(path), patches);
+    }
+
+    private static UUID requireJobId(LearningPath path) {
+        if (path.getJobId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dữ liệu bóc tách của lộ trình không còn.");
+        }
+        return path.getJobId();
+    }
+
+    /** Mọi item (chọn và bỏ chọn) của một chương, theo vị trí trong tài liệu. */
+    @Transactional(readOnly = true)
+    public List<ExtractionItemResponse> chapterItems(Long uid, UUID id, UUID cid) {
+        LearningPath path = owned(uid, id);
+        ownedChapter(path, cid);
+        return items.findByChapterIdOrderByPositionAsc(cid).stream().map(ExtractionItemResponse::of).toList();
+    }
+
+    // ---------- kích hoạt ----------
+
+    /**
+     * Bản nháp -> thư mục (metadata learningPathId) + mỗi chương một bộ thẻ (vocab rồi grammar, thứ tự tài liệu)
+     * + chốt số thẻ và dải ngày. Chương không còn thẻ chọn bị bỏ (item của nó gắn sang chương kề trước / sau).
+     */
+    @Transactional
+    public LearningPathResponse activate(Long uid, UUID id, LearningPathRequests.Activate req) {
+        LearningPath path = owned(uid, id);
+        requireDraft(path);
+        if (req != null && req.startDate() != null) path.setStartDate(req.startDate());
+        if (req != null && req.totalDays() != null) path.setTotalDays(req.totalDays());
+        ExtractionJob job = jobs.findById(requireJobId(path)).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dữ liệu bóc tách của lộ trình không còn."));
+        List<ExtractionItem> all = items.findByJobIdOrderByPositionAsc(job.getId());
+
+        Map<UUID, List<ExtractionItem>> byChapter = new HashMap<>();
+        for (ExtractionItem i : all) {
+            if (i.getChapterId() != null) byChapter.computeIfAbsent(i.getChapterId(), k -> new ArrayList<>()).add(i);
+        }
+        List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
+        List<LearningPathChapter> kept = new ArrayList<>();
+        List<LearningPathChapter> dropped = new ArrayList<>();
+        for (LearningPathChapter c : rows) {
+            boolean any = byChapter.getOrDefault(c.getId(), List.of()).stream().anyMatch(ExtractionItem::isSelected);
+            (any ? kept : dropped).add(c);
+        }
+        if (kept.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chưa chọn thẻ nào để tạo lộ trình.");
+        }
+        for (LearningPathChapter c : dropped) {
+            // item (bỏ chọn) của chương trống theo chương còn lại đứng trước; chương đầu thì theo chương sau
+            LearningPathChapter host = null;
+            for (LearningPathChapter k : kept) {
+                if (k.getPosition() < c.getPosition() || host == null) host = k;
+                if (k.getPosition() > c.getPosition()) break;
+            }
+            UUID hostId = host.getId();
+            byChapter.getOrDefault(c.getId(), List.of()).forEach(i -> i.setChapterId(hostId));
+            chapters.delete(c);
+        }
+        renumber(kept);
+
+        List<ExtractionItem> allSelected = all.stream()
+                .filter(i -> i.isSelected() && i.getChapterId() != null).toList();
+        User user = users.findById(uid).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
+        FolderRequest folderReq = new FolderRequest(uniqueRootTitle(uid, path.getTitle()), null, "private",
+                ExtractionService.dominantLevel(allSelected, job), false, "{\"learningPathId\":\"" + id + "\"}");
+        UUID folderId = folderService.createFolder(folderReq, user).getId();
+
+        List<String> deckIds = new ArrayList<>(job.getDeckIds() != null ? job.getDeckIds() : List.of());
+        List<Integer> counts = new ArrayList<>();
+        for (LearningPathChapter c : kept) {
+            List<ExtractionItem> chosen = byChapter.get(c.getId()).stream().filter(ExtractionItem::isSelected).toList();
+            List<ExtractionItem> ordered = new ArrayList<>();
+            chosen.stream().filter(i -> !ExtractionItem.GRAMMAR.equals(i.getKind())).forEach(ordered::add);
+            chosen.stream().filter(i -> ExtractionItem.GRAMMAR.equals(i.getKind())).forEach(ordered::add);
+            DeckRequest deckReq = new DeckRequest(c.getTitle(), ExtractionService.dominantLevel(ordered, job),
+                    ExtractionWorker.cut("Chương " + c.getPosition() + " của lộ trình " + path.getTitle(), 1000),
+                    folderId, null, "goi", ordered.stream().map(ExtractionService::toCard).toList());
+            String deckId = deckService.create(uid, deckReq).id();
+            c.setDeckId(deckId);
+            c.setCardCount(ordered.size());
+            counts.add(ordered.size());
+            deckIds.add(deckId);
+        }
+        job.setDeckIds(deckIds);
+        writeRanges(kept, LearningPathScheduler.allocate(counts, path.getTotalDays()));
+        path.setFolderId(folderId);
+        path.setStatus(LearningPath.ACTIVE);
+        path.setActivatedAt(Instant.now());
+        return toResponse(path, today(null), true);
+    }
+
+    /** Tên thư mục gốc chưa dùng (không phân biệt hoa thường): "title", "title (2)", ... Tính trước createFolder. */
+    private String uniqueRootTitle(Long uid, String title) {
+        Set<String> taken = new HashSet<>();
+        for (Folder f : folders.findByUser_IdOrderByTitleAsc(uid)) {
+            if (f.getParent() == null) taken.add(f.getTitle().toLowerCase(Locale.ROOT));
+        }
+        if (!taken.contains(title.toLowerCase(Locale.ROOT))) return title;
+        String base = title.length() > 94 ? title.substring(0, 94).strip() : title;
+        for (int n = 2; ; n++) {
+            String candidate = base + " (" + n + ")";
+            if (!taken.contains(candidate.toLowerCase(Locale.ROOT))) return candidate;
+        }
+    }
+
+    // ---------- xoá ----------
+
+    /** Xoá kế hoạch (chương cascade) + job bóc tách ẩn (item cascade). Thư mục / bộ thẻ / review giữ nguyên. */
+    @Transactional
+    public void delete(Long uid, UUID id) {
+        LearningPath path = owned(uid, id);
+        UUID jobId = path.getJobId();
+        paths.delete(path);
+        if (jobId != null) jobs.deleteById(jobId);
+    }
+
     LearningPathResponse toResponse(LearningPath p, LocalDate today, boolean full) {
         JobSummary job = p.getJobId() == null ? null : jobs.findById(p.getJobId())
                 .map(j -> new JobSummary(j.getStatus(), j.getStage(), j.getErrorMessage(), j.getStats()))
@@ -339,7 +550,8 @@ public class LearningPathService {
                 DayRange r = ranges.get(idx);
                 int[] kc = counts.getOrDefault(c.getId(), new int[3]);
                 int perDay = r != null ? LearningPathScheduler.perDay(cards, r) : 0;
-                if (r != null) plans.add(new ChapterPlan(c.getId(), c.getTitle(), c.getDeckId(), cards, r));
+                // bộ thẻ đã xoá: chương không còn gì để học trong lịch
+                if (r != null && !(active && c.getDeckId() == null)) plans.add(new ChapterPlan(c.getId(), c.getTitle(), c.getDeckId(), cards, r));
                 dtos.add(new LearningPathChapterResponse(c.getId(), c.getPosition(), c.getTitle(), c.getDeckId(),
                         active && c.getDeckId() == null, cards, kc[1], kc[2],
                         r != null ? r.dayFrom() : null, r != null ? r.dayTo() : null, perDay));
