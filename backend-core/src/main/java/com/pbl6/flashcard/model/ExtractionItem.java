@@ -75,6 +75,14 @@ public class ExtractionItem {
     @Column(nullable = false)
     private boolean selected = true;
 
+    /** Số chương ai-service trả (lộ trình học tập, V13). */
+    @Column(name = "chapter_no")
+    private Integer chapterNo;
+
+    /** Chương sau khi gộp / sửa; xoá chương -> NULL. */
+    @Column(name = "chapter_id")
+    private UUID chapterId;
+
     public ExtractionItem() {}
 
     public UUID getId() { return id; }
@@ -113,6 +121,10 @@ public class ExtractionItem {
     public void setExample(String example) { this.example = example; }
     public String getExampleVi() { return exampleVi; }
     public void setExampleVi(String exampleVi) { this.exampleVi = exampleVi; }
+    public Integer getChapterNo() { return chapterNo; }
+    public void setChapterNo(Integer chapterNo) { this.chapterNo = chapterNo; }
+    public UUID getChapterId() { return chapterId; }
+    public void setChapterId(UUID chapterId) { this.chapterId = chapterId; }
     public boolean isSelected() { return selected; }
     public void setSelected(boolean selected) { this.selected = selected; }
 }

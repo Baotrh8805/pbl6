@@ -24,6 +24,9 @@ public class ExtractionJob {
     public static final String FAILED = "FAILED";
     public static final String CANCELLED = "CANCELLED";
 
+    public static final String PURPOSE_EXTRACTION = "extraction";
+    public static final String PURPOSE_LEARNING_PATH = "learning_path";
+
     public static final String STAGE_TEXT = "TEXT";
     public static final String STAGE_ANALYZE = "ANALYZE";
     public static final String STAGE_ENRICH = "ENRICH";
@@ -68,6 +71,10 @@ public class ExtractionJob {
     @Column(name = "deck_ids", nullable = false, columnDefinition = "jsonb")
     private List<String> deckIds = new ArrayList<>();
 
+    /** Mục đích lượt bóc tách: bóc tách thường hay dựng lộ trình học tập (V13). */
+    @Column(nullable = false, length = 16)
+    private String purpose = PURPOSE_EXTRACTION;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -107,6 +114,8 @@ public class ExtractionJob {
     public void setStats(Map<String, Object> stats) { this.stats = stats; }
     public List<String> getDeckIds() { return deckIds; }
     public void setDeckIds(List<String> deckIds) { this.deckIds = deckIds; }
+    public String getPurpose() { return purpose; }
+    public void setPurpose(String purpose) { this.purpose = purpose; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getStartedAt() { return startedAt; }

@@ -12,5 +12,7 @@ public interface ExtractionItemRepository extends JpaRepository<ExtractionItem, 
 
     List<ExtractionItem> findByJobIdOrderByPositionAsc(UUID jobId);
 
+    List<ExtractionItem> findByChapterIdOrderByPositionAsc(UUID chapterId);
+
     void deleteByJobId(UUID jobId);
 }

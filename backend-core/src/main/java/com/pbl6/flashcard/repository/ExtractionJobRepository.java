@@ -19,6 +19,8 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
 
     List<ExtractionJob> findTop50ByUserIdOrderByCreatedAtDesc(Long userId);
 
+    List<ExtractionJob> findTop50ByUserIdAndPurposeOrderByCreatedAtDesc(Long userId, String purpose);
+
     /** Giới hạn lượt bóc tách mỗi ngày: đếm theo DB để bền qua restart. */
     long countByUserIdAndCreatedAtAfter(Long userId, Instant since);
 
