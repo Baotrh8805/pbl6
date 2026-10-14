@@ -9,6 +9,20 @@ export interface Card {
     /** Nội dung nhiều dòng: định nghĩa, ví dụ, ghi chú. Dòng đầu = định nghĩa chính (Quiz dùng làm đáp án). */
     meaning: string;
     position?: number | null;
+    /** Thẻ sinh từ bóc tách AI mang thêm metadata; thẻ tạo tay để null. */
+    level?: string | null;
+    kind?: CardKind;
+    /** Furigana từng đoạn kanji; null = chưa tách, Ruby hiện cách đọc cho cả từ. */
+    readingSegments?: ReadingSegment[] | null;
+    hanViet?: string | null;
+}
+
+export type CardKind = "vocab" | "grammar";
+
+/** Một đoạn kanji + kana tương ứng (kana === kanji khi đoạn là chữ không cần ruby). */
+export interface ReadingSegment {
+    kanji: string;
+    kana: string;
 }
 
 /** DeckResponse */
@@ -38,6 +52,11 @@ export interface CardDto {
     term: string;
     reading?: string | null;
     meaning: string;
+    /** Pass-through để PUT deck không xoá metadata của thẻ sinh từ bóc tách AI. */
+    level?: string | null;
+    kind?: CardKind;
+    readingSegments?: ReadingSegment[] | null;
+    hanViet?: string | null;
 }
 
 /** DeckRequest (dùng chung cho POST và PUT /decks). */
@@ -225,4 +244,138 @@ export interface QuizResult {
     /** Bản ghi cũ không có mode: coi là exam. */
     mode?: QuizMode;
     createdAt: string; // ISO
+}
+
+// ===== Bóc tách tài liệu -> flashcard (ExtractionController, /api/extractions) =====
+
+export type ExtractionLevelFilter = "all" | "at_or_above" | "only_unknown_to_me";
+export type ExtractionMeaningLang = "vi" | "en";
+export type ExtractionUnknownPolicy = "above" | "drop";
+export type ExtractionOcrMode = "auto" | "vertical" | "horizontal";
+/** auto: ai-service tự nhận dạng; list: mỗi dòng một cụm + nghĩa in sẵn; prose: tách từng từ. */
+export type ExtractionExtractMode = "auto" | "list" | "prose";
+
+/** Tuỳ chọn người dùng, backend lưu và chuyển nguyên vẹn sang ai-service. */
+export interface ExtractionOptions {
+    /** N5..N1; backend mặc định User.jlptLevel. */
+    userLevel: string;
+    levelFilter: ExtractionLevelFilter;
+    includeGrammar: boolean;
+    includeFurigana: boolean;
+    includeHanViet: boolean;
+    meaningLang: ExtractionMeaningLang;
+    /** above: giữ từ không rõ cấp (level=null); drop: bỏ. */
+    treatUnknownAs: ExtractionUnknownPolicy;
+    minFrequency: number;
+    /** Chỉ ảnh hưởng ảnh / PDF scan. */
+    ocrMode: ExtractionOcrMode;
+    /** Bố cục tài liệu: danh sách từ vựng (cụm + nghĩa in sẵn) hay văn xuôi. */
+    extractMode: ExtractionExtractMode;
+}
+
+export type ExtractionStatus = "QUEUED" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED";
+export type ExtractionStage = "QUEUED" | "TEXT" | "ANALYZE" | "ENRICH" | "DONE";
+export type ExtractionSourceType = "text" | "txt" | "docx" | "pdf" | "image";
+
+/** Kết quả bước TEXT (OCR / đọc file). meanConfidence, isVertical = null khi không phải OCR. */
+export interface ExtractionTextMeta {
+    sourceType: ExtractionSourceType;
+    engine: string;
+    meanConfidence: number | null;
+    isVertical: boolean | null;
+    pages: number;
+    lowConfidence: boolean;
+    truncated: boolean;
+    /** Dòng OCR Tesseract có confidence < 0.75 (tối đa 50), theo thứ tự trong văn bản; không có khi đọc file/Gemini. */
+    lowLines?: { text: string; conf: number }[];
+    /** Chỉ có khi OCR kém mà Gemini không chép lại được: quota | no_api_key | error. */
+    geminiError?: string;
+}
+
+/** Thống kê bước ANALYZE; byLevel có khoá N5..N1 và "unknown". */
+export interface ExtractionStats {
+    vocab: number;
+    grammar: number;
+    byLevel: Record<string, number>;
+    sentences: number;
+    tokens: number;
+    /** false khi bước dịch nghĩa tiếng Việt không chạy được; enrichReason: quota | no_api_key | error. */
+    enriched?: boolean;
+    enrichReason?: string;
+    /** ISO thời điểm "Dịch lại nghĩa" gần nhất (POST /{id}/enrich); backend chặn gọi lại trong 5 phút. */
+    enrichedAt?: string;
+    /** Bố cục ai-service nhận dạng: list = danh sách từ vựng (mỗi dòng một cụm), prose = văn xuôi. */
+    layout?: "list" | "prose";
+}
+
+/** ExtractionJobResponse */
+export interface ExtractionJob {
+    id: string;
+    sourceType: ExtractionSourceType;
+    sourceName: string | null;
+    status: ExtractionStatus;
+    stage: ExtractionStage;
+    options: ExtractionOptions;
+    textMeta: ExtractionTextMeta | null;
+    stats: ExtractionStats | null;
+    /** Bộ thẻ đã tạo từ job này. */
+    deckIds: string[];
+    errorMessage: string | null;
+    createdAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    /** Chỉ có khi gọi ?includeText=true. */
+    extractedText?: string | null;
+}
+
+/** ExtractionItemResponse: một từ vựng / mẫu ngữ pháp đã bóc tách. */
+export interface ExtractionItem {
+    id: string;
+    kind: CardKind;
+    /** Thứ tự xuất hiện đầu tiên (1-based). */
+    position: number;
+    /** Lemma (dạng từ điển) hoặc tên mẫu ngữ pháp. */
+    term: string;
+    /** Dạng gặp trong văn bản; null với ngữ pháp. */
+    surface: string | null;
+    reading: string | null;
+    readingSegments: ReadingSegment[] | null;
+    hanViet: string | null;
+    pos: string | null;
+    meaningEn: string | null;
+    meaningVi: string | null;
+    /** N5..N1 hoặc null = không rõ. */
+    level: string | null;
+    levelConfidence: number;
+    /** VD: ["jlpt_list:N4", "jlpt_list:N3"] -> tooltip giải thích cấp mơ hồ. */
+    levelSources: string[];
+    frequency: number;
+    example: string | null;
+    exampleVi: string | null;
+    selected: boolean;
+}
+
+/** PATCH /extractions/{id}/items: chỉ gửi trường cần đổi. */
+export interface ExtractionItemPatch {
+    id: string;
+    selected?: boolean;
+    term?: string;
+    reading?: string | null;
+    meaningVi?: string | null;
+    meaningEn?: string | null;
+    level?: string | null;
+}
+
+/** Thông tin bộ thẻ sẽ tạo cho một loại item (từ vựng / ngữ pháp). */
+export interface ExtractionDeckSpec {
+    title: string;
+    folderId: string | null;
+    /** null = backend lấy cấp phổ biến nhất trong các item đã chọn. */
+    level: string | null;
+}
+
+/** POST /extractions/{id}/decks: null = không tạo bộ thẻ cho loại đó. */
+export interface CreateDecksFromExtractionDto {
+    vocab: ExtractionDeckSpec | null;
+    grammar: ExtractionDeckSpec | null;
 }

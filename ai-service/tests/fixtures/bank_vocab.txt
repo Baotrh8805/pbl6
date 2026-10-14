@@ -1,0 +1,21 @@
+銀行でお金を下ろす	withdraw some money from your account
+銀行でお金を引き出す	withdraw some money from your account
+預ける	put money in a bank account
+銀行口座	bank account
+自動で引き落とされる	be paid by automatic bank transfer
+授業料を払い込む	pay tuition fees with a bank transfer
+家賃を振り込む	transfer a monthly rent
+振込	bank transfer
+公共料金を支払う	pay the utility charges
+支払い	payment
+＊公共料金＝電気代、ガス代、水道代、電話代など
+手数料がかかる	a bank charge
+収入	income/revenue
+支出	expenditure
+赤字	deficit / in the red
+黒字	profits / in the black
+外食する	eat out
+自炊する	cook one's own meals
+高くつく	costly
+栄養がかたよる	a poor diet
+バランスが取れた食事	a balanced meal

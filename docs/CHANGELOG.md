@@ -1,5 +1,94 @@
 # Nhật ký thay đổi
 
+## 14/10/2026: Cập nhật tài liệu cho đợt "Bóc tách AI" (chưa đổi code)
+- Cập nhật `README.md` (cài ai-service, Tesseract, `build_dicts.py`, `.env`), `EXTRACTION.md`, `CODEBASE_MAP.md`,
+  `TEAM_GUIDELINES.md`, `USE_CASES_CHECKLIST.md`; thêm [Plan/README.md](Plan/README.md) làm mục lục spec / kế hoạch.
+- **Trạng thái các spec trong `docs/Plan/`**: `trich-xuat-cum-tu` đã làm (xem mục 12/10 bên dưới); `dich-nghia-offline` đã thử
+  rồi **hoàn tác** (xem ngay dưới); 3 spec ngày 13/10 (thanh tiến trình, giao diện trang `/extractions`, kết quả kiểu "Sửa bộ
+  thẻ") **mới là thiết kế, chưa triển khai, chờ duyệt**.
+
+## 12/10/2026: Thử dịch nghĩa offline (NLLB + CTranslate2) rồi HOÀN TÁC
+- Đã dựng thử engine dịch EN → VI offline thay Gemini ở bước ENRICH, sau đó **gỡ hoàn toàn theo yêu cầu**: không còn
+  `translator.py` / `tm.py` / `enrich.py`, không thêm `ctranslate2` / `sentencepiece` vào `requirements.txt`, không có
+  `--models` trong `build_dicts.py`. Bước ENRICH vẫn là Gemini (kèm thử lại + `GEMINI_FALLBACK_MODEL`, mục bên dưới).
+- Còn lại duy nhất: spec + kế hoạch trong `docs/Plan/` (đánh dấu "đã hoàn tác") và hai dòng `.gitignore`
+  (`app/extract/data/models/`, `translations.sqlite`) để file model / bộ nhớ dịch còn trên máy dev không bị commit nhầm.
+  Xoá thư mục `ai-service/app/extract/data/models/` (≈ 600 MB) nếu cần giải phóng ổ đĩa.
+
+## 12/10/2026: Bảng / danh sách từ vựng → trích theo **cụm**, dùng nghĩa in sẵn; dự phòng khi Gemini hết quota
+Spec: [Plan/specs/2026-10-12-trich-xuat-cum-tu-design.md](Plan/specs/2026-10-12-trich-xuat-cum-tu-design.md).
+- **ai-service** `extract/entries.py` (mới): `parse_line` tách mỗi dòng thành cụm + nghĩa (TAB / `｜` / ` - ` / `：` /
+  ranh giới chữ viết; cột cụm = cột đầu tiên có tiếng Nhật nên `nghĩa<TAB>cụm` vẫn chạy; cột toàn kana → cách đọc
+  cho bảng 3 cột; khai triển `A[B/C`; bỏ `↔ (N)`, bullet, chú thích `＊ ※`; gloss Trung/Hàn bỏ — chữ Hán không có cách
+  đọc tiếng Nhật trong Unihan); `detect_layout` nhận dạng `list` / `prose` (câu ví dụ song ngữ `…です。 I am…` vẫn là
+  `prose`; `auto` mà `list` không ra mục nào thì rơi về `prose`).
+- Sau review: "Dịch lại nghĩa" thành công thì xoá `stats.enrichReason` cũ (trước đây banner hết quota hiện mãi).
+- Sửa sau khi chạy thật (Gemini `gemini-3.7/3.8-flash` quá tải, job rơi về bản Tesseract rác): (1) gloss chỉ được nhận khi có
+  ít nhất một từ tiếng Anh thật (wordfreq zipf ≥ 3) — bỏ "el", "ME", "OO pm fd 24" từ dòng Tesseract; (2) mã 504
+  `DEADLINE_EXCEEDED` cũng thử lại rồi sang `GEMINI_FALLBACK_MODEL` như 503; đo 12/10: `gemini-3.5-flash-lite` trả đúng
+  định dạng trong 2 s nên dùng làm model dự phòng. Thứ tự OCR không đổi: Tesseract trước, Gemini chỉ khi conf < 0,85.
+- `pipeline.py`: tuỳ chọn `extractMode` (`auto|list|prose`), `stats.layout`; nhánh `list` không tách từ bên trong cụm,
+  không ngữ pháp, `pos = 句`, cấp = cấp khó nhất của từ bên trong (`jlpt.phrase_level`, `levelSources[0] = phrase:<từ>`),
+  nghĩa EN/VI in sẵn → `meaningEn` / `meaningVi` (VI có dấu mới nhận). Ảnh bảng "ngân hàng" thật: 20 cụm đúng như bảng
+  (trước: 36 từ rời + 2 ngữ pháp, chú thích bị tách thành 4 từ).
+- `gemini.py`: prompt Vision xuất bảng từ vựng dạng `cụm<TAB>nghĩa`; prompt dịch giữ sát nghĩa gốc; thử lại 429/503
+  (2/4/8 s) rồi `GEMINI_FALLBACK_MODEL` (env mới, tuỳ chọn); hết lượt vẫn giữ `reason = quota`.
+- **Backend**: `ExtractionOptions.extractMode`; `POST /api/extractions/{id}/enrich` chạy lại riêng bước dịch cho item
+  chưa có nghĩa VI (không phân tích lại, không tính hạn mức ngày, cách nhau ≥ 5 phút → `stats.enrichedAt`).
+- **Frontend**: ô "Bố cục tài liệu" trong modal tải lên; huy hiệu "Nhận dạng: danh sách từ vựng" và nút "Dịch lại nghĩa"
+  trên trang kết quả khi `enrichReason` là `quota` / `error`.
+- Test: `test_entries.py` (mới, 11), `test_pipeline.py` +5, `test_classifier.py` +2, `test_gemini.py` +5, `test_router.py` +1,
+  `test_vision_fixture.py` (chạy thật khi `RUN_GEMINI_TESTS=1`, fixture `tests/fixtures/vocab_table.png`), `ExtractionIT` +2.
+
+## 11/10/2026: Thẻ sạch hơn khi nguồn là OCR (ảnh bảng song ngữ), PDF có chữ không bị OCR nhầm
+- **PDF** `readers/pdf_reader.py`: chỉ OCR khi text layer gần như rỗng (< 30 ký tự/trang). Trước đây PDF tiếng Việt/Anh có
+  chữ thật (tỉ lệ chữ Nhật < 20%) bị coi là scan và OCR bằng `jpn` → văn bản rác.
+- **Ví dụ trên thẻ** `pipeline.py`: với dòng OCR, ví dụ = cụm tiếng Nhật liền mạch quanh từ (cắt ở chữ Latin / ký hiệu /
+  chữ số ASCII); bỏ nếu cụm ≤ từ + 1 ký tự hoặc dòng conf < 0.40; lần đầu không có ví dụ thì lấy ở lần xuất hiện sau. Ngữ
+  pháp lấy cụm dài nhất của dòng. Văn bản thường / DOCX / PDF có chữ giữ nguyên câu như cũ.
+- **Mục đáng ngờ** (`suspect`, chỉ OCR): không có nghĩa trong từ điển, từ 1 ký tự trên dòng conf < 0.75, hoặc không rõ cấp
+  JLPT trên dòng conf < 0.60 → backend lưu `selected=false` (vẫn hiện, tick lại được). Ảnh bảng song ngữ thật: 84 từ,
+  34 chọn sẵn (trước: 91 từ chọn hết, gồm 具 / 戸 / 肌 / 逝得…).
+- **OCR** `image_reader.py`: chèn khoảng trắng giữa hai từ Latin liền nhau ("met money from your account" thay vì
+  "metmoneyfrom…"); CER bộ tổng hợp không đổi (0.044). Thử lại `jpn+eng` trên ảnh thật: chữ Anh tốt hơn nhưng mất chữ Nhật
+  (を, 人) → vẫn loại.
+- **Báo lỗi Gemini**: `textMeta.geminiError` (chỉ có khi OCR kém mà Gemini không chép lại được) và `stats.enrichReason`
+  hiện thành cảnh báo trong `ExtractedTextPanel` (vd. "AI (Gemini) đã hết hạn mức…").
+- Test: `test_pipeline.py` +6, `test_image_reader.py` +2, `test_pdf_reader.py` +1, `ExtractionIT` kiểm tra `selected=false`.
+
+## 10/10/2026: Nâng độ chính xác OCR ảnh / PDF scan (UC-05, 07, 17)
+- **ai-service** `readers/image_reader.py` (chỉ Pillow + numpy, không thêm thư viện): flatten PNG trong suốt lên nền trắng;
+  khử bóng đổ (`_flatten_background`); deskew ±5° (projection profile, có biên 1.2× tránh xoay nhầm chữ dọc); hỏi OSD xoay
+  90/180/270 khi cả hai lượt đọc đều kém; điểm chọn hướng phạt dòng < 8 ký tự; 2 lượt `jpn`/`jpn_vert` và 3 trang PDF chạy
+  song song (20 trang: 44 s → 22 s); lọc furigana bỏ dấu câu trước khi xét kana-only; NFKC cho text OCR; Gemini nhận ảnh
+  đã tiền xử lý, kết quả Gemini `meanConfidence=null` và `lowConfidence=true` nếu độ dài lệch > 3× bản Tesseract.
+- **Đo**: `ai-service/scripts/ocr_eval.py` (ảnh tổng hợp 12 nhóm, CER / tỉ lệ Gemini / thời gian / vocab F1; `--gemini`,
+  `--real DIR`, `--set`). Chỉ Tesseract: CER 0.355 → 0.095; có Gemini ≈ 0.05. Bảng từng bước và các thử nghiệm bị loại
+  (`jpn+eng`, `--oem 1`, Otsu, psm 3/4/11, dừng sớm) ở [EXTRACTION.md](EXTRACTION.md) §6. Chưa xử lý được trang ngang 2 cột
+  (Tesseract gộp 2 cột thành một dòng; Gemini đọc đúng).
+- **Tách 2 cột**: rãnh trắng dọc ≥ 1.5 dòng ở giữa trang → OCR từng nửa, nối trái → phải (two_col CER 0.58 → 0.03;
+  Tesseract tự nó gộp 2 cột thành 1 dòng ở mọi psm).
+- **Soát dòng nghi sai**: ai-service trả `blocks[].lines[] = {text, conf}`; backend (`ExtractionJobResponse`) rút
+  `textMeta.lowLines` (conf < 0.75, ≤ 50 dòng) thay vì gửi cả `blocks`; FE `ExtractedTextPanel` liệt kê, bấm vào là bôi
+  đen đúng dòng trong ô văn bản để sửa rồi "Phân tích lại".
+- **API đổi**: `meanConfidence` có thể `null` khi `engine=gemini` (FE đã xử lý `!= null`); `textMeta.lowLines` (tuỳ chọn).
+- Test: `test_image_reader.py` thêm 12 test (alpha, NFKC, nền, deskew, OSD, furigana, 2 cột, Gemini plausibility, lines);
+  `ExtractionIT` kiểm tra `lowLines`.
+
+## 07/10/2026: Bóc tách tài liệu tiếng Nhật → từ vựng / ngữ pháp / cấp JLPT → bộ thẻ (UC-05 → 12, 17, 18)
+- **Backend** (`V12__extraction_jobs`): bảng `extraction_jobs` / `extraction_items`; `flashcards` thêm `level`, `kind`,
+  `reading_segments`, `han_viet`. API `/api/extractions` (tạo job multipart, poll, sửa văn bản chạy lại, duyệt / PATCH item,
+  tạo bộ thẻ qua `DeckService.create`, xoá). Worker `@Async` 3 giai đoạn TEXT → ANALYZE → ENRICH gọi ai-service bằng
+  `RestClient` (`AiServiceClient`); file gốc không lưu. Giới hạn 5 / 50 lượt mỗi 24 giờ (`app.extraction.daily-limit.*`).
+- **ai-service**: gói `app/extract/` thật (SudachiPy, furigana từng chữ, Hán-Việt Unihan, JMdict, 5 danh sách JLPT + wordfreq,
+  catalog ngữ pháp YAML, DOCX/PDF/TXT reader, Tesseract + Gemini Vision fallback, Gemini dịch nghĩa VN) với
+  `POST /api/extract/text|analyze|enrich`, `GET /api/extract/health`; `scripts/build_dicts.py` tải dữ liệu từ điển.
+- **Frontend**: modal "Tải tài liệu & bóc tách AI" mở khoá (file hoặc dán văn bản + tuỳ chọn), trang `/extractions/:id`
+  (tiến trình, sửa văn bản OCR, duyệt từ vựng / ngữ pháp theo cấp, tạo bộ thẻ), `/extractions` lịch sử; `Ruby` nhận
+  `segments` để hiện furigana theo từng chữ.
+- **API đổi**: `CardResponse` / `DeckRequest.Card` có thêm `level`, `kind`, `readingSegments`, `hanViet` (tuỳ chọn; không gửi = giữ nguyên).
+- Test: `ExtractionIT` (4 test, ai-service giả lập); pytest trong `ai-service/tests/`. Tài liệu: [EXTRACTION.md](EXTRACTION.md).
+
 ## 03/10/2026: Đánh giá bộ thẻ có bình luận
 - **Backend** (`V10__deck_rating_comments`): bảng `deck_ratings` có sẵn từ V3 nay thêm `comment` (<= 500 ký tự, CHECK) và
   `created_at`; vẫn một đánh giá mỗi người mỗi bộ thẻ (UNIQUE `deck_id,user_id`). Thêm `GET /api/library/decks/{id}/ratings`

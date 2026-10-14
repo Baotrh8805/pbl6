@@ -76,6 +76,7 @@ const SECTIONS: NavSectionConfig[] = [
         },
       },
       { to: "/folders", icon: "folder", label: "Thư Mục Học" },
+      { to: "/extractions", icon: "document_scanner", label: "Bóc Tách AI" },
     ],
   },
   {

@@ -1,8 +1,8 @@
 import React from "react";
-import type { CardDto } from "@/types/api.types";
 import type { EditorCard } from "./editorCards";
 
-type EditableField = Exclude<keyof CardDto, "id">;
+// Chỉ 3 cột chữ soạn được; metadata (level, kind, readingSegments, hanViet) pass-through, không sửa ở đây.
+type EditableField = "term" | "reading" | "meaning";
 
 interface CardRowsEditorProps {
   cards: EditorCard[];

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.stream.Collectors;
@@ -77,6 +78,12 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> onConflict(DataIntegrityViolationException e) {
         log.warn("Vi phạm ràng buộc dữ liệu: {}", e.getMostSpecificCause().getMessage());
         return error(HttpStatus.CONFLICT, "Dữ liệu xung đột với bản ghi hiện có, vui lòng thử lại.");
+    }
+
+    /** Upload vượt spring.servlet.multipart.max-file-size: 413 với thông điệp rõ ràng thay vì 500. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiError> onTooLarge(MaxUploadSizeExceededException e) {
+        return error(HttpStatus.PAYLOAD_TOO_LARGE, "File vượt quá 15 MB.");
     }
 
     @ExceptionHandler(Exception.class)

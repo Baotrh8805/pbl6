@@ -5,6 +5,7 @@ import com.pbl6.flashcard.model.Flashcard;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -16,10 +17,11 @@ public record DeckResponse(String id, String title, String level, String descrip
                            List<CardResponse> cards) {
 
     public record CardResponse(String id, String term, String reading, String meaning,
-                               Integer position) {
+                               Integer position, String level, String kind,
+                               List<Map<String, String>> readingSegments, String hanViet) {
         public static CardResponse of(Flashcard c) {
             return new CardResponse(c.getId(), c.getTerm(), c.getReading(), c.getMeaning(),
-                    c.getPosition());
+                    c.getPosition(), c.getLevel(), c.getKind(), c.getReadingSegments(), c.getHanViet());
         }
     }
 

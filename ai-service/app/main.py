@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import nlp_router, kanji_dtw_router, ocr_router, audio_praat_router
+from app.api import nlp_router, kanji_dtw_router, ocr_router, audio_praat_router, extract_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -23,6 +23,7 @@ app.include_router(nlp_router.router, prefix=settings.API_V1_STR)
 app.include_router(kanji_dtw_router.router, prefix=settings.API_V1_STR)
 app.include_router(ocr_router.router, prefix=settings.API_V1_STR)
 app.include_router(audio_praat_router.router, prefix=settings.API_V1_STR)
+app.include_router(extract_router.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def health_check():

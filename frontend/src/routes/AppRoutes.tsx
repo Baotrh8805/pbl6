@@ -15,6 +15,8 @@ import { RoadmapPage } from "@/pages/RoadmapPage";
 import { QuizRoomPage } from "@/pages/QuizRoomPage";
 import { DeckLibraryPage } from "@/pages/DeckLibraryPage";
 import { FoldersPage } from "@/pages/FoldersPage";
+import { ExtractionPage } from "@/pages/ExtractionPage";
+import { ExtractionsPage } from "@/pages/ExtractionsPage";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicRoute } from "./PublicRoute";
@@ -67,6 +69,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="/decks/:deckId" element={<DeckDetailPage />} />
         <Route path="/decks/:deckId/edit" element={<DeckEditorPage mode="edit" />} />
         <Route path="/decks/:deckId/add-cards" element={<DeckEditorPage mode="add-cards" />} />
+        <Route path="/extractions" element={<ExtractionsPage />} />
+        <Route path="/extractions/:id" element={<ExtractionPage />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
         <Route path="/profile" element={<ProfilePage />} />

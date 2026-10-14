@@ -1,0 +1,253 @@
+package com.pbl6.flashcard.service;
+
+import com.pbl6.flashcard.config.AsyncConfig;
+import com.pbl6.flashcard.dto.extraction.AiDtos;
+import com.pbl6.flashcard.dto.extraction.AiDtos.AnalyzeResult;
+import com.pbl6.flashcard.dto.extraction.AiDtos.EnrichRequest;
+import com.pbl6.flashcard.dto.extraction.AiDtos.EnrichResult;
+import com.pbl6.flashcard.dto.extraction.AiDtos.TextResult;
+import com.pbl6.flashcard.model.ExtractionItem;
+import com.pbl6.flashcard.model.ExtractionJob;
+import com.pbl6.flashcard.repository.ExtractionItemRepository;
+import com.pbl6.flashcard.repository.ExtractionJobRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Consumer;
+
+/**
+ * Chạy pipeline TEXT -> ANALYZE -> ENRICH cho một job trên thread nền. Mỗi giai đoạn một transaction ngắn để
+ * client poll thấy tiến độ và kết nối DB không bị giữ trong lúc chờ ai-service. Byte của file chỉ sống trong
+ * lúc gọi bước TEXT, không lưu đâu cả.
+ */
+@Component
+public class ExtractionWorker {
+
+    private static final Logger log = LoggerFactory.getLogger(ExtractionWorker.class);
+
+    private final ExtractionJobRepository jobs;
+    private final ExtractionItemRepository items;
+    private final AiServiceClient ai;
+    private final TransactionTemplate tx;
+
+    public ExtractionWorker(ExtractionJobRepository jobs, ExtractionItemRepository items, AiServiceClient ai,
+                            PlatformTransactionManager txManager) {
+        this.jobs = jobs;
+        this.items = items;
+        this.ai = ai;
+        this.tx = new TransactionTemplate(txManager);
+    }
+
+    /** Job mới: từ bước TEXT. data != null = file; text != null = văn bản dán. */
+    @Async(AsyncConfig.EXTRACTION_EXECUTOR)
+    public void runFromText(UUID jobId, byte[] data, String filename, String text, String ocrMode) {
+        try {
+            update(jobId, j -> {
+                j.setStatus(ExtractionJob.RUNNING);
+                j.setStage(ExtractionJob.STAGE_TEXT);
+                j.setStartedAt(Instant.now());
+                j.setErrorMessage(null);
+            });
+            TextResult tr = ai.extractText(data, filename, text, ocrMode);
+            if (tr.text() == null || tr.text().isBlank()) {
+                throw new AiServiceClient.AiServiceException("Không trích được chữ tiếng Nhật nào từ tài liệu.");
+            }
+            Map<String, Object> meta = new LinkedHashMap<>(tr.meta() != null ? tr.meta() : Map.of());
+            if (tr.blocks() != null) meta.put("blocks", tr.blocks());
+            update(jobId, j -> {
+                j.setExtractedText(tr.text());
+                j.setTextMeta(meta);
+            });
+            analyzeAndFinish(jobId);
+        } catch (RuntimeException e) {
+            fail(jobId, e);
+        }
+    }
+
+    /** Phân tích lại từ văn bản đã lưu (người dùng sửa OCR / chạy lại sau lỗi). */
+    @Async(AsyncConfig.EXTRACTION_EXECUTOR)
+    public void runFromAnalyze(UUID jobId) {
+        try {
+            update(jobId, j -> {
+                j.setStatus(ExtractionJob.RUNNING);
+                j.setStartedAt(Instant.now());
+                j.setFinishedAt(null);
+                j.setErrorMessage(null);
+            });
+            analyzeAndFinish(jobId);
+        } catch (RuntimeException e) {
+            fail(jobId, e);
+        }
+    }
+
+    private void analyzeAndFinish(UUID jobId) {
+        update(jobId, j -> j.setStage(ExtractionJob.STAGE_ANALYZE));
+        ExtractionJob snapshot = tx.execute(s -> jobs.findById(jobId).orElseThrow());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blocks = snapshot.getTextMeta() != null
+                ? (List<Map<String, Object>>) snapshot.getTextMeta().get("blocks") : null;
+        AnalyzeResult ar = ai.analyze(snapshot.getExtractedText(), blocks, snapshot.getOptions());
+
+        List<ExtractionItem> created = new ArrayList<>();
+        int position = 0;
+        for (AiDtos.Item it : ar.items() != null ? ar.items() : List.<AiDtos.Item>of()) {
+            if (it.term() == null || it.term().isBlank()) continue;
+            created.add(toEntity(jobId, it, ++position));
+        }
+        Map<String, Object> stats = new LinkedHashMap<>(ar.stats() != null ? ar.stats() : Map.of());
+        if (Boolean.TRUE.equals(ar.truncated())) stats.put("truncated", true);
+        tx.executeWithoutResult(s -> {
+            items.deleteByJobId(jobId);
+            items.saveAll(created);
+            jobs.findById(jobId).ifPresent(j -> j.setStats(stats));
+        });
+
+        boolean wantVi = "vi".equals(snapshot.getOptions().get("meaningLang"));
+        if (wantVi && !created.isEmpty()) {
+            update(jobId, j -> j.setStage(ExtractionJob.STAGE_ENRICH));
+            enrich(jobId, created, stats);
+        } else {
+            stats.put("enriched", false);
+        }
+
+        update(jobId, j -> {
+            j.setStats(stats);
+            j.setStatus(ExtractionJob.DONE);
+            j.setStage(ExtractionJob.DONE);
+            j.setFinishedAt(Instant.now());
+        });
+    }
+
+    /** Nghĩa tiếng Việt chỉ là phần làm giàu: lỗi ở đây không làm job thất bại (giữ nghĩa tiếng Anh). */
+    /** Chỉ chạy lại bước ENRICH (người dùng bấm "Dịch lại nghĩa" sau khi Gemini hết quota): không phân tích lại,
+     *  không chạm item đã có nghĩa VI (từ tài liệu hoặc người dùng sửa). */
+    @Async(AsyncConfig.EXTRACTION_EXECUTOR)
+    public void runEnrich(UUID jobId) {
+        try {
+            update(jobId, j -> {
+                j.setStatus(ExtractionJob.RUNNING);
+                j.setStage(ExtractionJob.STAGE_ENRICH);
+                j.setStartedAt(Instant.now());
+                j.setFinishedAt(null);
+                j.setErrorMessage(null);
+            });
+            ExtractionJob snapshot = tx.execute(s -> jobs.findById(jobId).orElseThrow());
+            Map<String, Object> stats = new LinkedHashMap<>(snapshot.getStats() != null ? snapshot.getStats() : Map.of());
+            List<ExtractionItem> pending = tx.execute(s -> items.findByJobIdOrderByPositionAsc(jobId));
+            enrich(jobId, pending, stats);
+            stats.put("enrichedAt", Instant.now().toString());
+            update(jobId, j -> {
+                j.setStats(stats);
+                j.setStatus(ExtractionJob.DONE);
+                j.setStage(ExtractionJob.DONE);
+                j.setFinishedAt(Instant.now());
+            });
+        } catch (RuntimeException e) {
+            fail(jobId, e);
+        }
+    }
+
+    private void enrich(UUID jobId, List<ExtractionItem> created, Map<String, Object> stats) {
+        List<AiDtos.EnrichInput> inputs = new ArrayList<>();
+        Map<String, ExtractionItem> byRef = new HashMap<>();
+        for (ExtractionItem i : created) {
+            if (!ExtractionItem.VOCAB.equals(i.getKind()) || i.getMeaningVi() != null) continue;
+            String ref = i.getId().toString();
+            byRef.put(ref, i);
+            inputs.add(new AiDtos.EnrichInput(ref, i.getTerm(), i.getReading(), i.getPos(), i.getMeaningEn(), i.getExample()));
+        }
+        if (inputs.isEmpty()) {
+            // không còn gì để dịch (mọi nghĩa VI đã có từ tài liệu / lần dịch trước) -> không giữ lý do lỗi cũ
+            stats.put("enriched", false);
+            stats.remove("enrichReason");
+            return;
+        }
+        try {
+            EnrichResult er = ai.enrich(new EnrichRequest("vi", inputs));
+            boolean enriched = Boolean.TRUE.equals(er.enriched());
+            stats.put("enriched", enriched);
+            stats.remove("enrichReason"); // "Dịch lại nghĩa" thành công thì cảnh báo hết quota cũ phải biến mất
+            if (er.reason() != null) stats.put("enrichReason", er.reason());
+            if (!enriched || er.items() == null) return;
+            Map<UUID, AiDtos.EnrichOutput> outputs = new HashMap<>();
+            for (AiDtos.EnrichOutput o : er.items()) {
+                ExtractionItem target = o.ref() != null ? byRef.get(o.ref()) : null;
+                if (target != null) outputs.put(target.getId(), o);
+            }
+            tx.executeWithoutResult(s -> {
+                for (ExtractionItem i : items.findAllById(outputs.keySet())) {
+                    AiDtos.EnrichOutput o = outputs.get(i.getId());
+                    if (o.meaningVi() != null && !o.meaningVi().isBlank()) i.setMeaningVi(cut(o.meaningVi(), 1000));
+                    if (o.exampleVi() != null && !o.exampleVi().isBlank()) i.setExampleVi(cut(o.exampleVi(), 500));
+                }
+            });
+        } catch (AiServiceClient.AiServiceException e) {
+            log.warn("Bỏ qua bước dịch nghĩa cho job {}: {}", jobId, e.getMessage());
+            stats.put("enriched", false);
+            stats.put("enrichReason", "error");
+        }
+    }
+
+    private static ExtractionItem toEntity(UUID jobId, AiDtos.Item it, int position) {
+        ExtractionItem e = new ExtractionItem();
+        e.setId(UUID.randomUUID());
+        e.setJobId(jobId);
+        e.setKind(ExtractionItem.GRAMMAR.equals(it.kind()) ? ExtractionItem.GRAMMAR : ExtractionItem.VOCAB);
+        e.setPosition(it.position() != null ? it.position() : position);
+        e.setTerm(cut(it.term(), 200));
+        e.setSurface(cut(it.surface(), 200));
+        e.setReading(cut(it.reading(), 200));
+        e.setReadingSegments(it.readingSegments());
+        e.setHanViet(cut(it.hanViet(), 100));
+        e.setPos(cut(it.pos(), 40));
+        e.setMeaningEn(cut(it.meaningEn(), 1000));
+        e.setMeaningVi(cut(it.meaningVi(), 1000));
+        e.setLevel(it.level() != null && it.level().matches("N[1-5]") ? it.level() : null);
+        e.setLevelConfidence(it.levelConfidence());
+        e.setLevelSources(it.levelSources());
+        e.setFrequency(it.frequency() != null && it.frequency() > 0 ? it.frequency() : 1);
+        e.setExample(cut(it.example(), 500));
+        e.setExampleVi(cut(it.exampleVi(), 500));
+        // OCR đọc kém (chữ đơn trên dòng tin cậy thấp, không có trong từ điển) -> bỏ chọn sẵn để người dùng xem lại
+        e.setSelected(!Boolean.TRUE.equals(it.suspect()));
+        return e;
+    }
+
+    static String cut(String s, int max) {
+        if (s == null) return null;
+        String t = s.strip();
+        if (t.isEmpty()) return null;
+        return t.length() <= max ? t : t.substring(0, max);
+    }
+
+    private void update(UUID jobId, Consumer<ExtractionJob> change) {
+        tx.executeWithoutResult(s -> jobs.findById(jobId).ifPresent(change));
+    }
+
+    private void fail(UUID jobId, RuntimeException e) {
+        String message = e instanceof AiServiceClient.AiServiceException ? e.getMessage()
+                : "Lỗi hệ thống khi xử lý tài liệu.";
+        if (!(e instanceof AiServiceClient.AiServiceException)) log.error("Job bóc tách {} lỗi", jobId, e);
+        else log.warn("Job bóc tách {} thất bại: {}", jobId, e.getMessage());
+        try {
+            update(jobId, j -> {
+                j.setStatus(ExtractionJob.FAILED);
+                j.setErrorMessage(cut(message, 500));
+                j.setFinishedAt(Instant.now());
+            });
+        } catch (RuntimeException inner) {
+            log.error("Không ghi được trạng thái FAILED cho job {}", jobId, inner);
+        }
+    }
+}

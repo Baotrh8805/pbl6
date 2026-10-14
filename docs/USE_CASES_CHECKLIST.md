@@ -1,14 +1,14 @@
 # Bảng Phân Chia 7 Phân Hệ & 42 Use Case Theo 3 Sprint
 
-> Trạng thái cập nhật 30/09/2026 theo code thực tế (commit `0d90c0f`, nhánh `Backend`): `[x]` = đã chạy được và có test;
+> Trạng thái cập nhật 14/10/2026 theo code thực tế (nhánh `backend-feature-learnmode`; UC-05 → 12, 17, 18 chưa commit lúc viết): `[x]` = đã chạy được và có test;
 > ghi chú in nghiêng = làm một phần. Tổng kết đợt gần nhất: [Progress/30-9.md](Progress/30-9.md).
 
 | Sprint | Số UC | Xong | Một phần | Còn lại |
 | :--- | :---: | :---: | :---: | :---: |
-| Sprint 1 (UC-01 → UC-16) | 16 | 7 | 1 | 8 (chủ yếu AI: upload, OCR, NLP, sinh thẻ) |
-| Sprint 2 (UC-17 → UC-29) | 13 | 5 | 0 | 8 |
+| Sprint 1 (UC-01 → UC-16) | 16 | 15 | 1 | 0 |
+| Sprint 2 (UC-17 → UC-29) | 13 | 7 | 0 | 6 |
 | Sprint 3 (UC-30 → UC-42) | 13 | 0 | 0 | 13 |
-| **Tổng** | **42** | **12** | **1** | **29** |
+| **Tổng** | **42** | **22** | **1** | **19** |
 
 Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm vừa làm vừa học hiệu quả mà không bị ngợp, công việc được chia làm 3 Sprint:
 
@@ -24,16 +24,16 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [x] UC-04: Đổi mật khẩu / Khôi phục tài khoản. *(quên mật khẩu gửi email thật khi đã cấu hình SMTP, xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp); chưa cấu hình thì link chỉ ghi vào log backend)*
 
 ### Phân hệ 2: Tiếp nhận & Xử lý tài liệu (Cơ bản)
-- [ ] UC-05: Tải lên hình ảnh tài liệu tiếng Nhật (JPG/PNG).
-- [ ] UC-06: Tải lên tài liệu dạng văn bản / PDF.
-- [ ] UC-07: OCR nhận dạng văn bản tiếng Nhật cơ bản.
-- [ ] UC-08: Tách từ tiếng Nhật (Sudachi / MeCab).
-- [ ] UC-09: Tự động gán phiên âm Furigana cho từ vựng.
-- [ ] UC-10: Tra cứu và tự động gán âm Hán-Việt tương ứng.
+- [x] UC-05: Tải lên hình ảnh tài liệu tiếng Nhật (JPG/PNG). *(PNG/JPG/WEBP ≤ 15 MB, OCR Tesseract + Gemini fallback; xem [EXTRACTION.md](EXTRACTION.md))*
+- [x] UC-06: Tải lên tài liệu dạng văn bản / PDF. *(TXT/MD/DOCX/PDF hoặc dán văn bản)*
+- [x] UC-07: OCR nhận dạng văn bản tiếng Nhật cơ bản. *(cần cài Tesseract; không có thì job báo lỗi rõ)*
+- [x] UC-08: Tách từ tiếng Nhật (Sudachi / MeCab). *(SudachiPy mode A/C)*
+- [x] UC-09: Tự động gán phiên âm Furigana cho từ vựng. *(căn từng chữ, `readingSegments`)*
+- [x] UC-10: Tra cứu và tự động gán âm Hán-Việt tương ứng. *(Unihan kVietnamese)*
 
 ### Phân hệ 3: Sinh học liệu bằng AI (Cơ bản)
-- [ ] UC-11: Tự động sinh bộ Flashcard từ danh sách từ vựng OCR.
-- [ ] UC-12: Tự động tạo ví dụ và dịch nghĩa câu ví dụ.
+- [x] UC-11: Tự động sinh bộ Flashcard từ danh sách từ vựng OCR. *(duyệt / sửa / bỏ chọn rồi tạo bộ thẻ vào thư mục)*
+- [x] UC-12: Tự động tạo ví dụ và dịch nghĩa câu ví dụ. *(ví dụ = câu trong tài liệu; nghĩa VN + dịch ví dụ qua Gemini khi có `GEMINI_API_KEY`)*
 - [x] UC-13: Chỉnh sửa thủ công nội dung Flashcard sau khi AI tạo. *(sửa thủ công thẻ trong trình soạn / trang bộ thẻ)*
 
 ### Phân hệ 4: Quản lý & Chia sẻ bộ thẻ (Cơ bản)
@@ -47,8 +47,8 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 *Mục tiêu: Tích hợp chấm nét vẽ Kanji (DTW), OCR chữ dọc, phân tầng JLPT và sinh trắc nghiệm có câu nhiễu.*
 
 ### Tiếp nối Phân hệ 2 & 3:
-- [ ] UC-17: OCR tài liệu chữ dọc (Tatechugaki) và xử lý phân đoạn văn bản.
-- [ ] UC-18: Phân loại cấp độ từ vựng/ngữ pháp theo 5 bậc JLPT (N5 - N1).
+- [x] UC-17: OCR tài liệu chữ dọc (Tatechugaki) và xử lý phân đoạn văn bản. *(`jpn_vert`, tự chọn theo confidence × độ dài dòng, sắp cột phải → trái; deskew + OSD + khử bóng; đo bằng `ai-service/scripts/ocr_eval.py`)*
+- [x] UC-18: Phân loại cấp độ từ vựng/ngữ pháp theo 5 bậc JLPT (N5 - N1). *(danh sách JLPT + wordfreq fallback; mơ hồ → cấp dễ nhất kèm độ tin cậy)*
 - [x] UC-19: Tự động sinh bài kiểm tra trắc nghiệm (Quiz) từ bộ thẻ. *(sinh đề từ bộ thẻ bằng thuật toán, chưa dùng AI)*
 - [ ] UC-20: AI sinh các phương án gây nhiễu (distractors) có căn cứ ngôn ngữ học (dễ nhầm Kanji, cách đọc onyomi/kunyomi).
 - [ ] UC-21: Cơ chế Sinh-rồi-lọc (Generate-then-filter) kiểm tra chất lượng câu hỏi.

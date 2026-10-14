@@ -233,7 +233,7 @@ export const DeckDetailPage: React.FC = () => {
                             >
                                 <div className="flex-1 min-w-0">
                                     <div className="text-title-md font-semibold">
-                                        <Ruby term={card.term} reading={card.reading ?? undefined} />
+                                        <Ruby term={card.term} reading={card.reading ?? undefined} segments={card.readingSegments} />
                                     </div>
                                     <div className="text-body-sm text-on-surface-variant mt-0.5">
                                         <CardContent

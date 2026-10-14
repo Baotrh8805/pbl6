@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record DeckRequest(
@@ -26,6 +27,16 @@ public record DeckRequest(
             @NotBlank @Size(max = 200) String term,
             @Size(max = 200) String reading,
             // Nội dung nhiều dòng (định nghĩa, ví dụ, ghi chú); dòng đầu là định nghĩa chính
-            @NotBlank @Size(max = 2000) String meaning
-    ) {}
+            @NotBlank @Size(max = 2000) String meaning,
+            // Metadata bóc tách AI (tuỳ chọn, V12): client giữ nguyên khi sửa để không mất khi PUT deck
+            @Pattern(regexp = "N[1-5]") String level,
+            @Pattern(regexp = "vocab|grammar") String kind,
+            @Size(max = 50) List<Map<String, String>> readingSegments,
+            @Size(max = 100) String hanViet
+    ) {
+        /** Thẻ chỉ có nội dung cơ bản (import, nhân bản). */
+        public Card(String id, String term, String reading, String meaning) {
+            this(id, term, reading, meaning, null, null, null, null);
+        }
+    }
 }

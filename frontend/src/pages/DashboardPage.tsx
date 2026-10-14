@@ -125,11 +125,8 @@ export const DashboardPage: React.FC = () => {
         />
       )}
 
-      <QuickAiUploadModal
-        isOpen={uploadModalOpen}
-        onClose={() => setUploadModalOpen(false)}
-        folders={folders}
-      />
+      {/* Thư mục chọn sau, lúc tạo bộ thẻ từ kết quả bóc tách -> không cần truyền folders. */}
+      <QuickAiUploadModal isOpen={uploadModalOpen} onClose={() => setUploadModalOpen(false)} />
     </div>
   );
 };

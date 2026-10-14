@@ -132,7 +132,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Thao tác trên hàng thẻ
-  const handleCardChange = (index: number, field: Exclude<keyof CardDto, "id">, value: string) => {
+  const handleCardChange = (index: number, field: "term" | "reading" | "meaning", value: string) => {
     setCards((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };

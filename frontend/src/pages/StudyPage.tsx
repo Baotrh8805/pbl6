@@ -122,7 +122,11 @@ export const StudyPage: React.FC = () => {
 
                 <div className="p-space-xl rounded-2xl bg-surface-container-lowest border border-surface-container-high text-center">
                     <div lang="ja" className="text-display-sm font-bold">
-                        {revealed ? <Ruby term={current.term} reading={current.reading ?? undefined} /> : current.term}
+                        {revealed ? (
+                            <Ruby term={current.term} reading={current.reading ?? undefined} segments={current.readingSegments} />
+                        ) : (
+                            current.term
+                        )}
                     </div>
 
                     {canSpeak && (

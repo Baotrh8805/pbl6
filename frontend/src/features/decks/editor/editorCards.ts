@@ -15,6 +15,16 @@ export function createEmptyCards(count: number): EditorCard[] {
   return Array.from({ length: count }, createEmptyCard);
 }
 
+/** Metadata của thẻ sinh từ bóc tách AI: chỉ pass-through (chưa có UI sửa) để PUT deck không xoá. */
+function cardMeta(card: Card | CardDto): Pick<CardDto, "level" | "kind" | "readingSegments" | "hanViet"> {
+  return {
+    level: card.level ?? null,
+    kind: card.kind,
+    readingSegments: card.readingSegments ?? null,
+    hanViet: card.hanViet ?? null,
+  };
+}
+
 /** Thẻ đã lưu (từ API) hoặc thẻ nhập hàng loạt -> hàng soạn thảo. */
 export function toEditorCard(card: Card | CardDto): EditorCard {
   return {
@@ -23,19 +33,20 @@ export function toEditorCard(card: Card | CardDto): EditorCard {
     term: card.term,
     reading: card.reading || "",
     meaning: card.meaning,
+    ...cardMeta(card),
   };
 }
 
 /**
  * Đảo 2 cột: cột trái (Thuật ngữ + Cách đọc) <-> cột phải (Nội dung).
  * Dòng đầu của nội dung thành Thuật ngữ; Thuật ngữ, Cách đọc và các dòng còn lại gộp thành nội dung mới.
- * Không mất chữ nào.
+ * Không mất chữ nào. Furigana từng đoạn gắn với thuật ngữ cũ nên bỏ.
  */
 export function swapCardColumns(card: EditorCard): EditorCard {
   const [first = "", ...rest] = card.meaning.split("\n");
   const reading = card.reading?.trim() ?? "";
   const meaning = [card.term, reading, ...rest].filter((l) => l.trim().length > 0).join("\n");
-  return { ...card, term: first.trim(), reading: "", meaning };
+  return { ...card, term: first.trim(), reading: "", meaning, readingSegments: null };
 }
 
 /** Bỏ _key, trim và loại hàng thiếu Thuật ngữ/Định nghĩa trước khi gửi API. */
@@ -46,6 +57,7 @@ export function toValidCardDtos(cards: EditorCard[]): CardDto[] {
       term: c.term.trim(),
       reading: c.reading?.trim() || null,
       meaning: c.meaning.trim(),
+      ...cardMeta(c),
     }))
     .filter((c) => c.term.length > 0 && c.meaning.length > 0);
 }

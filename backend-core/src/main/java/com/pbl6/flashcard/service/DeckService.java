@@ -218,7 +218,8 @@ public class DeckService {
                 .toList();
         int pos = 1;
         for (Flashcard f : ordered) {
-            copy.getCards().add(newCard(copy, new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning()), pos++));
+            copy.getCards().add(newCard(copy, new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning(),
+                    f.getLevel(), f.getKind(), f.getReadingSegments(), f.getHanViet()), pos++));
         }
         return DeckResponse.of(deckRepository.save(copy), Access.OWNER.json());
     }
@@ -374,5 +375,10 @@ public class DeckService {
         card.setTerm(c.term().trim());
         card.setReading(c.reading() != null ? c.reading().trim() : null);
         card.setMeaning(c.meaning().trim());
+        // Metadata AI: client không gửi (null) = giữ nguyên giá trị đang có, không xoá
+        if (c.level() != null) card.setLevel(c.level());
+        if (c.kind() != null) card.setKind(c.kind());
+        if (c.readingSegments() != null) card.setReadingSegments(c.readingSegments());
+        if (c.hanViet() != null) card.setHanViet(c.hanViet().trim());
     }
 }

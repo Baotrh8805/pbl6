@@ -9,22 +9,22 @@ Tài liệu này quy định các chuẩn mực lập trình, quy trình làm vi
 Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Sprint chi tiết tại [USE_CASES_CHECKLIST.md](USE_CASES_CHECKLIST.md)).
 Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất: [30-9.md](Progress/30-9.md)).
 
-### Tiến độ hiện tại (Cập nhật 30/09/2026, commit `0d90c0f` trên nhánh `Backend`):
-- **Tổng tiến độ toàn dự án:** ~**31%** (12/42 use case xong, 1 làm một phần)
-- **Sprint 1 (Nền tảng & MVP):** ~**48%** (7/16 xong, 1 một phần). Phần còn thiếu chủ yếu là AI (upload, OCR, sinh thẻ), lùi sang sau theo quyết định của nhóm.
-- **Sprint 2:** ~**40%** (5/13: quiz, SRS, Thư viện cộng đồng). **Sprint 3:** chưa bắt đầu.
-- **Chất lượng:** 55 test backend đạt; CI chạy test backend + lint/build/selfcheck frontend cho mọi push/PR.
+### Tiến độ hiện tại (Cập nhật 14/10/2026, nhánh `backend-feature-learnmode`; phần bóc tách AI chưa commit lúc viết):
+- **Tổng tiến độ toàn dự án:** ~**52%** (22/42 use case xong, 1 làm một phần)
+- **Sprint 1 (Nền tảng & MVP):** ~**94%** (15/16 xong, 1 một phần: UC-01 chưa có Google OAuth). Đã có luồng AI: tải tài liệu → OCR → bóc tách → bộ thẻ.
+- **Sprint 2:** ~**54%** (7/13: quiz, SRS, Thư viện cộng đồng, OCR chữ dọc, phân cấp JLPT). **Sprint 3:** chưa bắt đầu.
+- **Chất lượng:** CI chạy `mvn test` + lint/build/selfcheck frontend + `pytest` ai-service cho mọi push/PR.
 
 | Phân hệ | Use Cases | Trạng thái hiện tại | Thành phần phụ trách |
 | :--- | :--- | :---: | :--- |
 | **Phân hệ 1: Tài khoản & Auth** | UC-01 -> UC-04 | 🟢 85% | Xong: đăng ký email, đăng nhập JWT + Refresh Token (không vào web 3 ngày thì tự đăng xuất), hồ sơ & JLPT, đổi mật khẩu, quên mật khẩu qua email. Chưa có: Google OAuth. |
-| **Phân hệ 2: Xử lý tài liệu & NLP** | UC-05 -> UC-10 | 🟡 15% | `ai-service`: prototype tách từ / Furigana / Hán-Việt (từ điển mẫu). OCR mock. Chưa upload file, backend chưa gọi AI service. |
-| **Phân hệ 3: Sinh học liệu AI** | UC-11 -> UC-13 | 🟡 33% | Sửa thẻ thủ công (UC-13) xong. Chưa tích hợp LLM sinh thẻ / ví dụ. |
+| **Phân hệ 2: Xử lý tài liệu & NLP** | UC-05 -> UC-10 | 🟢 90% | Xong: tải ảnh / PDF / DOCX / TXT / dán văn bản, OCR Tesseract (chữ ngang + dọc) với Gemini Vision dự phòng, SudachiPy, furigana từng chữ, Hán-Việt, JMdict. Chưa có ảnh chụp thật để đo OCR (chỉ có ảnh tổng hợp). Xem [EXTRACTION.md](EXTRACTION.md). |
+| **Phân hệ 3: Sinh học liệu AI** | UC-11 -> UC-13 | 🟢 90% | Xong: bóc tách → duyệt / sửa → tạo bộ thẻ (UC-11), nghĩa VN + dịch ví dụ qua Gemini (UC-12), sửa thẻ tay (UC-13). Còn mở: giao diện kết quả kiểu "Sửa bộ thẻ" (spec 13/10, chưa làm). |
 | **Phân hệ 4: Quản lý & Chia sẻ Bộ thẻ** | UC-14 -> UC-16, UC-27 -> UC-29 | 🟢 85% | Xong: CRUD bộ thẻ / thẻ, thư mục lồng nhau, chia sẻ bộ thẻ & thư mục, Thư viện cộng đồng (tìm, chấm sao, lưu bản sao). Chưa có: xuất Anki/CSV (UC-29). |
 | **Phân hệ 5: Luyện tập đa giác quan** | UC-22 -> UC-26, UC-30 -> UC-33 | 🟡 35% | Xong: SRS (UC-26), Quiz chấm ở server có hạn giờ (UC-19, UC-25). DTW Kanji & Praat còn là khung sườn / mock; chưa có Canvas. |
 | **Phân hệ 6: Lộ trình & GraphRAG** | UC-34 -> UC-37 | 🔴 5% | Trang Lộ trình hiển thị tiến độ theo cấp JLPT từ dữ liệu thật; chưa có Neo4j / GraphRAG. |
 | **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🔴 0% | Chưa triển khai. |
-| **Giao diện người dùng (Frontend)** | Toàn bộ UI Web | 🟢 | React + Vite: mọi màn hình gọi API thật, trừ tải lên AI (khoá, "Sắp ra mắt"). |
+| **Giao diện người dùng (Frontend)** | Toàn bộ UI Web | 🟢 | React + Vite: mọi màn hình gọi API thật, kể cả tải lên AI (`/extractions`). |
 
 ### Việc cần làm tiếp (theo thứ tự ưu tiên)
 1. **Đổi mật khẩu DB Supabase** (đã bị lộ trong lịch sử git), rồi cập nhật `application-local.properties` của từng thành viên. Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#4-đổi-mật-khẩu-database-khi-nghi-bị-lộ).
@@ -32,7 +32,9 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 3. **Thử giao diện trên trình duyệt** các màn hình vừa đổi: trình soạn bộ thẻ, thư mục & chia sẻ, quiz, quên / đặt lại mật khẩu.
 4. **Cấu hình SMTP** để gửi email quên mật khẩu thật. Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp).
 5. **Nhánh `Frontend` / `dev`**: cập nhật theo API đã đổi (quiz cần `attemptId`, `GET /api/decks` không còn trả bộ thẻ cộng đồng). Chi tiết ở [Progress/30-9.md](Progress/30-9.md).
-6. Việc sau: phân hệ AI (upload, OCR, sinh thẻ), xuất Anki/CSV (UC-29), Google OAuth.
+6. **Bóc tách AI** (nhánh `backend-feature-learnmode`): commit, rồi mỗi thành viên làm theo [README bước 2](../README.md) (venv, `build_dicts.py`, `ai-service/.env`, Tesseract). Cần `GEMINI_API_KEY` riêng của từng người, không commit key.
+7. **Chờ duyệt** 3 spec giao diện ngày 13/10 trong [Plan/](Plan/README.md) (thanh tiến trình, trang danh sách, kết quả kiểu "Sửa bộ thẻ").
+8. Việc sau: xuất Anki/CSV (UC-29), Google OAuth, distractor có căn cứ (UC-20), Kanji DTW / phát âm thật.
 
 ---
 

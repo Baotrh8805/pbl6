@@ -95,10 +95,16 @@ const CardForm: React.FC<CardFormProps> = ({ formId, initialCard, onSave, onClos
     onSavingChange(true);
     setError(null);
     try {
+      // Giữ metadata bóc tách AI của thẻ đang sửa; đổi thuật ngữ thì furigana từng đoạn không còn khớp.
+      const termChanged = initialCard != null && term.trim() !== initialCard.term;
       await onSave({
         term: term.trim(),
         reading: reading.trim() || null,
         meaning: meaning.trim(),
+        level: initialCard?.level ?? null,
+        kind: initialCard?.kind,
+        readingSegments: termChanged ? null : (initialCard?.readingSegments ?? null),
+        hanViet: initialCard?.hanViet ?? null,
       });
       onClose();
     } catch (err) {

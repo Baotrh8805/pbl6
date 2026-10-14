@@ -2,6 +2,11 @@ package com.pbl6.flashcard.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.util.List;
+import java.util.Map;
 
 @Entity
 @Table(name = "flashcards")
@@ -26,6 +31,24 @@ public class Flashcard {
 
     private Integer position;
 
+    // Metadata do bóc tách AI sinh ra (V12). Thẻ tạo tay: level/segments/hanViet null, kind = vocab.
+    @Column(length = 2)
+    private String level;
+
+    @Column(nullable = false, length = 8)
+    private String kind = KIND_VOCAB;
+
+    /** [{kanji, kana}] từng đoạn để hiện furigana theo chữ; null = chỉ có cách đọc cả từ. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "reading_segments", columnDefinition = "jsonb")
+    private List<Map<String, String>> readingSegments;
+
+    @Column(name = "han_viet", length = 100)
+    private String hanViet;
+
+    public static final String KIND_VOCAB = "vocab";
+    public static final String KIND_GRAMMAR = "grammar";
+
     public Flashcard() {}
 
     public String getId() { return id; }
@@ -45,4 +68,16 @@ public class Flashcard {
 
     public Integer getPosition() { return position; }
     public void setPosition(Integer position) { this.position = position; }
+
+    public String getLevel() { return level; }
+    public void setLevel(String level) { this.level = level; }
+
+    public String getKind() { return kind; }
+    public void setKind(String kind) { this.kind = kind != null ? kind : KIND_VOCAB; }
+
+    public List<Map<String, String>> getReadingSegments() { return readingSegments; }
+    public void setReadingSegments(List<Map<String, String>> readingSegments) { this.readingSegments = readingSegments; }
+
+    public String getHanViet() { return hanViet; }
+    public void setHanViet(String hanViet) { this.hanViet = hanViet; }
 }
