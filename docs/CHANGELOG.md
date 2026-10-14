@@ -1,5 +1,18 @@
 # Nhật ký thay đổi
 
+## 14/10/2026: Lộ trình học tập từ tài liệu (UC-37, bản theo tài liệu)
+Spec: [Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md](Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md) · tài liệu: [LEARNING_PATH.md](LEARNING_PATH.md).
+- **ai-service**: `extract/chapters.py` (tách chương theo `第N課` / `Unit N` / heading DOCX), `pipeline.analyze` nhận
+  `splitChapters` (phân tích từng chương, gộp trùng; `item.chapter`, `stats.chapters`, `stats.chaptersDetected`), `/text` trả `blocks[].heading`.
+- **Backend**: `V13__learning_paths.sql` (`learning_paths`, `learning_path_chapters`, `extraction_jobs.purpose`,
+  `extraction_items.chapter_no/chapter_id`); `LearningPathService`, `LearningPathScheduler` (chia ngày, hàm thuần),
+  `ExtractionJobFinishedEvent`, `LearningPathController` (`/api/learning-paths`: tạo, danh sách, chi tiết, sửa, gộp chương,
+  bỏ thẻ, kích hoạt, xoá). Job lộ trình ẩn khỏi `GET /api/extractions`; `DELETE /api/extractions/{id}` → 409 với job này.
+- **Frontend**: trang `/roadmap` thay hẳn bằng danh sách lộ trình + modal tạo; `/roadmap/:id` (đang xử lý / bản nháp / đang học
+  với "Hôm nay" và nợ); `StudyPage` nhận `?range=a-b&path=`; tách dùng chung `SourceFields`, `ExtractionOptionsFields`, `LevelBadge`.
+- Test: `LearningPathSchedulerTest`, `LearningPathIT`, `test_chapters.py`, `roadmapUtils` (selfcheck), `smoke-learning-path.mjs`
+  (thêm vào `npm run e2e`).
+
 ## 14/10/2026: Cập nhật tài liệu cho đợt "Bóc tách AI" (chưa đổi code)
 - Cập nhật `README.md` (cài ai-service, Tesseract, `build_dicts.py`, `.env`), `EXTRACTION.md`, `CODEBASE_MAP.md`,
   `TEAM_GUIDELINES.md`, `USE_CASES_CHECKLIST.md`; thêm [Plan/README.md](Plan/README.md) làm mục lục spec / kế hoạch.

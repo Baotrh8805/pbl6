@@ -80,7 +80,7 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [ ] UC-34: Xây dựng đồ thị tri thức (Knowledge Graph) từ vựng - ngữ pháp trên Neo4j.
 - [ ] UC-35: Ứng dụng GraphRAG truy vấn ngữ cảnh học tập theo đồ thị.
 - [ ] UC-36: Phát hiện mâu thuẫn kiến thức giữa các tài liệu tự sưu tầm của người học.
-- [ ] UC-37: Đề xuất lộ trình học bổ khuyết các điểm yếu của từng cá nhân.
+- [~] UC-37: Đề xuất lộ trình học bổ khuyết các điểm yếu của từng cá nhân. (Đã có lộ trình theo tài liệu: chương → bộ thẻ → lịch theo ngày, xem [LEARNING_PATH.md](LEARNING_PATH.md); chưa cá nhân hoá theo điểm yếu.)
 
 ### Phân hệ 7: Quản trị hệ thống & Thương mại hóa
 - [ ] UC-38: Dashboard quản trị: thống kê số lượng người dùng, bộ thẻ, lượt tạo AI.

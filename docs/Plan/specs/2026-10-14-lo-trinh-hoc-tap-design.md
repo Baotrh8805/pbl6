@@ -1,6 +1,6 @@
 # Spec: Lộ trình học tập từ tài liệu (thư mục → chương → bộ thẻ → lịch theo ngày)
 
-Ngày 14/10/2026 · nhánh `backend-feature-learnmode` · trạng thái: **đã duyệt 14/10, đang triển khai** theo
+Ngày 14/10/2026 · nhánh `backend-feature-learnmode` · trạng thái: **đã duyệt 14/10, đã triển khai 14/10/2026** theo
 [plans/2026-10-14-lo-trinh-hoc-tap.md](../plans/2026-10-14-lo-trinh-hoc-tap.md).
 
 ## 1. Bối cảnh

@@ -57,7 +57,7 @@ let code = 0;
 try {
     await waitUp();
     // smoke-extraction cần ai-service thật ở AI_SERVICE_URL (mặc định :8000); không có thì section báo FAIL rõ ràng
-    for (const script of ["smoke-auth.mjs", "smoke-crud.mjs", "smoke-extraction.mjs"]) {
+    for (const script of ["smoke-auth.mjs", "smoke-crud.mjs", "smoke-extraction.mjs", "smoke-learning-path.mjs"]) {
         const r = spawnSync(process.execPath, [script], { stdio: "inherit", env: { ...process.env, BASE_URL: base } });
         if (r.status !== 0) code = 1;
     }

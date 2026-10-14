@@ -7,6 +7,7 @@
         "smoke": "node smoke-auth.mjs",
         "smoke:crud": "node smoke-crud.mjs",
         "smoke:extraction": "node smoke-extraction.mjs",
+        "smoke:learning-path": "node smoke-learning-path.mjs",
         "e2e": "node e2e.mjs"
     }
 }

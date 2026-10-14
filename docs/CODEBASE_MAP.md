@@ -28,6 +28,7 @@ Cập nhật 14/10/2026 (nhánh `backend-feature-learnmode`, trên commit `901d8
 | Route trang | `frontend/src/routes/AppRoutes.tsx` |
 | Số liệu dashboard dùng chung (tự tải lại sau mỗi thao tác ghi) | `frontend/src/components/layout/AppLayout.tsx` |
 | Bóc tách tài liệu → từ vựng / ngữ pháp → bộ thẻ | `controller/ExtractionController.java`, `service/ExtractionService.java` (job, duyệt, tạo bộ thẻ), `service/ExtractionWorker.java` (@Async, 3 giai đoạn), `service/AiServiceClient.java` (RestClient → ai-service). Frontend: `services/extractionService.ts`, `pages/ExtractionPage.tsx`, `features/extraction/`. Python: `ai-service/app/extract/`. Xem [EXTRACTION.md](EXTRACTION.md) |
+| Lộ trình học tập (tài liệu → chương → bộ thẻ → lịch theo ngày) | `controller/LearningPathController.java` (`/api/learning-paths`), `service/LearningPathService.java` (tạo, bản nháp, kích hoạt), `service/LearningPathScheduler.java` (chia ngày, hàm thuần), `service/ExtractionJobFinishedEvent.java`, `model/LearningPath*.java`, `V13__learning_paths.sql`. Frontend: `services/learningPathService.ts`, `pages/RoadmapPage.tsx` + `RoadmapDetailPage.tsx`, `features/roadmap/`. Python: `ai-service/app/extract/chapters.py`. Xem [LEARNING_PATH.md](LEARNING_PATH.md) |
 | AI khác (Kanji DTW, phát âm) | `ai-service/app/api/*.py` — khung sườn / mock |
 
 ---
@@ -70,12 +71,13 @@ Chủ > được chia sẻ riêng bộ thẻ (`deck_shares`: VIEWER/EDITOR) > b�
 `V1` baseline · `V2` ràng buộc & độ dài cột · `V3` thư viện, chia sẻ bộ thẻ, chấm sao · `V4` chia sẻ thư mục ·
 `V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `V7` refresh token · `V8` gộp ví dụ vào nghĩa · `V9` chế độ quiz & làm tiếp · `V10` bình luận đánh giá ·
 `V11` log ôn tập & reset tiến độ · `V12` job bóc tách AI (`extraction_jobs`, `extraction_items`, thêm cột vào `flashcards`) ·
+`V13` lộ trình học tập (`learning_paths`, `learning_path_chapters`, `extraction_jobs.purpose`, `extraction_items.chapter_*`) ·
 `R__seed_system_decks` bộ thẻ mẫu.
 
 ### Test
 `mvn test` chạy khoảng 96 test (unit + tích hợp `*IT.java`; đếm theo `@Test`, con số thật xem output Maven) trên Postgres nhúng (không cần Docker / Supabase).
 Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderShareIT`, `QuizAttemptIT`, `PasswordResetIT`, `RefreshTokenIT`,
-`AuthValidationIT`, `RegisterRateLimitIT`, `ExtractionIT` (ai-service giả lập bằng `@MockitoBean`).
+`AuthValidationIT`, `RegisterRateLimitIT`, `ExtractionIT` (ai-service giả lập bằng `@MockitoBean`), `LearningPathIT`, `LearningPathSchedulerTest`.
 `ai-service`: `cd ai-service && python -m pytest -q` (khoảng 123 test; test cần Tesseract / Gemini tự bỏ qua khi thiếu).
 `npm run e2e` (thư mục gốc) chạy smoke test HTTP trên backend thật + Postgres nhúng.
 
@@ -85,8 +87,8 @@ Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderSha
 
 | Thư mục | Nội dung |
 | :--- | :--- |
-| `pages/` | Mỗi route một trang (Dashboard, Decks, Folders, Library, DeckDetail/Editor, Study, Quiz, QuizRoom, Roadmap, Profile, Extractions (`/extractions`, lịch sử) / Extraction (`/extractions/:id`), Login/Register/Forgot/ResetPassword) |
-| `features/<miền>/` | Component + helper theo miền: `auth`, `dashboard` (gồm `QuickAiUploadModal`: tải tài liệu), `decks`, `extraction`, `folders`, `library`, `profile` |
+| `pages/` | Mỗi route một trang (Dashboard, Decks, Folders, Library, DeckDetail/Editor, Study, Quiz, QuizRoom, Roadmap (`/roadmap`, danh sách lộ trình) / RoadmapDetail (`/roadmap/:id`), Profile, Extractions (`/extractions`, lịch sử) / Extraction (`/extractions/:id`), Login/Register/Forgot/ResetPassword) |
+| `features/<miền>/` | Component + helper theo miền: `auth`, `dashboard` (gồm `QuickAiUploadModal`: tải tài liệu), `decks`, `extraction`, `folders`, `library`, `profile`, `roadmap` (modal tạo, bản nháp, lịch, "Hôm nay") |
 | `components/` | Layout (`AppLayout`, `AuthLayout`) và UI dùng chung (`Button`, `Input`, `Modal`, `DialogProvider`) |
 | `lib/` | Hàm thuần: `deckUtils` (gồm `JLPT_LEVELS`), `learningStats`, `srs`, `useAsync` (tham số `reload` để tải lại ngầm), `textUtils` (`getInitials`), `speech` |
 | `services/` | `apiClient` (gắn JWT, 401 -> đăng xuất, phát `data:changed` sau request ghi), các service gọi API |
@@ -99,7 +101,7 @@ Kiểm tra: `npm run lint`, `npm run build`, `npm run selfcheck` (`scripts/selfC
 
 | Endpoint | Tệp | Trạng thái |
 | :--- | :--- | :--- |
-| `POST /api/extract/text`, `/analyze`, `/enrich`, `GET /api/extract/health` | `app/api/extract_router.py` → `app/extract/` (readers, tokenizer SudachiPy, entries — bố cục list/prose + tách cụm/nghĩa, furigana, han_viet, jmdict, jlpt, grammar, pipeline, gemini) | Thật, backend gọi qua `AiServiceClient`. Header `X-Internal-Key`. Xem [EXTRACTION.md](EXTRACTION.md) |
+| `POST /api/extract/text`, `/analyze`, `/enrich`, `GET /api/extract/health` | `app/api/extract_router.py` → `app/extract/` (readers, tokenizer SudachiPy, entries — bố cục list/prose + tách cụm/nghĩa, chapters — tách chương cho Lộ trình, furigana, han_viet, jmdict, jlpt, grammar, pipeline, gemini) | Thật, backend gọi qua `AiServiceClient`. Header `X-Internal-Key`. Xem [EXTRACTION.md](EXTRACTION.md) |
 | `POST /api/nlp/analyze` | `app/api/nlp_router.py` | Dùng lại tokenizer / furigana / Hán-Việt / JLPT của `app/extract` |
 | `POST /api/kanji/score-stroke` | `app/api/kanji_dtw_router.py` | Khung sườn: so với 1 nét mẫu cố định |
 | `POST /api/ocr/process-image` | `app/api/ocr_router.py` | Gọi `app/extract/readers/image_reader.py` (Tesseract + Gemini fallback) |
@@ -115,7 +117,7 @@ CORS đang mở `*`; các route `/api/extract/*` có khoá nội bộ `AI_SERVIC
 - `docker-compose.yml`: Postgres 16, Redis, Neo4j cho chạy offline (backend hiện chỉ dùng Postgres).
 - `.github/workflows/ci.yml`: CI chạy `mvn test` + lint/build/selfcheck frontend + `pytest` ai-service (Python 3.12) cho mọi push/PR.
 - `dev.mjs` (`npm run dev`: bật cả ai-service nếu có `ai-service/venv`), `e2e.mjs` (`npm run e2e`), `smoke-*.mjs`
-  (`npm run smoke:extraction` cần backend + ai-service thật): script chạy thử ở thư mục gốc.
+  (`npm run smoke:extraction`, `npm run smoke:learning-path` cần backend + ai-service thật): script chạy thử ở thư mục gốc.
 - `ai-service/scripts/`: `build_dicts.py` (tải từ điển), `ocr_eval.py` (đo CER của OCR).
 - `docs/`: [ARCHITECTURE.md](ARCHITECTURE.md), [SUPABASE_SETUP.md](SUPABASE_SETUP.md),
   [USE_CASES_CHECKLIST.md](USE_CASES_CHECKLIST.md), [TEAM_GUIDELINES.md](TEAM_GUIDELINES.md), [CHANGELOG.md](CHANGELOG.md),

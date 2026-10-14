@@ -22,7 +22,7 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 | **Phân hệ 3: Sinh học liệu AI** | UC-11 -> UC-13 | 🟢 90% | Xong: bóc tách → duyệt / sửa → tạo bộ thẻ (UC-11), nghĩa VN + dịch ví dụ qua Gemini (UC-12), sửa thẻ tay (UC-13). Còn mở: giao diện kết quả kiểu "Sửa bộ thẻ" (spec 13/10, chưa làm). |
 | **Phân hệ 4: Quản lý & Chia sẻ Bộ thẻ** | UC-14 -> UC-16, UC-27 -> UC-29 | 🟢 85% | Xong: CRUD bộ thẻ / thẻ, thư mục lồng nhau, chia sẻ bộ thẻ & thư mục, Thư viện cộng đồng (tìm, chấm sao, lưu bản sao). Chưa có: xuất Anki/CSV (UC-29). |
 | **Phân hệ 5: Luyện tập đa giác quan** | UC-22 -> UC-26, UC-30 -> UC-33 | 🟡 35% | Xong: SRS (UC-26), Quiz chấm ở server có hạn giờ (UC-19, UC-25). DTW Kanji & Praat còn là khung sườn / mock; chưa có Canvas. |
-| **Phân hệ 6: Lộ trình & GraphRAG** | UC-34 -> UC-37 | 🔴 5% | Trang Lộ trình hiển thị tiến độ theo cấp JLPT từ dữ liệu thật; chưa có Neo4j / GraphRAG. |
+| **Phân hệ 6: Lộ trình & GraphRAG** | UC-34 -> UC-37 | 🟡 25% | UC-37 một phần: Lộ trình học tập từ tài liệu (tách chương → thư mục + bộ thẻ/chương → lịch theo ngày, trang `/roadmap`); chưa cá nhân hoá theo điểm yếu, chưa có Neo4j / GraphRAG. |
 | **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🔴 0% | Chưa triển khai. |
 | **Giao diện người dùng (Frontend)** | Toàn bộ UI Web | 🟢 | React + Vite: mọi màn hình gọi API thật, kể cả tải lên AI (`/extractions`). |
 
