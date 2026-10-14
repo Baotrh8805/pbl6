@@ -199,3 +199,19 @@ def test_docx_front_matter_heading_dropped():
     r = split_chapters_ex(text, blocks)
     assert [c.title for c in r.chapters] == ["第1課", "第2課"]
     assert "はじめに" in r.skipped
+
+
+def test_soumatome_day_units_and_week_header():
+    # Nihongo Soumatome: tuần (第1週) chỉ là nhóm, bài học = N日目; header "第1週 ..." lặp đầu mỗi trang
+    lines = ["第1週 楽しく暮らしていますか?", "1日目 アパートを探しています", "チラシ flyer", "第1週 楽しく暮らしていますか?",
+             "練習 正しいほうに", "2日目 引っ越しは大変です", "段ボール cardboard", "第1週 楽しく暮らしていますか?",
+             "3日目 友人を招きました", "招く invite"]
+    r = split_chapters_ex(chr(10).join(lines), None)
+    assert r.detected is True
+    assert [c.title for c in r.chapters] == ["1日目 アパートを探しています", "2日目 引っ越しは大変です", "3日目 友人を招きました"]
+    assert r.chapters[0].text == "チラシ flyer" + chr(10) + "第1週 楽しく暮らしていますか?" + chr(10) + "練習 正しいほうに"
+    # chỉ có tuần (không có ngày) -> tách theo tuần
+    r2 = split_chapters_ex(chr(10).join(["第1週 あ", "x", "第2週 い", "y", "第3週 う", "z"]), None)
+    assert [c.title for c in r2.chapters] == ["第1週 あ", "第2週 い", "第3週 う"]
+    assert heading_title("１日目　買い物") == "１日目　買い物"
+    assert heading_title("3日目に行きます。") is None

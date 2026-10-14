@@ -13,11 +13,12 @@ MAX_TRAILING_LEN = 50
 INTRO_TITLE = "Mở đầu"
 
 # Hạng 1 = đơn vị bài/chương; hạng 2 = phần/mục bên trong bài. Chỉ tách theo họ hạng cao nhất xuất hiện ≥ 2 lần.
-_RANK1_JA = {"課", "章", "単元"}
+_RANK1_JA = {"課", "章", "単元", "日目"}   # 日目 = bài theo ngày (Nihongo Soumatome); 週 = nhóm tuần -> hạng 2
 _RANK1_LATIN = {"lesson", "unit", "chapter", "bài", "chương", "レッスン", "ユニット"}
 
 _RE_JA = re.compile(
-    r"^第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百]{1,4})\s*(課|章|部|節|回|話|単元)\s*[:：.．\-－~〜]?\s*(.*)$")
+    r"^(?:第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百]{1,4})\s*(課|章|部|節|回|話|単元|週)"
+    r"|(?:[0-9０-９]{1,3}|[一二三四五六七八九十]{1,3})\s*(日目))\s*[:：.．\-－~〜]?\s*(.*)$")
 _RE_LATIN = re.compile(
     r"^(Lesson|Unit|Chapter|Part|Section|Bài|Chương|Phần|Mục|レッスン|ユニット)\s*[0-9０-９]{1,3}\s*[:：.．\-－)]?\s*(.*)$",
     re.IGNORECASE)
@@ -41,7 +42,7 @@ def _toc_like(line: str) -> bool:
     for rx in (_RE_JA, _RE_LATIN):
         m = rx.match(line)
         if m:
-            return bool(_TOC_PAGE_NO.search(m.group(2).strip()))
+            return bool(_TOC_PAGE_NO.search(_kw_trailing(m)[1]))
     return bool(_TOC_PAGE_NO.search(line))
 
 
@@ -79,13 +80,15 @@ def _norm_title(line: str) -> str:
     for rx in (_RE_JA, _RE_LATIN):
         m = rx.match(line)
         if m:
-            trailing = _TOC_PAGE_NO.sub("", m.group(2).strip())
-            return re.sub(r"\s+", "", line[:m.start(2)] + trailing).lower()
+            trailing_raw = _kw_trailing(m)[1]
+            trailing = _TOC_PAGE_NO.sub("", trailing_raw)
+            head = line[:len(line) - len(m.group(m.lastindex))] if m.group(m.lastindex) else line
+            return re.sub(r"\s+", "", head + trailing).lower()
     return re.sub(r"\s+", "", _TOC_PAGE_NO.sub("", line)).lower()
 
 
 def _basic_ok(line: str) -> bool:
-    return bool(line) and len(line) <= MAX_HEADING_LEN and line[-1] not in "。！？!?"
+    return bool(line) and len(line) <= MAX_HEADING_LEN and line[-1] not in "。！!"  # tiêu đề dạng câu hỏi (…ますか?) vẫn hợp lệ
 
 
 def _heading_rank(line: str) -> Optional[int]:
@@ -96,11 +99,17 @@ def _heading_rank(line: str) -> Optional[int]:
     for rx, rank1 in ((_RE_JA, _RANK1_JA), (_RE_LATIN, _RANK1_LATIN)):
         m = rx.match(line)
         if m:
-            trailing = m.group(2).strip()
+            kw, trailing = _kw_trailing(m)
             if len(trailing) > MAX_TRAILING_LEN or trailing.startswith(_PARTICLE_START):
                 return None
-            return 1 if m.group(1).lower() in rank1 else 2
+            return 1 if kw.lower() in rank1 else 2
     return None
+
+
+def _kw_trailing(m: "re.Match[str]") -> tuple[str, str]:
+    """(từ khoá, phần đuôi) của một match tiêu đề; _RE_JA có hai nhánh nên từ khoá ở group 1 hoặc 2."""
+    groups = [g for g in m.groups() if g is not None]
+    return groups[0], groups[-1].strip()
 
 
 def heading_title(line: str) -> Optional[str]:
@@ -202,11 +211,15 @@ def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
     if had_toc and not any(m.lower() in _TOC_MARKERS for m in front):
         front.append("目次")
     merge_pre = False
+    # dòng tiêu đề của họ khác (vd. trang bìa tuần "第1週 ..." trước "1日目") không phải nội dung
+    pre_content = chr(10).join(ln for ln in pre_lines if _heading_rank(ln) is None)
     if front:
         skipped.extend(front)
+    elif not pre_content.strip():
+        pass  # chỉ có trang bìa / tiêu đề nhóm -> bỏ
     else:
-        merge_pre = bool(preamble.strip()) and not has_japanese(preamble)
-        if heads[0] > 0 and has_japanese(preamble):
+        merge_pre = not has_japanese(pre_content)
+        if heads[0] > 0 and has_japanese(pre_content):
             chapters.append(Chapter(1, INTRO_TITLE, preamble, 0, heads[0]))
 
     for k, h in enumerate(heads):
