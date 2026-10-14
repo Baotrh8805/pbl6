@@ -185,6 +185,43 @@ class LearningPathIT extends IntegrationTest {
     }
 
     @Test
+    void fallback_splits_only_selected_items_so_titles_match_ranges() throws Exception {
+        List<AiDtos.Item> six = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) six.add(vocab(i, "語" + i, null, i <= 2)); // 2 item đầu suspect -> bỏ chọn
+        stubAnalyze(six, Map.of("vocab", 6, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+
+        String id = read(postPath(token, TEXT, "20", null).andExpect(status().isAccepted())).get("id").asText();
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        JsonNode chapters = draft.get("chapters");
+        assertEquals(3, chapters.size()); // 4 item chọn, k = min(3, 4)
+        int[] cards = {2, 1, 1};
+        for (int i = 0; i < 3; i++) {
+            JsonNode c = chapters.get(i);
+            assertEquals(cards[i], c.get("cardCount").asInt());
+            String expected = "Tuần " + (i + 1) + " (ngày " + c.get("dayFrom").asInt() + "–" + c.get("dayTo").asInt() + ")";
+            assertEquals(expected, c.get("title").asText()); // tên chương khớp dải ngày tính sống
+        }
+        assertEquals(1, chapters.get(0).get("dayFrom").asInt());
+        assertEquals(20, chapters.get(2).get("dayTo").asInt());
+    }
+
+    @Test
+    void fallback_with_no_selected_items_keeps_one_chapter_draft() throws Exception {
+        List<AiDtos.Item> two = List.of(vocab(1, "疑1", null, true), vocab(2, "疑2", null, true));
+        stubAnalyze(two, Map.of("vocab", 2, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+
+        String id = read(postPath(token, TEXT, "5", null).andExpect(status().isAccepted())).get("id").asText();
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        assertEquals(1, draft.get("chapters").size());
+        assertEquals("Ngày 1", draft.get("chapters").get(0).get("title").asText());
+        assertEquals(0, draft.get("chapters").get(0).get("cardCount").asInt());
+    }
+
+    @Test
     void ai_failure_marks_path_failed_and_limit_is_shared() throws Exception {
         Mockito.when(ai.analyze(anyString(), any(), any()))
                 .thenThrow(new AiServiceClient.AiServiceException("Không kết nối được dịch vụ AI (phân tích từ vựng)."));

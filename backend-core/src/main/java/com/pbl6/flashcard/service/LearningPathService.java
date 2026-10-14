@@ -220,12 +220,23 @@ public class LearningPathService {
         }
     }
 
-    /** Không nhận ra chương: ≤ 14 ngày -> mỗi ngày một chương, dài hơn -> mỗi tuần một chương. */
+    /**
+     * Không nhận ra chương: ≤ 14 ngày -> mỗi ngày một chương, dài hơn -> mỗi tuần một chương.
+     * Chia theo item được chọn để tên chương khớp dải ngày tính sống; item bỏ chọn theo item được chọn đứng trước.
+     */
     private void draftByDays(LearningPath path, List<ExtractionItem> all) {
         int days = path.getTotalDays();
+        int selected = (int) all.stream().filter(ExtractionItem::isSelected).count();
+        if (selected == 0) {
+            // không còn thẻ chọn: một chương chứa tất cả, người dùng tự chọn lại trong bản nháp
+            LearningPathChapter only = newChapter(path, 1, "Ngày 1");
+            chapters.save(only);
+            all.forEach(i -> i.setChapterId(only.getId()));
+            return;
+        }
         int k = days <= 14 ? days : (int) Math.ceil(days / 7.0);
-        k = Math.min(k, all.size());
-        List<Integer> sizes = LearningPathScheduler.evenSplit(all.size(), k);
+        k = Math.min(k, selected);
+        List<Integer> sizes = LearningPathScheduler.evenSplit(selected, k);
         List<DayRange> ranges = LearningPathScheduler.allocate(sizes, days);
         List<LearningPathChapter> rows = new ArrayList<>();
         for (int i = 0; i < k; i++) {
@@ -235,10 +246,19 @@ public class LearningPathService {
             rows.add(newChapter(path, i + 1, title));
         }
         chapters.saveAll(rows);
-        int idx = 0;
-        for (int i = 0; i < k; i++) {
-            UUID cid = rows.get(i).getId();
-            for (int j = 0; j < sizes.get(i); j++) all.get(idx++).setChapterId(cid);
+        int chunk = 0;
+        int filled = 0;   // số item chọn đã vào chương chunk
+        int current = 0;  // chương của item chọn gần nhất phía trước (mặc định chương đầu)
+        for (ExtractionItem i : all) {
+            if (i.isSelected()) {
+                while (filled >= sizes.get(chunk)) {
+                    chunk++;
+                    filled = 0;
+                }
+                filled++;
+                current = chunk;
+            }
+            i.setChapterId(rows.get(current).getId());
         }
     }
 
