@@ -239,7 +239,7 @@ export const ExtractionPage: React.FC = () => {
           </div>
         </div>
 
-        <StageStepper job={job} />
+        <StageStepper status={job.status} stage={job.stage} />
 
         {loadError && (
           <p role="alert" className="text-label-sm text-error">

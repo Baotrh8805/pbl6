@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/Button";
 import { Ruby } from "@/lib/ja";
 import { JLPT_LEVELS } from "@/lib/deckUtils";
 import type { CardKind, ExtractionItem, ExtractionItemPatch, ExtractionStats } from "@/types/api.types";
-import { KIND_LABELS, UNKNOWN_LEVEL, filterItems, itemMeaning, levelTooltip, type ItemFilter } from "../extractionUtils";
+import { KIND_LABELS, UNKNOWN_LEVEL, filterItems, itemMeaning, type ItemFilter } from "../extractionUtils";
+import { LevelBadge } from "./LevelBadge";
 
 interface ExtractionItemsPanelProps {
   items: ExtractionItem[];
@@ -14,28 +15,6 @@ interface ExtractionItemsPanelProps {
   /** Đang PATCH hoặc tạo bộ thẻ: khoá thao tác hàng loạt để không gửi chồng. */
   busy: boolean;
 }
-
-const LEVEL_TONE: Record<string, string> = {
-  N5: "bg-secondary-container/50 text-on-secondary-container",
-  N4: "bg-primary-fixed text-on-primary-fixed",
-  N3: "bg-[#FEF3C7] text-[#B45309]",
-  N2: "bg-tertiary-fixed text-on-tertiary-fixed",
-  N1: "bg-error-container text-on-error-container",
-};
-
-const LevelBadge: React.FC<{ item: ExtractionItem }> = ({ item }) => (
-  <span
-    title={levelTooltip(item)}
-    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-label-sm text-[11px] font-bold cursor-help ${
-      item.level ? LEVEL_TONE[item.level] : "bg-surface-container text-outline"
-    }`}
-  >
-    {item.level ?? "?"}
-    {item.level && item.levelConfidence < 1 && (
-      <span aria-hidden="true" className="material-symbols-outlined text-[12px]">help</span>
-    )}
-  </span>
-);
 
 const inlineInput =
   "w-full bg-transparent border-b border-transparent hover:border-outline-variant focus:border-primary focus:outline-none text-body-sm text-on-surface px-0.5 py-0.5 transition-colors";
