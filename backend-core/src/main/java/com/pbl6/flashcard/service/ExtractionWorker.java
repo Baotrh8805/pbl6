@@ -12,6 +12,7 @@ import com.pbl6.flashcard.repository.ExtractionItemRepository;
 import com.pbl6.flashcard.repository.ExtractionJobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -40,9 +41,11 @@ public class ExtractionWorker {
     private final ExtractionItemRepository items;
     private final AiServiceClient ai;
     private final TransactionTemplate tx;
+    private final ApplicationEventPublisher events;
 
     public ExtractionWorker(ExtractionJobRepository jobs, ExtractionItemRepository items, AiServiceClient ai,
-                            PlatformTransactionManager txManager) {
+                            PlatformTransactionManager txManager, ApplicationEventPublisher events) {
+        this.events = events;
         this.jobs = jobs;
         this.items = items;
         this.ai = ai;
@@ -127,6 +130,16 @@ public class ExtractionWorker {
             j.setStage(ExtractionJob.DONE);
             j.setFinishedAt(Instant.now());
         });
+        publishFinished(jobId, ExtractionJob.DONE);
+    }
+
+    /** Listener lỗi không được làm đổi trạng thái job. */
+    private void publishFinished(UUID jobId, String status) {
+        try {
+            events.publishEvent(new ExtractionJobFinishedEvent(jobId, status));
+        } catch (RuntimeException e) {
+            log.error("Listener sự kiện kết thúc job {} bị lỗi", jobId, e);
+        }
     }
 
     /** Nghĩa tiếng Việt chỉ là phần làm giàu: lỗi ở đây không làm job thất bại (giữ nghĩa tiếng Anh). */
@@ -220,6 +233,7 @@ public class ExtractionWorker {
         e.setExample(cut(it.example(), 500));
         e.setExampleVi(cut(it.exampleVi(), 500));
         // OCR đọc kém (chữ đơn trên dòng tin cậy thấp, không có trong từ điển) -> bỏ chọn sẵn để người dùng xem lại
+        e.setChapterNo(it.chapter());
         e.setSelected(!Boolean.TRUE.equals(it.suspect()));
         return e;
     }
@@ -248,6 +262,8 @@ public class ExtractionWorker {
             });
         } catch (RuntimeException inner) {
             log.error("Không ghi được trạng thái FAILED cho job {}", jobId, inner);
+            return;
         }
+        publishFinished(jobId, ExtractionJob.FAILED);
     }
 }

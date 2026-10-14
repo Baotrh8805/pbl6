@@ -46,13 +46,13 @@ class ExtractionIT extends IntegrationTest {
         Mockito.when(ai.analyze(anyString(), any(), any())).thenReturn(new AiDtos.AnalyzeResult(List.of(
                 new AiDtos.Item("vocab", 1, "漢字", "漢字", "かんじ",
                         List.of(Map.of("kanji", "漢", "kana", "かん"), Map.of("kanji", "字", "kana", "じ")),
-                        "HÁN TỰ", "名詞", "kanji", null, "N4", 1.0, List.of("jlpt_list:N4"), 1, TEXT, null, null),
+                        "HÁN TỰ", "名詞", "kanji", null, "N4", 1.0, List.of("jlpt_list:N4"), 1, TEXT, null, null, null),
                 new AiDtos.Item("vocab", 2, "勉強", "勉強し", "べんきょう", null, "MIỄN CƯỜNG", "名詞",
-                        "study", null, "N5", 0.5, List.of("jlpt_list:N5", "jlpt_list:N4"), 2, TEXT, null, false),
+                        "study", null, "N5", 0.5, List.of("jlpt_list:N5", "jlpt_list:N4"), 2, TEXT, null, false, null),
                 new AiDtos.Item("vocab", 3, "難解", "難解", "なんかい", null, null, "形状詞",
-                        null, null, null, 0.0, List.of(), 1, null, null, true),
+                        null, null, null, 0.0, List.of(), 1, null, null, true, null),
                 new AiDtos.Item("grammar", 4, "〜ます", null, null, null, null, "文法", null,
-                        "thể lịch sự", "N5", 1.0, List.of("grammar_catalog:N5"), 3, TEXT, null, false)),
+                        "thể lịch sự", "N5", 1.0, List.of("grammar_catalog:N5"), 3, TEXT, null, false, null)),
                 Map.of("vocab", 3, "grammar", 1), false));
         Mockito.when(ai.enrich(any())).thenAnswer(inv -> {
             AiDtos.EnrichRequest req = inv.getArgument(0);
@@ -80,6 +80,13 @@ class ExtractionIT extends IntegrationTest {
             Thread.sleep(100);
         }
         throw new AssertionError("job không kết thúc sau 10 giây");
+    }
+
+    @Test
+    void job_created_via_api_has_splitChapters_false_by_default() throws Exception {
+        String token = newUser();
+        JsonNode job = read(postText(token, TEXT, null).andExpect(status().isAccepted()));
+        assertEquals(false, job.get("options").get("splitChapters").asBoolean(true));
     }
 
     @Test
@@ -243,9 +250,9 @@ class ExtractionIT extends IntegrationTest {
         // ANALYZE trả 1 item đã có nghĩa VI từ tài liệu, 1 item chưa có; ENRICH lần đầu hết quota
         Mockito.when(ai.analyze(anyString(), any(), any())).thenReturn(new AiDtos.AnalyzeResult(List.of(
                 new AiDtos.Item("vocab", 1, "銀行口座", "銀行口座", "ぎんこうこうざ", null, null, "名詞",
-                        "bank account", "tài khoản ngân hàng", "N2", 0.8, List.of("phrase:口座"), 1, null, null, false),
+                        "bank account", "tài khoản ngân hàng", "N2", 0.8, List.of("phrase:口座"), 1, null, null, false, null),
                 new AiDtos.Item("vocab", 2, "漢字", "漢字", "かんじ", null, "HÁN TỰ", "名詞",
-                        "kanji", null, "N4", 1.0, List.of("jlpt_list:N4"), 1, null, null, false)),
+                        "kanji", null, "N4", 1.0, List.of("jlpt_list:N4"), 1, null, null, false, null)),
                 Map.of("vocab", 2, "grammar", 0, "layout", "list"), false));
         Mockito.doReturn(new AiDtos.EnrichResult(false, List.of(), "quota")).when(ai).enrich(any());
         String id = read(postText(token, "銀行口座\tbank account\n漢字\tkanji\n", null)).get("id").asText();

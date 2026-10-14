@@ -21,10 +21,12 @@ public record ExtractionOptions(
         @Min(1) @Max(100) Integer minFrequency,
         @Pattern(regexp = "auto|vertical|horizontal") String ocrMode,
         /** auto: ai-service tự nhận dạng; list: mỗi dòng một cụm + nghĩa in sẵn; prose: tách từng từ. */
-        @Pattern(regexp = "auto|list|prose") String extractMode
+        @Pattern(regexp = "auto|list|prose") String extractMode,
+        /** Tách tài liệu thành chương (dùng cho Lộ trình học); mặc định false. */
+        Boolean splitChapters
 ) {
     public static ExtractionOptions empty() {
-        return new ExtractionOptions(null, null, null, null, null, null, null, null, null, null);
+        return new ExtractionOptions(null, null, null, null, null, null, null, null, null, null, null);
     }
 
     /** Điền mặc định; trình độ lấy từ hồ sơ người dùng khi client không gửi. */
@@ -39,7 +41,13 @@ public record ExtractionOptions(
                 treatUnknownAs != null ? treatUnknownAs : "above",
                 minFrequency != null ? minFrequency : 1,
                 ocrMode != null ? ocrMode : "auto",
-                extractMode != null ? extractMode : "auto");
+                extractMode != null ? extractMode : "auto",
+                splitChapters != null ? splitChapters : Boolean.FALSE);
+    }
+
+    public ExtractionOptions withSplitChapters(boolean value) {
+        return new ExtractionOptions(userLevel, levelFilter, includeGrammar, includeFurigana, includeHanViet,
+                meaningLang, treatUnknownAs, minFrequency, ocrMode, extractMode, value);
     }
 
     public boolean wantsVietnamese() {

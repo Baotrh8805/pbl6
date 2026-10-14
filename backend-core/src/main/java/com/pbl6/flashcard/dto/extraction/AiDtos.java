@@ -18,7 +18,7 @@ public final class AiDtos {
                        List<Map<String, String>> readingSegments, String hanViet, String pos,
                        String meaningEn, String meaningVi, String level, Double levelConfidence,
                        List<String> levelSources, Integer frequency, String example, String exampleVi,
-                       Boolean suspect) {}
+                       Boolean suspect, Integer chapter) {}
 
     /** POST /api/extract/enrich */
     public record EnrichRequest(String targetLang, List<EnrichInput> items) {}

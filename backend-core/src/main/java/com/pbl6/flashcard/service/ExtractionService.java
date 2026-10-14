@@ -93,6 +93,15 @@ public class ExtractionService {
      * data/filename cho file; text cho văn bản dán. Đúng một trong hai.
      */
     public ExtractionJobResponse create(User user, byte[] data, String filename, String text, String optionsJson) {
+        ExtractionOptions options = parseOptions(optionsJson).withDefaults(user.getJlptLevel());
+        ExtractionJob job = prepareJob(user, data, filename, text, options, ExtractionJob.PURPOSE_EXTRACTION);
+        startJob(job, data, filename, text);
+        return ExtractionJobResponse.of(job, false);
+    }
+
+    /** Kiểm đầu vào + giới hạn ngày rồi lưu job (chưa chạy). options đã được điền mặc định. */
+    ExtractionJob prepareJob(User user, byte[] data, String filename, String text, ExtractionOptions options,
+                             String purpose) {
         boolean hasFile = data != null && data.length > 0;
         boolean hasText = text != null && !text.isBlank();
         if (hasFile == hasText) {
@@ -105,7 +114,6 @@ public class ExtractionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Văn bản vượt quá 50.000 ký tự.");
         }
         String sourceType = hasFile ? sniff(data, filename) : "text";
-        ExtractionOptions options = parseOptions(optionsJson).withDefaults(user.getJlptLevel());
         enforceDailyLimit(user);
 
         ExtractionJob job = new ExtractionJob();
@@ -114,14 +122,22 @@ public class ExtractionService {
         job.setSourceType(sourceType);
         job.setSourceName(hasFile ? ExtractionWorker.cut(filename, 255) : null);
         job.setOptions(json.convertValue(options, new TypeReference<Map<String, Object>>() {}));
+        job.setPurpose(purpose);
         job.setCreatedAt(Instant.now());
         jobs.save(job);
-        dispatch(job, () -> worker.runFromText(job.getId(), hasFile ? data : null, filename,
-                hasText ? text : null, options.ocrMode()));
-        return ExtractionJobResponse.of(job, false);
+        return job;
     }
 
-    private ExtractionOptions parseOptions(String optionsJson) {
+    /** Đẩy job đã lưu sang worker nền. */
+    void startJob(ExtractionJob job, byte[] data, String filename, String text) {
+        boolean hasFile = data != null && data.length > 0;
+        boolean hasText = text != null && !text.isBlank();
+        String ocrMode = job.getOptions() != null ? (String) job.getOptions().get("ocrMode") : null;
+        dispatch(job, () -> worker.runFromText(job.getId(), hasFile ? data : null, filename,
+                hasText ? text : null, ocrMode != null ? ocrMode : "auto"));
+    }
+
+    ExtractionOptions parseOptions(String optionsJson) {
         if (optionsJson == null || optionsJson.isBlank()) return ExtractionOptions.empty();
         ExtractionOptions parsed;
         try {
@@ -201,7 +217,7 @@ public class ExtractionService {
 
     @Transactional(readOnly = true)
     public List<ExtractionJobResponse> list(Long uid) {
-        return jobs.findTop50ByUserIdOrderByCreatedAtDesc(uid).stream().map(j -> ExtractionJobResponse.of(j, false)).toList();
+        return jobs.findTop50ByUserIdAndPurposeOrderByCreatedAtDesc(uid, ExtractionJob.PURPOSE_EXTRACTION).stream().map(j -> ExtractionJobResponse.of(j, false)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -317,6 +333,9 @@ public class ExtractionService {
     @Transactional
     public void delete(Long uid, UUID id) {
         ExtractionJob job = owned(uid, id);
+        if (ExtractionJob.PURPOSE_LEARNING_PATH.equals(job.getPurpose())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt này thuộc một lộ trình học, hãy xoá lộ trình.");
+        }
         jobs.delete(job); // extraction_items: FK ON DELETE CASCADE; bộ thẻ đã tạo giữ nguyên
     }
 
@@ -366,7 +385,7 @@ public class ExtractionService {
         return level == null ? 9 : 6 - Integer.parseInt(level.substring(1));
     }
 
-    private static String dominantLevel(List<ExtractionItem> chosen, ExtractionJob job) {
+    static String dominantLevel(List<ExtractionItem> chosen, ExtractionJob job) {
         Map<String, Integer> count = new HashMap<>();
         for (ExtractionItem i : chosen) if (i.getLevel() != null) count.merge(i.getLevel(), 1, Integer::sum);
         return count.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey)
