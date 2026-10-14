@@ -215,3 +215,19 @@ def test_soumatome_day_units_and_week_header():
     assert [c.title for c in r2.chapters] == ["第1週 あ", "第2週 い", "第3週 う"]
     assert heading_title("１日目　買い物") == "１日目　買い物"
     assert heading_title("3日目に行きます。") is None
+
+
+def test_ocr_toc_two_entries_per_line_without_page_numbers():
+    # Mục lục OCR từ scan: 2 mục một dòng, không số trang, xen dòng nhiễu; phần "cách dùng sách" nằm SAU mục lục
+    lines = ["目次", "1日目アパートを探しています2日目引っ越しは大変です", "3日目友人を招きました4日目家事は大変です",
+             "5日目夏休み6日目お金", "7日目実戦問題", "この本の使い方", "毎日一課ずつ勉強してください。",
+             "テストで確認しましょう。", "1日目アパートを探しています", "チラシ flyer", "家賃 rent", "2日目引っ越しは大変です",
+             "段ボール cardboard", "3日目友人を招きました", "招く invite"]
+    r = split_chapters_ex(chr(10).join(lines), None)
+    assert r.detected is True
+    assert [c.title for c in r.chapters] == ["1日目アパートを探しています", "2日目引っ越しは大変です", "3日目友人を招きました"]
+    assert all("勉強してください" not in c.text for c in r.chapters)
+    assert "目次" in r.skipped and "この本の使い方" in r.skipped
+    # nhãn phần bỏ qua rút gọn về từ khoá khi dòng OCR có đuôi rác
+    r2 = split_chapters_ex(chr(10).join(["How to use this book本志的使用方法0|科", "第1課", "あ", "第2課", "い"]), None)
+    assert r2.skipped == ["How to use"]

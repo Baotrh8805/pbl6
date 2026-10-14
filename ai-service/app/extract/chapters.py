@@ -37,12 +37,20 @@ TOC_MIN_RUN = 3        # ≥ 3 dòng mục lục liên tiếp (tiêu đề khôn
 _TOC_PAGE_NO = re.compile(r"(?:[.．…・]{2,}\s*|[^\s\d]\s+)[0-9０-９]{1,4}$")
 
 
+# Một tiêu đề khác nằm trong phần đuôi (mục lục OCR gộp 2 mục một dòng: "1日目アパート…2日目引っ越し…")
+_INLINE_HEAD = re.compile(
+    r"(?:第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十]{1,3})\s*(?:課|章|週|部|節|回|話|単元)"
+    r"|[0-9０-９]{1,2}\s*日目"
+    r"|(?:Lesson|Unit|Chapter|Part|Section|Bài|Chương|Phần|Mục)\s*[0-9０-９]{1,3})", re.IGNORECASE)
+
+
 def _toc_like(line: str) -> bool:
     line = line.strip()
     for rx in (_RE_JA, _RE_LATIN):
         m = rx.match(line)
         if m:
-            return bool(_TOC_PAGE_NO.search(_kw_trailing(m)[1]))
+            trailing = _kw_trailing(m)[1]
+            return bool(_TOC_PAGE_NO.search(trailing)) or bool(_INLINE_HEAD.search(trailing))
     return bool(_TOC_PAGE_NO.search(line))
 
 
@@ -65,12 +73,12 @@ class SplitResult:
 def _marker(line: str, keywords: tuple[str, ...]) -> Optional[str]:
     """Dòng ngắn đứng riêng là tên phần đầu/cuối sách (vd. 'はじめに', 'Mục lục', 'Lời nói đầu')."""
     t = line.strip().strip("　:：.．").strip()
-    if not t or len(t) > MAX_MARKER_LEN:
+    if not t or len(t) > MAX_MARKER_LEN or "、" in t or t.endswith("。"):  # câu văn (はじめに、この本は。) không phải tên phần
         return None
     low = t.lower()
     for kw in keywords:
-        if low == kw or low.startswith(kw + " ") or low.startswith(kw + "　"):
-            return t
+        if low == kw or low.startswith(kw + " ") or low.startswith(kw + "　") or (has_japanese(kw) and low.startswith(kw)):
+            return t[:len(kw)]  # nhãn = từ khoá (bỏ đuôi rác OCR / bản dịch đi kèm)
     return None
 
 
@@ -142,10 +150,12 @@ def _drop_toc_and_duplicates(lines: list[str], heads: list[int]) -> tuple[list[i
         end = heads[k + 1] if k + 1 < len(heads) else n
         body_lines.append(sum(1 for ln in lines[h + 1:end] if ln.strip()))
     is_toc = [False] * len(heads)
+    toc_like = [_toc_like(lines[h]) for h in heads]
     run_start = 0
     for k in range(len(heads) + 1):
-        thin = k < len(heads) and (body_lines[k] == 0 or _toc_like(lines[heads[k]]))
+        thin = k < len(heads) and (body_lines[k] == 0 or toc_like[k])
         if not thin:
+            # cụm mục lục: >= TOC_MIN_RUN tiêu đề liên tiếp không có thân hoặc mang dấu hiệu mục lục (số trang, 2 mục/dòng)
             if k - run_start >= TOC_MIN_RUN:
                 for j in range(run_start, k):
                     is_toc[j] = True
@@ -245,6 +255,17 @@ def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
             body = preamble + "\n" + body  # preamble không có tiếng Nhật → dồn vào chương 1
             start = 0
         chapters.append(Chapter(len(chapters) + 1, title, body, start, end))
+    # Các chương đứng đầu mà thân còn chứa dòng tên phần đầu sách (mục nhập cuối của mục lục OCR ôm luôn trang
+    # "cách dùng sách") cũng là phần đầu sách -> bỏ, dừng ở chương đầu tiên không có dấu hiệu đó.
+    while chapters and chapters[0].title != INTRO_TITLE:
+        marks = [m for ln in chapters[0].text.split(chr(10)) if (m := _marker(ln, _FRONT_MATTER))]
+        if not marks:
+            break
+        skipped.append(chapters[0].title)
+        skipped.extend(m for m in marks if m not in skipped)
+        chapters.pop(0)
+    for i, c in enumerate(chapters, start=1):
+        c.index = i
     if len(chapters) < 2:
         return SplitResult([Chapter(1, None, text, 0, n)], False, skipped)
     return SplitResult(chapters, True, skipped)
