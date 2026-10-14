@@ -206,16 +206,18 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
     split = bool(opts.get("splitChapters"))
     chapters, detected = split_chapters(text, blocks) if split else ([Chapter(1, None, text, 0, 0)], False)
     items, grammar_items, n_sentences, total_tokens, layouts = [], [], 0, 0, []
+    # tần suất là số đếm toàn tài liệu → khi tách chương, lọc minFrequency sau khi gộp
+    ch_opts = {**opts, "minFrequency": 1} if split else opts
     for ch in chapters:
         layout = mode if mode in ("list", "prose") else detect_layout(ch.text)
         ci, gi, s, t = [], [], 0, 0
         if layout == "list":
-            ci, gi, s, t = _list_items(ch.text, opts, rubies, ocr_lines)
+            ci, gi, s, t = _list_items(ch.text, ch_opts, rubies, ocr_lines)
             if not ci and mode != "list":
                 # auto nhận nhầm (vd. toàn dòng chú thích có dấu tách) → đừng trả rỗng im lặng, chạy văn xuôi
                 layout = "prose"
         if layout == "prose":
-            ci, gi, s, t = _prose_items(ch.text, opts, rubies, ocr_lines)
+            ci, gi, s, t = _prose_items(ch.text, ch_opts, rubies, ocr_lines)
         for it in ci + gi:
             it["chapter"] = ch.index if split else None
             it["_order"] = (ch.index,) + tuple(it["_order"])  # sắp theo chương trước
@@ -225,7 +227,9 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
         total_tokens += t
         layouts.append(layout)
     if split:
-        items, grammar_items = _merge_chapters(items), _merge_chapters(grammar_items)
+        min_freq = int(opts.get("minFrequency") or 1)
+        items = [it for it in _merge_chapters(items) if it["frequency"] >= min_freq]
+        grammar_items = [it for it in _merge_chapters(grammar_items) if it["frequency"] >= min_freq]
     layout = "list" if layouts and all(l == "list" for l in layouts) else "prose"
     result = _finish(items, grammar_items, n_sentences, total_tokens, layout, truncated)
     if split:

@@ -284,3 +284,11 @@ def test_split_chapters_list_mode():
     by_term = {it["term"]: it["chapter"] for it in r["items"]}
     assert by_term == {"勉強する": 1, "学校": 1, "映画": 2}
     assert r["stats"]["layout"] == "list"
+
+
+def test_split_chapters_min_frequency_is_document_wide():
+    text = "第1課\n私は毎日勉強します。\n第2課\n勉強は面白いです。学校へ行きます。"
+    r = analyze(text, None, {**CH_OPTS, "minFrequency": 2})
+    by_term = {it["term"]: it for it in r["items"]}
+    assert by_term["勉強"]["frequency"] == 2 and by_term["勉強"]["chapter"] == 1
+    assert "学校" not in by_term
