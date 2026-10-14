@@ -23,6 +23,10 @@ MODEL = settings.GEMINI_MODEL
 # của backend, nếu không backend timeout và cả job FAILED dù dịch nghĩa chỉ là bước làm giàu.
 RETRY_DELAYS = (2, 4, 8)
 TOTAL_BUDGET_S = 150
+# Hết quota / quá tải sau khi đã thử lại hết -> tạm ngưng gọi Gemini COOLDOWN_S giây (mọi lượt gọi: OCR từng trang,
+# dịch nghĩa) để một tài liệu 18 trang scan không chờ 14 s x 18 trang vô ích.
+COOLDOWN_S = 120
+_cooldown_until = 0.0
 _sleep = time.sleep   # tách ra để test thay bằng no-op
 _now = time.monotonic  # tách ra để test giả lập lượt gọi treo lâu
 
@@ -75,6 +79,9 @@ def _map_error(exc: Exception) -> GeminiError:
 def _generate(contents: Any, config: Optional[dict] = None) -> str:
     """Gọi model chính, thử lại theo RETRY_DELAYS khi 429/503, rồi một lần ở model dự phòng (nếu đặt).
     Lỗi cuối cùng được raise nguyên `reason` để router/backend ghi `quota` / `error`."""
+    global _cooldown_until
+    if _now() < _cooldown_until:
+        raise GeminiError("quota", "Gemini quota exceeded (đang tạm ngưng gọi)", retryable=True)
     client = _get_client()
     from google.genai import types
     cfg = types.GenerateContentConfig(**(config or {}))
@@ -88,6 +95,7 @@ def _generate(contents: Any, config: Optional[dict] = None) -> str:
         for attempt in range(len(delays) + 1):
             if last is not None and _now() - started + TIMEOUT_MS / 1000 > TOTAL_BUDGET_S:
                 logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, TOTAL_BUDGET_S)
+                _cooldown_until = _now() + COOLDOWN_S
                 raise last from None
             try:
                 resp = client.models.generate_content(model=model, contents=contents, config=cfg)
@@ -103,7 +111,8 @@ def _generate(contents: Any, config: Optional[dict] = None) -> str:
                     logger.warning("gemini: %s — thử lại sau %ss (model %s)", last, delays[attempt], model)
                     _sleep(delays[attempt])
     assert last is not None
-    logger.warning("gemini: %s (đã hết lượt thử lại)", last)
+    _cooldown_until = _now() + COOLDOWN_S
+    logger.warning("gemini: %s (đã hết lượt thử lại, tạm ngưng gọi Gemini %ss)", last, COOLDOWN_S)
     raise last from None
 
 

@@ -196,6 +196,7 @@ def _flaky(fails, code):
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
     monkeypatch.setattr(gemini, "_sleep", lambda s: None)
+    monkeypatch.setattr(gemini, "_cooldown_until", 0.0)  # cầu dao quota là trạng thái module, không để rò giữa các test
 
 
 def test_retries_503_then_succeeds(fake_client):
@@ -260,3 +261,22 @@ def test_504_is_retried_then_fallback(fake_client, monkeypatch):
     models = fake_client(_flaky(4, 504))
     assert gemini.vision_transcribe(b"png", "image/png", "horizontal")
     assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
+
+
+def test_quota_cooldown_skips_calls_until_expiry(fake_client, monkeypatch):
+    # Hết quota (429) ở một trang -> các lượt gọi tiếp theo trong COOLDOWN_S không gọi Gemini nữa (OCR 18 trang
+    # scan không thể chờ 14 s/trang khi quota đã hết); hết thời gian nguội thì gọi lại bình thường.
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "")
+    models = fake_client(_flaky(99, 429))
+    with pytest.raises(gemini.GeminiError):
+        gemini.vision_transcribe(b"png", "image/png", "auto")
+    n = len(models.calls)
+    assert n == 4
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", "image/png", "auto")
+    assert exc.value.reason == "quota" and len(models.calls) == n  # không gọi thêm
+    clock["t"] += gemini.COOLDOWN_S + 1
+    fake_client(lambda c, cfg: "ok")
+    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
