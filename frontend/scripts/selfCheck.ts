@@ -24,6 +24,25 @@ import {
 } from "../src/lib/learningStats.ts";
 import { flattenFolders } from "../src/features/folders/components/folderTree.ts";
 import { getInitials, isValidDailyGoal, parseProfileTab, scoreTone } from "../src/features/profile/lib/profileUtils.ts";
+import {
+  behindCount,
+  chapterPerDay,
+  chapterProgress,
+  dateForDay,
+  dayIndexFor,
+  endDate,
+  formatDayRange,
+  isPathEnded,
+  isValidDays,
+  parseDateOnly,
+  parseRange,
+  pathProgress,
+  scheduledUpTo,
+  sliceRange,
+  tasksForDay,
+  todayCardCount,
+  unreviewedInTasks,
+} from "../src/features/roadmap/roadmapUtils.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -289,6 +308,77 @@ async function runSelfCheck() {
   assertStrictEqual(normalizeComment("   "), null, "Toàn khoảng trắng = không có bình luận");
   assertStrictEqual(commentCharsLeft("a".repeat(RATING_COMMENT_MAX)), 0, "Đủ 500 ký tự còn 0");
   assertStrictEqual(commentCharsLeft("a".repeat(RATING_COMMENT_MAX + 1)), -1, "Vượt 500 ký tự là âm");
+
+  // 14. Lộ trình học tập (features/roadmap/roadmapUtils.ts)
+  assertStrictEqual(dayIndexFor("2026-10-14", d(2026, 10, 14), 30), 1, "Ngày bắt đầu = ngày 1");
+  assertStrictEqual(dayIndexFor("2026-10-14", d(2026, 10, 16, 23), 30), 3, "Bỏ giờ, ngày thứ 3");
+  assertStrictEqual(dayIndexFor("2026-10-14", d(2026, 10, 13), 30), 1, "Trước ngày bắt đầu kẹp về 1");
+  assertStrictEqual(dayIndexFor("2026-10-14", d(2026, 12, 25), 30), 30, "Sau khi kết thúc kẹp về totalDays");
+  assertStrictEqual(dayIndexFor(null, d(2026, 10, 14), 30), 1, "Chưa có ngày bắt đầu -> 1");
+  assertStrictEqual(endDate("2026-10-14", 30), "2026-11-12", "Kết thúc sau 30 ngày");
+  assertStrictEqual(endDate("2026-10-14", 1), "2026-10-14", "1 ngày: kết thúc cùng ngày");
+  assertStrictEqual(endDate("2026-12-31", 2), "2027-01-01", "Qua năm");
+  assertStrictEqual(dateForDay("2026-10-14", 3), "2026-10-16", "Ngày thứ 3");
+  assertStrictEqual(isPathEnded("2026-10-14", 30, d(2026, 11, 12)), false, "Ngày cuối vẫn chưa kết thúc");
+  assertStrictEqual(isPathEnded("2026-10-14", 30, d(2026, 11, 13)), true, "Sau ngày cuối là kết thúc");
+  assertStrictEqual(parseDateOnly("2026-10-14").getHours(), 0, "Parse theo giờ địa phương, không lệch UTC");
+  assertStrictEqual(formatDayRange(1, 3), "Ngày 1–3", "Dải ngày");
+  assertStrictEqual(formatDayRange(4, 4), "Ngày 4", "Một ngày");
+
+  const rmA = { id: "c1", deckId: "d1", cardCount: 10, dayFrom: 1, dayTo: 3, perDay: 4 };
+  const rmB = { id: "c2", deckId: "d2", cardCount: 5, dayFrom: 4, dayTo: 5, perDay: 3 };
+  const rmC = { id: "c3", deckId: null, cardCount: 9, dayFrom: 1, dayTo: 9, perDay: 1 };
+  const rmTasks = (day: number, chs = [rmA, rmB, rmC]) =>
+    tasksForDay(chs, day).map((t) => `${t.chapterId}:${t.fromPos}-${t.toPos}`).join(",");
+  assertStrictEqual(rmTasks(1), "c1:1-4", "Ngày 1");
+  assertStrictEqual(rmTasks(3), "c1:9-10", "Ngày cuối lấy hết phần dư");
+  assertStrictEqual(rmTasks(4), "c2:1-3", "Chương kế tiếp, bỏ chương không có bộ thẻ");
+  assertStrictEqual(rmTasks(5), "c2:4-5", "Ngày cuối chương B");
+  assertStrictEqual(rmTasks(6), "", "Ngoài mọi chương");
+  assertStrictEqual(rmTasks(3, [{ ...rmA, cardCount: 4, perDay: 2 }]), "", "from > cardCount thì bỏ");
+  assertStrictEqual(chapterPerDay({ ...rmA, perDay: 0 }), 4, "perDay 0 -> ceil(10/3)");
+  assertStrictEqual(scheduledUpTo(rmA, 0), 0, "Trước chương");
+  assertStrictEqual(scheduledUpTo(rmA, 2), 8, "Hết ngày 2");
+  assertStrictEqual(scheduledUpTo(rmA, 3), 10, "Hết chương");
+  assertStrictEqual(scheduledUpTo(rmA, 9), 10, "Sau chương");
+  assertStrictEqual(todayCardCount([{ fromPos: 1, toPos: 4 }, { fromPos: 1, toPos: 3 }]), 7, "Cộng số thẻ");
+  assertStrictEqual(todayCardCount([]), 0, "Không có việc");
+  const rmRange = (raw: string | null) => {
+    const r = parseRange(raw);
+    return r ? `${r.from}-${r.to}` : null;
+  };
+  assertStrictEqual(rmRange("3-10"), "3-10", "Dải hợp lệ");
+  assertStrictEqual(rmRange("5-5"), "5-5", "Một thẻ");
+  assertStrictEqual(rmRange(" 2-4 "), "2-4", "Cắt khoảng trắng");
+  assertStrictEqual(rmRange("0-5") ?? rmRange("7-3") ?? rmRange("abc") ?? rmRange(null) ?? rmRange("3-"), null, "Dải sai -> null");
+  const rmCards = ["c1", "c2", "c3", "c4", "c5"];
+  assertStrictEqual(sliceRange(rmCards, { from: 2, to: 4 }).join(","), "c2,c3,c4", "Cắt giữa");
+  assertStrictEqual(sliceRange(rmCards, { from: 4, to: 9 }).join(","), "c4,c5", "to vượt quá");
+  assertStrictEqual(sliceRange(rmCards, { from: 7, to: 9 }).join(","), "", "from vượt quá");
+
+  const rmCard = (id: string) => ({ id }) as never;
+  const rmDecks = [{ id: "d1", cards: [rmCard("c1"), rmCard("c2"), rmCard("c3"), rmCard("c4")] }] as never;
+  const rmReviews = { c1: { cardId: "c1", reps: 5, intervalDays: 30, ease: 2.5, dueAt: "2026-12-01T00:00:00Z" } };
+  const rmNow = d(2026, 10, 14);
+  const rmProg = pathProgress([rmA, { ...rmB, deckId: "gone" }, rmC], rmDecks, rmReviews, rmNow);
+  assertStrictEqual(
+    `${rmProg.total},${rmProg.mastered},${rmProg.pct},${rmProg.missingDecks}`,
+    "4,1,25,1",
+    "Tiến độ lộ trình: chương mất bộ thẻ tính missingDecks, deckId null bỏ qua"
+  );
+  assertStrictEqual(chapterProgress({ deckId: "gone" }, rmDecks, rmReviews, rmNow), null, "Bộ thẻ không còn");
+  assertStrictEqual(chapterProgress({ deckId: null }, rmDecks, rmReviews, rmNow), null, "Chương không có bộ thẻ");
+  const rmBehind = [{ ...rmA, deckId: "d1", cardCount: 4, dayFrom: 1, dayTo: 2, perDay: 2 }];
+  assertStrictEqual(behindCount(rmBehind, 2, rmDecks, { c1: rmReviews.c1 }), 1, "Hết ngày 1 có c1,c2; c2 chưa ôn");
+  assertStrictEqual(behindCount(rmBehind, 1, rmDecks, { c1: rmReviews.c1 }), 0, "Ngày 1 chưa có gì trễ");
+  assertStrictEqual(behindCount(rmBehind, 5, rmDecks, { c1: rmReviews.c1 }), 3, "Sau chương: 3 thẻ chưa ôn");
+  assertStrictEqual(
+    unreviewedInTasks([{ chapterId: "c1", deckId: "d1", fromPos: 1, toPos: 4 }], rmDecks, { c1: rmReviews.c1 }),
+    3,
+    "Thẻ chưa ôn trong việc hôm nay"
+  );
+  assertStrictEqual(isValidDays(1) && isValidDays(365), true, "1 và 365 hợp lệ");
+  assertStrictEqual(isValidDays(0) || isValidDays(366) || isValidDays(2.5) || isValidDays(NaN), false, "Ngoài 1–365 hoặc lẻ");
 
   console.log(" All self-check assertions passed successfully!");
 }

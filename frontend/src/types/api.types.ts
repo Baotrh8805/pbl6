@@ -379,3 +379,88 @@ export interface CreateDecksFromExtractionDto {
     vocab: ExtractionDeckSpec | null;
     grammar: ExtractionDeckSpec | null;
 }
+
+// ===== Lộ trình học tập (/api/learning-paths) =====
+export type LearningPathStatus = "PROCESSING" | "DRAFT" | "ACTIVE" | "FAILED";
+
+export interface LearningPathJob {
+    status: ExtractionStatus;
+    stage: ExtractionStage;
+    errorMessage: string | null;
+    stats?: ExtractionStats | null;
+}
+
+export interface LearningPathChapter {
+    id: string;
+    position: number;
+    title: string;
+    deckId: string | null;
+    deckDeleted?: boolean;
+    cardCount: number;
+    vocabCount?: number;
+    grammarCount?: number;
+    dayFrom: number;
+    dayTo: number;
+    perDay: number;
+}
+
+export interface LearningPathTask {
+    chapterId: string;
+    chapterTitle?: string;
+    deckId: string | null;
+    fromPos: number;
+    toPos: number;
+}
+
+export interface LearningPathDay {
+    dayIndex: number;
+    date: string;
+    tasks: LearningPathTask[];
+}
+
+export interface LearningPathToday {
+    date: string;
+    dayIndex: number;
+    state: "before" | "during" | "after";
+    tasks: LearningPathTask[];
+}
+
+export interface LearningPath {
+    id: string;
+    title: string;
+    status: LearningPathStatus;
+    sourceType: ExtractionSourceType;
+    sourceName: string | null;
+    totalDays: number;
+    startDate: string;
+    chaptersDetected: boolean | null;
+    jobId: string | null;
+    folderId: string | null;
+    createdAt: string;
+    activatedAt: string | null;
+    errorMessage: string | null;
+    job: LearningPathJob | null;
+    chapters?: LearningPathChapter[];
+    today?: LearningPathToday | null;
+    days?: LearningPathDay[];
+}
+
+export interface LearningPathPatch {
+    title?: string;
+    totalDays?: number;
+    startDate?: string;
+}
+
+export interface ActivateLearningPathDto {
+    startDate?: string;
+    totalDays?: number;
+}
+
+export interface CreateLearningPathInput {
+    file?: File;
+    text?: string;
+    days: number;
+    title?: string;
+    startDate?: string;
+    options: ExtractionOptions;
+}
