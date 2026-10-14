@@ -364,3 +364,13 @@ def test_adjacent_latin_words_keep_a_space_but_japanese_words_join():
                (1, 1, 1, 200, 0, 20, 30, 80, "る")])
     [line] = image_reader._lines_from_data(d, False)
     assert line.text == "銀行でmet money 2預ける"
+
+
+def test_gemini_output_absurdly_long_is_rejected(fake_tesseract, monkeypatch):
+    # Gemini suy thoái sinh hàng chục nghìn ký tự cho một trang (thấy thật 14/10): giữ bản Tesseract, không để
+    # một trang rác chiếm hết giới hạn 50 000 ký tự của cả tài liệu
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a: "日本語の勉強。" * 1000)   # 7 000 ký tự so với 6
+    r = image_reader.read_image(_png(), "horizontal")
+    assert r.engine == "tesseract" and r.gemini_error == "implausible"
+    assert len(r.text) < 100

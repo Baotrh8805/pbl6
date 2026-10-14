@@ -305,3 +305,11 @@ def test_primary_quota_goes_straight_to_fallback_next_calls(fake_client, monkeyp
     clock["t"] += gemini.COOLDOWN_S + 1
     gemini.vision_transcribe(b"png", "image/png", "auto")
     assert models.calls[6]["model"] == gemini.MODEL  # hết thời gian nguội -> thử lại model chính
+
+
+def test_degenerate_repeats_are_collapsed(fake_client):
+    # Gemini Vision trang mục lục "この本の使い方 ·····" sinh 50 000 dấu chấm dẫn (thấy thật 14/10) -> cắt chuỗi lặp
+    fake_client(lambda c, cfg: "この本の使い方 " + "·" * 5000 + chr(10) + "第1課 あいさつ" + "ー" * 30)
+    out = gemini.vision_transcribe(b"png", "image/png", "auto")
+    assert out.count("·") <= 3 and "第1課 あいさつ" in out and out.count("ー") <= 3
+    assert len(out) < 100

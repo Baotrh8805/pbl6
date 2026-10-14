@@ -148,12 +148,20 @@ _ORIENTATION = {
 }
 
 
+_REPEAT_RE = re.compile(r"(.)\1{9,}", re.DOTALL)
+
+
+def _collapse_repeats(text: str) -> str:
+    """Model suy thoái lặp một ký tự vô tận (dấu chấm dẫn mục lục '·····', 'ーーー'): giữ tối đa 3 lần."""
+    return _REPEAT_RE.sub(lambda m: m.group(1) * 3, text)
+
+
 def vision_transcribe(image_bytes: bytes, mime: str = "image/png", mode: str = "auto") -> str:
     """Chép lại nguyên văn tiếng Nhật trong ảnh. Trả "" khi model không thấy chữ."""
     from google.genai import types
     prompt = _TRANSCRIBE_PROMPT.format(orientation=_ORIENTATION.get(mode, _ORIENTATION["auto"]))
     contents = [types.Part.from_bytes(data=image_bytes, mime_type=mime), prompt]
-    return _generate(contents, {"temperature": 0.0})
+    return _collapse_repeats(_generate(contents, {"temperature": 0.0}))
 
 
 # --- Dịch nghĩa --------------------------------------------------------------

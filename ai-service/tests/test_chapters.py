@@ -238,3 +238,15 @@ def test_leading_chapter_with_toc_like_title_dropped():
     r = split_chapters_ex(chr(10).join(lines), None)
     assert [c.title for c in r.chapters] == ["1日目 アパート", "2日目 引っ越し", "3日目 友人"]
     assert "1日目-6日目 7日目" in r.skipped
+
+
+def test_heads_before_first_number_one_are_front_matter():
+    # Hộp ví dụ trong trang "cách dùng sách" chứa "5日目 ..." trước khi bài 1 thật bắt đầu -> bỏ
+    lines = ["5日目 どんな気持ち・態度ですか?", "彼は明るい人です。", "使い方の説明です。", "1日目 アパートを探しています", "チラシ",
+             "家賃", "2日目 引っ越しは大変です", "段ボール", "3日目 友人を招きました", "招く"]
+    r = split_chapters_ex(chr(10).join(lines), None)
+    assert [c.title for c in r.chapters] == ["1日目 アパートを探しています", "2日目 引っ越しは大変です", "3日目 友人を招きました"]
+    assert "5日目 どんな気持ち・態度ですか?" in r.skipped
+    # tài liệu bắt đầu giữa sách (không có bài 1) -> giữ nguyên
+    r2 = split_chapters_ex(chr(10).join(["第5課 あ", "x", "第6課 い", "y", "第7課 う", "z"]), None)
+    assert [c.title for c in r2.chapters] == ["第5課 あ", "第6課 い", "第7課 う"]

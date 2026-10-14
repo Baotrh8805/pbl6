@@ -32,6 +32,7 @@ OSD_SCORE_THRESHOLD = 0.5   # điểm hướng tốt nhất dưới mức này �
 GUTTER_MIN_LINES = 1.5      # rãnh trắng rộng ≥ 1.5 lần chiều cao dòng mới coi là 2 cột
 ORIENT_FULL_LINE_LEN = 8   # dòng trung vị đạt độ dài này mới được tính trọn mean_conf khi chấm điểm hướng
 GEMINI_LEN_RATIO = 3.0      # bản Gemini lệch độ dài quá mức này so với bản Tesseract → low_confidence
+GEMINI_REJECT_CHARS = 3000  # dài hơn Tesseract > GEMINI_LEN_RATIO lần VÀ vượt mức này → ảo giác, bỏ bản Gemini
 PAGE_WORKERS = 3           # số trang PDF OCR song song (mỗi trang lại chạy 2 lượt jpn/jpn_vert song song → ≤ 6 tesseract);
                             # đo 20 trang trên máy 4 nhân: 1 worker 44 s, 2 → 35 s, 3 → 22 s, 4 không nhanh hơn
 FURIGANA_RATIO = 0.60       # kana nhỏ hơn 60% dòng lân cận → furigana
@@ -399,7 +400,10 @@ def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1) -> TextResult
         except gemini.GeminiError as e:
             g_text = ""
             result.gemini_error = e.reason
-        if g_text and has_japanese(g_text):
+        if g_text and has_japanese(g_text) and _gemini_runaway(g_text, text):
+            # Model suy thoái (lặp vô tận) sinh hàng chục nghìn ký tự cho một trang -> giữ bản Tesseract
+            result.gemini_error = "implausible"
+        elif g_text and has_japanese(g_text):
             # Gemini không có confidence riêng; giữ số của Tesseract thì FE hiện "63%" cho văn bản không phải của
             # Tesseract → để None. Chỉ gắn cờ low_confidence khi độ dài lệch hẳn so với bản Tesseract (nghi ảo giác)
             result.text = g_text
@@ -408,6 +412,12 @@ def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1) -> TextResult
             result.mean_confidence = None
             result.low_confidence = not _gemini_plausible(g_text, text)
     return result
+
+
+def _gemini_runaway(g_text: str, tess_text: str) -> bool:
+    """Bản Gemini vừa dài hơn GEMINI_LEN_RATIO lần bản Tesseract vừa vượt GEMINI_REJECT_CHARS ký tự → ảo giác."""
+    n_g, n_t = len(_JA_LETTERS_RE.sub("", g_text)), len(_JA_LETTERS_RE.sub("", tess_text))
+    return n_g > GEMINI_REJECT_CHARS and n_g > GEMINI_LEN_RATIO * max(n_t, 1)
 
 
 def _gemini_plausible(g_text: str, tess_text: str) -> bool:

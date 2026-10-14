@@ -176,6 +176,40 @@ def _drop_toc_and_duplicates(lines: list[str], heads: list[int]) -> tuple[list[i
     return kept, had_toc, dup
 
 
+_KANJI_NUM = {c: i + 1 for i, c in enumerate("一二三四五六七八九")}
+_NUM_RE = re.compile(r"([0-9０-９]{1,3}|[一二三四五六七八九十百]{1,4})")
+
+
+def _head_number(line: str) -> Optional[int]:
+    """Số thứ tự của tiêu đề (第3課 -> 3, 1日目 -> 1, Bài 12 -> 12, 第十二課 -> 12); None nếu không đọc được."""
+    m = _NUM_RE.search(line.strip())
+    if not m:
+        return None
+    tok = m.group(1)
+    if tok[0] in "0123456789０-９" or tok[0].isdigit():
+        return int("".join(chr(ord(ch) - 0xFEE0) if "０" <= ch <= "９" else ch for ch in tok))
+    total, cur = 0, 0
+    for ch in tok:
+        if ch == "十":
+            total += (cur or 1) * 10
+            cur = 0
+        elif ch == "百":
+            total += (cur or 1) * 100
+            cur = 0
+        else:
+            cur = _KANJI_NUM.get(ch, 0)
+    return total + cur
+
+
+def _drop_before_first_one(lines: list[str], heads: list[int]) -> tuple[list[int], list[int]]:
+    """Tiêu đề đứng trước tiêu đề số 1 đầu tiên là phần đầu sách (hộp ví dụ trong "cách dùng sách", mục lục sót).
+    Chỉ áp dụng khi có tiêu đề số 1; tài liệu bắt đầu giữa sách (bài 5, 6, 7) giữ nguyên. Trả (heads, heads bị bỏ)."""
+    for k, h in enumerate(heads):
+        if _head_number(lines[h]) == 1:
+            return heads[k:], heads[:k]
+    return heads, []
+
+
 def _find_heads(lines: list[str], blocks: Optional[list[dict]]) -> tuple[list[int], bool, set[int]]:
     docx_set = _docx_heading_set(blocks)
     if docx_set:  # hạng 0: heading DOCX được ưu tiên hơn regex
@@ -204,6 +238,7 @@ def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
     lines = text.split("\n")
     n = len(lines)
     heads, had_toc, dup = _find_heads(lines, blocks)
+    heads, before_one = _drop_before_first_one(lines, heads)
     if len(heads) < 2:
         return SplitResult([Chapter(1, None, text, 0, n)], False, [])
 
@@ -220,11 +255,13 @@ def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
             front.append(m)
     if had_toc and not any(m.lower() in _TOC_MARKERS for m in front):
         front.append("目次")
+    if before_one and not front:
+        front.append(lines[before_one[0]].strip()[:MAX_TITLE_LEN])  # đã bỏ tiêu đề giả trước bài 1 -> phần trước là đầu sách
     merge_pre = False
     # dòng tiêu đề của họ khác (vd. trang bìa tuần "第1週 ..." trước "1日目") không phải nội dung
     pre_content = chr(10).join(ln for ln in pre_lines if _heading_rank(ln) is None)
     if front:
-        skipped.extend(front)
+        skipped.extend(m for m in front if m not in skipped)
     elif not pre_content.strip():
         pass  # chỉ có trang bìa / tiêu đề nhóm -> bỏ
     else:
