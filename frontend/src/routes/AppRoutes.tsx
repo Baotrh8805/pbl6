@@ -12,6 +12,7 @@ import { StudyPage } from "@/pages/StudyPage";
 import { QuizPage } from "@/pages/QuizPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { RoadmapPage } from "@/pages/RoadmapPage";
+import { RoadmapDetailPage } from "@/pages/RoadmapDetailPage";
 import { QuizRoomPage } from "@/pages/QuizRoomPage";
 import { DeckLibraryPage } from "@/pages/DeckLibraryPage";
 import { FoldersPage } from "@/pages/FoldersPage";
@@ -72,6 +73,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="/extractions" element={<ExtractionsPage />} />
         <Route path="/extractions/:id" element={<ExtractionPage />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
+        <Route path="/roadmap/:id" element={<RoadmapDetailPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
