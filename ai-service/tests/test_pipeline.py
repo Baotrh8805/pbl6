@@ -1,5 +1,10 @@
-from app.extract import pipeline
+import pytest
+
+from app.extract import jmdict, pipeline
 from app.extract.pipeline import analyze, split_sentences
+
+# jmdict.sqlite không commit (scripts/build_dicts.py) nên CI không có; test dựa vào nghĩa / từ ghép của JMdict thì bỏ qua.
+needs_jmdict = pytest.mark.skipif(not jmdict.available(), reason="chưa có jmdict.sqlite (python scripts/build_dicts.py)")
 
 PARAGRAPH = (
     "私は毎日日本語学校で勉強しなければなりません。"
@@ -55,6 +60,7 @@ def test_level_filter_at_or_above_and_drop_unknown():
     assert all(it["level"] in {None, "N3", "N2", "N1"} for it in r2["items"])
 
 
+@needs_jmdict
 def test_options_toggle_grammar_furigana_hanviet_and_min_frequency():
     r = analyze(PARAGRAPH, None, {"includeGrammar": False, "includeFurigana": False, "includeHanViet": False,
                                   "minFrequency": 2})
@@ -71,6 +77,7 @@ def test_source_rubies_from_blocks_are_used():
     assert otona["reading"] == "おとな"
 
 
+@needs_jmdict
 def test_limits_and_truncation(monkeypatch):
     monkeypatch.setattr(pipeline, "MAX_VOCAB", 3)
     monkeypatch.setattr(pipeline, "MAX_GRAMMAR", 1)
@@ -124,6 +131,7 @@ def test_ocr_example_dropped_on_low_confidence_line_and_taken_from_later_good_li
     assert v["志"]["example"] is None
 
 
+@needs_jmdict
 def test_ocr_suspect_items_are_flagged_unselected():
     # conf thật của dòng này là 0.40: phần tiếng Nhật đúng nhưng cả dòng bị kéo xuống bởi chữ Anh/Trung
     text, blocks = _ocr([("銀行口座bankaccount銀行具戸較子媒", 0.40),

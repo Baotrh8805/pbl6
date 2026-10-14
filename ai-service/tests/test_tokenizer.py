@@ -1,4 +1,6 @@
-from app.extract import pipeline
+import pytest
+
+from app.extract import jmdict, pipeline
 from app.extract.tokenizer import tokenize
 
 
@@ -31,6 +33,7 @@ def test_compound_expansion_when_compound_unknown(monkeypatch):
     assert expanded[:3] == ["日本", "語", "学校"]
 
 
+@pytest.mark.skipif(not jmdict.available(), reason="chưa có jmdict.sqlite (python scripts/build_dicts.py)")
 def test_compound_kept_when_in_dictionary():
     sent = "日本語を勉強する"
     c_tokens = tokenize(sent, "C")
