@@ -49,3 +49,18 @@ def test_read_source_dispatches_docx_by_extension_and_magic():
     result = read_source("bai1.docx", data, None, "auto")
     assert result.engine == "docx"
     assert result.to_dict()["meta"]["sourceType"] == "docx"
+
+
+def test_docx_heading_levels():
+    d = docx.Document()
+    d.add_heading("第1課 あいさつ", level=1)
+    d.add_paragraph("こんにちは。")
+    d.add_heading("第2課", level=2)
+    buf = io.BytesIO()
+    d.save(buf)
+    result = read_docx(buf.getvalue())
+    assert result.blocks[0].heading == 1
+    assert result.blocks[1].heading is None
+    assert result.blocks[2].heading == 2
+    assert "heading" in result.blocks[0].to_dict()
+    assert result.to_dict()["blocks"][1]["heading"] is None

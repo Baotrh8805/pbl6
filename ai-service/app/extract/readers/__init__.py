@@ -30,10 +30,11 @@ class Block:
     is_vertical: Optional[bool] = None
     rubies: list[dict] = field(default_factory=list)  # [{"base": "漢字", "reading": "かんじ"}]
     lines: list[dict] = field(default_factory=list)   # [{"text": "...", "conf": 0.87}] từng dòng OCR (chỉ Tesseract)
+    heading: Optional[int] = None                     # cấp tiêu đề DOCX (1-9), None nếu là đoạn thường
 
     def to_dict(self) -> dict:
         return {"text": self.text, "page": self.page, "isVertical": self.is_vertical, "rubies": self.rubies,
-                "lines": self.lines}
+                "lines": self.lines, "heading": self.heading}
 
 
 @dataclass

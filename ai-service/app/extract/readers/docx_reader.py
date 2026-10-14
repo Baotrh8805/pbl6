@@ -6,6 +6,8 @@ cặp (base, reading) đưa vào blocks[].rubies làm ground truth cho furigana.
 from __future__ import annotations
 
 import io
+import re
+from typing import Optional
 
 from app.extract.readers import Block, ReaderError, TextResult
 from app.extract.readers.text_reader import extract_paren_rubies, normalize
@@ -57,6 +59,33 @@ def _paragraph(p_el) -> tuple[str, list[dict]]:
     return "".join(text_parts), rubies
 
 
+_HEADING_NAME = re.compile(r"(?i)(?:heading |見出し )(\d)")
+
+
+def _heading_level(p_el, para_styles: dict) -> Optional[int]:
+    """Cấp tiêu đề của <w:p>: theo tên style (Heading N / 見出し N), không có thì outlineLvl."""
+    ppr = p_el.find(_q("pPr"))
+    if ppr is None:
+        return None
+    pstyle = ppr.find(_q("pStyle"))
+    style = para_styles.get(pstyle.get(_q("val"))) if pstyle is not None else None
+    for _ in range(3):  # style + tối đa 2 cấp base_style
+        if style is None:
+            break
+        m = _HEADING_NAME.fullmatch(style.name or "")
+        if m:
+            return int(m.group(1))
+        style = style.base_style
+    outline = ppr.find(_q("outlineLvl"))
+    if outline is not None:
+        try:
+            lvl = int(outline.get(_q("val"))) + 1
+        except (TypeError, ValueError):
+            return None
+        return lvl if 1 <= lvl <= 9 else None
+    return None
+
+
 def read_docx(data: bytes) -> TextResult:
     try:
         import docx
@@ -64,6 +93,8 @@ def read_docx(data: bytes) -> TextResult:
     except Exception as exc:  # file hỏng / không phải docx
         raise ReaderError(f"Không đọc được file DOCX: {exc}") from exc
 
+    from docx.enum.style import WD_STYLE_TYPE
+    para_styles = {s.style_id: s for s in document.styles if s.type == WD_STYLE_TYPE.PARAGRAPH}
     blocks: list[Block] = []
     body = document.element.body
     # Duyệt mọi <w:p> theo thứ tự tài liệu (gồm cả paragraph trong bảng)
@@ -73,6 +104,7 @@ def read_docx(data: bytes) -> TextResult:
         if not text:
             continue
         text, paren = extract_paren_rubies(text)
-        blocks.append(Block(text=text, page=1, rubies=rubies + paren))
+        blocks.append(Block(text=text, page=1, rubies=rubies + paren,
+                            heading=_heading_level(p_el, para_styles)))
     full = "\n".join(b.text for b in blocks)
     return TextResult(text=full, source_type="docx", engine="docx", blocks=blocks, pages=1)
