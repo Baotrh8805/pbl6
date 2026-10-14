@@ -243,3 +243,44 @@ def test_list_layout_three_columns_uses_reading_column():
     nama = r["items"][0]
     assert nama["term"] == "生" and nama["reading"] == "なま" and nama["meaningEn"] == "raw"
     assert nama["readingSegments"] == [{"kanji": "生", "kana": "なま"}]
+
+
+# --- Tách chương (splitChapters) ----------------------------------------------------------------------------
+CH_TEXT = "第1課\n私は毎日勉強します。\n第2課\n勉強は面白いです。学校へ行きます。"
+CH_OPTS = {"splitChapters": True, "levelFilter": "all", "includeGrammar": False}
+
+
+def test_split_chapters_assigns_chapter_and_merges_across_chapters():
+    r = analyze(CH_TEXT, None, CH_OPTS)
+    assert r["stats"]["chaptersDetected"] is True
+    chs = r["stats"]["chapters"]
+    assert [c["index"] for c in chs] == [1, 2] and [c["title"] for c in chs] == ["第1課", "第2課"]
+    by_term = {it["term"]: it for it in r["items"]}
+    assert by_term["勉強"]["chapter"] == 1 and by_term["勉強"]["frequency"] == 2
+    assert by_term["学校"]["chapter"] == 2
+    assert "課" not in by_term
+    assert [it["position"] for it in r["items"]] == list(range(1, len(r["items"]) + 1))
+    chapters = [it["chapter"] for it in r["items"]]
+    assert chapters == sorted(chapters)
+    assert sum(c["vocab"] for c in chs) == r["stats"]["vocab"]
+
+
+def test_split_chapters_off_leaves_chapter_none():
+    r = analyze(CH_TEXT, None, {"levelFilter": "all", "includeGrammar": False})
+    assert r["items"] and all(it["chapter"] is None for it in r["items"])
+    assert "chapters" not in r["stats"] and "chaptersDetected" not in r["stats"]
+
+
+def test_split_chapters_without_headings_is_single_chapter():
+    r = analyze("私は毎日勉強します。学校へ行きます。", None, CH_OPTS)
+    assert r["stats"]["chaptersDetected"] is False
+    assert r["items"] and all(it["chapter"] == 1 for it in r["items"])
+    assert len(r["stats"]["chapters"]) == 1 and r["stats"]["chapters"][0]["title"] is None
+
+
+def test_split_chapters_list_mode():
+    text = "第1課\n勉強する\thọc\n学校\ttrường\n第2課\n映画\tphim\n"
+    r = analyze(text, None, {**CH_OPTS, "extractMode": "list"})
+    by_term = {it["term"]: it["chapter"] for it in r["items"]}
+    assert by_term == {"勉強する": 1, "学校": 1, "映画": 2}
+    assert r["stats"]["layout"] == "list"

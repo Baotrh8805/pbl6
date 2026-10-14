@@ -41,6 +41,7 @@ class ExtractionOptions(BaseModel):
     minFrequency: int = 1
     ocrMode: str = "auto"
     extractMode: str = "auto"           # auto | list | prose
+    splitChapters: bool = False         # tách chương trước khi trích từ
 
 
 class AnalyzeRequest(BaseModel):

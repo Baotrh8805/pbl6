@@ -10,10 +10,12 @@ Các bước: tách câu → Sudachi mode C (ứng viên) + mode A (thành phầ
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any, Optional
 
 from app.extract import han_viet as hv
 from app.extract import jmdict
+from app.extract.chapters import Chapter, split_chapters
 from app.extract.entries import detect_layout, is_japanese_char, parse_line
 from app.extract.furigana import align
 from app.extract.grammar import match_document
@@ -200,15 +202,54 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
 
     ocr_lines = _line_confs(blocks)
     mode = opts.get("extractMode")
-    layout = mode if mode in ("list", "prose") else detect_layout(text)
-    if layout == "list":
-        items, grammar_items, n_sentences, total_tokens = _list_items(text, opts, rubies, ocr_lines)
-        if not items and mode != "list":
-            # auto nhận nhầm (vd. toàn dòng chú thích có dấu tách) → đừng trả rỗng im lặng, chạy văn xuôi
-            layout = "prose"
-    if layout == "prose":
-        items, grammar_items, n_sentences, total_tokens = _prose_items(text, opts, rubies, ocr_lines)
-    return _finish(items, grammar_items, n_sentences, total_tokens, layout, truncated)
+    # Tách chương (nếu bật): mỗi chương chạy pipeline riêng rồi gộp lại, cap vẫn áp toàn tài liệu trong _finish
+    split = bool(opts.get("splitChapters"))
+    chapters, detected = split_chapters(text, blocks) if split else ([Chapter(1, None, text, 0, 0)], False)
+    items, grammar_items, n_sentences, total_tokens, layouts = [], [], 0, 0, []
+    for ch in chapters:
+        layout = mode if mode in ("list", "prose") else detect_layout(ch.text)
+        ci, gi, s, t = [], [], 0, 0
+        if layout == "list":
+            ci, gi, s, t = _list_items(ch.text, opts, rubies, ocr_lines)
+            if not ci and mode != "list":
+                # auto nhận nhầm (vd. toàn dòng chú thích có dấu tách) → đừng trả rỗng im lặng, chạy văn xuôi
+                layout = "prose"
+        if layout == "prose":
+            ci, gi, s, t = _prose_items(ch.text, opts, rubies, ocr_lines)
+        for it in ci + gi:
+            it["chapter"] = ch.index if split else None
+            it["_order"] = (ch.index,) + tuple(it["_order"])  # sắp theo chương trước
+        items += ci
+        grammar_items += gi
+        n_sentences += s
+        total_tokens += t
+        layouts.append(layout)
+    if split:
+        items, grammar_items = _merge_chapters(items), _merge_chapters(grammar_items)
+    layout = "list" if layouts and all(l == "list" for l in layouts) else "prose"
+    result = _finish(items, grammar_items, n_sentences, total_tokens, layout, truncated)
+    if split:
+        counts = Counter((it["chapter"], it["kind"]) for it in result["items"])
+        result["stats"]["chaptersDetected"] = detected
+        result["stats"]["chapters"] = [
+            {"index": ch.index, "title": ch.title,
+             "vocab": counts[(ch.index, "vocab")], "grammar": counts[(ch.index, "grammar")]}
+            for ch in chapters]
+    return result
+
+
+def _merge_chapters(lst: list[dict]) -> list[dict]:
+    """Cùng (kind, term) xuất hiện ở nhiều chương → giữ bản ở chương đầu, cộng tần suất, bỏ cờ suspect nếu có bản đáng tin."""
+    merged: dict[tuple, dict] = {}
+    for it in sorted(lst, key=lambda x: x["_order"]):
+        key = (it["kind"], it["term"])
+        first = merged.get(key)
+        if first is None:
+            merged[key] = it
+            continue
+        first["frequency"] += it["frequency"]
+        first["suspect"] = first["suspect"] and it["suspect"]  # xuất hiện tốt ở chương khác → không nghi ngờ
+    return list(merged.values())
 
 
 def _dict_meaning(lemma: str, reading: Optional[str], kana_only: bool) -> Optional[str]:

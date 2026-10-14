@@ -139,7 +139,18 @@ def test_analyze():
     item = body["items"][0]
     assert set(item) == {"kind", "position", "term", "surface", "reading", "readingSegments", "hanViet", "pos",
                          "meaningEn", "meaningVi", "level", "levelConfidence", "levelSources", "frequency",
-                         "example", "exampleVi", "suspect"}
+                         "example", "exampleVi", "suspect", "chapter"}
+
+
+def test_analyze_split_chapters():
+    r = client.post("/api/extract/analyze", json={
+        "text": "第1課\n私は毎日勉強します。\n第2課\n学校へ行きます。",
+        "options": {"levelFilter": "all", "includeGrammar": False, "splitChapters": True},
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["stats"]["chaptersDetected"] is True
+    assert body["items"][0]["chapter"] == 1
 
 
 def test_enrich_without_key(monkeypatch):
