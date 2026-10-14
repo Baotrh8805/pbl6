@@ -66,6 +66,12 @@ Chỉ chạy khi `ExtractionOptions.splitChapters = true` (lộ trình bật s�
   hạng 2 nếu có ≥ 2); dòng của họ hạng thấp hơn **ở lại trong thân chương** ("Bài 1 / Phần 1 / Phần 2 / Bài 2" → 2 chương).
 - **DOCX** (hạng 0, ưu tiên hơn regex khi khớp ≥ 2 dòng): chỉ dùng heading ở **cấp nhỏ nhất** (gần 1 nhất) xuất hiện ≥ 2
   lần; cấp sâu hơn (vd. H2 `語彙`/`文法` lặp ở mỗi bài) ở lại trong thân. Tập so khớp dựng từ dòng đầu của các block cấp đó.
+- **Bỏ mục lục / phần đầu & cuối sách** (14/10): (1) cụm ≥ 3 dòng tiêu đề liên tiếp **không có thân** hoặc **kết thúc
+  bằng số trang** (`第1課 あいさつ ...... 12`) là mục lục → bỏ; (2) tiêu đề **lặp** (mục lục sót, header chạy đầu trang PDF)
+  chỉ lần đầu mở chương, các lần sau bị xoá khỏi thân; (3) phần trước tiêu đề thật đầu tiên bị **bỏ hẳn** nếu chứa dòng
+  `はじめに / まえがき / 本書の使い方 / 目次 / 凡例 / Lời nói đầu / Cách sử dụng / Mục lục / Preface / Contents…` (không thì giữ
+  "Mở đầu" như dưới); chương có tiêu đề là các từ đó cũng bị bỏ; (4) chương cuối bị cắt tại dòng `付録 / 索引 / 解答 / Phụ lục
+  / Đáp án / Appendix / Index`. Danh sách phần đã bỏ trả về ở `stats.skippedSections`, bản nháp hiện "Đã bỏ qua: …".
 - `chaptersDetected` = số tiêu đề được chọn ≥ 2. Không nhận ra → một chương, văn bản **nguyên vẹn**; backend dùng thuật toán chia theo ngày (mục 4).
 - Nhận ra: thân chương = các dòng giữa hai tiêu đề (bỏ dòng tiêu đề, vì `split_sentences` vốn xoá nó và `第1課` sẽ thành
   từ vựng `課`); tiêu đề chương = cả dòng (cắt 100 ký tự). Phần trước tiêu đề đầu: có tiếng Nhật → chương "Mở đầu", không thì
@@ -74,7 +80,7 @@ Chỉ chạy khi `ExtractionOptions.splitChapters = true` (lộ trình bật s�
   ngay khi dựng bản nháp, nên bản nháp không hiện chương rỗng và khớp với kết quả `activate`.
 - Phân tích **từng chương**, rồi gộp trùng toàn tài liệu theo lần xuất hiện đầu (từ ở chương 1 và 5 → chỉ chương 1,
   `frequency` cộng dồn). Giới hạn 600 từ / 100 mẫu ngữ pháp tính cho cả tài liệu.
-- Đầu ra: `item.chapter`, `stats.chaptersDetected`, `stats.chapters[{index, title, vocab, grammar}]`; `/text` trả thêm
+- Đầu ra: `item.chapter`, `stats.chaptersDetected`, `stats.chapters[{index, title, vocab, grammar}]`, `stats.skippedSections[]`; `/text` trả thêm
   `blocks[].heading` cho DOCX.
 
 Hạn chế đã biết: OCR nhiễu (`第l課`) hoặc heading chỉ là đoạn in đậm thường bị sót / nhận nhầm → dùng bản nháp: sửa tên,

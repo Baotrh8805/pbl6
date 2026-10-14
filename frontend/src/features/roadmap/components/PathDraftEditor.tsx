@@ -58,6 +58,8 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   };
 
   const chapters = path.chapters ?? [];
+
+  const skipped = path.job?.stats?.skippedSections ?? [];
   const totalCards = chapters.reduce((s, c) => s + c.cardCount, 0);
   const perDay = Math.ceil(totalCards / Math.max(path.totalDays, 1));
   const daysNum = Number(form.days);
@@ -112,9 +114,12 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
         </div>
         <p className="text-body-sm text-on-surface-variant flex items-start gap-1.5">
           <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-primary">info</span>
-          {path.chaptersDetected
-            ? `Đã nhận dạng ${chapters.length} chương theo cấu trúc tài liệu.`
-            : "Không nhận ra chương trong tài liệu, đã chia theo ngày."}
+          <span>
+            {path.chaptersDetected
+              ? `Đã nhận dạng ${chapters.length} chương theo cấu trúc tài liệu.`
+              : "Không nhận ra chương trong tài liệu, đã chia theo ngày."}
+            {skipped.length > 0 && ` Đã bỏ qua: ${skipped.join(", ")}.`}
+          </span>
         </p>
       </div>
 

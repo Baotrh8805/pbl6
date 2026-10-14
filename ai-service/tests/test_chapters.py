@@ -143,3 +143,59 @@ def test_docx_single_h1_uses_h2():
     chapters, detected = _split(text, blocks)
     assert detected
     assert [c.title for c in chapters] == ["Mở đầu", "語彙", "文法"]  # H1 chỉ 1 lần → dùng H2; "教科書" thành mở đầu
+
+
+# --- Bỏ phần đầu/cuối sách, mục lục, tiêu đề lặp -------------------------------------------------------------------
+
+from app.extract.chapters import split_chapters_ex
+
+
+def test_toc_cluster_and_front_matter_dropped():
+    text = (
+        "みんなの日本語\n目次\n第1課 あいさつ ...... 1\n第2課 買い物 ...... 5\n第3課 週末 ...... 9\n\n"
+        "はじめに\nこの本は日本語を学ぶ人のための教科書です。\n本書の使い方\n毎日一課ずつ勉強してください。\n\n"
+        "第1課 あいさつ\nこんにちは。\n第2課 買い物\nこれはいくらですか。\n第3課 週末\n映画を見ます。"
+    )
+    r = split_chapters_ex(text, None)
+    assert r.detected is True
+    assert [c.title for c in r.chapters] == ["第1課 あいさつ", "第2課 買い物", "第3課 週末"]
+    assert r.chapters[0].text == "こんにちは。"
+    assert all("この本は" not in c.text and "目次" not in c.text for c in r.chapters)
+    assert "目次" in r.skipped and "はじめに" in r.skipped and "本書の使い方" in r.skipped
+
+
+def test_running_page_header_duplicates_merge_into_first():
+    # PDF: tiêu đề bài lặp ở đầu mỗi trang -> chỉ lần đầu mở chương, các lần sau nhập vào thân
+    text = "第1課 あいさつ\nこんにちは。\n第1課 あいさつ\nおはよう。\n第2課 買い物\nいくらですか。\n第2課 買い物\nたかいです。"
+    chapters, detected = split_chapters(text, None)
+    assert detected is True
+    assert [c.title for c in chapters] == ["第1課 あいさつ", "第2課 買い物"]
+    assert chapters[0].text == "こんにちは。\nおはよう。"
+    assert chapters[1].text == "いくらですか。\nたかいです。"
+
+
+def test_vietnamese_front_matter_dropped_but_plain_intro_kept():
+    text = "Lời nói đầu\nSách này dành cho người mới.\nMục lục\nBài 1 ... 3\nBài 2 ... 9\nBài 3 ... 15\n\nBài 1\nこんにちは。\nBài 2\nさようなら。\nBài 3\nまたね。"
+    r = split_chapters_ex(text, None)
+    assert [c.title for c in r.chapters] == ["Bài 1", "Bài 2", "Bài 3"]
+    assert "Lời nói đầu" in r.skipped and "Mục lục" in r.skipped
+    # không có dấu hiệu phần đầu sách -> đoạn mở đầu có tiếng Nhật vẫn thành chương "Mở đầu" như trước
+    text2 = "きょうは いい てんきです。\n第1課\nこんにちは。\n第2課\nさようなら。"
+    chapters, _ = split_chapters(text2, None)
+    assert chapters[0].title == "Mở đầu"
+
+
+def test_back_matter_cut_from_last_chapter():
+    text = "第1課\nこんにちは。\n第2課\nさようなら。\n付録\n動詞の活用表\n索引\nあ\nい"
+    r = split_chapters_ex(text, None)
+    assert [c.title for c in r.chapters] == ["第1課", "第2課"]
+    assert r.chapters[1].text == "さようなら。"
+    assert "付録" in r.skipped
+
+
+def test_docx_front_matter_heading_dropped():
+    blocks = [{"text": "はじめに", "heading": 1}, {"text": "第1課", "heading": 1}, {"text": "第2課", "heading": 1}]
+    text = "はじめに\nこの本について。\n第1課\nこんにちは。\n第2課\nさようなら。"
+    r = split_chapters_ex(text, blocks)
+    assert [c.title for c in r.chapters] == ["第1課", "第2課"]
+    assert "はじめに" in r.skipped

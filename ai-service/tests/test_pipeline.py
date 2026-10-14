@@ -292,3 +292,13 @@ def test_split_chapters_min_frequency_is_document_wide():
     by_term = {it["term"]: it for it in r["items"]}
     assert by_term["勉強"]["frequency"] == 2 and by_term["勉強"]["chapter"] == 1
     assert "学校" not in by_term
+
+
+def test_split_chapters_skips_front_matter_and_reports_it():
+    lines = ["目次", "第1課 ...... 1", "第2課 ...... 5", "第3課 ...... 9", "はじめに", "この本は教科書です。",
+             "第1課", "私は学生です。", "第2課", "学校へ行きます。", "第3課", "本を読みます。"]
+    res = analyze(chr(10).join(lines), None, {"splitChapters": True, "levelFilter": "all", "includeGrammar": False})
+    assert res["stats"]["chaptersDetected"] is True
+    assert [c["title"] for c in res["stats"]["chapters"]] == ["第1課", "第2課", "第3課"]
+    assert "はじめに" in res["stats"]["skippedSections"] and "目次" in res["stats"]["skippedSections"]
+    assert not any(it["term"] == "教科書" for it in res["items"])  # câu trong lời nói đầu không thành thẻ

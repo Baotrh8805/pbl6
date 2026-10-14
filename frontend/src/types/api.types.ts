@@ -306,6 +306,11 @@ export interface ExtractionStats {
     enrichedAt?: string;
     /** Bố cục ai-service nhận dạng: list = danh sách từ vựng (mỗi dòng một cụm), prose = văn xuôi. */
     layout?: "list" | "prose";
+    /** Lộ trình (splitChapters): có nhận ra chương theo cấu trúc không; chapters[] = số thẻ mỗi chương. */
+    chaptersDetected?: boolean;
+    chapters?: { index: number; title: string | null; vocab: number; grammar: number }[];
+    /** Phần đầu / cuối sách đã bỏ khi tách chương (mục lục, lời nói đầu, phụ lục...). */
+    skippedSections?: string[];
 }
 
 /** ExtractionJobResponse */

@@ -24,6 +24,26 @@ _RE_LATIN = re.compile(
 # Trợ từ dính ngay sau số (第3章では, 第2回目) → câu văn, không phải tiêu đề
 _PARTICLE_START = tuple("でにのはがを目")
 
+# Phần đầu / cuối sách: dòng ngắn đứng riêng khớp các từ khoá này (không phân biệt hoa thường) đánh dấu phần bị bỏ.
+_FRONT_MATTER = ("はじめに", "まえがき", "序文", "本書の使い方", "この本の使い方", "教科書の使い方", "目次", "凡例",
+                 "学習者の皆さんへ", "lời nói đầu", "lời mở đầu", "cách sử dụng", "hướng dẫn sử dụng", "mục lục",
+                 "preface", "introduction", "how to use", "table of contents", "contents")
+_BACK_MATTER = ("付録", "索引", "解答", "別冊", "phụ lục", "đáp án", "bảng tra", "appendix", "answer key", "answers",
+                "index", "glossary")
+MAX_MARKER_LEN = 40
+TOC_MIN_RUN = 3        # ≥ 3 dòng mục lục liên tiếp (tiêu đề không có thân, hoặc kết thúc bằng số trang) -> cụm mục lục
+# Dòng mục lục: phần sau từ khoá+số kết thúc bằng số trang (dấu chấm dẫn, hoặc chữ rồi khoảng trắng rồi số)
+_TOC_PAGE_NO = re.compile(r"(?:[.．…・]{2,}\s*|[^\s\d]\s+)[0-9０-９]{1,4}$")
+
+
+def _toc_like(line: str) -> bool:
+    line = line.strip()
+    for rx in (_RE_JA, _RE_LATIN):
+        m = rx.match(line)
+        if m:
+            return bool(_TOC_PAGE_NO.search(m.group(2).strip()))
+    return bool(_TOC_PAGE_NO.search(line))
+
 
 @dataclass
 class Chapter:
@@ -32,6 +52,36 @@ class Chapter:
     text: str             # đã bỏ dòng tiêu đề
     start_line: int
     end_line: int         # exclusive
+
+
+@dataclass
+class SplitResult:
+    chapters: list[Chapter]
+    detected: bool
+    skipped: list[str]    # phần đầu / cuối sách, mục lục đã bỏ (để hiện cho người dùng)
+
+
+def _marker(line: str, keywords: tuple[str, ...]) -> Optional[str]:
+    """Dòng ngắn đứng riêng là tên phần đầu/cuối sách (vd. 'はじめに', 'Mục lục', 'Lời nói đầu')."""
+    t = line.strip().strip("　:：.．").strip()
+    if not t or len(t) > MAX_MARKER_LEN:
+        return None
+    low = t.lower()
+    for kw in keywords:
+        if low == kw or low.startswith(kw + " ") or low.startswith(kw + "　"):
+            return t
+    return None
+
+
+def _norm_title(line: str) -> str:
+    """Khoá so trùng tiêu đề: giữ từ khoá + số thứ tự, bỏ số trang / dấu chấm dẫn cuối dòng của mục lục và khoảng trắng."""
+    line = line.strip()
+    for rx in (_RE_JA, _RE_LATIN):
+        m = rx.match(line)
+        if m:
+            trailing = _TOC_PAGE_NO.sub("", m.group(2).strip())
+            return re.sub(r"\s+", "", line[:m.start(2)] + trailing).lower()
+    return re.sub(r"\s+", "", _TOC_PAGE_NO.sub("", line)).lower()
 
 
 def _basic_ok(line: str) -> bool:
@@ -73,38 +123,115 @@ def _docx_heading_set(blocks: Optional[list[dict]]) -> frozenset:
     return frozenset()
 
 
-def _find_heads(lines: list[str], blocks: Optional[list[dict]]) -> list[int]:
+def _drop_toc_and_duplicates(lines: list[str], heads: list[int]) -> tuple[list[int], bool, set[int]]:
+    """Bỏ cụm mục lục (≥ TOC_MIN_RUN tiêu đề liên tiếp hầu như không có thân) và tiêu đề lặp (mục lục sót,
+    header chạy đầu trang PDF): chỉ lần xuất hiện đầu tiên mở chương. Trả (heads còn lại, có cụm mục lục không,
+    chỉ số các dòng tiêu đề lặp cần bỏ khỏi thân)."""
+    n = len(lines)
+    body_lines = []
+    for k, h in enumerate(heads):
+        end = heads[k + 1] if k + 1 < len(heads) else n
+        body_lines.append(sum(1 for ln in lines[h + 1:end] if ln.strip()))
+    is_toc = [False] * len(heads)
+    run_start = 0
+    for k in range(len(heads) + 1):
+        thin = k < len(heads) and (body_lines[k] == 0 or _toc_like(lines[heads[k]]))
+        if not thin:
+            if k - run_start >= TOC_MIN_RUN:
+                for j in range(run_start, k):
+                    is_toc[j] = True
+            run_start = k + 1
+    had_toc = any(is_toc)
+    seen: set[str] = set()
+    kept: list[int] = []
+    dup: set[int] = set()
+    for k, h in enumerate(heads):
+        if is_toc[k]:
+            continue
+        key = _norm_title(lines[h])
+        if key in seen:
+            dup.add(h)
+            continue
+        seen.add(key)
+        kept.append(h)
+    return kept, had_toc, dup
+
+
+def _find_heads(lines: list[str], blocks: Optional[list[dict]]) -> tuple[list[int], bool, set[int]]:
     docx_set = _docx_heading_set(blocks)
     if docx_set:  # hạng 0: heading DOCX được ưu tiên hơn regex
         heads = [i for i, ln in enumerate(lines) if _basic_ok(ln.strip()) and ln.strip() in docx_set]
+        heads, had_toc, dup = _drop_toc_and_duplicates(lines, heads)
         if len(heads) >= 2:
-            return heads
+            return heads, had_toc, dup
     ranked = [(i, _heading_rank(ln)) for i, ln in enumerate(lines)]
     for rank in (1, 2):
         heads = [i for i, r in ranked if r == rank]
+        heads, had_toc, dup = _drop_toc_and_duplicates(lines, heads)
         if len(heads) >= 2:
-            return heads
-    return []
+            return heads, had_toc, dup
+    return [], False, set()
 
 
 def split_chapters(text: str, blocks: Optional[list[dict]]) -> tuple[list[Chapter], bool]:
+    r = split_chapters_ex(text, blocks)
+    return r.chapters, r.detected
+
+
+_TOC_MARKERS = ("目次", "mục lục", "contents", "table of contents")
+
+
+def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
     lines = text.split("\n")
     n = len(lines)
-    heads = _find_heads(lines, blocks)
+    heads, had_toc, dup = _find_heads(lines, blocks)
     if len(heads) < 2:
-        return [Chapter(1, None, text, 0, n)], False
+        return SplitResult([Chapter(1, None, text, 0, n)], False, [])
 
+    skipped: list[str] = []
     chapters: list[Chapter] = []
-    preamble = "\n".join(lines[:heads[0]])
-    merge_pre = bool(preamble.strip()) and not has_japanese(preamble)
-    if heads[0] > 0 and has_japanese(preamble):
-        chapters.append(Chapter(1, INTRO_TITLE, preamble, 0, heads[0]))
+
+    # Phần đầu sách: có mục lục / はじめに / Lời nói đầu... -> bỏ hẳn; không thì giữ hành vi cũ ("Mở đầu" nếu có tiếng Nhật)
+    pre_lines = lines[:heads[0]]
+    preamble = "\n".join(pre_lines)
+    front: list[str] = []
+    for ln in pre_lines:
+        m = _marker(ln, _FRONT_MATTER)
+        if m and m not in front:
+            front.append(m)
+    if had_toc and not any(m.lower() in _TOC_MARKERS for m in front):
+        front.append("目次")
+    merge_pre = False
+    if front:
+        skipped.extend(front)
+    else:
+        merge_pre = bool(preamble.strip()) and not has_japanese(preamble)
+        if heads[0] > 0 and has_japanese(preamble):
+            chapters.append(Chapter(1, INTRO_TITLE, preamble, 0, heads[0]))
+
     for k, h in enumerate(heads):
         end = heads[k + 1] if k + 1 < len(heads) else n
-        body = "\n".join(lines[h + 1:end])
+        title = lines[h].strip()[:MAX_TITLE_LEN]
+        if _marker(title, _FRONT_MATTER) or _marker(title, _BACK_MATTER):
+            skipped.append(title)
+            continue
+        body_lines = lines[h + 1:end]
+        if k == len(heads) - 1:  # chương cuối: cắt phần cuối sách (付録 / 索引 / Phụ lục...)
+            for j, ln in enumerate(body_lines):
+                m = _marker(ln, _BACK_MATTER)
+                if m:
+                    skipped.append(m)
+                    body_lines = body_lines[:j]
+                    end = h + 1 + j
+                    break
+        if dup:  # tiêu đề lặp (header chạy đầu trang) không phải nội dung
+            body_lines = [ln for j, ln in enumerate(body_lines, start=h + 1) if j not in dup]
+        body = "\n".join(body_lines)
         start = h
         if k == 0 and merge_pre:
             body = preamble + "\n" + body  # preamble không có tiếng Nhật → dồn vào chương 1
             start = 0
-        chapters.append(Chapter(len(chapters) + 1, lines[h].strip()[:MAX_TITLE_LEN], body, start, end))
-    return chapters, True
+        chapters.append(Chapter(len(chapters) + 1, title, body, start, end))
+    if len(chapters) < 2:
+        return SplitResult([Chapter(1, None, text, 0, n)], False, skipped)
+    return SplitResult(chapters, True, skipped)

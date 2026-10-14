@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from app.extract import han_viet as hv
 from app.extract import jmdict
-from app.extract.chapters import Chapter, split_chapters
+from app.extract.chapters import Chapter, SplitResult, split_chapters_ex
 from app.extract.entries import detect_layout, is_japanese_char, parse_line
 from app.extract.furigana import align
 from app.extract.grammar import match_document
@@ -204,7 +204,8 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
     mode = opts.get("extractMode")
     # Tách chương (nếu bật): mỗi chương chạy pipeline riêng rồi gộp lại, cap vẫn áp toàn tài liệu trong _finish
     split = bool(opts.get("splitChapters"))
-    chapters, detected = split_chapters(text, blocks) if split else ([Chapter(1, None, text, 0, 0)], False)
+    sr = split_chapters_ex(text, blocks) if split else SplitResult([Chapter(1, None, text, 0, 0)], False, [])
+    chapters, detected = sr.chapters, sr.detected
     items, grammar_items, n_sentences, total_tokens, layouts = [], [], 0, 0, []
     # tần suất là số đếm toàn tài liệu → khi tách chương, lọc minFrequency sau khi gộp
     ch_opts = {**opts, "minFrequency": 1} if split else opts
@@ -235,6 +236,7 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
     if split:
         counts = Counter((it["chapter"], it["kind"]) for it in result["items"])
         result["stats"]["chaptersDetected"] = detected
+        result["stats"]["skippedSections"] = sr.skipped  # mục lục / lời nói đầu / phụ lục đã bỏ (hiện cho người dùng)
         result["stats"]["chapters"] = [
             {"index": ch.index, "title": ch.title,
              "vocab": counts[(ch.index, "vocab")], "grammar": counts[(ch.index, "grammar")]}
