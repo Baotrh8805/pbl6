@@ -1,6 +1,8 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { fetchLibrary } from "@/services/libraryService";
+import { fetchLearningPaths } from "@/services/learningPathService";
+import { todayCardCount } from "@/features/roadmap/roadmapUtils";
 import { useAsync } from "@/lib/useAsync";
 import type { UserMetrics } from "../types/dashboard.types";
 
@@ -47,6 +49,24 @@ const LibraryCountBadge: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   );
 };
 
+// Tổng số thẻ cần học hôm nay của các lộ trình đang học. 0 thẻ / lỗi / đang tải thì ẩn.
+const RoadmapTodayBadge: React.FC<{ isActive: boolean }> = ({ isActive }) => {
+  const { data } = useAsync(fetchLearningPaths, []);
+  const total = (data ?? [])
+    .filter((p) => p.status === "ACTIVE" && p.today?.state === "during")
+    .reduce((sum, p) => sum + todayCardCount(p.today?.tasks ?? []), 0);
+  if (total <= 0) return null;
+  return (
+    <span
+      className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border transition-colors ${
+        isActive ? "bg-white/20 text-white border-white/30" : "bg-blue-50 text-blue-700 border-blue-200/70"
+      }`}
+    >
+      {total} thẻ
+    </span>
+  );
+};
+
 const SECTIONS: NavSectionConfig[] = [
   {
     id: "personal",
@@ -89,17 +109,7 @@ const SECTIONS: NavSectionConfig[] = [
         to: "/roadmap",
         icon: "alt_route",
         label: "Lộ Trình Học Tập",
-        renderBadge: ({ isActive, currentLevel }) => (
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold transition-colors ${
-              isActive
-                ? "bg-white/20 text-white"
-                : "bg-surface-container-high text-on-surface-variant"
-            }`}
-          >
-            {currentLevel || "N5"}
-          </span>
-        ),
+        renderBadge: ({ isActive }) => <RoadmapTodayBadge isActive={isActive} />,
       },
       {
         to: "/quiz",

@@ -8,6 +8,7 @@ import { useAsync } from "@/lib/useAsync";
 import { isDue, type Grade } from "@/lib/srs";
 import { extractErrorMessage } from "@/services/apiClient";
 import { CardContent } from "@/features/decks/components/CardContent";
+import { parseRange, sliceRange } from "@/features/roadmap/roadmapUtils";
 
 const GRADES: { grade: Grade; label: string; key: string; className: string }[] = [
     { grade: "again", label: "Lại", key: "1", className: "bg-error text-on-primary" },
@@ -18,28 +19,33 @@ const GRADES: { grade: Grade; label: string; key: string; className: string }[] 
 
 export const StudyPage: React.FC = () => {
     const { deckId = "" } = useParams(); // deckId từ URL: server kiểm quyền, sai thì 404
-    const cram = useSearchParams()[0].get("cram") === "1"; // Học nhanh: ôn cả bộ, không đổi lịch dài hạn
+    const [params] = useSearchParams();
+    const cram = params.get("cram") === "1"; // Học nhanh: ôn cả bộ, không đổi lịch dài hạn
+    // Từ Lộ trình: ?range=a-b chỉ học đúng các thẻ ở vị trí a..b (bất kể đến hạn), ?path=<id> để quay về.
+    const range = parseRange(params.get("range"));
+    const pathId = params.get("path");
+    const queueKey = `${deckId}|${range ? `${range.from}-${range.to}` : ""}`;
     const { data, error, loading } = useAsync(
         async () => ({ deck: await fetchDeck(deckId), reviews: await fetchReviews() }),
         [deckId]
     );
 
-    // Hàng đợi gắn với deckId: sang bộ thẻ khác thì chốt lại hàng đợi mới.
-    const [queueState, setQueueState] = useState<{ deckId: string; ids: string[] } | null>(null);
+    // Hàng đợi gắn với deckId + dải thẻ: sang bộ/dải khác thì chốt lại hàng đợi mới.
+    const [queueState, setQueueState] = useState<{ key: string; ids: string[]; size: number } | null>(null);
     const [revealed, setRevealed] = useState(false);
     const [saveError, setSaveError] = useState("");
     const [saving, setSaving] = useState(false);
 
     // Hàng đợi chốt 1 lần lúc dữ liệu về: chấm điểm không làm danh sách nhảy loạn.
-    if (data && queueState?.deckId !== deckId) {
+    if (data && queueState?.key !== queueKey) {
         const now = new Date();
-        setQueueState({
-            deckId,
-            ids: data.deck.cards.filter((c) => cram || isDue(data.reviews[c.id], now)).map((c) => c.id),
-        });
+        const ids = range
+            ? sliceRange(data.deck.cards, range).map((c) => c.id)
+            : data.deck.cards.filter((c) => cram || isDue(data.reviews[c.id], now)).map((c) => c.id);
+        setQueueState({ key: queueKey, ids, size: ids.length });
     }
 
-    const queue = queueState?.deckId === deckId ? queueState.ids : null;
+    const queue = queueState?.key === queueKey ? queueState.ids : null;
     const current = data?.deck.cards.find((c) => c.id === queue?.[0]);
 
     const grade = async (g: Grade) => {
@@ -93,18 +99,25 @@ export const StudyPage: React.FC = () => {
     }
 
     const deck = data.deck;
+    const exitTo = pathId ? `/roadmap/${encodeURIComponent(pathId)}` : `/decks/${deck.id}`;
 
     if (!current) {
         return (
             <section className="min-h-screen bg-surface text-on-surface flex flex-col items-center justify-center gap-space-md px-gutter text-center">
                 <h1 className="font-headline-sm text-headline-sm font-bold">Xong phiên hôm nay 🎉</h1>
-                <p className="text-on-surface-variant">Không còn thẻ nào đến hạn trong bộ «{deck.title}».</p>
-                <Link
-                    to={`/decks/${deck.id}`}
-                    className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold"
-                >
-                    Về chi tiết bộ thẻ
+                <p className="text-on-surface-variant">
+                    {range
+                        ? `Bạn đã học xong phần hôm nay (${queueState?.size ?? 0} thẻ).`
+                        : `Không còn thẻ nào đến hạn trong bộ «${deck.title}».`}
+                </p>
+                <Link to={exitTo} className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold">
+                    {pathId ? "Về lộ trình" : "Về chi tiết bộ thẻ"}
                 </Link>
+                {pathId && (
+                    <Link to={`/decks/${deck.id}`} className="text-primary hover:underline text-label-md">
+                        Xem bộ thẻ
+                    </Link>
+                )}
             </section>
         );
     }
@@ -114,8 +127,8 @@ export const StudyPage: React.FC = () => {
         <section className="min-h-screen bg-surface text-on-surface px-gutter py-space-lg">
             <div className="max-w-2xl mx-auto flex flex-col gap-space-lg">
                 <div className="flex items-center justify-between text-label-md text-on-surface-variant">
-                    <Link to={`/decks/${deck.id}`} className="text-primary hover:underline">
-                        ← Thoát
+                    <Link to={exitTo} className="text-primary hover:underline">
+                        {pathId ? "← Về lộ trình" : "← Thoát"}
                     </Link>
                     <span aria-live="polite">Còn {queue?.length ?? 0} thẻ</span>
                 </div>

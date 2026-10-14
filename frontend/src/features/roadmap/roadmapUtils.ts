@@ -49,7 +49,13 @@ export function isPathEnded(startDate: string | null, totalDays: number, today: 
     return dayKey(today) > endDate(startDate, totalDays);
 }
 
-export const formatDayRange = (from: number, to: number): string =>
+/** "YYYY-MM-DD" -> "dd/mm" (hoặc "dd/mm/yyyy" khi `withYear`). */
+export function formatShortDate(s: string, withYear = false): string {
+    const [y, m, d] = s.split("-");
+    return withYear ? `${d}/${m}/${y}` : `${d}/${m}`;
+}
+
+export const formatDayRange =(from: number, to: number): string =>
     from === to ? `Ngày ${from}` : `Ngày ${from}–${to}`;
 
 type ChapterLite = Pick<LearningPathChapter, "id" | "deckId" | "cardCount" | "dayFrom" | "dayTo" | "perDay">;

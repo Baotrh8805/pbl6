@@ -4,27 +4,41 @@ import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
 import { dayKey } from "@/lib/learningStats";
 import { extractErrorMessage } from "@/services/apiClient";
-import { deleteLearningPath, fetchLearningPath } from "@/services/learningPathService";
-import type { LearningPath } from "@/types/api.types";
+import {
+  activateLearningPath,
+  deleteLearningPath,
+  fetchLearningPath,
+  mergeChapterUp,
+  renameChapter,
+  updateLearningPath,
+} from "@/services/learningPathService";
+import type { LearningPath, LearningPathPatch } from "@/types/api.types";
+import { useShell } from "@/components/layout/shellContext";
 import { PathStatusChip } from "@/features/roadmap/components/PathStatusChip";
 import { PathProcessingPanel } from "@/features/roadmap/components/PathProcessingPanel";
 import { PathFailedPanel } from "@/features/roadmap/components/PathFailedPanel";
 import { CreateLearningPathModal } from "@/features/roadmap/components/CreateLearningPathModal";
+import { PathDraftEditor } from "@/features/roadmap/components/PathDraftEditor";
+import { PathActiveView } from "@/features/roadmap/components/PathActiveView";
 import { isPathProcessing } from "@/features/roadmap/roadmapUtils";
 
 const POLL_MS = 2000;
+/** Sau khi kích hoạt: chờ danh sách bộ thẻ của shell có đủ bộ mới, tối đa chừng này. */
+const DECKS_PENDING_MS = 8000;
 
 export const RoadmapDetailPage: React.FC = () => {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const dialog = useDialog();
+  const { decks, reviews, reloadStats } = useShell();
 
   const [path, setPath] = useState<LearningPath | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Tăng để khởi động lại vòng poll / tải lại.
   const [pollRound, setPollRound] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [busy] = useState(false); // Task 10: setBusy khi sửa bản nháp / kích hoạt
+  const [busy, setBusy] = useState(false);
+  const [decksPending, setDecksPending] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   // Poll mỗi 2 s khi PROCESSING; dừng khi sang trạng thái khác hoặc rời trang.
@@ -49,7 +63,7 @@ export const RoadmapDetailPage: React.FC = () => {
     };
   }, [id, pollRound]);
 
-  // Task 10 dùng: tải lại sau khi sửa bản nháp / kích hoạt.
+  // Tải lại sau khi sửa bản nháp / kích hoạt.
   const refreshPath = useCallback(async () => {
     try {
       setPath(await fetchLearningPath(id, dayKey(new Date())));
@@ -58,7 +72,57 @@ export const RoadmapDetailPage: React.FC = () => {
       setActionError(extractErrorMessage(e));
     }
   }, [id]);
-  void refreshPath;
+
+  // Bộ thẻ mới tạo khi kích hoạt chưa có trong shell ngay: hiện "Đang tạo bộ thẻ…" tới khi đủ hoặc hết hạn.
+  const allDecksLoaded =
+    !!path?.chapters && path.chapters.every((c) => !c.deckId || decks.some((d) => d.id === c.deckId));
+  const showDecksPending = decksPending && !allDecksLoaded;
+  useEffect(() => {
+    if (!decksPending) return;
+    const timer = window.setTimeout(() => setDecksPending(false), DECKS_PENDING_MS);
+    return () => window.clearTimeout(timer);
+  }, [decksPending]);
+
+  /** Chạy một thao tác sửa: khoá nút khi đang chạy, lỗi -> tải lại để bỏ thay đổi lạc quan rồi hiện lỗi. */
+  const runAction = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await action();
+      await refreshPath();
+    } catch (e) {
+      await refreshPath();
+      setActionError(extractErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePatchPath = (patch: LearningPathPatch) => void runAction(() => updateLearningPath(id, patch));
+
+  const handleRenameChapter = (cid: string, title: string) => {
+    setPath((p) =>
+      p?.chapters ? { ...p, chapters: p.chapters.map((c) => (c.id === cid ? { ...c, title } : c)) } : p
+    );
+    void runAction(() => renameChapter(id, cid, title));
+  };
+
+  const handleMergeUp = (cid: string) => void runAction(() => mergeChapterUp(id, cid));
+
+  const handleActivate = async (startDate: string, totalDays: number) => {
+    setBusy(true);
+    try {
+      const next = await activateLearningPath(id, { startDate, totalDays });
+      setPath(next);
+      setActionError(null);
+      reloadStats();
+      setDecksPending(true);
+      void refreshPath(); // lấy "hôm nay" theo ngày của máy khách
+    } catch (e) {
+      setActionError(extractErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleDelete = async () => {
     const ok = await dialog.confirm({
@@ -122,7 +186,7 @@ export const RoadmapDetailPage: React.FC = () => {
         )}
       </header>
 
-      {actionError && (
+      {actionError && path.status !== "DRAFT" && (
         <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
           {actionError}
         </p>
@@ -135,15 +199,20 @@ export const RoadmapDetailPage: React.FC = () => {
       )}
 
       {path.status === "DRAFT" && (
-        <div className="p-space-md rounded-2xl bg-surface-container-low text-body-sm text-on-surface-variant">
-          Bản nháp — đang hoàn thiện giao diện
-        </div>
+        <PathDraftEditor
+          path={path}
+          busy={busy}
+          error={actionError}
+          onPatchPath={handlePatchPath}
+          onRenameChapter={handleRenameChapter}
+          onMergeUp={handleMergeUp}
+          onItemsPatched={() => void refreshPath()}
+          onActivate={(startDate, totalDays) => void handleActivate(startDate, totalDays)}
+        />
       )}
 
       {path.status === "ACTIVE" && (
-        <div className="p-space-md rounded-2xl bg-surface-container-low text-body-sm text-on-surface-variant">
-          Đang học — đang hoàn thiện giao diện
-        </div>
+        <PathActiveView path={path} decks={decks} reviews={reviews} now={new Date()} decksPending={showDecksPending} />
       )}
 
       {createOpen && (
