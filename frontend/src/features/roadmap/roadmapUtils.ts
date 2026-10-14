@@ -1,6 +1,6 @@
 import { dayKey } from "../../lib/learningStats.ts";
 import { calcDeckProgress, type DeckProgress } from "../../lib/deckUtils.ts";
-import type { Review } from "../../lib/srs.ts";
+import { isDue, type Review } from "../../lib/srs.ts";
 import type { Deck, LearningPathChapter, LearningPathStatus, LearningPathTask } from "../../types/api.types.ts";
 
 export const MIN_DAYS = 1;
@@ -100,6 +100,12 @@ export function parseRange(raw: string | null): { from: number; to: number } | n
 }
 
 export const sliceRange = <T>(cards: T[], r: { from: number; to: number }): T[] => cards.slice(r.from - 1, r.to);
+
+/**
+ * Học theo dải (lộ trình): thẻ đã ôn mà chưa đến hạn chỉ ghi log (cram), không đổi lịch SRS;
+ * thẻ mới hoặc đến hạn xếp lịch bình thường.
+ */
+export const rangeCram = (review: Review | undefined, now: Date): boolean => !!review && !isDue(review, now);
 
 export function chapterProgress(
     ch: Pick<LearningPathChapter, "deckId">,

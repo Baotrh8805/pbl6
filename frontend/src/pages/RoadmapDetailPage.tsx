@@ -26,8 +26,16 @@ const POLL_MS = 2000;
 /** Sau khi kích hoạt: chờ danh sách bộ thẻ của shell có đủ bộ mới, tối đa chừng này. */
 const DECKS_PENDING_MS = 8000;
 
+/**
+ * Route giữ nguyên component khi chỉ đổi :id (vd. "Thử lại" từ lộ trình FAILED sang lộ trình mới) ->
+ * key={id} để mount lại: bỏ path / modal / lỗi của lộ trình cũ, vòng poll và refresh dở bị huỷ theo.
+ */
 export const RoadmapDetailPage: React.FC = () => {
   const { id = "" } = useParams();
+  return <RoadmapDetail key={id} id={id} />;
+};
+
+const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   const navigate = useNavigate();
   const dialog = useDialog();
   const { decks, reviews, reloadStats } = useShell();

@@ -1,22 +1,17 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import type { Deck, LearningPath } from "@/types/api.types";
-import type { Review } from "@/lib/srs";
+import type { LearningPath } from "@/types/api.types";
 import { SOURCE_TYPE_LABELS } from "@/features/extraction/extractionUtils";
-import { dayIndexFor, isPathProcessing, pathProgress, todayCardCount } from "../roadmapUtils";
+import { dayIndexFor, isPathProcessing, todayCardCount } from "../roadmapUtils";
 import { PathStatusChip } from "./PathStatusChip";
-import { ProgressBar } from "./ProgressBar";
 
 interface LearningPathCardProps {
   path: LearningPath;
-  decks: Deck[];
-  reviews: Record<string, Review>;
   now: Date;
   onDelete: (path: LearningPath) => void;
 }
 
-export const LearningPathCard: React.FC<LearningPathCardProps> = ({ path, decks, reviews, now, onDelete }) => {
-  const progress = path.chapters && path.chapters.length > 0 ? pathProgress(path.chapters, decks, reviews, now) : null;
+export const LearningPathCard: React.FC<LearningPathCardProps> = ({ path, now, onDelete }) => {
   const active = path.status === "ACTIVE";
   return (
     <li className="relative p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant transition-colors">
@@ -31,18 +26,7 @@ export const LearningPathCard: React.FC<LearningPathCardProps> = ({ path, decks,
             ? `Ngày ${dayIndexFor(path.startDate, now, path.totalDays)}/${path.totalDays}`
             : `${path.totalDays} ngày`}
         </p>
-        {progress && (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between text-label-sm">
-              <span className="text-on-surface-variant font-medium">
-                Đã thuộc {progress.mastered}/{progress.total} thẻ
-              </span>
-              <span className="text-secondary font-bold">{progress.pct}%</span>
-            </div>
-            <ProgressBar pct={progress.pct} label={`Tiến độ ${path.title}`} />
-          </div>
-        )}
-        {active && path.today && (
+        {active && path.today?.state === "during" && (
           <p className="text-label-md text-primary font-semibold">
             Hôm nay: {todayCardCount(path.today.tasks ?? [])} thẻ
           </p>

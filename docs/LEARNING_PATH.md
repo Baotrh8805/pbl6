@@ -26,7 +26,13 @@ ACTIVE: /roadmap/:id hiện lịch, "Hôm nay" → /decks/:deckId/study?range=a-
 - **Hook khi job xong** là Spring event (`ExtractionJobFinishedEvent`); listener không bao giờ ném — lỗi nào cũng chuyển
   lộ trình sang FAILED.
 - **Học một dải thẻ**: `StudyPage` nhận `?range=a-b` (vị trí thẻ trong bộ) và `?path=` để quay về lộ trình; backend
-  không có khái niệm "thẻ mới mỗi ngày", dải vị trí do lịch quyết định.
+  không có khái niệm "thẻ mới mỗi ngày", dải vị trí do lịch quyết định. Hàng đợi là **cả dải** (bất kể đến hạn), nhưng
+  chế độ chấm quyết định **từng thẻ** (`rangeCram`): thẻ mới (chưa có review) và thẻ đến hạn xếp lịch SRS bình thường;
+  thẻ đã ôn mà **chưa đến hạn** chấm kiểu cram (chỉ ghi log, không đổi `reps`/`interval`) — mở lại dải hôm nay không
+  thổi phồng "đã thuộc". `?cram=1` vẫn ép cram cho mọi thẻ.
+- **"Thử lại"** ở lộ trình FAILED mở modal tạo mới; tạo xong đóng modal rồi sang `/roadmap/:newId` (trang mount lại theo
+  `key={id}`, không giữ lộ trình cũ). Danh sách `GET /api/learning-paths` gửi `?date=` của máy khách như trang chi tiết;
+  thẻ "Hôm nay: k thẻ" chỉ hiện khi `today.state = during`.
 - **Giới hạn ngày dùng chung** với bóc tách (5 lượt / 24 giờ free, 50 premium): tạo lộ trình tốn một lượt.
 
 ## 2. Trạng thái

@@ -37,6 +37,7 @@ import {
   parseDateOnly,
   parseRange,
   pathProgress,
+  rangeCram,
   scheduledUpTo,
   sliceRange,
   tasksForDay,
@@ -355,6 +356,11 @@ async function runSelfCheck() {
   assertStrictEqual(sliceRange(rmCards, { from: 2, to: 4 }).join(","), "c2,c3,c4", "Cắt giữa");
   assertStrictEqual(sliceRange(rmCards, { from: 4, to: 9 }).join(","), "c4,c5", "to vượt quá");
   assertStrictEqual(sliceRange(rmCards, { from: 7, to: 9 }).join(","), "", "from vượt quá");
+  const rcNow = d(2026, 10, 14, 12);
+  const rcReview = (dueAt: string) => ({ cardId: "c", reps: 2, intervalDays: 3, ease: 2.5, dueAt });
+  assertStrictEqual(rangeCram(undefined, rcNow), false, "Học dải: thẻ mới -> xếp lịch bình thường");
+  assertStrictEqual(rangeCram(rcReview("2026-10-13T00:00:00Z"), rcNow), false, "Học dải: thẻ đến hạn -> xếp lịch");
+  assertStrictEqual(rangeCram(rcReview("2026-10-20T00:00:00Z"), rcNow), true, "Học dải: thẻ chưa đến hạn -> chỉ ghi log");
 
   const rmCard = (id: string) => ({ id }) as never;
   const rmDecks = [{ id: "d1", cards: [rmCard("c1"), rmCard("c2"), rmCard("c3"), rmCard("c4")] }] as never;

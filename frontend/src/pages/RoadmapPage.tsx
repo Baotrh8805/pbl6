@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
-import { useShell } from "@/components/layout/shellContext";
 import { useAsync } from "@/lib/useAsync";
 import { deleteLearningPath, fetchLearningPaths } from "@/services/learningPathService";
 import type { LearningPath } from "@/types/api.types";
@@ -10,7 +9,6 @@ import { LearningPathCard } from "@/features/roadmap/components/LearningPathCard
 
 export const RoadmapPage: React.FC = () => {
   const dialog = useDialog();
-  const { decks, reviews } = useShell();
   const [refreshIndex, setRefreshIndex] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const { data, error, loading } = useAsync(fetchLearningPaths, [refreshIndex]);
@@ -65,7 +63,7 @@ export const RoadmapPage: React.FC = () => {
       ) : (
         <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md">
           {paths.map((p) => (
-            <LearningPathCard key={p.id} path={p} decks={decks} reviews={reviews} now={now} onDelete={handleDelete} />
+            <LearningPathCard key={p.id} path={p} now={now} onDelete={handleDelete} />
           ))}
         </ul>
       )}

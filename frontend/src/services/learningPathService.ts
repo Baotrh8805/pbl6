@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient.ts";
+import { dayKey } from "../lib/learningStats.ts";
 import type {
     ActivateLearningPathDto,
     CreateLearningPathInput,
@@ -37,8 +38,9 @@ export const createLearningPath = async ({
     ).data;
 };
 
-export const fetchLearningPaths = async (): Promise<LearningPath[]> =>
-    (await apiClient.get<LearningPath[]>("/learning-paths")).data;
+/** Gửi kèm ngày của máy khách để `today` của từng lộ trình khớp với trang chi tiết (tránh lệch múi giờ). */
+export const fetchLearningPaths = async (date: string = dayKey(new Date())): Promise<LearningPath[]> =>
+    (await apiClient.get<LearningPath[]>("/learning-paths", { params: { date } })).data;
 
 /** `date` (yyyy-MM-dd) để server tính "hôm nay" theo ngày của người dùng. */
 export const fetchLearningPath = async (id: string, date?: string): Promise<LearningPath> =>

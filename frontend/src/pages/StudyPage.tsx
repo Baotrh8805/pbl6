@@ -8,7 +8,7 @@ import { useAsync } from "@/lib/useAsync";
 import { isDue, type Grade } from "@/lib/srs";
 import { extractErrorMessage } from "@/services/apiClient";
 import { CardContent } from "@/features/decks/components/CardContent";
-import { parseRange, sliceRange } from "@/features/roadmap/roadmapUtils";
+import { parseRange, rangeCram, sliceRange } from "@/features/roadmap/roadmapUtils";
 
 const GRADES: { grade: Grade; label: string; key: string; className: string }[] = [
     { grade: "again", label: "Lại", key: "1", className: "bg-error text-on-primary" },
@@ -21,7 +21,8 @@ export const StudyPage: React.FC = () => {
     const { deckId = "" } = useParams(); // deckId từ URL: server kiểm quyền, sai thì 404
     const [params] = useSearchParams();
     const cram = params.get("cram") === "1"; // Học nhanh: ôn cả bộ, không đổi lịch dài hạn
-    // Từ Lộ trình: ?range=a-b chỉ học đúng các thẻ ở vị trí a..b (bất kể đến hạn), ?path=<id> để quay về.
+    // Từ Lộ trình: ?range=a-b chỉ học đúng các thẻ ở vị trí a..b (bất kể đến hạn; thẻ chưa đến hạn chấm kiểu cram),
+    // ?path=<id> để quay về.
     const range = parseRange(params.get("range"));
     const pathId = params.get("path");
     const queueKey = `${deckId}|${range ? `${range.from}-${range.to}` : ""}`;
@@ -52,7 +53,9 @@ export const StudyPage: React.FC = () => {
         if (!current || saving) return;
         setSaving(true);
         try {
-            await submitReview(current.id, g, cram); // lưu từng thẻ: thoát giữa chừng không mất tiến độ
+            // Học theo dải: thẻ đã ôn chưa đến hạn chỉ ghi log, không đẩy lịch SRS (mở lại dải hôm nay không thổi phồng "đã thuộc")
+            const cramThis = cram || (range !== null && rangeCram(data?.reviews[current.id], new Date()));
+            await submitReview(current.id, g, cramThis); // lưu từng thẻ: thoát giữa chừng không mất tiến độ
             setSaveError("");
             setRevealed(false);
             setQueueState((s) =>

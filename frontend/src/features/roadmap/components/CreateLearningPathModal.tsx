@@ -46,7 +46,7 @@ export const CreateLearningPathModal: React.FC<CreateLearningPathModalProps> = (
       }
     >
       {/* Form mount lại mỗi lần mở -> state về mặc định, tuỳ chọn đọc lại từ localStorage. */}
-      <PathForm formId={formId} initial={initial} onSavingChange={setSaving} />
+      <PathForm formId={formId} initial={initial} onSavingChange={setSaving} onDone={onClose} />
     </Modal>
   );
 };
@@ -55,7 +55,8 @@ const PathForm: React.FC<{
   formId: string;
   initial?: { days?: number; title?: string };
   onSavingChange: (saving: boolean) => void;
-}> = ({ formId, initial, onSavingChange }) => {
+  onDone: () => void;
+}> = ({ formId, initial, onSavingChange, onDone }) => {
   const navigate = useNavigate();
   const { userProfile } = useAuth();
   const [source, setSource] = useState<UploadSource>("file");
@@ -102,6 +103,9 @@ const PathForm: React.FC<{
         title: trimmedTitle || undefined,
         options,
       });
+      // Đóng modal trước khi chuyển trang: mở từ /roadmap/:id (Thử lại) thì trang không unmount, modal sẽ còn mở.
+      onSavingChange(false);
+      onDone();
       navigate(`/roadmap/${encodeURIComponent(path.id)}`);
     } catch (err) {
       setError(extractErrorMessage(err));
