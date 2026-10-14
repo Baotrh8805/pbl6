@@ -15,6 +15,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
@@ -104,6 +105,11 @@ public class AiServiceClient {
         } catch (ResourceAccessException e) {
             log.warn("ai-service {} không kết nối được: {}", step, e.getMessage());
             throw new AiServiceException("Không kết nối được dịch vụ AI (" + step + "). Hãy chắc ai-service đang chạy.", e);
+        } catch (RestClientException e) {
+            // Read timed out giữa chừng khi đọc body (Gemini treo quá AI_SERVICE_READ_TIMEOUT) không phải
+            // ResourceAccessException -> vẫn phải gói lại để worker coi là lỗi dịch vụ AI, không phải lỗi hệ thống
+            log.warn("ai-service {} không phản hồi kịp: {}", step, e.getMessage());
+            throw new AiServiceException("Dịch vụ AI không phản hồi kịp ở bước " + step + ", vui lòng thử lại sau.", e);
         }
     }
 

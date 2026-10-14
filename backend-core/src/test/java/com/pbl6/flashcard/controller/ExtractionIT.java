@@ -284,6 +284,19 @@ class ExtractionIT extends IntegrationTest {
     }
 
     @Test
+    void enrich_unexpected_failure_keeps_job_done() throws Exception {
+        // Gemini treo quá AI_SERVICE_READ_TIMEOUT -> RestClient ném lỗi không phải AiServiceException (thấy thật 14/10):
+        // dịch nghĩa chỉ là bước làm giàu nên job vẫn DONE với nghĩa EN, stats ghi enrichReason=error
+        String token = newUser();
+        Mockito.doThrow(new RuntimeException("Read timed out")).when(ai).enrich(any());
+        String id = read(postText(token, TEXT, null)).get("id").asText();
+        JsonNode done = awaitTerminal(token, id);
+        assertEquals("DONE", done.get("status").asText());
+        assertFalse(done.get("stats").get("enriched").asBoolean());
+        assertEquals("error", done.get("stats").get("enrichReason").asText());
+    }
+
+    @Test
     void reEnrich_rejects_running_and_throttles() throws Exception {
         // job chưa DONE (FAILED do analyze lỗi) -> 400; options extractMode được lưu và validate
         String token = newUser();

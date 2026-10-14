@@ -18,9 +18,13 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 40
 TIMEOUT_MS = 60_000
 MODEL = settings.GEMINI_MODEL
-# 429 / 503: thử lại với giãn cách rồi mới sang GEMINI_FALLBACK_MODEL (spec §2.7). Tổng chờ ≤ 14 s < AI_SERVICE_READ_TIMEOUT.
+# 429 / 503: thử lại với giãn cách rồi mới sang GEMINI_FALLBACK_MODEL (spec §2.7). Giãn cách chỉ 14 s nhưng mỗi lượt gọi
+# có thể treo tới TIMEOUT_MS (504 DEADLINE_EXCEEDED) -> giới hạn tổng thời gian dưới AI_SERVICE_READ_TIMEOUT (3 phút)
+# của backend, nếu không backend timeout và cả job FAILED dù dịch nghĩa chỉ là bước làm giàu.
 RETRY_DELAYS = (2, 4, 8)
+TOTAL_BUDGET_S = 150
 _sleep = time.sleep   # tách ra để test thay bằng no-op
+_now = time.monotonic  # tách ra để test giả lập lượt gọi treo lâu
 
 _client: Any = None
 
@@ -79,8 +83,12 @@ def _generate(contents: Any, config: Optional[dict] = None) -> str:
     if fallback and fallback != MODEL:
         plans.append((fallback, ()))
     last: Optional[GeminiError] = None
+    started = _now()
     for model, delays in plans:
         for attempt in range(len(delays) + 1):
+            if last is not None and _now() - started + TIMEOUT_MS / 1000 > TOTAL_BUDGET_S:
+                logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, TOTAL_BUDGET_S)
+                raise last from None
             try:
                 resp = client.models.generate_content(model=model, contents=contents, config=cfg)
                 return (getattr(resp, "text", None) or "").strip()

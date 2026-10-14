@@ -219,6 +219,24 @@ def test_retry_exhausted_keeps_quota_reason(fake_client, monkeypatch):
     assert exc.value.reason == "quota" and len(models.calls) == 5
 
 
+def test_slow_failures_stop_within_total_budget(fake_client, monkeypatch):
+    # Model treo tới timeout 60 s mỗi lần (504 thấy thật 14/10): tổng vòng thử lại phải dừng trước AI_SERVICE_READ_TIMEOUT
+    # của backend (3 phút), nếu không backend timeout và cả job FAILED dù dịch nghĩa chỉ là bước làm giàu.
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    clock = {"t": 0.0}
+
+    def fake_now():
+        clock["t"] += 70.0  # mỗi lần hỏi giờ ≈ một lượt gọi treo 60 s + giãn cách
+        return clock["t"]
+
+    monkeypatch.setattr(gemini, "_now", fake_now)
+    models = fake_client(_flaky(99, 504))
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.translate_items([{"ref": "1", "term": "語"}], "vi")
+    assert exc.value.reason == "error" and exc.value.retryable
+    assert len(models.calls) == 2  # lượt 3 sẽ vượt ngân sách 150 s -> không gọi nữa, không sang model dự phòng
+
+
 def test_non_retryable_error_not_retried(fake_client):
     models = fake_client(_flaky(99, 404))
     with pytest.raises(gemini.GeminiError) as exc:

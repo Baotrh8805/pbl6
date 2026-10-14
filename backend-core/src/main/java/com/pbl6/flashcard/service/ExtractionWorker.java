@@ -209,6 +209,11 @@ public class ExtractionWorker {
             log.warn("Bỏ qua bước dịch nghĩa cho job {}: {}", jobId, e.getMessage());
             stats.put("enriched", false);
             stats.put("enrichReason", "error");
+        } catch (RuntimeException e) {
+            // Mọi lỗi khác (timeout đọc body, JSON lạ...) cũng không được làm job FAILED: thẻ vẫn có nghĩa EN
+            log.error("Bỏ qua bước dịch nghĩa cho job {} vì lỗi bất ngờ", jobId, e);
+            stats.put("enriched", false);
+            stats.put("enrichReason", "error");
         }
     }
 
