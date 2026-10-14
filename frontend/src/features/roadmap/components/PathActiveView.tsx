@@ -29,9 +29,10 @@ export const PathActiveView: React.FC<PathActiveViewProps> = ({ path, decks, rev
   const chapters = path.chapters ?? [];
   const total = Math.max(path.totalDays, 1);
   // Ưu tiên số liệu server (tính theo ?date= của máy khách); hàm phía client chỉ là dự phòng.
-  const ended = path.today?.state === "after" || isPathEnded(path.startDate, path.totalDays, now);
   const state: TodayState =
-    path.today?.state ?? (ended ? "after" : dayKey(now) < path.startDate ? "before" : "during");
+    path.today?.state ??
+    (isPathEnded(path.startDate, path.totalDays, now) ? "after" : dayKey(now) < path.startDate ? "before" : "during");
+  const ended = state === "after";
   // Server trả dayIndex chưa kẹp (≤ 0 trước ngày bắt đầu, > N sau khi kết thúc).
   const rawIndex = path.today?.dayIndex ?? dayIndexFor(path.startDate, now, path.totalDays);
   const dayIndex = Math.min(Math.max(rawIndex, 1), total);
@@ -42,7 +43,8 @@ export const PathActiveView: React.FC<PathActiveViewProps> = ({ path, decks, rev
       : (path.days?.find((d) => d.dayIndex === dayIndex)?.tasks ?? tasksForDay(chapters, dayIndex));
   const date = state === "during" && path.today ? path.today.date : dateForDay(path.startDate, dayIndex);
   const progress = pathProgress(chapters, decks, reviews, now);
-  const behind = behindCount(chapters, dayIndex, decks, reviews);
+  // Đã kết thúc: thẻ chưa học của cả ngày cuối cũng tính là nợ.
+  const behind = behindCount(chapters, ended ? path.totalDays + 1 : dayIndex, decks, reviews);
 
   return (
     <div className="flex flex-col gap-space-lg">

@@ -14,9 +14,10 @@ interface ChapterDraftCardProps {
   chapter: LearningPathChapter;
   index: number;
   canMergeUp: boolean;
-  busy: boolean;
+  /** Đang kích hoạt lộ trình: khoá gộp chương / chọn thẻ. */
+  activating: boolean;
   onRename: (cid: string, title: string) => void;
-  onMergeUp: (cid: string) => void;
+  onMergeUp: (cid: string) => Promise<void>;
   onItemsPatched: () => void;
 }
 
@@ -25,7 +26,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
   chapter,
   index,
   canMergeUp,
-  busy,
+  activating,
   onRename,
   onMergeUp,
   onItemsPatched,
@@ -35,6 +36,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
 
   // Tải lại ngầm khi số thẻ của chương đổi (bỏ tick, gộp chương) để danh sách khớp server.
   const items = useAsync(
@@ -60,6 +62,15 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
     onItemsPatched();
   };
 
+  const mergeUp = async () => {
+    setMerging(true);
+    try {
+      await onMergeUp(chapter.id);
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const toggleOpen = () => {
     if (!open) setVersion((v) => v + 1); // mở lại -> lấy danh sách mới
     setOpen((o) => !o);
@@ -80,7 +91,6 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
             <input
               value={title.value}
               maxLength={100}
-              disabled={busy}
               onChange={(e) => setTitle({ src: chapter.title, value: e.target.value })}
               onBlur={commitTitle}
               onKeyDown={(e) => {
@@ -115,8 +125,8 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
         {canMergeUp && index > 0 && (
           <button
             type="button"
-            disabled={busy}
-            onClick={() => onMergeUp(chapter.id)}
+            disabled={activating || merging}
+            onClick={() => void mergeUp()}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">vertical_align_top</span>
@@ -137,7 +147,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
           ) : items.error ? (
             <p className="text-body-sm text-error">{items.error}</p>
           ) : (
-            <ChapterItemsList items={items.data ?? []} busy={busy} onToggle={toggle} />
+            <ChapterItemsList items={items.data ?? []} busy={activating} onToggle={toggle} />
           )}
         </div>
       )}

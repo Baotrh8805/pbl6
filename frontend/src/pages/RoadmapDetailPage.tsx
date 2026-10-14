@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
@@ -37,7 +37,7 @@ export const RoadmapDetailPage: React.FC = () => {
   // Tăng để khởi động lại vòng poll / tải lại.
   const [pollRound, setPollRound] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [decksPending, setDecksPending] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -64,12 +64,18 @@ export const RoadmapDetailPage: React.FC = () => {
   }, [id, pollRound]);
 
   // Tải lại sau khi sửa bản nháp / kích hoạt.
+  // Chỉ nhận kết quả của lần tải mới nhất: lưu-khi-blur và kích hoạt có thể chạy chồng nhau, phản hồi cũ về muộn
+  // không được đè bản ACTIVE bằng bản DRAFT.
+  const refreshSeq = useRef(0);
   const refreshPath = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     try {
-      setPath(await fetchLearningPath(id, dayKey(new Date())));
+      const next = await fetchLearningPath(id, dayKey(new Date()));
+      if (seq !== refreshSeq.current) return;
+      setPath(next);
       setActionError(null);
     } catch (e) {
-      setActionError(extractErrorMessage(e));
+      if (seq === refreshSeq.current) setActionError(extractErrorMessage(e));
     }
   }, [id]);
 
@@ -83,17 +89,17 @@ export const RoadmapDetailPage: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [decksPending]);
 
-  /** Chạy một thao tác sửa: khoá nút khi đang chạy, lỗi -> tải lại để bỏ thay đổi lạc quan rồi hiện lỗi. */
+  /**
+   * Chạy một thao tác sửa bản nháp rồi tải lại. Không khoá cả trang: lưu khi blur mà khoá nút/ô nhập thì
+   * cú click/Tab kế tiếp rơi vào phần tử bị disabled. Lỗi -> tải lại để bỏ thay đổi lạc quan rồi hiện lỗi.
+   */
   const runAction = async (action: () => Promise<unknown>) => {
-    setBusy(true);
     try {
       await action();
       await refreshPath();
     } catch (e) {
       await refreshPath();
       setActionError(extractErrorMessage(e));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -106,12 +112,20 @@ export const RoadmapDetailPage: React.FC = () => {
     void runAction(() => renameChapter(id, cid, title));
   };
 
-  const handleMergeUp = (cid: string) => void runAction(() => mergeChapterUp(id, cid));
+  const handleMergeUp = (cid: string) => runAction(() => mergeChapterUp(id, cid));
 
-  const handleActivate = async (startDate: string, totalDays: number) => {
-    setBusy(true);
+  const handleActivate = async ({ title, startDate, totalDays }: { title: string; startDate: string; totalDays: number }) => {
+    if (!path) return;
+    setActivating(true);
     try {
+      // Lưu nốt giá trị đang gõ (blur-commit có thể còn đang chạy) để cú click đầu tiên luôn kích hoạt đúng.
+      const patch: LearningPathPatch = {};
+      if (title !== path.title) patch.title = title;
+      if (totalDays !== path.totalDays) patch.totalDays = totalDays;
+      if (startDate !== path.startDate) patch.startDate = startDate;
+      if (Object.keys(patch).length > 0) await updateLearningPath(id, patch);
       const next = await activateLearningPath(id, { startDate, totalDays });
+      refreshSeq.current++; // bỏ các lần tải lại đang dở (còn là DRAFT)
       setPath(next);
       setActionError(null);
       reloadStats();
@@ -120,7 +134,7 @@ export const RoadmapDetailPage: React.FC = () => {
     } catch (e) {
       setActionError(extractErrorMessage(e));
     } finally {
-      setBusy(false);
+      setActivating(false);
     }
   };
 
@@ -168,7 +182,7 @@ export const RoadmapDetailPage: React.FC = () => {
               variant="ghost"
               size="md"
               onClick={handleDelete}
-              disabled={busy}
+              disabled={activating}
               className="text-error hover:bg-error/10 hover:text-error shrink-0"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
@@ -195,19 +209,19 @@ export const RoadmapDetailPage: React.FC = () => {
       {processing && <PathProcessingPanel path={path} />}
 
       {path.status === "FAILED" && (
-        <PathFailedPanel path={path} onRetry={() => setCreateOpen(true)} onDelete={handleDelete} busy={busy} />
+        <PathFailedPanel path={path} onRetry={() => setCreateOpen(true)} onDelete={handleDelete} busy={activating} />
       )}
 
       {path.status === "DRAFT" && (
         <PathDraftEditor
           path={path}
-          busy={busy}
+          activating={activating}
           error={actionError}
           onPatchPath={handlePatchPath}
           onRenameChapter={handleRenameChapter}
           onMergeUp={handleMergeUp}
           onItemsPatched={() => void refreshPath()}
-          onActivate={(startDate, totalDays) => void handleActivate(startDate, totalDays)}
+          onActivate={(values) => void handleActivate(values)}
         />
       )}
 

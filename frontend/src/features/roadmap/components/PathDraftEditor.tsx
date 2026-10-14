@@ -7,13 +7,15 @@ import { ChapterDraftCard } from "./ChapterDraftCard";
 
 interface PathDraftEditorProps {
   path: LearningPath;
-  busy: boolean;
+  /** Chỉ bật khi đang kích hoạt; lưu khi blur không khoá ô nhập (server là nguồn đúng, tải lại sau mỗi lần lưu). */
+  activating: boolean;
   error: string | null;
   onPatchPath: (patch: LearningPathPatch) => void;
   onRenameChapter: (cid: string, title: string) => void;
-  onMergeUp: (cid: string) => void;
+  onMergeUp: (cid: string) => Promise<void>;
   onItemsPatched: () => void;
-  onActivate: (startDate: string, totalDays: number) => void;
+  /** Nhận giá trị đang gõ để tự lưu nốt trước khi kích hoạt (blur-commit có thể chưa xong). */
+  onActivate: (values: { title: string; startDate: string; totalDays: number }) => void;
 }
 
 const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -22,7 +24,7 @@ const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
 
 export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   path,
-  busy,
+  activating,
   error,
   onPatchPath,
   onRenameChapter,
@@ -61,7 +63,11 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   const daysNum = Number(form.days);
 
   const activate = () =>
-    onActivate(form.start || path.startDate, isValidDays(daysNum) ? daysNum : path.totalDays);
+    onActivate({
+      title: form.title.trim() || path.title,
+      startDate: form.start || path.startDate,
+      totalDays: isValidDays(daysNum) ? daysNum : path.totalDays,
+    });
 
   return (
     <div className="flex flex-col gap-space-md">
@@ -76,7 +82,6 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
           name="path-title"
           value={form.title}
           maxLength={100}
-          disabled={busy}
           onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
           onBlur={commitTitle}
           onKeyDown={blurOnEnter}
@@ -90,7 +95,6 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             min={MIN_DAYS}
             max={MAX_DAYS}
             value={form.days}
-            disabled={busy}
             onChange={(e) => setForm((f) => ({ ...f, days: e.target.value }))}
             onBlur={commitDays}
             onKeyDown={blurOnEnter}
@@ -101,7 +105,6 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             name="path-start"
             type="date"
             value={form.start}
-            disabled={busy}
             onChange={(e) => setForm((f) => ({ ...f, start: e.target.value }))}
             onBlur={commitStart}
             onKeyDown={blurOnEnter}
@@ -126,7 +129,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
               chapter={ch}
               index={i}
               canMergeUp={i > 0}
-              busy={busy}
+              activating={activating}
               onRename={onRenameChapter}
               onMergeUp={onMergeUp}
               onItemsPatched={onItemsPatched}
@@ -140,7 +143,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
         <p className="min-w-0 text-label-md text-on-surface">
           {chapters.length} chương · {totalCards} thẻ · ~{perDay} thẻ/ngày
         </p>
-        <Button size="md" onClick={activate} isLoading={busy} disabled={busy || totalCards === 0} className="shrink-0">
+        <Button size="md" onClick={activate} isLoading={activating} disabled={activating || totalCards === 0} className="shrink-0">
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">rocket_launch</span>
           Tạo lộ trình
         </Button>
