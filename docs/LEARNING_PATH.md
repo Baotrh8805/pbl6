@@ -61,8 +61,9 @@ Chỉ chạy khi `ExtractionOptions.splitChapters = true` (lộ trình bật s�
   fullwidth). Dòng `1.` / `１．` **không** là tiêu đề.
 - **Loại câu văn**: dòng chứa `、` hoặc `。` ở bất kỳ đâu không phải tiêu đề; phần sau số phải ≤ 50 ký tự và không bắt đầu
   bằng `で|に|の|は|が|を|目` (trợ từ dính vào số: `第3章では…`, `第2回目の授業で…`).
-- **Xếp hạng họ từ khoá**: hạng 1 = `課|章|単元|Bài|Chương|Lesson|Unit|Chapter|レッスン|ユニット`; hạng 2 =
-  `部|節|回|話|Phần|Mục|Part|Section`. Chỉ tách theo **họ hạng cao nhất xuất hiện ≥ 2 lần** (hạng 1 nếu có ≥ 2, không thì
+- **Xếp hạng họ từ khoá**: hạng 1 = `課|章|単元|日目|Bài|Chương|Lesson|Unit|Chapter|レッスン|ユニット` (`N日目` = bài theo ngày,
+  Nihongo Soumatome); hạng 2 = `部|節|回|話|週|Phần|Mục|Part|Section` (`第N週` là nhóm tuần, chỉ tách khi không có ngày).
+  Tiêu đề dạng câu hỏi (`…ますか?`) hợp lệ; chỉ loại dòng kết thúc `。！!` hoặc chứa `、`. Chỉ tách theo **họ hạng cao nhất xuất hiện ≥ 2 lần** (hạng 1 nếu có ≥ 2, không thì
   hạng 2 nếu có ≥ 2); dòng của họ hạng thấp hơn **ở lại trong thân chương** ("Bài 1 / Phần 1 / Phần 2 / Bài 2" → 2 chương).
 - **DOCX** (hạng 0, ưu tiên hơn regex khi khớp ≥ 2 dòng): chỉ dùng heading ở **cấp nhỏ nhất** (gần 1 nhất) xuất hiện ≥ 2
   lần; cấp sâu hơn (vd. H2 `語彙`/`文法` lặp ở mỗi bài) ở lại trong thân. Tập so khớp dựng từ dòng đầu của các block cấp đó.
@@ -72,6 +73,12 @@ Chỉ chạy khi `ExtractionOptions.splitChapters = true` (lộ trình bật s�
   `はじめに / まえがき / 本書の使い方 / 目次 / 凡例 / Lời nói đầu / Cách sử dụng / Mục lục / Preface / Contents…` (không thì giữ
   "Mở đầu" như dưới); chương có tiêu đề là các từ đó cũng bị bỏ; (4) chương cuối bị cắt tại dòng `付録 / 索引 / 解答 / Phụ lục
   / Đáp án / Appendix / Index`. Danh sách phần đã bỏ trả về ở `stats.skippedSections`, bản nháp hiện "Đã bỏ qua: …".
+- **Mục lục OCR**: dòng mục lục còn là dòng có **2 mốc trong một dòng** (`1日目アパート…2日目引っ越し…`, scan không có số trang).
+- **Phần đầu sách liền khối** (14/10, sau khi thử PDF Soumatome): bỏ mọi chương tới chương **cuối cùng** mà thân còn chứa dòng
+  tên phần đầu sách (mục nhập cuối của mục lục OCR thường "ôm" luôn trang cách dùng sách), miễn sau đó còn ≥ 2 chương;
+  tiêu đề đứng **trước tiêu đề số 1 đầu tiên** (hộp ví dụ `5日目 …` trong trang cách dùng sách) là phần đầu sách — không áp dụng
+  khi tài liệu bắt đầu giữa sách (không có bài 1); chương dẫn đầu có **tiêu đề dạng mục lục** (`1日目-6日目 7日目`) bị bỏ; phần mở
+  đầu chỉ gồm tiêu đề nhóm (trang bìa `第1週 …`) bị bỏ, không thành "Mở đầu".
 - `chaptersDetected` = số tiêu đề được chọn ≥ 2. Không nhận ra → một chương, văn bản **nguyên vẹn**; backend dùng thuật toán chia theo ngày (mục 4).
 - Nhận ra: thân chương = các dòng giữa hai tiêu đề (bỏ dòng tiêu đề, vì `split_sentences` vốn xoá nó và `第1課` sẽ thành
   từ vựng `課`); tiêu đề chương = cả dòng (cắt 100 ký tự). Phần trước tiêu đề đầu: có tiếng Nhật → chương "Mở đầu", không thì

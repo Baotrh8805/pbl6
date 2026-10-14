@@ -12,6 +12,13 @@ Spec: [Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md](Plan/specs/2026-10-14-l
   với "Hôm nay" và nợ); `StudyPage` nhận `?range=a-b&path=`; tách dùng chung `SourceFields`, `ExtractionOptionsFields`, `LevelBadge`.
 - Test: `LearningPathSchedulerTest`, `LearningPathIT`, `test_chapters.py`, `roadmapUtils` (selfcheck), `smoke-learning-path.mjs`
   (thêm vào `npm run e2e`).
+- **Kiểm thử thật (Chrome + ai-service thật) với văn bản mẫu và PDF scan Nihongo Soumatome N2 Goi (trang 1–18)** → báo cáo
+  [Plan/reports/2026-10-14-kiem-thu-lo-trinh.md](Plan/reports/2026-10-14-kiem-thu-lo-trinh.md). Lỗi tìm thấy và sửa cùng ngày:
+  - Gemini treo/quá tải làm job FAILED dù dịch nghĩa không fatal → ngân sách 150 s, bọc `RestClientException`, `enrich` bắt `RuntimeException`.
+  - OCR 18 trang scan vượt 3 phút khi Gemini hết quota → model chính hết quota thì đi thẳng model dự phòng 2 phút; cả hai hỏng thì tạm ngưng Gemini 2 phút.
+  - Gemini Vision sinh 50 000 dấu chấm dẫn ở trang mục lục → gộp ký tự lặp, từ chối bản Gemini phình bất thường.
+  - Tách chương: thêm `N日目` / `第N週`; bỏ mục lục (kể cả OCR 2 mục/dòng), lời nói đầu, cách dùng sách, hộp ví dụ trước bài 1,
+    phụ lục; `stats.skippedSections` → bản nháp hiện "Đã bỏ qua: …".
 
 ## 14/10/2026: Cập nhật tài liệu cho đợt "Bóc tách AI" (chưa đổi code)
 - Cập nhật `README.md` (cài ai-service, Tesseract, `build_dicts.py`, `.env`), `EXTRACTION.md`, `CODEBASE_MAP.md`,
