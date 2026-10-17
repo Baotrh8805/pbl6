@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 
-/** Nhật ký quản trị: chỉ đọc (mọi staff). Không có endpoint sửa / xoá. */
+/** Nhật ký quản trị: chỉ đọc (ADMIN trở lên). Không có endpoint sửa / xoá. */
 @RestController
 @RequestMapping("/api/admin/audit-logs")
 @Validated

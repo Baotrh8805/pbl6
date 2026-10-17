@@ -28,7 +28,7 @@ class AdminAuditIT extends IntegrationTest {
     void viewer_lists_logs_filtered_by_actor_and_target_type() throws Exception {
         String emailA = newEmail();
         String emailB = newEmail();
-        String viewer = newStaff(Role.VIEWER, emailA);
+        String viewer = newStaff(Role.ADMIN, emailA);
         newStaff(Role.ADMIN, emailB);
         Long a = userId(emailA);
         Long b = userId(emailB);
@@ -65,7 +65,7 @@ class AdminAuditIT extends IntegrationTest {
 
     @Test
     void page_params_are_validated() throws Exception {
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         call(get("/api/admin/audit-logs").param("page", "-1"), viewer, null).andExpect(status().isBadRequest());
         call(get("/api/admin/audit-logs").param("size", "101"), viewer, null).andExpect(status().isBadRequest());
     }
@@ -77,7 +77,7 @@ class AdminAuditIT extends IntegrationTest {
     @Test
     void date_filter_uses_application_timezone() throws Exception {
         String email = newEmail();
-        String viewer = newStaff(Role.VIEWER, email);
+        String viewer = newStaff(Role.ADMIN, email);
         Long me = userId(email);
         java.time.ZoneId vn = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
         java.time.LocalDate today = java.time.LocalDate.now(vn);

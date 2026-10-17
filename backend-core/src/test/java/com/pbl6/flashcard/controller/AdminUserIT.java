@@ -152,7 +152,7 @@ class AdminUserIT extends IntegrationTest {
 
     @Test
     void search_escapes_like_wildcards_and_limits_length() throws Exception { // US-15
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         user();
         JsonNode pct = read(call(get("/api/admin/users").param("q", "%"), viewer.token, null).andExpect(status().isOk()));
         assertEquals(0, pct.get("total").asLong(), "'%' là ký tự thường, không khớp tất cả");
@@ -163,7 +163,7 @@ class AdminUserIT extends IntegrationTest {
 
     @Test
     void paging_params_are_validated() throws Exception { // US-16
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         call(get("/api/admin/users").param("page", "-1"), viewer.token, null).andExpect(status().isBadRequest());
         call(get("/api/admin/users").param("size", "0"), viewer.token, null).andExpect(status().isBadRequest());
         call(get("/api/admin/users").param("size", "101"), viewer.token, null).andExpect(status().isBadRequest());
@@ -171,7 +171,7 @@ class AdminUserIT extends IntegrationTest {
 
     @Test
     void detail_of_fresh_user_has_zero_counts() throws Exception { // US-17
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         Account u = user();
         JsonNode d = read(call(get("/api/admin/users/" + u.id), viewer.token, null).andExpect(status().isOk()));
         assertEquals(0, d.get("deckCount").asInt());
@@ -185,20 +185,20 @@ class AdminUserIT extends IntegrationTest {
 
     @Test
     void unknown_user_is_404() throws Exception { // US-18
-        call(get("/api/admin/users/999999"), staff(Role.VIEWER).token, null).andExpect(status().isNotFound());
+        call(get("/api/admin/users/999999"), staff(Role.ADMIN).token, null).andExpect(status().isNotFound());
     }
 
     @Test
-    void admin_can_lock_viewer() throws Exception { // US-19
-        Account admin = staff(Role.ADMIN);
-        Account v = staff(Role.VIEWER);
-        patchUser(admin.token, v.id, body("locked", true)).andExpect(status().isOk());
-        call(get("/api/admin/stats"), v.token, null).andExpect(status().isUnauthorized());
+    void super_admin_can_lock_admin() throws Exception { // US-19
+        Account root = staff(Role.SUPER_ADMIN);
+        Account a = staff(Role.ADMIN);
+        patchUser(root.token, a.id, body("locked", true)).andExpect(status().isOk());
+        call(get("/api/admin/stats"), a.token, null).andExpect(status().isUnauthorized());
     }
 
     @Test
     void list_filters_by_role_and_shows_deck_count() throws Exception {
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         Account u = user();
         call(post("/api/decks"), u.token, Map.of("title", "A", "level", "N5", "cards", List.of(Map.of("term", "猫", "meaning", "mèo"))))
                 .andExpect(status().isCreated());

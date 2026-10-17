@@ -32,7 +32,7 @@ class AdminAuthorizationIT extends IntegrationTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = Role.class, names = {"VIEWER", "ADMIN", "SUPER_ADMIN"})
+    @EnumSource(value = Role.class, names = {"ADMIN", "SUPER_ADMIN"})
     void staff_cannot_use_learning_apis(Role role) throws Exception {
         String token = newStaff(role);
         call(post("/api/library/decks/n5-core/reports"), token, Map.of("reason", "SPAM")).andExpect(status().isForbidden());
@@ -45,9 +45,9 @@ class AdminAuthorizationIT extends IntegrationTest {
 
     @Test
     void staff_can_use_auth_apis() throws Exception {
-        String viewer = newStaff(Role.VIEWER);
-        JsonNode me = read(call(get("/api/auth/me"), viewer, null).andExpect(status().isOk()));
-        assertEquals("VIEWER", me.get("role").asText());
+        String admin = newStaff(Role.ADMIN);
+        JsonNode me = read(call(get("/api/auth/me"), admin, null).andExpect(status().isOk()));
+        assertEquals("ADMIN", me.get("role").asText());
     }
 
     @Test
@@ -89,14 +89,14 @@ class AdminAuthorizationIT extends IntegrationTest {
     void promoted_user_can_enter_admin_after_relogin() throws Exception { // AZ-03
         Account root = staff(Role.SUPER_ADMIN);
         Account u = user();
-        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "VIEWER")).andExpect(status().isOk());
+        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "ADMIN")).andExpect(status().isOk());
         call(get("/api/admin/users"), relogin(u.email), null).andExpect(status().isOk());
     }
 
     @Test
-    void demoted_viewer_loses_admin_immediately_with_old_token() throws Exception { // AZ-04
+    void demoted_admin_loses_admin_immediately_with_old_token() throws Exception { // AZ-04
         Account root = staff(Role.SUPER_ADMIN);
-        Account v = staff(Role.VIEWER);
+        Account v = staff(Role.ADMIN);
         call(put("/api/admin/users/" + v.id + "/role"), root.token, Map.of("role", "USER")).andExpect(status().isOk());
         call(get("/api/admin/stats"), v.token, null).andExpect(status().isForbidden());
     }
@@ -111,7 +111,7 @@ class AdminAuthorizationIT extends IntegrationTest {
     void unknown_role_is_rejected() throws Exception { // AZ-07
         Account root = staff(Role.SUPER_ADMIN);
         Account u = user();
-        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "MODERATOR")).andExpect(status().isBadRequest());
+        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "VIEWER")).andExpect(status().isBadRequest());
         call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "ROOT")).andExpect(status().isBadRequest());
     }
 
@@ -122,22 +122,22 @@ class AdminAuthorizationIT extends IntegrationTest {
         newUser(email);
         JsonNode tokens = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")));
         Long id = userId(email);
-        call(put("/api/admin/users/" + id + "/role"), root.token, Map.of("role", "VIEWER")).andExpect(status().isOk());
+        call(put("/api/admin/users/" + id + "/role"), root.token, Map.of("role", "ADMIN")).andExpect(status().isOk());
         JsonNode logs = read(call(get("/api/admin/audit-logs").param("actorId", root.id.toString()), root.token, null));
         assertEquals(1, logs.get("total").asLong());
         JsonNode d = logs.get("items").get(0).get("detail").get("role");
         assertEquals("USER", d.get("before").asText());
-        assertEquals("VIEWER", d.get("after").asText());
+        assertEquals("ADMIN", d.get("after").asText());
         call(post("/api/auth/refresh"), null, Map.of("refreshToken", tokens.get("refreshToken").asText()))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void hierarchy_applies_to_pre_authorize() throws Exception { // AZ-09: PATCH user cần ADMIN, SUPER_ADMIN cũng qua
+    void hierarchy_applies_to_pre_authorize() throws Exception { // AZ-09: @PreAuthorize SUPER_ADMIN từ chối ADMIN bằng 403 (không 500)
         Account root = staff(Role.SUPER_ADMIN);
         Account u = user();
         call(patch("/api/admin/users/" + u.id), root.token, Map.of("premium", true)).andExpect(status().isOk());
-        call(patch("/api/admin/users/" + u.id), staff(Role.VIEWER).token, Map.of("premium", true)).andExpect(status().isForbidden());
+        call(put("/api/admin/users/" + u.id + "/role"), staff(Role.ADMIN).token, Map.of("role", "ADMIN")).andExpect(status().isForbidden());
     }
 
     @Test
@@ -148,7 +148,7 @@ class AdminAuthorizationIT extends IntegrationTest {
             call(post("/api/decks"), u.token, Map.of("title", "D" + i, "level", "N5", "cards", List.of(Map.of("term", "猫", "meaning", "mèo"))))
                     .andExpect(status().isCreated());
         }
-        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "VIEWER")).andExpect(status().isOk());
+        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "ADMIN")).andExpect(status().isOk());
         call(get("/api/decks"), relogin(u.email), null).andExpect(status().isForbidden());
         call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "USER")).andExpect(status().isOk());
         assertEquals(3, read(call(get("/api/decks"), relogin(u.email), null).andExpect(status().isOk())).size());
@@ -158,16 +158,16 @@ class AdminAuthorizationIT extends IntegrationTest {
 
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> contentEndpoints() {
         return java.util.stream.Stream.of(
-                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/decks", Role.VIEWER),
-                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/decks/n5-core", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/decks", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/decks/n5-core", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/decks/n5-core/unpublish", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("PATCH", "/api/admin/decks/n5-core/flags", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/decks/khong-ton-tai", Role.ADMIN),
-                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/ratings", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/ratings", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/ratings/999999/comment", Role.ADMIN),
-                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/extractions", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/extractions", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/extractions/00000000-0000-0000-0000-000000000000", Role.ADMIN),
-                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/reports", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/reports", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/resolve", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/dismiss", Role.ADMIN));
     }

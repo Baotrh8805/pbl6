@@ -472,7 +472,7 @@ export interface CreateLearningPathInput {
 
 // ---------- Admin Panel (dto.admin.*) ----------
 
-export type Role = "USER" | "VIEWER" | "ADMIN" | "SUPER_ADMIN";
+export type Role = "USER" | "ADMIN" | "SUPER_ADMIN";
 
 /** AdminPage<T>: trang kết quả dùng chung cho mọi danh sách admin. */
 export interface AdminPage<T> {

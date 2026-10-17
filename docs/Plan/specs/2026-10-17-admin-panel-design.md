@@ -1,6 +1,6 @@
 # Spec: Admin Panel (quản trị hệ thống) — UC-38, UC-39, UC-41, UC-42
 
-Ngày 17/10/2026 · nhánh `backend-feature-learnmode` · trạng thái: **đã duyệt và triển khai 17/10/2026** (backend + frontend, chưa kiểm tay trên trình duyệt); kế hoạch triển khai ở
+Ngày 17/10/2026 · nhánh `backend-feature-learnmode` · trạng thái: **đã duyệt và triển khai 17/10/2026; chiều 17/10 bỏ VIEWER (D5)** (backend + frontend, chưa kiểm tay trên trình duyệt); kế hoạch triển khai ở
 [plans/2026-10-17-admin-panel.md](../plans/2026-10-17-admin-panel.md).
 Phân hệ 7 hiện 0% ([USE_CASES_CHECKLIST.md](../../USE_CASES_CHECKLIST.md)). UC-40 (thanh toán) **không** nằm trong spec này.
 
@@ -10,7 +10,8 @@ Quy ước viết trong spec: mỗi quyết định tinh gọn ghi dạng `[mụ
 
 | # | Quyết định |
 |---|---|
-| D1 | **Bỏ MODERATOR.** 4 vai trò: `USER` (người học), `VIEWER` (staff chỉ đọc), `ADMIN` (vận hành + kiểm duyệt), `SUPER_ADMIN` (thêm đổi vai trò, sửa cấu hình). |
+| D1 | **Bỏ MODERATOR.** Vai trò: `USER` (người học), `ADMIN` (vận hành + kiểm duyệt), `SUPER_ADMIN` (thêm đổi vai trò, sửa cấu hình). |
+| D5 | **Bỏ VIEWER** (chiều 17/10): nhóm vận hành nhỏ, bậc chỉ đọc là thừa; ADMIN kiêm luôn phần xem. Thêm lại khi cần tài khoản demo chỉ đọc. |
 | D2 | **Một tài khoản một vai trò.** Staff **không** dùng tính năng học: mọi API học tập yêu cầu `ROLE_USER` (403 cho staff), giao diện admin có layout riêng. |
 | D3 | Thăng USER → staff **không xoá** dữ liệu học của họ, chỉ bị ẩn (403); giáng về USER thì thấy lại. Khuyến nghị tạo tài khoản staff mới thay vì thăng cấp tài khoản đang học. |
 | D4 | Tài khoản chủ Thư viện (`dongocle2404@gmail.com`, chủ 2 bộ official) **giữ là USER**; admin dùng tài khoản riêng. Trình soạn bộ thẻ trong admin panel → bỏ qua, thêm khi admin cần tự tạo nội dung official. |
@@ -39,7 +40,7 @@ Quy ước viết trong spec: mỗi quyết định tinh gọn ghi dạng `[mụ
 
 ## 1. Mục tiêu & phạm vi
 
-**Mục tiêu:** nhân sự vận hành (3 vai trò staff) xem số liệu, hỗ trợ người dùng, kiểm duyệt nội dung cộng đồng, xử lý báo cáo và đổi hạn mức AI mà **không** đụng DB tay; mọi thao tác ghi đều có dấu vết (audit).
+**Mục tiêu:** nhân sự vận hành (2 vai trò staff) xem số liệu, hỗ trợ người dùng, kiểm duyệt nội dung cộng đồng, xử lý báo cáo và đổi hạn mức AI mà **không** đụng DB tay; mọi thao tác ghi đều có dấu vết (audit).
 
 **Tiêu chí nghiệm thu:**
 1. Ma trận quyền (mục 3) được một test tham số hoá chứng minh: mỗi endpoint × mỗi vai trò → 403 hoặc không-403 đúng bảng, **kể cả chiều ngược**: staff gọi API học tập → 403.
@@ -138,14 +139,14 @@ Bảng `admin_audit_logs` ghi mọi thao tác ghi: ai, hành động, đối tư
 ## 3. Vai trò & ma trận phân quyền
 
 ### 3.1 Vai trò
-`Role { USER, VIEWER, ADMIN, SUPER_ADMIN }`. Ba vai trò staff lồng nhau tuyến tính, khai báo **một lần** bằng `RoleHierarchy` của Spring Security
-(`ROLE_SUPER_ADMIN > ROLE_ADMIN > ROLE_VIEWER`); Spring Security 6.5 tự áp dụng cho cả `authorizeHttpRequests` lẫn `@PreAuthorize`.
+`Role { USER, ADMIN, SUPER_ADMIN }`. Hai vai trò staff lồng nhau, khai báo **một lần** bằng `RoleHierarchy` của Spring Security
+(`ROLE_SUPER_ADMIN > ROLE_ADMIN`); Spring Security 6.5 tự áp dụng cho cả `authorizeHttpRequests` lẫn `@PreAuthorize`.
 `USER` đứng ngoài hierarchy: staff **không** có `ROLE_USER` → mọi API học tập trả 403 (D2).
 
 Quy tắc trong `SecurityConfig` (khai báo, không code tay):
 ```
 /api/auth/**, /api/announcement        → authenticated()   (mọi vai trò; login/register/... vẫn permitAll như cũ)
-/api/admin/**                          → hasRole("VIEWER") (USER bị 403 tại filter)
+/api/admin/**                          → hasRole("ADMIN")  (USER bị 403 tại filter)
 anyRequest()                           → hasRole("USER")   (staff bị 403 tại filter)
 ```
 
@@ -154,27 +155,27 @@ anyRequest()                           → hasRole("USER")   (staff bị 403 t�
 - Tài khoản 2 vai trò / chuyển chế độ → bỏ qua (D2), thêm khi staff thật sự cần vừa học vừa quản trị.
 
 ### 3.2 Ma trận (✔ = được, — = 403)
-| Chức năng | USER | VIEWER | ADMIN | SUPER_ADMIN |
-|---|:-:|:-:|:-:|:-:|
-| Toàn bộ API học tập (`/api/decks`, `/folders`, `/library`, `/quizzes`, `/reviews`, `/extractions`, `/learning-paths`…) | ✔ | — | — | — |
-| Gửi báo cáo bộ thẻ | ✔ | — | — | — |
-| `/api/auth/me`, hồ sơ, đổi mật khẩu, `/api/announcement` | ✔ | ✔ | ✔ | ✔ |
-| Xem dashboard, health | — | ✔ | ✔ | ✔ |
-| Xem danh sách / chi tiết người dùng | — | ✔ | ✔ | ✔ |
-| Khoá / mở khoá, premium, hạn mức riêng, thu hồi phiên | — | — | ✔ | ✔ |
-| Đổi vai trò | — | — | — | ✔ |
-| Xem bộ thẻ (metadata) / bình luận / job | — | ✔ | ✔ | ✔ |
-| Xem thẻ của bộ thẻ public hoặc đang bị báo cáo | — | ✔ | ✔ | ✔ |
-| Gỡ bộ thẻ khỏi Thư viện, xoá bình luận, official / featured, xoá bộ thẻ, xoá job | — | — | ✔ | ✔ |
-| Xem hàng đợi báo cáo | — | ✔ | ✔ | ✔ |
-| Resolve / dismiss báo cáo | — | — | ✔ | ✔ |
-| Xem audit log | — | ✔ | ✔ | ✔ |
-| Xem settings | — | ✔ | ✔ | ✔ |
-| Sửa settings | — | — | — | ✔ |
+| Chức năng | USER | ADMIN | SUPER_ADMIN |
+|---|:-:|:-:|:-:|
+| Toàn bộ API học tập (`/api/decks`, `/folders`, `/library`, `/quizzes`, `/reviews`, `/extractions`, `/learning-paths`…) | ✔ | — | — |
+| Gửi báo cáo bộ thẻ | ✔ | — | — |
+| `/api/auth/me`, hồ sơ, đổi mật khẩu, `/api/announcement` | ✔ | ✔ | ✔ |
+| Xem dashboard, health | — | ✔ | ✔ |
+| Xem danh sách / chi tiết người dùng | — | ✔ | ✔ |
+| Khoá / mở khoá, premium, hạn mức riêng, thu hồi phiên | — | ✔ | ✔ |
+| Đổi vai trò | — | — | ✔ |
+| Xem bộ thẻ (metadata) / bình luận / job | — | ✔ | ✔ |
+| Xem thẻ của bộ thẻ public hoặc đang bị báo cáo | — | ✔ | ✔ |
+| Gỡ bộ thẻ khỏi Thư viện, xoá bình luận, official / featured, xoá bộ thẻ, xoá job | — | ✔ | ✔ |
+| Xem hàng đợi báo cáo | — | ✔ | ✔ |
+| Resolve / dismiss báo cáo | — | ✔ | ✔ |
+| Xem audit log | — | ✔ | ✔ |
+| Xem settings | — | ✔ | ✔ |
+| Sửa settings | — | — | ✔ |
 
 ### 3.3 Ràng buộc bảo vệ lẫn nhau (kiểm tra trong service, cùng transaction)
 1. Không thao tác lên **chính mình** (khoá, đổi role, thu hồi phiên) → 400.
-2. Chỉ thao tác lên người có **bậc thấp hơn** mình (`rank`: USER 0 < VIEWER 1 < ADMIN 2 < SUPER_ADMIN 3). ADMIN khoá được USER và VIEWER; SUPER_ADMIN khoá được mọi người trừ mình → 403.
+2. Chỉ thao tác lên người có **bậc thấp hơn** mình (`rank`: USER 0 < ADMIN 1 < SUPER_ADMIN 2). ADMIN khoá được USER; SUPER_ADMIN khoá được USER và ADMIN → 403.
 3. "SUPER_ADMIN cuối cùng" không cần kiểm tra riêng: vì không tự đổi role của mình (quy tắc 1), người giáng luôn là một SUPER_ADMIN khác nên hệ thống còn ≥ 1. (Phát hiện khi viết test, 17/10.)
 4. `registration_open=false` chỉ chặn `POST /auth/register`; đăng nhập không bị ảnh hưởng.
 5. Đổi vai trò USER ↔ staff **không** đụng dữ liệu học (D3); thu hồi mọi refresh token của người đó để frontend nạp lại layout đúng vai trò sau đăng nhập lại.
@@ -194,7 +195,7 @@ Test tích hợp tạo staff qua `UserRepository` trực tiếp (helper `newStaf
 -- Vai trò
 ALTER TABLE users DROP CONSTRAINT users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('USER','VIEWER','ADMIN','SUPER_ADMIN'));
+  CHECK (role IN ('USER','ADMIN','SUPER_ADMIN'));
 ALTER TABLE users ADD COLUMN locked_at timestamptz(6);
 ALTER TABLE users ADD COLUMN extraction_daily_limit int
   CONSTRAINT users_extraction_limit_check CHECK (extraction_daily_limit BETWEEN 0 AND 1000);
@@ -259,44 +260,44 @@ Lỗi: 400 tham số, 401 chưa đăng nhập, 403 thiếu bậc, 404 không có
 ### 5.1 Dashboard & health
 | Method | Path | Query / Body | Trả về | Vai trò |
 |---|---|---|---|---|
-| GET | `/api/admin/stats` | `days` (7–90, mặc định 30) | `{users:{total,new7d,new30d,locked,premium,active7d}, decks:{total,public,official}, cards, extractions:{total,done,failed,running}, quizAttempts, learningPaths, openReports, series:[{date, newUsers, extractions, quizzes}]}` | VIEWER |
-| GET | `/api/admin/health` | — | `{db:"ok", aiService:"ok"\|"down", version}` | VIEWER |
+| GET | `/api/admin/stats` | `days` (7–90, mặc định 30) | `{users:{total,new7d,new30d,locked,premium,active7d}, decks:{total,public,official}, cards, extractions:{total,done,failed,running}, quizAttempts, learningPaths, openReports, series:[{date, newUsers, extractions, quizzes}]}` | ADMIN |
+| GET | `/api/admin/health` | — | `{db:"ok", aiService:"ok"\|"down", version}` | ADMIN |
 
 ### 5.2 Người dùng
 | Method | Path | Query / Body | Trả về | Vai trò |
 |---|---|---|---|---|
-| GET | `/api/admin/users` | `q, role, premium, locked, page, size` | Page của `{id,email,fullName,role,isPremium,lockedAt,createdAt,deckCount}` | VIEWER |
-| GET | `/api/admin/users/{id}` | — | chi tiết + `{deckCount,cardCount,extractionCount,extractionsToday,quizCount,lastReviewAt,activeSessions,extractionDailyLimit}` | VIEWER |
+| GET | `/api/admin/users` | `q, role, premium, locked, page, size` | Page của `{id,email,fullName,role,isPremium,lockedAt,createdAt,deckCount}` | ADMIN |
+| GET | `/api/admin/users/{id}` | — | chi tiết + `{deckCount,cardCount,extractionCount,extractionsToday,quizCount,lastReviewAt,activeSessions,extractionDailyLimit}` | ADMIN |
 | PATCH | `/api/admin/users/{id}` | `{locked?, premium?, extractionDailyLimit?, clearLimit?}` (`clearLimit: true` = bỏ hạn mức riêng, về cấu hình chung; trường không gửi = giữ nguyên) | chi tiết | ADMIN |
-| PUT | `/api/admin/users/{id}/role` | `{role}` (USER / VIEWER / ADMIN / SUPER_ADMIN) | chi tiết; thu hồi mọi refresh token của người đó | SUPER_ADMIN |
+| PUT | `/api/admin/users/{id}/role` | `{role}` (USER / ADMIN / SUPER_ADMIN) | chi tiết; thu hồi mọi refresh token của người đó | SUPER_ADMIN |
 | POST | `/api/admin/users/{id}/revoke-sessions` | — | 204 | ADMIN |
 
 ### 5.3 Nội dung
 | Method | Path | Query / Body | Trả về | Vai trò |
 |---|---|---|---|---|
-| GET | `/api/admin/decks` | `q, visibility, official, featured, ownerId, page, size` | Page của `{id,title,level,category,ownerId,ownerEmail,visibility,official,featured,cardCount,avgStars,downloads,openReports}` (bảng `decks` không có `created_at`; sắp theo tiêu đề) | VIEWER |
-| GET | `/api/admin/decks/{id}` | — | metadata + `cards` **chỉ khi** public hoặc `openReports > 0`, ngược lại `cards: null` | VIEWER |
+| GET | `/api/admin/decks` | `q, visibility, official, featured, ownerId, page, size` | Page của `{id,title,level,category,ownerId,ownerEmail,visibility,official,featured,cardCount,avgStars,downloads,openReports}` (bảng `decks` không có `created_at`; sắp theo tiêu đề) | ADMIN |
+| GET | `/api/admin/decks/{id}` | — | metadata + `cards` **chỉ khi** public hoặc `openReports > 0`, ngược lại `cards: null` | ADMIN |
 | POST | `/api/admin/decks/{id}/unpublish` | — | metadata | ADMIN |
 | PATCH | `/api/admin/decks/{id}/flags` | `{official?, featured?}` | metadata | ADMIN |
 | DELETE | `/api/admin/decks/{id}` | — | 204 | ADMIN |
-| GET | `/api/admin/ratings` | `deckId?, q?, page, size` (chỉ dòng có `comment`) | Page của `{id,deckId,deckTitle,userId,userEmail,stars,comment,updatedAt}` | VIEWER |
+| GET | `/api/admin/ratings` | `deckId?, q?, page, size` (chỉ dòng có `comment`) | Page của `{id,deckId,deckTitle,userId,userEmail,stars,comment,updatedAt}` | ADMIN |
 | DELETE | `/api/admin/ratings/{id}/comment` | — | 204 (giữ sao) | ADMIN |
-| GET | `/api/admin/extractions` | `status?, userId?, page, size` | Page của `ExtractionJobResponse` **không** có `extractedText` + `userEmail` | VIEWER |
+| GET | `/api/admin/extractions` | `status?, userId?, page, size` | Page của `ExtractionJobResponse` **không** có `extractedText` + `userEmail` | ADMIN |
 | DELETE | `/api/admin/extractions/{id}` | — | 204; 409 nếu job đang chạy hoặc thuộc lộ trình | ADMIN |
 
 ### 5.4 Báo cáo
 | Method | Path | Query / Body | Trả về | Vai trò |
 |---|---|---|---|---|
 | POST | `/api/library/decks/{id}/reports` | `{reason, detail?}` | 201 `{id,status}`; 404 bộ thẻ không public; 400 tự báo cáo bộ của mình; 409 đã có báo cáo OPEN; 429 > 10/giờ | USER |
-| GET | `/api/admin/reports` | `status` (mặc định OPEN), `deckId?, page, size` | Page của `{id,deckId,deckTitle,deckVisibility,reporterEmail,reason,detail,status,action,resolutionNote,resolvedByEmail,resolvedAt,createdAt,sameDeckOpen}` | VIEWER |
+| GET | `/api/admin/reports` | `status` (mặc định OPEN), `deckId?, page, size` | Page của `{id,deckId,deckTitle,deckVisibility,reporterEmail,reason,detail,status,action,resolutionNote,resolvedByEmail,resolvedAt,createdAt,sameDeckOpen}` | ADMIN |
 | POST | `/api/admin/reports/{id}/resolve` | `{action, note?, ratingId?}` (`ratingId` bắt buộc khi `action=CLEAR_COMMENT`, phải thuộc bộ thẻ bị báo cáo) | báo cáo; 409 nếu không còn OPEN | ADMIN |
 | POST | `/api/admin/reports/{id}/dismiss` | `{note?}` | báo cáo; 409 nếu không còn OPEN | ADMIN |
 
 ### 5.5 Audit, settings, announcement
 | Method | Path | Query / Body | Trả về | Vai trò |
 |---|---|---|---|---|
-| GET | `/api/admin/audit-logs` | `actorId?, targetType?, from?, to?, page, size` | Page của `{id,actorEmail,action,targetType,targetId,detail,createdAt}` | VIEWER |
-| GET | `/api/admin/settings` | — | `{extraction_daily_limit_free, extraction_daily_limit_premium, announcement, registration_open, updatedAt}` | VIEWER |
+| GET | `/api/admin/audit-logs` | `actorId?, targetType?, from?, to?, page, size` | Page của `{id,actorEmail,action,targetType,targetId,detail,createdAt}` | ADMIN |
+| GET | `/api/admin/settings` | — | `{extraction_daily_limit_free, extraction_daily_limit_premium, announcement, registration_open, updatedAt}` | ADMIN |
 | PUT | `/api/admin/settings` | cùng 4 khoá (bắt buộc đủ) | như GET | SUPER_ADMIN |
 | GET | `/api/announcement` | — | `{text}` (rỗng = không có) | mọi người đã đăng nhập |
 
@@ -310,7 +311,7 @@ Lỗi: 400 tham số, 401 chưa đăng nhập, 403 thiếu bậc, 404 không có
 
 | Tệp | Việc |
 |---|---|
-| `model/Role.java` | `USER, VIEWER, ADMIN, SUPER_ADMIN`; `boolean isStaff()`; `int rank()` |
+| `model/Role.java` | `USER, ADMIN, SUPER_ADMIN`; `boolean isStaff()`; `int rank()` |
 | `model/User.java` | `lockedAt`, `extractionDailyLimit` |
 | `model/ContentReport.java`, `AdminAuditLog.java`, `AppSetting.java` + 3 repository | entity thuần, không tầng trung gian |
 | `security/CustomUserDetails.java` | `isAccountNonLocked() = lockedAt == null` → `DaoAuthenticationProvider` tự ném `LockedException` khi đăng nhập |
@@ -320,7 +321,7 @@ Lỗi: 400 tham số, 401 chưa đăng nhập, 403 thiếu bậc, 404 không có
 | `config/SecurityConfig.java` | `@EnableMethodSecurity`; bean `RoleHierarchy`; 3 dòng `requestMatchers` ở mục 3.1 |
 | `config/ApiExceptionHandler.java` | thêm handler `AccessDeniedException` → 403 (hiện `onOther` sẽ biến từ chối của `@PreAuthorize` thành 500) |
 | `dto/AuthResponse.java` | thêm `role` để frontend điều hướng `/admin` hay `/` ngay sau đăng nhập, không chờ `/auth/me` |
-| `controller/AdminStatsController`, `AdminUserController`, `AdminContentController`, `AdminReportController`, `AdminSettingsController` | mỗi nhóm tài nguyên 1 controller (quy tắc nhóm); `@PreAuthorize("hasRole('ADMIN')")` / `hasRole('SUPER_ADMIN')` trên **từng method ghi** |
+| `controller/AdminStatsController`, `AdminUserController`, `AdminContentController`, `AdminReportController`, `AdminSettingsController` | mỗi nhóm tài nguyên 1 controller (quy tắc nhóm); `@PreAuthorize("hasRole('SUPER_ADMIN')")` chỉ trên đổi vai trò và sửa cấu hình (URL đã yêu cầu ADMIN) |
 | `service/AdminUserService`, `AdminContentService`, `ReportService`, `SettingsService`, `AdminStatsService`, `AuditService` | mỗi service < 400 dòng; `AuditService.log(actor, action, type, id, before, after)` gọi trong cùng `@Transactional` |
 | `service/ExtractionService` | `enforceDailyLimit`: `limit = user.extractionDailyLimit ?? settings.getInt(premium ? …_premium : …_free)` |
 | `service/DeckService` | tách `deleteDeck(Deck)` khỏi `deleteForOwner(uid, id)` để admin dùng lại |
@@ -423,7 +424,7 @@ Mobile: nút ☰ mở sidebar dạng drawer (cùng cơ chế `DashboardSidebar`)
 │ Premium*        [x] Premium                                  [Lưu]       │
 │ Hạn mức AI/ngày* ( ) Theo cấu hình chung (5)  ( ) Riêng: [___]  [Lưu]    │
 │ Phiên đăng nhập* [Thu hồi mọi phiên]                                     │
-│ Vai trò**       [v USER ▾ VIEWER / ADMIN / SUPER_ADMIN] [Đổi]            │
+│ Vai trò**       [v USER ▾ ADMIN / SUPER_ADMIN] [Đổi]            │
 │                 (SUPER_ADMIN; disabled nếu là chính mình)                 │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Nhật ký liên quan (5 gần nhất)  → xem tất cả                             │
@@ -472,7 +473,7 @@ Tab Bóc tách:  | Người | Nguồn | Trạng thái·stage | Lỗi | Tạo | X
 │ 16/10│ Kanji lạ (public)│ c@x.vn        │ Sai nội dung  │ 2    │ [Xử lý]*│
 │ 15/10│ Bài 3 (private)  │ d@x.vn        │ Bản quyền     │ 1    │ [Xử lý]*│
 └──────┴──────────────────┴───────────────┴───────────────┴──────┴─────────┘
-Modal "Xử lý báo cáo #41" (Modal size lg, ADMIN+; VIEWER chỉ có [Xem]):
+Modal "Xử lý báo cáo #41" (Modal size lg):
 │ Bộ thẻ: Kanji lạ · chủ a@x.vn · public   [Mở bộ thẻ ↗]                   │
 │ Lý do: Sai nội dung — "Nghĩa thẻ 12 sai hoàn toàn"                        │
 │ Hành động: ( ) Không làm gì  (•) Gỡ khỏi Thư viện  ( ) Xoá bình luận      │
@@ -502,7 +503,7 @@ Modal "Xử lý báo cáo #41" (Modal size lg, ADMIN+; VIEWER chỉ có [Xem]):
 │ Thông báo toàn hệ thống         [________________________] (≤300, rỗng=tắt)│
 │ Mở đăng ký tài khoản mới        [x]                                       │
 │                                                     [Lưu thay đổi]*       │
-│ (VIEWER/ADMIN: mọi ô disabled + dòng "Chỉ Super admin được sửa")          │
+│ (ADMIN: mọi ô disabled + dòng "Chỉ Super admin được sửa")          │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -533,18 +534,18 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 ### 9.1 Phân quyền & vai trò — `AdminAuthorizationIT`
 | ID | Loại | Bước | Kỳ vọng |
 |---|---|---|---|
-| AZ-01 | C | `@ParameterizedTest` cho **mọi** endpoint mục 5 × 4 vai trò | Mã trả về ≠ 403 ⇔ bậc ≥ cột "Vai trò"; USER luôn 403 ở `/api/admin/**` |
+| AZ-01 | C | `@ParameterizedTest` cho **mọi** endpoint mục 5 × 3 vai trò | Mã trả về ≠ 403 ⇔ bậc ≥ cột "Vai trò"; USER luôn 403 ở `/api/admin/**` |
 | AZ-02 | N | Không token gọi `/api/admin/stats` | 401 (không phải 403) |
-| AZ-03 | C | SUPER_ADMIN đổi role của USER → VIEWER; người đó đăng nhập lại rồi gọi `/api/admin/stats` | 200 |
-| AZ-04 | C | Giáng VIEWER → USER; access token cũ (còn hạn) gọi `/api/admin/stats` | 403 ngay (authority nạp từ DB) |
+| AZ-03 | C | SUPER_ADMIN đổi role của USER → ADMIN; người đó đăng nhập lại rồi gọi `/api/admin/stats` | 200 |
+| AZ-04 | C | Giáng ADMIN → USER; access token cũ (còn hạn) gọi `/api/admin/stats` | 403 ngay (authority nạp từ DB) |
 | AZ-05 | N | SUPER_ADMIN đổi role của chính mình | 400 |
 | AZ-06 | — | (bỏ) Giáng SUPER_ADMIN cuối cùng không thể xảy ra qua API, xem 3.3 mục 3 | — |
-| AZ-07 | N | `PUT /role` với `{"role":"MODERATOR"}` / `"ROOT"` | 400 (enum) |
+| AZ-07 | N | `PUT /role` với `{"role":"VIEWER"}` / `"ROOT"` | 400 (enum) |
 | AZ-08 | C | Mỗi hành động đổi role sinh 1 dòng audit `USER_ROLE` `{before,after}` và thu hồi refresh token của người đó | đúng 1 dòng; refresh cũ → 401 |
-| AZ-09 | E | `RoleHierarchy` áp dụng cho `@PreAuthorize`: SUPER_ADMIN gọi endpoint `hasRole('ADMIN')` | 200 |
-| AZ-10 | C | **Chiều ngược (D2):** VIEWER / ADMIN / SUPER_ADMIN gọi `GET /api/decks`, `POST /api/decks`, `GET /api/library/decks`, `POST /api/library/decks/n5-core/reports`, `GET /api/quizzes/n5-core` | 403 tất cả |
+| AZ-09 | E | `RoleHierarchy` áp dụng cho `@PreAuthorize`: ADMIN gọi endpoint `hasRole('SUPER_ADMIN')` → 403 (không 500); SUPER_ADMIN gọi endpoint ADMIN | 200 |
+| AZ-10 | C | **Chiều ngược (D2):** ADMIN / SUPER_ADMIN gọi `GET /api/decks`, `POST /api/decks`, `GET /api/library/decks`, `POST /api/library/decks/n5-core/reports`, `GET /api/quizzes/n5-core` | 403 tất cả |
 | AZ-11 | C | Staff gọi `GET /api/auth/me`, `PUT /api/auth/password`, `GET /api/announcement` | 200 |
-| AZ-12 | E | USER có 3 bộ thẻ được thăng lên VIEWER rồi giáng về USER | `GET /api/decks` lại trả 3 bộ, review không mất (D3) |
+| AZ-12 | E | USER có 3 bộ thẻ được thăng lên ADMIN rồi giáng về USER | `GET /api/decks` lại trả 3 bộ, review không mất (D3) |
 
 ### 9.2 Khoá tài khoản & phiên — `AdminUserIT`
 | ID | Loại | Bước | Kỳ vọng |
@@ -567,7 +568,7 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 | US-16 | E | `page=-1`, `size=0`, `size=101` | 400 |
 | US-17 | E | Chi tiết user có 0 bộ thẻ, chưa ôn bao giờ | các đếm = 0, `lastReviewAt = null`, 200 |
 | US-18 | N | `GET /users/999999` | 404 |
-| US-19 | E | ADMIN khoá VIEWER (bậc thấp hơn) | 200; VIEWER gọi `/api/admin/stats` → 401 |
+| US-19 | E | SUPER_ADMIN khoá ADMIN (bậc thấp hơn) | 200; ADMIN gọi `/api/admin/stats` → 401 |
 
 ### 9.3 Nội dung — `AdminContentIT`
 | ID | Loại | Bước | Kỳ vọng |
@@ -576,7 +577,7 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 | CT-02 | E | `unpublish` bộ thẻ đã private | 200 không đổi, không audit |
 | CT-03 | C | ADMIN đặt `official=true, featured=true` | Thư viện `featured` trả bộ này; audit `DECK_FLAGS` |
 | CT-04 | C | ADMIN xoá bộ thẻ có share, rating, review, quiz_attempt | 204; các bảng con sạch (FK cascade); chủ `GET /api/decks` không còn |
-| CT-05 | N | VIEWER xoá bộ thẻ | 403 (AZ-01 bao, nhắc lại vì phá huỷ) |
+| CT-05 | N | USER gọi API xoá bộ thẻ của admin | 403 |
 | CT-06 | C | `GET /admin/decks/{id}` bộ private không bị báo cáo | `cards: null` |
 | CT-07 | C | Cùng bộ đó sau khi có 1 báo cáo OPEN | `cards` có dữ liệu; sau khi report resolved → lại `null` |
 | CT-08 | C | Xoá bình luận | `comment=null`, `stars` giữ nguyên, `GET /library/decks/{id}/ratings` trung bình không đổi |
@@ -639,10 +640,10 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 ### 9.8 Frontend — `scripts/selfCheck.ts` (hàm thuần) + kiểm tay
 | ID | Loại | Bước | Kỳ vọng |
 |---|---|---|---|
-| FE-01 | C | `atLeast('ADMIN','VIEWER')=true`, `atLeast('VIEWER','ADMIN')=false`, `isStaff('USER')=false`, `atLeast(undefined,'VIEWER')=false` | assert |
+| FE-01 | C | `atLeast('SUPER_ADMIN','ADMIN')=true`, `atLeast('ADMIN','SUPER_ADMIN')=false`, `isStaff('USER')=false`, `atLeast(undefined,'ADMIN')=false` | assert |
 | FE-02 | C | `toPercentHeights([0,5,10])=[0,50,100]`; mảng toàn 0 → toàn 0 (không chia 0) | assert |
 | FE-03 | C (tay) | Đăng nhập USER: vào `/`, gõ `/admin` → về `/` | |
-| FE-04 | C (tay) | Đăng nhập VIEWER: vào thẳng `/admin`, gõ `/decks` → về `/admin`; thấy bảng, mọi nút ghi ẩn. ADMIN thấy nút ghi, không thấy "Lưu" ở Cấu hình | |
+| FE-04 | C (tay) | Đăng nhập ADMIN: vào thẳng `/admin`, gõ `/decks` → về `/admin`; thấy nút ghi nhưng không thấy "Lưu" ở Cấu hình; SUPER_ADMIN thấy thêm đổi vai trò và Lưu cấu hình | |
 | FE-05 | N (tay) | Backend trả 403 (role vừa bị giáng) khi bấm nút | hiện "Bạn không có quyền…" (đã có trong `extractErrorMessage`) |
 | FE-06 | E (tay) | Bàn phím: Tab tới mọi nút, Esc đóng modal, focus trả về nút mở; screen reader đọc `caption` và `role="status"` | |
 | FE-07 | E (tay) | Màn 360px: bảng cuộn ngang, sidebar admin gập, không vỡ layout | |
@@ -652,7 +653,7 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 ## 10. Chiến lược bảo mật theo module
 
 ### 10.1 Chung
-- **Ba dòng khai báo, không code tay:** `/api/admin/**` → `VIEWER`, `anyRequest` → `USER`, `@PreAuthorize` trên từng method ghi nâng bậc. Thiếu annotation = mặc định chỉ đọc (fail-safe). Staff không chạm được dữ liệu học (D2) nên không có đường "vừa kiểm duyệt vừa là chủ bộ thẻ".
+- **Ba dòng khai báo, không code tay:** `/api/admin/**` → `ADMIN`, `anyRequest` → `USER`, `@PreAuthorize('SUPER_ADMIN')` chỉ trên đổi vai trò và sửa cấu hình. Staff không chạm được dữ liệu học (D2) nên không có đường "vừa kiểm duyệt vừa là chủ bộ thẻ".
 - **Authority từ DB mỗi request** (giữ nguyên): thu hồi quyền tức thì, không phụ thuộc hạn JWT 15 phút.
 - **Validation ở biên:** DTO `@Valid` (`@Min/@Max/@Size/@Pattern`), enum cho mọi giá trị rời rạc, `page/size/q` giới hạn; DB CHECK/unique/FK là lưới cuối (409 qua `ApiExceptionHandler`).
 - **Không lộ dữ liệu riêng tư:** không trả `extracted_text`, không trả `passwordHash` (đã `@JsonIgnore`), thẻ của bộ private chỉ khi đang bị báo cáo.

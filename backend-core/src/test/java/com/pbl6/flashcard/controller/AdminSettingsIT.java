@@ -142,7 +142,7 @@ class AdminSettingsIT extends IntegrationTest {
     @Test
     void only_super_admin_writes_but_every_staff_reads() throws Exception { // AZ-01
         call(put("/api/admin/settings"), newStaff(Role.ADMIN), defaults()).andExpect(status().isForbidden());
-        JsonNode s = read(call(get("/api/admin/settings"), newStaff(Role.VIEWER), null).andExpect(status().isOk()));
+        JsonNode s = read(call(get("/api/admin/settings"), newStaff(Role.ADMIN), null).andExpect(status().isOk()));
         assertEquals(5, s.get("extraction_daily_limit_free").asInt());
         call(get("/api/admin/settings"), newUser(), null).andExpect(status().isForbidden());
     }

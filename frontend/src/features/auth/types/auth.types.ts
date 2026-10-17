@@ -9,7 +9,7 @@ export interface AuthResponse {
   refreshToken: string;
   tokenType: string;
   /** Staff vào thẳng /admin sau đăng nhập. */
-  role: "USER" | "VIEWER" | "ADMIN" | "SUPER_ADMIN";
+  role: "USER" | "ADMIN" | "SUPER_ADMIN";
 }
 
 export interface RegisterRequest {

@@ -87,11 +87,11 @@ export const AppRoutes: React.FC = () => {
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
-      {/* Admin Panel: staff (VIEWER trở lên); người học bị đưa về "/" */}
+      {/* Admin Panel: staff (ADMIN / SUPER_ADMIN); người học bị đưa về "/" */}
       <Route
         path="/admin"
         element={
-          <ProtectedRoute minRole="VIEWER">
+          <ProtectedRoute minRole="ADMIN">
             <AdminLayout />
           </ProtectedRoute>
         }

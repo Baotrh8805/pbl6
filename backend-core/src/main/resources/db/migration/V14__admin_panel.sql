@@ -1,10 +1,10 @@
 -- Admin Panel (docs/Plan/specs/2026-10-17-admin-panel-design.md): vai trò staff, khoá tài khoản, hạn mức AI riêng,
 -- cấu hình đổi lúc chạy, báo cáo nội dung, nhật ký quản trị.
 
--- Vai trò: USER (người học) | VIEWER / ADMIN / SUPER_ADMIN (staff, không dùng tính năng học)
+-- Vai trò: USER (người học) | ADMIN / SUPER_ADMIN (staff, không dùng tính năng học)
 ALTER TABLE users DROP CONSTRAINT users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('USER','VIEWER','ADMIN','SUPER_ADMIN'));
+  CHECK (role IN ('USER','ADMIN','SUPER_ADMIN'));
 ALTER TABLE users ADD COLUMN locked_at timestamptz(6);
 ALTER TABLE users ADD COLUMN extraction_daily_limit int
   CONSTRAINT users_extraction_limit_check CHECK (extraction_daily_limit BETWEEN 0 AND 1000);

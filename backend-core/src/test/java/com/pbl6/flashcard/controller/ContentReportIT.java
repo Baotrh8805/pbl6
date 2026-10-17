@@ -55,7 +55,7 @@ class ContentReportIT extends IntegrationTest {
     void user_reports_public_deck_of_someone_else() throws Exception { // RP-01, RP-15
         Account owner = user();
         Account reporter = user();
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         String id = publicDeck(owner.token, "Sai");
         long before = openReports(viewer.token);
         JsonNode res = read(report(reporter.token, id, "WRONG_CONTENT", "Nghĩa thẻ 1 sai").andExpect(status().isCreated()));

@@ -135,17 +135,17 @@ class AdminContentIT extends IntegrationTest {
     }
 
     @Test
-    void viewer_cannot_delete_deck() throws Exception { // CT-05
+    void user_cannot_delete_deck_via_admin_api() throws Exception { // CT-05
         Account owner = user();
         String id = publicDeck(owner.token, "V").get("id").asText();
-        call(delete("/api/admin/decks/" + id), staff(Role.VIEWER).token, null).andExpect(status().isForbidden());
+        call(delete("/api/admin/decks/" + id), user().token, null).andExpect(status().isForbidden());
     }
 
     @Test
     void private_deck_cards_are_hidden_unless_reported() throws Exception { // CT-06, CT-07
         Account owner = user();
         Account reporter = user();
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         String id = read(call(post("/api/decks"), owner.token, Map.of("title", "Riêng", "level", "N5",
                 "cards", List.of(Map.of("term", "猫", "meaning", "mèo")))).andExpect(status().isCreated())).get("id").asText();
         JsonNode hidden = read(call(get("/api/admin/decks/" + id), viewer.token, null).andExpect(status().isOk()));
@@ -221,7 +221,7 @@ class AdminContentIT extends IntegrationTest {
     @Test
     void deck_filters_are_validated_and_unrated_deck_has_null_average() throws Exception { // CT-12, CT-13
         Account owner = user();
-        Account viewer = staff(Role.VIEWER);
+        Account viewer = staff(Role.ADMIN);
         String id = publicDeck(owner.token, "Chưa sao").get("id").asText();
         call(get("/api/admin/decks").param("visibility", "foo"), viewer.token, null).andExpect(status().isBadRequest());
         JsonNode page = read(call(get("/api/admin/decks").param("q", "Chưa sao").param("ownerId", owner.id.toString()), viewer.token, null)

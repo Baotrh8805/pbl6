@@ -18,7 +18,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-/** Admin Panel > Người dùng. Đọc: mọi staff; ghi: ADMIN; đổi vai trò: SUPER_ADMIN. */
+/** Admin Panel > Người dùng. ADMIN: đọc + khoá / premium / hạn mức / thu hồi phiên; SUPER_ADMIN: thêm đổi vai trò. */
 @RestController
 @RequestMapping("/api/admin/users")
 @Validated
@@ -46,7 +46,6 @@ public class AdminUserController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public Detail patch(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id,
                         @Valid @RequestBody AdminUserPatch body) {
         return service.patch(me.getUser(), id, body);
@@ -60,7 +59,6 @@ public class AdminUserController {
     }
 
     @PostMapping("/{id}/revoke-sessions")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> revokeSessions(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id) {
         service.revokeSessions(me.getUser(), id);
         return ResponseEntity.noContent().build();

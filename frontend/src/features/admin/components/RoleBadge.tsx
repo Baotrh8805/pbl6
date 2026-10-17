@@ -3,7 +3,6 @@ import { ROLE_LABELS, type Role } from "@/lib/roles";
 
 const TONES: Record<Role, string> = {
   USER: "bg-surface-container text-on-surface",
-  VIEWER: "bg-primary-fixed text-on-primary-fixed",
   ADMIN: "bg-secondary-container text-on-secondary-container",
   SUPER_ADMIN: "bg-tertiary-fixed text-on-tertiary-fixed",
 };

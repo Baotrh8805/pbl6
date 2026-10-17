@@ -2,7 +2,7 @@
 
 ## 17/10/2026: Admin Panel (UC-38, UC-39, UC-41, UC-42)
 Spec: [Plan/specs/2026-10-17-admin-panel-design.md](Plan/specs/2026-10-17-admin-panel-design.md) · plan: [Plan/plans/2026-10-17-admin-panel.md](Plan/plans/2026-10-17-admin-panel.md).
-- **Vai trò**: `USER` (người học) + staff `VIEWER` / `ADMIN` / `SUPER_ADMIN` (`RoleHierarchy`). Một tài khoản một vai trò: staff gọi API học
+- **Vai trò**: `USER` (người học) + staff `ADMIN` / `SUPER_ADMIN` (`RoleHierarchy`). Một tài khoản một vai trò: staff gọi API học
   tập bị 403, người học không vào `/api/admin/**`. Khoá tài khoản (`users.locked_at`) chặn ở đăng nhập, JWT filter và refresh.
   `AuthResponse` có `role`; `@PreAuthorize` từ chối → 403 (trước đây sẽ thành 500).
 - **Backend** (`V14__admin_panel.sql`): `app_settings` (hạn mức bóc tách free/premium **đổi lúc chạy**, thông báo hệ thống,
@@ -21,6 +21,8 @@ Spec: [Plan/specs/2026-10-17-admin-panel-design.md](Plan/specs/2026-10-17-admin-
 - Review toàn nhánh (reviewer độc lập) tìm 2 lỗi đã sửa cùng ngày: `/api/admin/health` thiếu `X-Internal-Key` nên luôn báo AI
   "down" khi có `AI_SERVICE_KEY` (`AiServiceClientHealthTest`); lọc nhật ký theo ngày dùng nửa đêm UTC thay vì giờ VN (`AdminAuditIT`).
   Thay đổi phụ cho người học: `DELETE /api/extractions/{id}` với job đang chạy nay trả 409 (UI đã ẩn nút từ trước).
+- **Chiều 17/10: bỏ vai trò VIEWER** (còn `USER / ADMIN / SUPER_ADMIN`; `/api/admin/**` cần ADMIN; `@PreAuthorize` chỉ còn cho đổi vai trò và sửa cấu hình). V14 chưa chạy trên Supabase nên sửa thẳng CHECK trong V14.
+- `V15__seed_admin_accounts.sql`: 2 tài khoản khởi tạo `superadmin@nihongen.local` / `superadmin` (SUPER_ADMIN) và `admin1@nihongen.local` / `admin1` (ADMIN); đổi mật khẩu sau lần đầu đăng nhập.
 - **Việc cần làm khi deploy**: sao lưu DB, kiểm `SELECT email, role FROM users WHERE role <> 'USER'` trước V14, tạo tài khoản
   admin riêng rồi `UPDATE users SET role = 'SUPER_ADMIN' …`. Giao diện admin chưa kiểm tay trên trình duyệt trong đợt này.
 

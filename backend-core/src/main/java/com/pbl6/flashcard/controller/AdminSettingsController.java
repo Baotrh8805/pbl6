@@ -8,7 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-/** Cấu hình hệ thống: mọi staff xem, chỉ SUPER_ADMIN sửa. */
+/** Cấu hình hệ thống: ADMIN xem, chỉ SUPER_ADMIN sửa. */
 @RestController
 @RequestMapping("/api/admin/settings")
 public class AdminSettingsController {

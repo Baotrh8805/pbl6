@@ -63,8 +63,8 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // Mọi vai trò đã đăng nhập: hồ sơ, đổi mật khẩu, thông báo hệ thống
                         .requestMatchers("/api/auth/**", "/api/announcement").authenticated()
-                        // Admin Panel: staff (VIEWER trở lên theo RoleHierarchy); từng method ghi nâng bậc bằng @PreAuthorize
-                        .requestMatchers("/api/admin/**").hasRole("VIEWER")
+                        // Admin Panel: staff (ADMIN; SUPER_ADMIN qua RoleHierarchy); đổi vai trò / sửa cấu hình nâng bậc bằng @PreAuthorize
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // API học tập chỉ cho người học: staff bị 403 (một tài khoản một vai trò)
                         .anyRequest().hasRole("USER")
                 )
@@ -77,10 +77,10 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** SUPER_ADMIN > ADMIN > VIEWER; USER đứng ngoài. Spring Security 6.x tự dùng bean này cho cả URL lẫn @PreAuthorize. */
+    /** SUPER_ADMIN > ADMIN; USER đứng ngoài. Spring Security 6.x tự dùng bean này cho cả URL lẫn @PreAuthorize. */
     @Bean
     public RoleHierarchy roleHierarchy() {
-        return RoleHierarchyImpl.fromHierarchy("ROLE_SUPER_ADMIN > ROLE_ADMIN > ROLE_VIEWER");
+        return RoleHierarchyImpl.fromHierarchy("ROLE_SUPER_ADMIN > ROLE_ADMIN");
     }
 
     @Bean

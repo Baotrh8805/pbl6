@@ -107,9 +107,21 @@ pg_restore --clean --if-exists --no-owner --no-privileges -d "postgresql://USER@
 Thử khôi phục định kỳ vào một Postgres cục bộ (ví dụ `docker compose up db` rồi `pg_restore … -d postgresql://postgres:postgres@localhost:5432/postgres`)
 và chạy backend trỏ vào đó để chắc bản dump dùng được. Kiểm nhanh nội dung: `pg_restore --list file.dump | grep -c "TABLE DATA"`.
 
-## 8. Tạo Super admin đầu tiên (Admin Panel)
+## 8. Tài khoản quản trị (Admin Panel)
 
-Admin Panel (`/admin`) chỉ mở cho tài khoản có vai trò `VIEWER` / `ADMIN` / `SUPER_ADMIN`; vai trò này **không dùng được
+Migration `V15__seed_admin_accounts.sql` tạo sẵn 2 tài khoản khi backend khởi động (không ghi đè nếu đã có):
+
+| Đăng nhập (ô Email) | Mật khẩu | Vai trò |
+| :--- | :--- | :--- |
+| `superadmin@nihongen.local` | `superadmin` | SUPER_ADMIN |
+| `admin1@nihongen.local` | `admin1` | ADMIN |
+
+Trang đăng nhập yêu cầu định dạng email nên tên đăng nhập có đuôi `@nihongen.local`. **Đổi mật khẩu ngay** sau lần đầu
+(Hồ sơ > Đổi mật khẩu) trên môi trường thật: mật khẩu mặc định nằm trong mã nguồn. Muốn thêm Super admin khác, làm theo mục dưới.
+
+### Nâng một tài khoản khác lên Super admin
+
+Admin Panel (`/admin`) chỉ mở cho tài khoản có vai trò `ADMIN` / `SUPER_ADMIN`; vai trò này **không dùng được
 tính năng học** (một tài khoản một vai trò). Vì vậy hãy **đăng ký một tài khoản riêng** cho quản trị (không dùng tài khoản
 đang học, càng không dùng tài khoản chủ Thư viện `dongocle2404@gmail.com`), rồi chạy một lần trong SQL Editor của Supabase:
 

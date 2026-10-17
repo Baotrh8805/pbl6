@@ -1,8 +1,10 @@
 # Kế hoạch triển khai: Admin Panel
 
+> **Ghi chú 17/10 (chiều):** sau khi hoàn thành, người dùng quyết định **bỏ VIEWER**; mọi chỗ "VIEWER" dưới đây đọc là "ADMIN" (bậc thấp nhất của staff). Code, test và spec đã cập nhật.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Mục tiêu:** Giao diện và API quản trị cho 3 vai trò staff (VIEWER / ADMIN / SUPER_ADMIN): thống kê, người dùng, kiểm duyệt nội dung, báo cáo vi phạm, cấu hình runtime, audit; staff không dùng tính năng học.
+**Mục tiêu:** Giao diện và API quản trị cho 2 vai trò staff (ADMIN / SUPER_ADMIN): thống kê, người dùng, kiểm duyệt nội dung, báo cáo vi phạm, cấu hình runtime, audit; staff không dùng tính năng học.
 
 **Kiến trúc:** Spring Security `RoleHierarchy` + 3 dòng `requestMatchers` + `@PreAuthorize` trên method ghi; 5 controller `/api/admin/**` gọi 6 service, mọi ghi đi qua `AuditService.log` trong cùng transaction; ràng buộc đẩy xuống DB (CHECK, partial unique index, `UPDATE … WHERE status='OPEN'`). Frontend React: `AdminLayout` riêng, 8 trang `<table>` + `useSearchParams`, 0 dependency mới.
 
@@ -42,7 +44,7 @@
 - Test: `src/test/java/com/pbl6/flashcard/security/AdminAuthorizationIT.java` (mới), `security/AccountLockIT.java` (mới)
 
 **Interfaces:**
-- Produces: `Role { USER, VIEWER, ADMIN, SUPER_ADMIN }` với `boolean isStaff()` (`!= USER`), `int rank()` (`ordinal()`); `User.getLockedAt()/setLockedAt(Instant)`, `User.getExtractionDailyLimit()/setExtractionDailyLimit(Integer)`; `IntegrationTest.newStaff(Role role) → String token` (đăng ký như `newUser`, rồi `userRepository` set role, đăng nhập lại) và `IntegrationTest.userId(String email) → Long`; `AuthResponse(accessToken, refreshToken, tokenType, role)` (thêm trường `role`); bean `RoleHierarchy`.
+- Produces: `Role { USER, ADMIN, SUPER_ADMIN }` với `boolean isStaff()` (`!= USER`), `int rank()` (`ordinal()`); `User.getLockedAt()/setLockedAt(Instant)`, `User.getExtractionDailyLimit()/setExtractionDailyLimit(Integer)`; `IntegrationTest.newStaff(Role role) → String token` (đăng ký như `newUser`, rồi `userRepository` set role, đăng nhập lại) và `IntegrationTest.userId(String email) → Long`; `AuthResponse(accessToken, refreshToken, tokenType, role)` (thêm trường `role`); bean `RoleHierarchy`.
 
 - [ ] **Step 1: Viết test đỏ `AdminAuthorizationIT`**
 
@@ -65,7 +67,7 @@
 
 - [ ] **Step 3: V14 + model**
 - `V14__admin_panel.sql` chép nguyên khối SQL spec mục 4.
-- `Role`: 4 hằng theo đúng thứ tự `USER, VIEWER, ADMIN, SUPER_ADMIN`; `isStaff()`, `rank()`.
+- `Role`: 4 hằng theo đúng thứ tự `USER, ADMIN, SUPER_ADMIN`; `isStaff()`, `rank()`.
 - `User`: `@Column(name="locked_at") Instant lockedAt`; `@Column(name="extraction_daily_limit") Integer extractionDailyLimit`.
 - `AppSetting` (`@Table app_settings`: `@Id String key`, `String value`, `Instant updatedAt`, `Long updatedBy`), `ContentReport` (`@Table content_reports`, mọi cột spec, `@GeneratedValue IDENTITY`), `AdminAuditLog` (`@Table admin_audit_logs`, `detail` là `Map<String,Object>` `@JdbcTypeCode(SqlTypes.JSON)`).
 
@@ -76,7 +78,7 @@
 - `AuthService.login`: trong `catch`, thêm trước: `if (e instanceof LockedException) throw new ResponseStatusException(FORBIDDEN, "Tài khoản đã bị khoá, vui lòng liên hệ hỗ trợ.");` (không `record(key)`).
 
 - [ ] **Step 5: SecurityConfig + 403**
-- `@EnableMethodSecurity` trên `SecurityConfig`; bean `RoleHierarchy roleHierarchy()` = `RoleHierarchyImpl.fromHierarchy("ROLE_SUPER_ADMIN > ROLE_ADMIN > ROLE_VIEWER")`.
+- `@EnableMethodSecurity` trên `SecurityConfig`; bean `RoleHierarchy roleHierarchy()` = `RoleHierarchyImpl.fromHierarchy("ROLE_SUPER_ADMIN > ROLE_ADMIN")`.
 - `authorizeHttpRequests`: giữ các `permitAll` cũ; thêm theo thứ tự: `.requestMatchers("/api/auth/**", "/api/announcement").authenticated()`, `.requestMatchers("/api/admin/**").hasRole("VIEWER")`, `.anyRequest().hasRole("USER")`.
 - `ApiExceptionHandler`: thêm `@ExceptionHandler(AccessDeniedException.class)` (`org.springframework.security.access`) → `error(FORBIDDEN, "Bạn không có quyền thực hiện thao tác này.")`, đặt **trước** `onOther`; `onOther` cũng `log.warn` thay vì `error` khi là `AccessDeniedException` (không cần: handler riêng đã bắt).
 - `IntegrationTest`: `@Autowired UserRepository userRepository`; `newStaff(Role)`, `userId(email)`.

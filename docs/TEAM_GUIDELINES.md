@@ -23,7 +23,7 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 | **Phân hệ 4: Quản lý & Chia sẻ Bộ thẻ** | UC-14 -> UC-16, UC-27 -> UC-29 | 🟢 85% | Xong: CRUD bộ thẻ / thẻ, thư mục lồng nhau, chia sẻ bộ thẻ & thư mục, Thư viện cộng đồng (tìm, chấm sao, lưu bản sao). Chưa có: xuất Anki/CSV (UC-29). |
 | **Phân hệ 5: Luyện tập đa giác quan** | UC-22 -> UC-26, UC-30 -> UC-33 | 🟡 35% | Xong: SRS (UC-26), Quiz chấm ở server có hạn giờ (UC-19, UC-25). DTW Kanji & Praat còn là khung sườn / mock; chưa có Canvas. |
 | **Phân hệ 6: Lộ trình & GraphRAG** | UC-34 -> UC-37 | 🟡 25% | UC-37 một phần: Lộ trình học tập từ tài liệu (tách chương → thư mục + bộ thẻ/chương → lịch theo ngày, trang `/roadmap`); chưa cá nhân hoá theo điểm yếu, chưa có Neo4j / GraphRAG. |
-| **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🟢 80% | Xong (17/10): Admin Panel `/admin` cho 3 vai trò staff (VIEWER / ADMIN / SUPER_ADMIN, không dùng tính năng học): thống kê, người dùng (khoá, premium, hạn mức AI, đổi vai trò), kiểm duyệt bộ thẻ / bình luận / job, báo cáo vi phạm, cấu hình runtime, audit log; script sao lưu `pg_dump`. Chưa có: thanh toán (UC-40). |
+| **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🟢 80% | Xong (17/10): Admin Panel `/admin` cho 2 vai trò staff (ADMIN / SUPER_ADMIN, không dùng tính năng học): thống kê, người dùng (khoá, premium, hạn mức AI, đổi vai trò), kiểm duyệt bộ thẻ / bình luận / job, báo cáo vi phạm, cấu hình runtime, audit log; script sao lưu `pg_dump`. Chưa có: thanh toán (UC-40). |
 | **Giao diện người dùng (Frontend)** | Toàn bộ UI Web | 🟢 | React + Vite: mọi màn hình gọi API thật, kể cả tải lên AI (`/extractions`). |
 
 ### Việc cần làm tiếp (theo thứ tự ưu tiên)

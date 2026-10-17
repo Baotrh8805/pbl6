@@ -35,7 +35,7 @@ class AdminStatsIT extends IntegrationTest {
 
     @Test
     void stats_have_full_series_and_non_negative_counts() throws Exception { // SS-01
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         JsonNode s = stats(viewer, null);
         assertEquals(30, s.get("series").size());
         assertEquals(LocalDate.now(VN).toString(), s.get("series").get(29).get("date").asText());
@@ -48,7 +48,7 @@ class AdminStatsIT extends IntegrationTest {
 
     @Test
     void new_users_and_jobs_today_show_up_in_counts_and_series() throws Exception { // SS-02
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         JsonNode before = stats(viewer, null);
         String u1 = newUser();
         newUser();
@@ -63,14 +63,14 @@ class AdminStatsIT extends IntegrationTest {
 
     @Test
     void days_is_bounded() throws Exception { // SS-03
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         call(get("/api/admin/stats").param("days", "6"), viewer, null).andExpect(status().isBadRequest());
         call(get("/api/admin/stats").param("days", "91"), viewer, null).andExpect(status().isBadRequest());
     }
 
     @Test
     void series_uses_vietnam_day_boundaries() throws Exception { // SS-05
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         String u = newUser();
         String id = read(call(multipart("/api/extractions").part(new MockPart("text", "猫が好きです。".getBytes(StandardCharsets.UTF_8))), u, null)
                 .andExpect(status().isAccepted())).get("id").asText();
@@ -85,7 +85,7 @@ class AdminStatsIT extends IntegrationTest {
 
     @Test
     void active_users_are_counted_distinct() throws Exception { // SS-06
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         String u = newUser();
         JsonNode deck = read(call(post("/api/decks"), u, Map.of("title", "A", "level", "N5",
                 "cards", List.of(Map.of("term", "猫", "meaning", "mèo")))).andExpect(status().isCreated()));
@@ -99,7 +99,7 @@ class AdminStatsIT extends IntegrationTest {
 
     @Test
     void health_reports_ai_service_down_quickly() throws Exception { // SS-07
-        String viewer = newStaff(Role.VIEWER);
+        String viewer = newStaff(Role.ADMIN);
         long t0 = System.currentTimeMillis();
         JsonNode h = read(call(get("/api/admin/health"), viewer, null).andExpect(status().isOk()));
         assertTrue(System.currentTimeMillis() - t0 < 5000, "không treo chờ ai-service");

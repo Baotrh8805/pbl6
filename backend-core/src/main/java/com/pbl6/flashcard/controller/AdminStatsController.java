@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/** Admin Panel > Tổng quan: mọi staff. */
+/** Admin Panel > Tổng quan (ADMIN trở lên). */
 @RestController
 @RequestMapping("/api/admin")
 @Validated

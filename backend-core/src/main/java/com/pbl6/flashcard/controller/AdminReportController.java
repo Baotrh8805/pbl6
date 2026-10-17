@@ -11,12 +11,11 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-/** Admin Panel > Báo cáo. Đọc: mọi staff; xử lý: ADMIN. */
+/** Admin Panel > Báo cáo (ADMIN trở lên). */
 @RestController
 @RequestMapping("/api/admin/reports")
 @Validated
@@ -37,14 +36,12 @@ public class AdminReportController {
     }
 
     @PostMapping("/{id}/resolve")
-    @PreAuthorize("hasRole('ADMIN')")
     public ReportResponse resolve(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id,
                                   @Valid @RequestBody ResolveRequest body) {
         return service.resolve(me.getUser(), id, body);
     }
 
     @PostMapping("/{id}/dismiss")
-    @PreAuthorize("hasRole('ADMIN')")
     public ReportResponse dismiss(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id,
                                   @Valid @RequestBody DismissRequest body) {
         return service.dismiss(me.getUser(), id, body);

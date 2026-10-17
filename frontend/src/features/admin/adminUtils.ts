@@ -31,7 +31,7 @@ export const AUDIT_TARGET_LABELS: Record<string, string> = {
 };
 
 /** Vai trò được phép gán qua UI (SUPER_ADMIN chọn). */
-export const ASSIGNABLE_ROLES: Role[] = ["USER", "VIEWER", "ADMIN", "SUPER_ADMIN"];
+export const ASSIGNABLE_ROLES: Role[] = ["USER", "ADMIN", "SUPER_ADMIN"];
 
 /** dd/MM HH:mm cho bảng admin; null -> "—". */
 export const formatShort = (iso: string | null | undefined): string => {

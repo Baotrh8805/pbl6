@@ -11,14 +11,13 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
-/** Admin Panel > Nội dung. Đọc: mọi staff; ghi: ADMIN. */
+/** Admin Panel > Nội dung (ADMIN trở lên). */
 @RestController
 @RequestMapping("/api/admin")
 @Validated
@@ -47,21 +46,18 @@ public class AdminContentController {
     }
 
     @PostMapping("/decks/{id}/unpublish")
-    @PreAuthorize("hasRole('ADMIN')")
     public Detail unpublish(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String id) {
         service.unpublish(me.getUser(), id);
         return service.deck(id);
     }
 
     @PatchMapping("/decks/{id}/flags")
-    @PreAuthorize("hasRole('ADMIN')")
     public Row flags(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String id,
                      @Valid @RequestBody DeckFlagsRequest body) {
         return service.setFlags(me.getUser(), id, body);
     }
 
     @DeleteMapping("/decks/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteDeck(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String id) {
         service.deleteDeck(me.getUser(), id);
         return ResponseEntity.noContent().build();
@@ -76,7 +72,6 @@ public class AdminContentController {
     }
 
     @DeleteMapping("/ratings/{id}/comment")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> clearComment(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id) {
         service.clearComment(me.getUser(), id);
         return ResponseEntity.noContent().build();
@@ -92,7 +87,6 @@ public class AdminContentController {
     }
 
     @DeleteMapping("/extractions/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteExtraction(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id) {
         service.deleteExtraction(me.getUser(), id);
         return ResponseEntity.noContent().build();
