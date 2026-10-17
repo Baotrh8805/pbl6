@@ -15,6 +15,8 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     Optional<RefreshToken> findByTokenHash(String tokenHash);
 
+    long countByUserIdAndExpiresAtAfter(Long userId, Instant now);
+
     /** Đăng xuất: chỉ thu hồi phiên hiện tại. */
     @Modifying
     @Query("DELETE FROM RefreshToken t WHERE t.tokenHash = :hash")

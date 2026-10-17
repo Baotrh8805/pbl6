@@ -24,6 +24,8 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
     /** Giới hạn lượt bóc tách mỗi ngày: đếm theo DB để bền qua restart. */
     long countByUserIdAndCreatedAtAfter(Long userId, Instant since);
 
+    long countByUserId(Long userId);
+
     /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
     @Modifying
     @Query("UPDATE ExtractionJob j SET j.status = 'FAILED', j.errorMessage = :message, j.finishedAt = :now "

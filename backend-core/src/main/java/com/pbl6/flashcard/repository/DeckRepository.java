@@ -40,6 +40,17 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
 
     long countByVisibility(String visibility);
 
+    long countByOwnerId(Long ownerId);
+
+    /** Số bộ thẻ của từng chủ trong một trang người dùng (Admin Panel). */
+    @Query("SELECT d.ownerId AS ownerId, count(d) AS n FROM Deck d WHERE d.ownerId IN :ids GROUP BY d.ownerId")
+    List<OwnerCount> countByOwnerIds(@Param("ids") java.util.Collection<Long> ids);
+
+    interface OwnerCount {
+        Long getOwnerId();
+        long getN();
+    }
+
     /** Một dòng Thư viện: số liệu tính từ dữ liệu thật. */
     interface LibraryRow {
         String getId();

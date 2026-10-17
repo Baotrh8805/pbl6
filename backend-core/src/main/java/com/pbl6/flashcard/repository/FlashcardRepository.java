@@ -10,4 +10,6 @@ import java.util.Optional;
 public interface FlashcardRepository extends JpaRepository<Flashcard, String> {
     /** Thẻ mẫu của bộ thẻ nổi bật. */
     Optional<Flashcard> findFirstByDeck_IdOrderByPositionAsc(String deckId);
+
+    long countByDeck_OwnerId(Long ownerId);
 }
