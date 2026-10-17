@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 
 /** Nhật ký quản trị: chỉ đọc (mọi staff). Không có endpoint sửa / xoá. */
 @RestController
@@ -36,9 +35,6 @@ public class AdminAuditController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return audit.search(actorId, targetType,
-                from == null ? null : from.atStartOfDay().toInstant(ZoneOffset.UTC),
-                to == null ? null : to.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC),
-                page, size);
+        return audit.search(actorId, targetType, from, to, page, size);
     }
 }

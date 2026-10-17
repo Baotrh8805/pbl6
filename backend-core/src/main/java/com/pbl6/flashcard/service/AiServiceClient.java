@@ -55,7 +55,7 @@ public class AiServiceClient {
         SimpleClientHttpRequestFactory quick = new SimpleClientHttpRequestFactory();
         quick.setConnectTimeout(Duration.ofSeconds(2));
         quick.setReadTimeout(Duration.ofSeconds(2));
-        this.healthHttp = builder.clone().baseUrl(baseUrl).requestFactory(quick).build();
+        this.healthHttp = b.clone().requestFactory(quick).build(); // clone SAU khi gắn X-Internal-Key: /health cũng cần key
     }
 
     /** true khi GET /api/extract/health trả 2xx trong 2 giây; mọi lỗi = false. */

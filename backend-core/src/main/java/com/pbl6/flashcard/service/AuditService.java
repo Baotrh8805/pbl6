@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +29,13 @@ public class AuditService {
 
     private final AdminAuditLogRepository logs;
     private final UserRepository users;
+    private final ZoneId zone;
 
-    public AuditService(AdminAuditLogRepository logs, UserRepository users) {
+    public AuditService(AdminAuditLogRepository logs, UserRepository users,
+                        @org.springframework.beans.factory.annotation.Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone) {
         this.logs = logs;
         this.users = users;
+        this.zone = ZoneId.of(zone);
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -54,9 +59,12 @@ public class AuditService {
         return m;
     }
 
+    /** from/to là ngày theo múi giờ ứng dụng (app.learning-path.zone); to bao gồm trọn ngày đó. */
     @Transactional(readOnly = true)
-    public AdminPage<AuditLogResponse> search(Long actorId, String targetType, Instant from, Instant to, int page, int size) {
-        Page<AdminAuditLog> p = logs.search(actorId, targetType, from, to, PageRequest.of(page, size));
+    public AdminPage<AuditLogResponse> search(Long actorId, String targetType, LocalDate from, LocalDate to, int page, int size) {
+        Instant fromAt = from == null ? null : from.atStartOfDay(zone).toInstant();
+        Instant toAt = to == null ? null : to.plusDays(1).atStartOfDay(zone).toInstant();
+        Page<AdminAuditLog> p = logs.search(actorId, targetType, fromAt, toAt, PageRequest.of(page, size));
         Map<Long, String> emails = emailsOf(p.getContent().stream().map(AdminAuditLog::getActorId).toList());
         return AdminPage.of(p, p.getContent().stream().map(l -> AuditLogResponse.of(l, emails.get(l.getActorId()))).toList());
     }

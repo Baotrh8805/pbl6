@@ -18,6 +18,9 @@ Spec: [Plan/specs/2026-10-17-admin-panel-design.md](Plan/specs/2026-10-17-admin-
 - Test: `AdminAuthorizationIT` (ma trận vai trò × endpoint), `AccountLockIT`, `AdminUserIT`, `AdminContentIT`, `ContentReportIT`
   (kể cả 2 admin xử lý cùng lúc), `AdminSettingsIT`, `AdminStatsIT`, `AdminAuditIT`, `AdminStatsServiceTest`; selfcheck `roles.ts`,
   `adminUtils.ts`. `mvn test`: 216 test xanh.
+- Review toàn nhánh (reviewer độc lập) tìm 2 lỗi đã sửa cùng ngày: `/api/admin/health` thiếu `X-Internal-Key` nên luôn báo AI
+  "down" khi có `AI_SERVICE_KEY` (`AiServiceClientHealthTest`); lọc nhật ký theo ngày dùng nửa đêm UTC thay vì giờ VN (`AdminAuditIT`).
+  Thay đổi phụ cho người học: `DELETE /api/extractions/{id}` với job đang chạy nay trả 409 (UI đã ẩn nút từ trước).
 - **Việc cần làm khi deploy**: sao lưu DB, kiểm `SELECT email, role FROM users WHERE role <> 'USER'` trước V14, tạo tài khoản
   admin riêng rồi `UPDATE users SET role = 'SUPER_ADMIN' …`. Giao diện admin chưa kiểm tay trên trình duyệt trong đợt này.
 

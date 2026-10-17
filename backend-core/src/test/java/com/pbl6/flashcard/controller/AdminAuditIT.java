@@ -69,4 +69,31 @@ class AdminAuditIT extends IntegrationTest {
         call(get("/api/admin/audit-logs").param("page", "-1"), viewer, null).andExpect(status().isBadRequest());
         call(get("/api/admin/audit-logs").param("size", "101"), viewer, null).andExpect(status().isBadRequest());
     }
+
+    @Autowired
+    com.pbl6.flashcard.repository.AdminAuditLogRepository logRepo;
+
+    /** Lọc theo ngày dùng múi giờ ứng dụng (Asia/Ho_Chi_Minh): 01:00 hôm nay giờ VN là 18:00 hôm qua UTC. */
+    @Test
+    void date_filter_uses_application_timezone() throws Exception {
+        String email = newEmail();
+        String viewer = newStaff(Role.VIEWER, email);
+        Long me = userId(email);
+        java.time.ZoneId vn = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+        java.time.LocalDate today = java.time.LocalDate.now(vn);
+        com.pbl6.flashcard.model.AdminAuditLog l = new com.pbl6.flashcard.model.AdminAuditLog();
+        l.setActorId(me);
+        l.setAction("USER_LOCK");
+        l.setTargetType("USER");
+        l.setTargetId("tz");
+        l.setCreatedAt(today.atTime(1, 0).atZone(vn).toInstant());
+        logRepo.save(l);
+
+        JsonNode fromToday = read(call(get("/api/admin/audit-logs").param("actorId", me.toString()).param("from", today.toString()),
+                viewer, null).andExpect(status().isOk()));
+        assertEquals(1, fromToday.get("total").asLong(), "từ hôm nay (giờ VN) phải thấy dòng lúc 01:00");
+        JsonNode toYesterday = read(call(get("/api/admin/audit-logs").param("actorId", me.toString())
+                .param("to", today.minusDays(1).toString()), viewer, null));
+        assertEquals(0, toYesterday.get("total").asLong(), "đến hết hôm qua (giờ VN) không được lọt dòng hôm nay");
+    }
 }
