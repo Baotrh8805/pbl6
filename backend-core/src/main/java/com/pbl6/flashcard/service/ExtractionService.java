@@ -351,9 +351,16 @@ public class ExtractionService {
 
     @Transactional
     public void delete(Long uid, UUID id) {
-        ExtractionJob job = owned(uid, id);
+        deleteJob(owned(uid, id));
+    }
+
+    /** Phần xoá không kiểm tra chủ: người dùng (delete) và Admin Panel dùng chung. Gọi trong transaction. */
+    public void deleteJob(ExtractionJob job) {
         if (ExtractionJob.PURPOSE_LEARNING_PATH.equals(job.getPurpose())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt này thuộc một lộ trình học, hãy xoá lộ trình.");
+        }
+        if (ExtractionJob.QUEUED.equals(job.getStatus()) || ExtractionJob.RUNNING.equals(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt bóc tách đang chạy, không thể xoá.");
         }
         jobs.delete(job); // extraction_items: FK ON DELETE CASCADE; bộ thẻ đã tạo giữ nguyên
     }

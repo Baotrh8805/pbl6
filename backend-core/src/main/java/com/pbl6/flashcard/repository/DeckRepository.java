@@ -42,6 +42,11 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
 
     long countByOwnerId(Long ownerId);
 
+    /** Bỏ cờ nổi bật hiện có (chỉ một bộ thẻ được featured). */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE Deck d SET d.featured = false WHERE d.featured = true")
+    int clearFeatured();
+
     /** Số bộ thẻ của từng chủ trong một trang người dùng (Admin Panel). */
     @Query("SELECT d.ownerId AS ownerId, count(d) AS n FROM Deck d WHERE d.ownerId IN :ids GROUP BY d.ownerId")
     List<OwnerCount> countByOwnerIds(@Param("ids") java.util.Collection<Long> ids);
@@ -50,6 +55,65 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
         Long getOwnerId();
         long getN();
     }
+
+    /** Một dòng bộ thẻ trong Admin Panel. */
+    interface AdminDeckRow {
+        String getId();
+        String getTitle();
+        String getLevel();
+        String getCategory();
+        Long getOwnerId();
+        String getOwnerEmail();
+        String getVisibility();
+        Boolean getOfficial();
+        Boolean getFeatured();
+        long getCardCount();
+        Double getAvgStars();
+        long getDownloads();
+        long getOpenReports();
+    }
+
+    /** Admin: mọi bộ thẻ; q đã lower + escape (rỗng = không lọc); visibility rỗng, official/featured/ownerId null = không lọc. */
+    @Query(value = """
+            SELECT d.id AS "id", d.title AS "title", d.level AS "level", d.category AS "category",
+                   d.owner_id AS "ownerId", u.email AS "ownerEmail", d.visibility AS "visibility",
+                   d.is_official AS "official", d.is_featured AS "featured",
+                   (SELECT count(*) FROM flashcards f WHERE f.deck_id = d.id) AS "cardCount",
+                   (SELECT CAST(avg(r.stars) AS double precision) FROM deck_ratings r WHERE r.deck_id = d.id) AS "avgStars",
+                   (SELECT count(*) FROM decks c WHERE c.source_deck_id = d.id) AS "downloads",
+                   (SELECT count(*) FROM content_reports cr WHERE cr.deck_id = d.id AND cr.status = 'OPEN') AS "openReports"
+            FROM decks d JOIN users u ON u.id = d.owner_id
+            WHERE (:q = '' OR lower(d.title) LIKE :q ESCAPE '!')
+              AND (:visibility = '' OR d.visibility = :visibility)
+              AND (CAST(:official AS boolean) IS NULL OR d.is_official = :official)
+              AND (CAST(:featured AS boolean) IS NULL OR d.is_featured = :featured)
+              AND (CAST(:ownerId AS bigint) IS NULL OR d.owner_id = :ownerId)
+            ORDER BY lower(d.title) ASC, d.id ASC
+            """,
+            countQuery = """
+            SELECT count(*) FROM decks d
+            WHERE (:q = '' OR lower(d.title) LIKE :q ESCAPE '!')
+              AND (:visibility = '' OR d.visibility = :visibility)
+              AND (CAST(:official AS boolean) IS NULL OR d.is_official = :official)
+              AND (CAST(:featured AS boolean) IS NULL OR d.is_featured = :featured)
+              AND (CAST(:ownerId AS bigint) IS NULL OR d.owner_id = :ownerId)
+            """, nativeQuery = true)
+    org.springframework.data.domain.Page<AdminDeckRow> searchAdmin(@Param("q") String q, @Param("visibility") String visibility,
+            @Param("official") Boolean official, @Param("featured") Boolean featured, @Param("ownerId") Long ownerId,
+            org.springframework.data.domain.Pageable pageable);
+
+    @Query(value = """
+            SELECT d.id AS "id", d.title AS "title", d.level AS "level", d.category AS "category",
+                   d.owner_id AS "ownerId", u.email AS "ownerEmail", d.visibility AS "visibility",
+                   d.is_official AS "official", d.is_featured AS "featured",
+                   (SELECT count(*) FROM flashcards f WHERE f.deck_id = d.id) AS "cardCount",
+                   (SELECT CAST(avg(r.stars) AS double precision) FROM deck_ratings r WHERE r.deck_id = d.id) AS "avgStars",
+                   (SELECT count(*) FROM decks c WHERE c.source_deck_id = d.id) AS "downloads",
+                   (SELECT count(*) FROM content_reports cr WHERE cr.deck_id = d.id AND cr.status = 'OPEN') AS "openReports"
+            FROM decks d JOIN users u ON u.id = d.owner_id
+            WHERE d.id = :id
+            """, nativeQuery = true)
+    Optional<AdminDeckRow> findAdminRow(@Param("id") String id);
 
     /** Một dòng Thư viện: số liệu tính từ dữ liệu thật. */
     interface LibraryRow {

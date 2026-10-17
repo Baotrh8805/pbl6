@@ -83,6 +83,8 @@ public class Deck {
 
     public boolean isOfficial() { return official; }
     public boolean isFeatured() { return featured; }
+    public void setOfficial(boolean official) { this.official = official; }
+    public void setFeatured(boolean featured) { this.featured = featured; }
 
     public String getSourceDeckId() { return sourceDeckId; }
     public void setSourceDeckId(String sourceDeckId) { this.sourceDeckId = sourceDeckId; }

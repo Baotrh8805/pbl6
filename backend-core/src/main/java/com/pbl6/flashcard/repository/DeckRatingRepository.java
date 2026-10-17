@@ -38,6 +38,34 @@ public interface DeckRatingRepository extends JpaRepository<DeckRating, Long> {
             + "FROM deck_ratings WHERE deck_id = :deckId", nativeQuery = true)
     Summary summary(@Param("deckId") String deckId);
 
+    interface AdminRow {
+        Long getId();
+        String getDeckId();
+        String getDeckTitle();
+        Long getUserId();
+        String getUserEmail();
+        Integer getStars();
+        String getComment();
+        Instant getUpdatedAt();
+    }
+
+    /** Admin: chỉ dòng còn bình luận; deckId rỗng = mọi bộ thẻ; q đã lower + escape (rỗng = không lọc). */
+    @Query(value = """
+            SELECT r.id AS "id", r.deck_id AS "deckId", d.title AS "deckTitle", r.user_id AS "userId", u.email AS "userEmail",
+                   CAST(r.stars AS integer) AS "stars", r.comment AS "comment", r.updated_at AS "updatedAt"
+            FROM deck_ratings r JOIN decks d ON d.id = r.deck_id JOIN users u ON u.id = r.user_id
+            WHERE r.comment IS NOT NULL AND (:deckId = '' OR r.deck_id = :deckId)
+              AND (:q = '' OR lower(r.comment) LIKE :q ESCAPE '!')
+            ORDER BY r.updated_at DESC, r.id DESC
+            """,
+            countQuery = """
+            SELECT count(*) FROM deck_ratings r
+            WHERE r.comment IS NOT NULL AND (:deckId = '' OR r.deck_id = :deckId)
+              AND (:q = '' OR lower(r.comment) LIKE :q ESCAPE '!')
+            """, nativeQuery = true)
+    org.springframework.data.domain.Page<AdminRow> searchAdmin(@Param("deckId") String deckId, @Param("q") String q,
+                                                              org.springframework.data.domain.Pageable pageable);
+
     interface Row {
         String getDisplayName();
         Integer getStars();

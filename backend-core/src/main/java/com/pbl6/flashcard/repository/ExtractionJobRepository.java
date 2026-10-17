@@ -26,6 +26,12 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
 
     long countByUserId(Long userId);
 
+    /** Admin: mọi job; status/userId null = không lọc. */
+    @Query("SELECT j FROM ExtractionJob j WHERE (:status IS NULL OR j.status = :status) "
+            + "AND (:userId IS NULL OR j.userId = :userId) ORDER BY j.createdAt DESC")
+    org.springframework.data.domain.Page<ExtractionJob> searchAdmin(@Param("status") String status, @Param("userId") Long userId,
+                                                                   org.springframework.data.domain.Pageable pageable);
+
     /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
     @Modifying
     @Query("UPDATE ExtractionJob j SET j.status = 'FAILED', j.errorMessage = :message, j.finishedAt = :now "

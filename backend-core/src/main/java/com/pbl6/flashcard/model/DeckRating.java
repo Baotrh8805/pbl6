@@ -37,6 +37,7 @@ public class DeckRating {
     public Long getUserId() { return userId; }
     public Short getStars() { return stars; }
     public String getComment() { return comment; }
+    public void setComment(String comment) { this.comment = comment; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

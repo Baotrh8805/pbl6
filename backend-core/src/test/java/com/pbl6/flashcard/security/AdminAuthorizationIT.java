@@ -152,4 +152,38 @@ class AdminAuthorizationIT extends IntegrationTest {
         call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "USER")).andExpect(status().isOk());
         assertEquals(3, read(call(get("/api/decks"), relogin(u.email), null).andExpect(status().isOk())).size());
     }
+
+    // ---------- bảng endpoint nội dung (Task 5): {method, path, vai trò tối thiểu} ----------
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> contentEndpoints() {
+        return java.util.stream.Stream.of(
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/decks", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/decks/n5-core", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/decks/n5-core/unpublish", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("PATCH", "/api/admin/decks/n5-core/flags", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/decks/khong-ton-tai", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/ratings", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/ratings/999999/comment", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/extractions", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/extractions/00000000-0000-0000-0000-000000000000", Role.ADMIN));
+    }
+
+    /** AZ-01: 403 khi và chỉ khi bậc thấp hơn vai trò tối thiểu (body rỗng {} -> có thể 200/404/400 nhưng không 403). */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("contentEndpoints")
+    void content_matrix(String method, String path, Role min) throws Exception {
+        for (Role role : Role.values()) {
+            String token = role == Role.USER ? newUser() : newStaff(role);
+            var req = switch (method) {
+                case "POST" -> post(path);
+                case "PATCH" -> patch(path);
+                case "DELETE" -> delete(path);
+                default -> get(path);
+            };
+            int status = call(req, token, method.equals("GET") || method.equals("DELETE") ? null : Map.of())
+                    .andReturn().getResponse().getStatus();
+            boolean forbidden = status == 403;
+            assertEquals(role.rank() < min.rank(), forbidden, method + " " + path + " với " + role + " -> " + status);
+        }
+    }
 }

@@ -75,7 +75,7 @@ Quy ước viết trong spec: mỗi quyết định tinh gọn ghi dạng `[mụ
 | Premium thủ công | `is_premium` (UC-40 chưa có cổng thanh toán → đây là cách cấp Pro) |
 | Hạn mức AI riêng (UC-39) | `users.extraction_daily_limit` (null = theo cấu hình chung) |
 | Thu hồi phiên | `revokeAll` + `password_changed_at = now()` (JWT cũ bị từ chối, không đổi mật khẩu) |
-| Đổi vai trò | Chỉ SUPER_ADMIN; không tự đổi của mình; không giáng SUPER_ADMIN cuối cùng; hộp xác nhận nhắc D3 (dữ liệu học bị ẩn, không xoá) |
+| Đổi vai trò | Chỉ SUPER_ADMIN; không tự đổi của mình (nên luôn còn ≥ 1 SUPER_ADMIN); hộp xác nhận nhắc D3 (dữ liệu học bị ẩn, không xoá) |
 
 - Xoá tài khoản → bỏ qua, thêm khi có yêu cầu pháp lý (GDPR) kèm quy trình ẩn danh hoá. Khoá đã chặn hoàn toàn.
 - Đặt lại mật khẩu hộ → bỏ qua, thêm khi SMTP không dùng được. Người dùng đã có "Quên mật khẩu".
@@ -89,7 +89,7 @@ Quy ước viết trong spec: mỗi quyết định tinh gọn ghi dạng `[mụ
 | Bộ thẻ | Danh sách mọi bộ thẻ (metadata: tiêu đề, chủ, visibility, official, featured, số thẻ, sao TB, lượt tải, ngày tạo); lọc visibility / official / featured / chủ; tìm tiêu đề |
 | Xem thẻ | **Chỉ** khi bộ thẻ public **hoặc** đang có báo cáo OPEN (quyền riêng tư: bộ thẻ private là tài liệu cá nhân) |
 | Gỡ khỏi Thư viện | `visibility = private` (ADMIN+). Không có "ẩn" riêng: private đã đủ |
-| Official / Featured | Đổi 2 cờ sẵn có (ADMIN+) |
+| Official / Featured | Đổi 2 cờ sẵn có (ADMIN+). DB chỉ cho **một** bộ featured (`uq_decks_single_featured`): gắn featured mới tự bỏ cờ bộ cũ |
 | Xoá bộ thẻ | ADMIN+, dùng lại hàm xoá của `DeckService` (tách phần kiểm tra chủ ra khỏi phần xoá). FK cascade sẵn có lo shares / ratings |
 | Đánh giá & bình luận | Danh sách bình luận mới nhất (lọc theo bộ thẻ, tìm chữ); xoá bình luận (ADMIN+) = `comment = null`, giữ sao |
 | Job bóc tách | Danh sách mọi job (người dùng, loại nguồn, trạng thái, stage, lỗi, thời gian); xoá job (ADMIN+). **Không** hiện `extracted_text` |
@@ -175,7 +175,7 @@ anyRequest()                           → hasRole("USER")   (staff bị 403 t�
 ### 3.3 Ràng buộc bảo vệ lẫn nhau (kiểm tra trong service, cùng transaction)
 1. Không thao tác lên **chính mình** (khoá, đổi role, thu hồi phiên) → 400.
 2. Chỉ thao tác lên người có **bậc thấp hơn** mình (`rank`: USER 0 < VIEWER 1 < ADMIN 2 < SUPER_ADMIN 3). ADMIN khoá được USER và VIEWER; SUPER_ADMIN khoá được mọi người trừ mình → 403.
-3. Không giáng SUPER_ADMIN cuối cùng → 409. Đua 2 super admin tự giáng nhau đồng thời: chấp nhận (cần ≥ 2 người cố ý, có audit).
+3. "SUPER_ADMIN cuối cùng" không cần kiểm tra riêng: vì không tự đổi role của mình (quy tắc 1), người giáng luôn là một SUPER_ADMIN khác nên hệ thống còn ≥ 1. (Phát hiện khi viết test, 17/10.)
 4. `registration_open=false` chỉ chặn `POST /auth/register`; đăng nhập không bị ảnh hưởng.
 5. Đổi vai trò USER ↔ staff **không** đụng dữ liệu học (D3); thu hồi mọi refresh token của người đó để frontend nạp lại layout đúng vai trò sau đăng nhập lại.
 
@@ -274,7 +274,7 @@ Lỗi: 400 tham số, 401 chưa đăng nhập, 403 thiếu bậc, 404 không có
 ### 5.3 Nội dung
 | Method | Path | Query / Body | Trả về | Vai trò |
 |---|---|---|---|---|
-| GET | `/api/admin/decks` | `q, visibility, official, featured, ownerId, page, size` | Page của `{id,title,level,ownerId,ownerEmail,visibility,official,featured,cardCount,avgStars,downloads,openReports,createdAt}` | VIEWER |
+| GET | `/api/admin/decks` | `q, visibility, official, featured, ownerId, page, size` | Page của `{id,title,level,category,ownerId,ownerEmail,visibility,official,featured,cardCount,avgStars,downloads,openReports}` (bảng `decks` không có `created_at`; sắp theo tiêu đề) | VIEWER |
 | GET | `/api/admin/decks/{id}` | — | metadata + `cards` **chỉ khi** public hoặc `openReports > 0`, ngược lại `cards: null` | VIEWER |
 | POST | `/api/admin/decks/{id}/unpublish` | — | metadata | ADMIN |
 | PATCH | `/api/admin/decks/{id}/flags` | `{official?, featured?}` | metadata | ADMIN |
@@ -538,7 +538,7 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 | AZ-03 | C | SUPER_ADMIN đổi role của USER → VIEWER; người đó đăng nhập lại rồi gọi `/api/admin/stats` | 200 |
 | AZ-04 | C | Giáng VIEWER → USER; access token cũ (còn hạn) gọi `/api/admin/stats` | 403 ngay (authority nạp từ DB) |
 | AZ-05 | N | SUPER_ADMIN đổi role của chính mình | 400 |
-| AZ-06 | N | Giáng SUPER_ADMIN duy nhất xuống ADMIN | 409 "Phải còn ít nhất một Super admin" |
+| AZ-06 | — | (bỏ) Giáng SUPER_ADMIN cuối cùng không thể xảy ra qua API, xem 3.3 mục 3 | — |
 | AZ-07 | N | `PUT /role` với `{"role":"MODERATOR"}` / `"ROOT"` | 400 (enum) |
 | AZ-08 | C | Mỗi hành động đổi role sinh 1 dòng audit `USER_ROLE` `{before,after}` và thu hồi refresh token của người đó | đúng 1 dòng; refresh cũ → 401 |
 | AZ-09 | E | `RoleHierarchy` áp dụng cho `@PreAuthorize`: SUPER_ADMIN gọi endpoint `hasRole('ADMIN')` | 200 |
@@ -665,7 +665,7 @@ Ký hiệu loại: **C** = luồng chính, **N** = ngoại lệ, **E** = edge ca
 
 ### 10.2 Người dùng
 - Khoá = 3 điểm chặn native: `isAccountNonLocked()` (login), filter (access token), `refresh` (refresh token) + `revokeAll`.
-- Bậc thấp hơn mới được thao tác; không tự thao tác; SUPER_ADMIN cuối cùng được bảo vệ; đổi role thu hồi phiên.
+- Bậc thấp hơn mới được thao tác; không tự thao tác (hệ quả: luôn còn ≥ 1 SUPER_ADMIN); đổi role thu hồi phiên.
 - Thông điệp khoá **không** tiết lộ lý do nội bộ; thông điệp đăng nhập sai mật khẩu vs khoá khác mã (401 vs 403): chấp nhận lộ "tài khoản tồn tại" vì người đó đã có mật khẩu đúng.
 
 ### 10.3 Nội dung

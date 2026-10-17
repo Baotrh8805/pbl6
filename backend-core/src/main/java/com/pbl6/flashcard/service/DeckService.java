@@ -274,12 +274,16 @@ public class DeckService {
 
     @Transactional
     public void delete(Long uid, String deckId) {
-        Deck deck = lockedWith(uid, deckId, Access.OWNER);
+        deleteDeck(lockedWith(uid, deckId, Access.OWNER));
+    }
+
+    /** Phần xoá không kiểm tra quyền: chủ bộ thẻ (delete) và Admin Panel dùng chung. Gọi trong transaction. */
+    public void deleteDeck(Deck deck) {
         List<String> cardIds = deck.getCards().stream().map(Flashcard::getId).toList();
         if (!cardIds.isEmpty()) {
             reviewRepository.deleteByCardIdIn(cardIds);
         }
-        deckRepository.delete(deck); // quiz_results, deck_shares, deck_ratings: FK ON DELETE CASCADE
+        deckRepository.delete(deck); // quiz_results, deck_shares, deck_ratings, content_reports: FK ON DELETE CASCADE
     }
 
     // ---------- chia sẻ (chỉ chủ bộ thẻ) ----------
