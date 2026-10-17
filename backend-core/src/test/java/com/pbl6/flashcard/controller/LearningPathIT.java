@@ -231,10 +231,9 @@ class LearningPathIT extends IntegrationTest {
         assertEquals("FAILED", failed.get("status").asText());
         assertTrue(failed.get("errorMessage").asText().contains("dịch vụ AI"), failed.toString());
 
-        // Hạn mức ngày dùng chung với bóc tách (test: 3 lượt)
+        // Hạn mức ngày dùng chung với bóc tách (app_settings mặc định: 5 lượt)
         String other = newUser();
-        postExtraction(other).andExpect(status().isAccepted());
-        postExtraction(other).andExpect(status().isAccepted());
+        for (int i = 0; i < 4; i++) postExtraction(other).andExpect(status().isAccepted());
         postPath(other, TEXT, "5", null).andExpect(status().isAccepted());
         postPath(other, TEXT, "5", null).andExpect(status().isTooManyRequests());
     }

@@ -17,7 +17,6 @@ import com.pbl6.flashcard.repository.ExtractionItemRepository;
 import com.pbl6.flashcard.repository.ExtractionJobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
@@ -62,20 +61,16 @@ public class ExtractionService {
     private final ExtractionWorker worker;
     private final DeckService deckService;
     private final ObjectMapper json;
-    private final int freeDailyLimit;
-    private final int premiumDailyLimit;
+    private final SettingsService settings;
 
     public ExtractionService(ExtractionJobRepository jobs, ExtractionItemRepository items, ExtractionWorker worker,
-                             DeckService deckService, ObjectMapper json,
-                             @Value("${app.extraction.daily-limit.free:5}") int freeDailyLimit,
-                             @Value("${app.extraction.daily-limit.premium:50}") int premiumDailyLimit) {
+                             DeckService deckService, ObjectMapper json, SettingsService settings) {
         this.jobs = jobs;
         this.items = items;
         this.worker = worker;
         this.deckService = deckService;
         this.json = json;
-        this.freeDailyLimit = freeDailyLimit;
-        this.premiumDailyLimit = premiumDailyLimit;
+        this.settings = settings;
     }
 
     /** Worker sống trong RAM: sau restart mọi job QUEUED/RUNNING không bao giờ chạy tiếp -> báo FAILED rõ ràng. */
@@ -156,8 +151,11 @@ public class ExtractionService {
         return parsed;
     }
 
+    /** Hạn mức riêng của tài khoản (admin đặt) ưu tiên; không có thì theo app_settings (đổi được lúc chạy). */
     private void enforceDailyLimit(User user) {
-        int limit = Boolean.TRUE.equals(user.getIsPremium()) ? premiumDailyLimit : freeDailyLimit;
+        Integer own = user.getExtractionDailyLimit();
+        int limit = own != null ? own : settings.getInt(Boolean.TRUE.equals(user.getIsPremium())
+                ? SettingsService.KEY_LIMIT_PREMIUM : SettingsService.KEY_LIMIT_FREE);
         long used = jobs.countByUserIdAndCreatedAtAfter(user.getId(), Instant.now().minus(Duration.ofHours(24)));
         if (used >= limit) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,

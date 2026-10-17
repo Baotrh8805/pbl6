@@ -28,7 +28,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 public class AuthService {
     public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       RefreshTokenService refreshTokens, LoginAttemptLimiter loginLimiter, RegisterRateLimiter registerLimiter) {
+                       RefreshTokenService refreshTokens, LoginAttemptLimiter loginLimiter, RegisterRateLimiter registerLimiter,
+                       SettingsService settings) {
+        this.settings = settings;
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -44,6 +46,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokens;
     private final LoginAttemptLimiter loginLimiter;
     private final RegisterRateLimiter registerLimiter;
+    private final SettingsService settings;
 
     public static final String EMAIL_TAKEN = "Email đã được sử dụng!";
 
@@ -77,6 +80,9 @@ public class AuthService {
     // Nâng cấp khi cần chống dò email: trả 202 chung + gửi mail xác thực.
     // Không gắn @Transactional: lỗi unique từ save() phải được bắt ngay tại đây, không đợi lúc commit.
     public void register(RegisterRequest request, String ip) {
+        if (!settings.getBool(SettingsService.KEY_REGISTRATION_OPEN)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Hệ thống tạm ngừng đăng ký tài khoản mới.");
+        }
         // IP thật khi chạy sau reverse proxy: server.forward-headers-strategy (application.properties)
         if (registerLimiter.isBlocked(ip)) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,

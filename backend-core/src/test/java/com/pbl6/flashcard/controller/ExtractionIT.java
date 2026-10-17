@@ -29,6 +29,9 @@ class ExtractionIT extends IntegrationTest {
     @MockitoBean
     private AiServiceClient ai;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.pbl6.flashcard.repository.AppSettingRepository appSettings;
+
     private static final String TEXT = "毎日漢字を勉強します。";
 
     @BeforeEach
@@ -237,9 +240,18 @@ class ExtractionIT extends IntegrationTest {
         call(get("/api/extractions/" + id + "/items"), other, null).andExpect(status().isNotFound());
         call(delete("/api/extractions/" + id), other, null).andExpect(status().isNotFound());
 
-        postText(owner, TEXT, null).andExpect(status().isAccepted());
-        postText(owner, TEXT, null).andExpect(status().isAccepted());
-        postText(owner, TEXT, null).andExpect(status().isTooManyRequests()); // app.extraction.daily-limit.free=3
+        // Hạn mức free đặt tạm = 3 trong app_settings (mặc định 5), trả lại cuối test
+        com.pbl6.flashcard.model.AppSetting free = appSettings.findById(com.pbl6.flashcard.service.SettingsService.KEY_LIMIT_FREE).orElseThrow();
+        free.setValue("3");
+        appSettings.save(free);
+        try {
+            postText(owner, TEXT, null).andExpect(status().isAccepted());
+            postText(owner, TEXT, null).andExpect(status().isAccepted());
+            postText(owner, TEXT, null).andExpect(status().isTooManyRequests());
+        } finally {
+            free.setValue("5");
+            appSettings.save(free);
+        }
         // Người khác không bị tính chung
         postText(other, TEXT, null).andExpect(status().isAccepted());
     }
