@@ -4,6 +4,10 @@ import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.library.DeckRatingsResponse;
 import com.pbl6.flashcard.dto.library.LibraryDeckResponse;
 import com.pbl6.flashcard.dto.library.RatingRequest;
+import com.pbl6.flashcard.dto.library.ReportRequest;
+import com.pbl6.flashcard.service.ReportService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.LibraryService;
 import jakarta.validation.Valid;
@@ -22,9 +26,20 @@ import org.springframework.web.bind.annotation.*;
 public class LibraryController {
 
     private final LibraryService libraryService;
+    private final ReportService reportService;
 
-    public LibraryController(LibraryService libraryService) {
+    public LibraryController(LibraryService libraryService, ReportService reportService) {
         this.libraryService = libraryService;
+        this.reportService = reportService;
+    }
+
+    /** Báo cáo bộ thẻ public vi phạm (UC-41): một báo cáo đang mở mỗi người mỗi bộ thẻ. */
+    @PostMapping("/decks/{deckId}/reports")
+    public ResponseEntity<java.util.Map<String, Object>> report(@AuthenticationPrincipal CustomUserDetails me,
+                                                                @PathVariable String deckId,
+                                                                @Valid @RequestBody ReportRequest req) {
+        var r = reportService.create(me.getUser(), deckId, req);
+        return ResponseEntity.status(HttpStatus.CREATED).body(java.util.Map.of("id", r.getId(), "status", r.getStatus()));
     }
 
     @GetMapping("/decks")

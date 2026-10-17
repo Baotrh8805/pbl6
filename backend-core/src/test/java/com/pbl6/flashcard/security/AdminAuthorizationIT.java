@@ -35,6 +35,7 @@ class AdminAuthorizationIT extends IntegrationTest {
     @EnumSource(value = Role.class, names = {"VIEWER", "ADMIN", "SUPER_ADMIN"})
     void staff_cannot_use_learning_apis(Role role) throws Exception {
         String token = newStaff(role);
+        call(post("/api/library/decks/n5-core/reports"), token, Map.of("reason", "SPAM")).andExpect(status().isForbidden());
         call(get("/api/decks"), token, null).andExpect(status().isForbidden());
         call(post("/api/decks"), token, Map.of("title", "x", "level", "N5", "cards", List.of()))
                 .andExpect(status().isForbidden());
@@ -165,7 +166,10 @@ class AdminAuthorizationIT extends IntegrationTest {
                 org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/ratings", Role.VIEWER),
                 org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/ratings/999999/comment", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/extractions", Role.VIEWER),
-                org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/extractions/00000000-0000-0000-0000-000000000000", Role.ADMIN));
+                org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/extractions/00000000-0000-0000-0000-000000000000", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/reports", Role.VIEWER),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/resolve", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/dismiss", Role.ADMIN));
     }
 
     /** AZ-01: 403 khi và chỉ khi bậc thấp hơn vai trò tối thiểu (body rỗng {} -> có thể 200/404/400 nhưng không 403). */
@@ -180,7 +184,10 @@ class AdminAuthorizationIT extends IntegrationTest {
                 case "DELETE" -> delete(path);
                 default -> get(path);
             };
-            int status = call(req, token, method.equals("GET") || method.equals("DELETE") ? null : Map.of())
+            // Body hợp lệ tối thiểu: @Valid chạy trước @PreAuthorize nên body sai sẽ ra 400 thay vì 403
+            Object body = method.equals("GET") || method.equals("DELETE") ? null
+                    : path.endsWith("/resolve") ? Map.of("action", "NONE") : Map.of();
+            int status = call(req, token, body)
                     .andReturn().getResponse().getStatus();
             boolean forbidden = status == 403;
             assertEquals(role.rank() < min.rank(), forbidden, method + " " + path + " với " + role + " -> " + status);
