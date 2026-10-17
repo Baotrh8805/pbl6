@@ -19,6 +19,15 @@ import { FoldersPage } from "@/pages/FoldersPage";
 import { ExtractionPage } from "@/pages/ExtractionPage";
 import { ExtractionsPage } from "@/pages/ExtractionsPage";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
+import { AdminUsersPage } from "@/pages/admin/AdminUsersPage";
+import { AdminUserDetailPage } from "@/pages/admin/AdminUserDetailPage";
+import { AdminDecksPage } from "@/pages/admin/AdminDecksPage";
+import { AdminDeckDetailPage } from "@/pages/admin/AdminDeckDetailPage";
+import { AdminReportsPage } from "@/pages/admin/AdminReportsPage";
+import { AdminAuditPage } from "@/pages/admin/AdminAuditPage";
+import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicRoute } from "./PublicRoute";
 
@@ -76,6 +85,25 @@ export const AppRoutes: React.FC = () => {
         <Route path="/roadmap/:id" element={<RoadmapDetailPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+      </Route>
+
+      {/* Admin Panel: staff (VIEWER trở lên); người học bị đưa về "/" */}
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute minRole="VIEWER">
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<AdminDashboardPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="users/:id" element={<AdminUserDetailPage />} />
+        <Route path="decks" element={<AdminDecksPage />} />
+        <Route path="decks/:id" element={<AdminDeckDetailPage />} />
+        <Route path="reports" element={<AdminReportsPage />} />
+        <Route path="audit" element={<AdminAuditPage />} />
+        <Route path="settings" element={<AdminSettingsPage />} />
       </Route>
 
       {/* Ngoài layout: học và kiểm tra chiếm trọn màn hình */}

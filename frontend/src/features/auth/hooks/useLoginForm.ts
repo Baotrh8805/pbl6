@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
 import { useAuth } from "@/context/useAuth";
 import { extractErrorMessage } from "@/services/apiClient";
+import { isStaff } from "@/lib/roles";
 
 export const useLoginForm = () => {
   const navigate = useNavigate();
@@ -49,7 +50,8 @@ export const useLoginForm = () => {
       login(response.accessToken, response.refreshToken, email.trim(), rememberMe);
       // ProtectedRoute lưu trang đang mở vào state.from -> đăng nhập xong quay lại đúng trang đó.
       const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-      navigate(from && from !== "/login" ? from : "/", { replace: true });
+      // Staff không có trang học: vào thẳng Admin Panel
+      navigate(isStaff(response.role) ? "/admin" : from && from !== "/login" ? from : "/", { replace: true });
     } catch (err: unknown) {
       const msg = extractErrorMessage(err);
       setApiError(msg);

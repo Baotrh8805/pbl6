@@ -14,6 +14,7 @@ import { canEditDeck, deckSourceLabel } from "@/lib/deckUtils";
 import { useDialog } from "@/components/ui/dialogContext";
 import { CardContent } from "@/features/decks/components/CardContent";
 import { DeckRatings } from "@/features/decks/components/DeckRatings";
+import { ReportDeckModal } from "@/features/library/components/ReportDeckModal";
 
 export const DeckDetailPage: React.FC = () => {
     const { deckId = "" } = useParams();
@@ -31,6 +32,8 @@ export const DeckDetailPage: React.FC = () => {
     const [isCardModalOpen, setIsCardModalOpen] = useState(false);
     const [editingCard, setEditingCard] = useState<Card | null>(null);
     const [isShareOpen, setIsShareOpen] = useState(false);
+    const [isReportOpen, setIsReportOpen] = useState(false);
+    const [reported, setReported] = useState(false);
 
     if (loading) return <p className="text-on-surface-variant py-space-lg">Đang tải bộ thẻ...</p>;
     if (error || !data)
@@ -157,6 +160,21 @@ export const DeckDetailPage: React.FC = () => {
                         >
                             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">share</span>
                             {deck.visibility === "public" ? "Chia sẻ · Công khai" : "Chia sẻ"}
+                        </Button>
+                    )}
+
+                    {/* Báo cáo vi phạm: bộ thẻ public của người khác (UC-41) */}
+                    {!isOwner && deck.visibility === "public" && (
+                        <Button
+                            variant="ghost"
+                            size="md"
+                            onClick={() => setIsReportOpen(true)}
+                            disabled={reported}
+                            className="cursor-pointer"
+                            title={reported ? "Bạn đã báo cáo bộ thẻ này" : "Báo cáo nội dung sai / vi phạm"}
+                        >
+                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">flag</span>
+                            {reported ? "Đã báo cáo" : "Báo cáo"}
                         </Button>
                     )}
 
@@ -301,6 +319,8 @@ export const DeckDetailPage: React.FC = () => {
                 initialCard={editingCard}
                 onSave={handleSaveCard}
             />
+
+            <ReportDeckModal deckId={deck.id} isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} onReported={() => setReported(true)} />
 
             {isShareOpen && (
                 <ShareDeckModal

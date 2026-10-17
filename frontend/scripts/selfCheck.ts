@@ -44,6 +44,8 @@ import {
   todayCardCount,
   unreviewedInTasks,
 } from "../src/features/roadmap/roadmapUtils.ts";
+import { atLeast, homeFor, isStaff } from "../src/lib/roles.ts";
+import { toPercentHeights } from "../src/features/admin/adminUtils.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -385,6 +387,17 @@ async function runSelfCheck() {
   );
   assertStrictEqual(isValidDays(1) && isValidDays(365), true, "1 và 365 hợp lệ");
   assertStrictEqual(isValidDays(0) || isValidDays(366) || isValidDays(2.5) || isValidDays(NaN), false, "Ngoài 1–365 hoặc lẻ");
+
+  // Admin Panel: vai trò (FE-01) và chiều cột biểu đồ CSS (FE-02)
+  assertStrictEqual(atLeast("ADMIN", "VIEWER"), true, "ADMIN >= VIEWER");
+  assertStrictEqual(atLeast("VIEWER", "ADMIN"), false, "VIEWER < ADMIN");
+  assertStrictEqual(atLeast("SUPER_ADMIN", "SUPER_ADMIN"), true, "SUPER_ADMIN >= SUPER_ADMIN");
+  assertStrictEqual(isStaff("USER") || isStaff(undefined) || isStaff("ROOT"), false, "USER / chưa tải / lạ không là staff");
+  assertStrictEqual(atLeast(undefined, "VIEWER"), false, "role chưa tải -> không có quyền");
+  assertStrictEqual(homeFor("ADMIN") + homeFor("USER") + homeFor(null), "/admin//", "Trang chủ theo vai trò");
+  assertStrictEqual(toPercentHeights([0, 5, 10]).join(","), "0,50,100", "Chiều cột theo % của max");
+  assertStrictEqual(toPercentHeights([0, 0]).join(","), "0,0", "Toàn 0 -> không chia cho 0");
+  assertStrictEqual(toPercentHeights([]).length, 0, "Rỗng");
 
   console.log(" All self-check assertions passed successfully!");
 }

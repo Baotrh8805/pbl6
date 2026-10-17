@@ -469,3 +469,142 @@ export interface CreateLearningPathInput {
     startDate?: string;
     options: ExtractionOptions;
 }
+
+// ---------- Admin Panel (dto.admin.*) ----------
+
+export type Role = "USER" | "VIEWER" | "ADMIN" | "SUPER_ADMIN";
+
+/** AdminPage<T>: trang kết quả dùng chung cho mọi danh sách admin. */
+export interface AdminPage<T> {
+    items: T[];
+    total: number;
+    page: number;
+    size: number;
+}
+
+export interface AdminStats {
+    users: { total: number; new7d: number; new30d: number; locked: number; premium: number; active7d: number };
+    decks: { total: number; public: number; official: number };
+    cards: number;
+    extractions: { total: number; done: number; failed: number; running: number };
+    quizAttempts: number;
+    learningPaths: number;
+    openReports: number;
+    series: { date: string; newUsers: number; extractions: number; quizzes: number }[];
+}
+
+export interface AdminHealth {
+    db: string;
+    aiService: "ok" | "down";
+    version: string;
+}
+
+export interface AdminUserRow {
+    id: number;
+    email: string;
+    fullName: string | null;
+    role: Role;
+    isPremium: boolean | null;
+    lockedAt: string | null;
+    createdAt: string | null;
+    deckCount: number;
+}
+
+export interface AdminUserDetail extends AdminUserRow {
+    jlptLevel: string | null;
+    extractionDailyLimit: number | null;
+    cardCount: number;
+    extractionCount: number;
+    extractionsToday: number;
+    quizCount: number;
+    lastReviewAt: string | null;
+    activeSessions: number;
+}
+
+/** Trường bỏ trống = giữ nguyên; clearLimit = bỏ hạn mức riêng. */
+export interface AdminUserPatch {
+    locked?: boolean;
+    premium?: boolean;
+    extractionDailyLimit?: number;
+    clearLimit?: boolean;
+}
+
+export interface AdminDeckRow {
+    id: string;
+    title: string;
+    level: string;
+    category: string | null;
+    ownerId: number;
+    ownerEmail: string;
+    visibility: DeckVisibility;
+    official: boolean;
+    featured: boolean;
+    cardCount: number;
+    avgStars: number | null;
+    downloads: number;
+    openReports: number;
+}
+
+/** cards = null khi bộ thẻ private và không bị báo cáo. */
+export interface AdminDeckDetail extends AdminDeckRow {
+    cards: Card[] | null;
+}
+
+export interface AdminRatingRow {
+    id: number;
+    deckId: string;
+    deckTitle: string;
+    userId: number;
+    userEmail: string;
+    stars: number;
+    comment: string | null;
+    updatedAt: string;
+}
+
+export interface AdminExtractionRow {
+    job: ExtractionJob;
+    userId: number;
+    userEmail: string;
+    purpose: "extraction" | "learning_path";
+}
+
+export type ReportReason = "WRONG_CONTENT" | "COPYRIGHT" | "OFFENSIVE" | "SPAM" | "OTHER";
+export type ReportStatus = "OPEN" | "RESOLVED" | "DISMISSED";
+export type ReportAction = "NONE" | "UNPUBLISH_DECK" | "CLEAR_COMMENT";
+
+export interface ContentReport {
+    id: number;
+    deckId: string;
+    deckTitle: string | null;
+    deckVisibility: DeckVisibility | null;
+    reporterId: number;
+    reporterEmail: string;
+    reason: ReportReason;
+    detail: string | null;
+    status: ReportStatus;
+    action: ReportAction | null;
+    resolutionNote: string | null;
+    resolvedByEmail: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+    sameDeckOpen: number;
+}
+
+export interface AuditLog {
+    id: number;
+    actorEmail: string;
+    action: string;
+    targetType: string;
+    targetId: string;
+    detail: Record<string, unknown> | null;
+    createdAt: string;
+}
+
+/** Khoá JSON = khoá app_settings. */
+export interface AdminSettings {
+    extraction_daily_limit_free: number;
+    extraction_daily_limit_premium: number;
+    announcement: string;
+    registration_open: boolean;
+    updatedAt?: string | null;
+}

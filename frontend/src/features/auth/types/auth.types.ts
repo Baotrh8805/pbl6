@@ -8,6 +8,8 @@ export interface AuthResponse {
   /** Hạn trượt 3 ngày: không vào web quá 3 ngày thì phải đăng nhập lại. */
   refreshToken: string;
   tokenType: string;
+  /** Staff vào thẳng /admin sau đăng nhập. */
+  role: "USER" | "VIEWER" | "ADMIN" | "SUPER_ADMIN";
 }
 
 export interface RegisterRequest {
