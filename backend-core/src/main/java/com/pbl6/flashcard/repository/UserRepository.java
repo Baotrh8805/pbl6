@@ -28,4 +28,21 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query(value = "SELECT max(reviewed_at) FROM review_logs WHERE user_id = :uid", nativeQuery = true)
     Instant lastReviewAt(@Param("uid") Long uid);
+
+    // ---------- dashboard admin ----------
+
+    long countByCreatedAtAfter(java.time.LocalDateTime since);
+
+    long countByLockedAtIsNotNull();
+
+    long countByIsPremiumTrue();
+
+    /** Người có ít nhất một lượt ôn từ mốc `since` (đếm distinct). */
+    @Query(value = "SELECT count(DISTINCT user_id) FROM review_logs WHERE reviewed_at >= :since", nativeQuery = true)
+    long countActiveSince(@Param("since") Instant since);
+
+    /** users.created_at là timestamp không múi giờ (ghi theo giờ JVM) -> lấy ngày như đã lưu. */
+    @Query(value = "SELECT CAST(created_at AS date) AS day, count(*) AS n FROM users WHERE created_at >= :since GROUP BY day",
+            nativeQuery = true)
+    java.util.List<DayCount> countByDay(@Param("since") java.time.LocalDateTime since);
 }

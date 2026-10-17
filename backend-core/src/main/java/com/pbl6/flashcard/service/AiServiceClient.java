@@ -37,6 +37,8 @@ public class AiServiceClient {
     }
 
     private final RestClient http;
+    /** Kiểm tra sức khoẻ cho dashboard admin: timeout ngắn, không dùng chung client đọc 3 phút. */
+    private final RestClient healthHttp;
 
     public AiServiceClient(RestClient.Builder builder,
                            @Value("${app.ai-service.url}") String baseUrl,
@@ -50,6 +52,19 @@ public class AiServiceClient {
             b.defaultHeader("X-Internal-Key", internalKey);
         }
         this.http = b.build();
+        SimpleClientHttpRequestFactory quick = new SimpleClientHttpRequestFactory();
+        quick.setConnectTimeout(Duration.ofSeconds(2));
+        quick.setReadTimeout(Duration.ofSeconds(2));
+        this.healthHttp = builder.clone().baseUrl(baseUrl).requestFactory(quick).build();
+    }
+
+    /** true khi GET /api/extract/health trả 2xx trong 2 giây; mọi lỗi = false. */
+    public boolean health() {
+        try {
+            return healthHttp.get().uri("/api/extract/health").retrieve().toBodilessEntity().getStatusCode().is2xxSuccessful();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** Văn bản dán / file -> văn bản thuần + meta (OCR, ruby...). Đúng một trong data/text khác null. */

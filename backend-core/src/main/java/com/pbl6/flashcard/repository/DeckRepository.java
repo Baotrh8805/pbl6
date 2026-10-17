@@ -42,6 +42,8 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
 
     long countByOwnerId(Long ownerId);
 
+    long countByOfficialTrue();
+
     /** Bỏ cờ nổi bật hiện có (chỉ một bộ thẻ được featured). */
     @org.springframework.data.jpa.repository.Modifying
     @Query("UPDATE Deck d SET d.featured = false WHERE d.featured = true")

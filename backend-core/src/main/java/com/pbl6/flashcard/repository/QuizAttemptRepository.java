@@ -16,6 +16,11 @@ import java.util.UUID;
 @Repository
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> {
 
+    /** Số lượt quiz mỗi ngày theo múi giờ hiển thị (dashboard admin). */
+    @Query(value = "SELECT CAST(created_at AT TIME ZONE :zone AS date) AS day, count(*) AS n FROM quiz_attempts "
+            + "WHERE created_at >= :since GROUP BY day", nativeQuery = true)
+    java.util.List<DayCount> countByDay(@Param("since") Instant since, @Param("zone") String zone);
+
     /** Khoá lượt làm khi nộp: 2 lần nộp song song không ghi 2 kết quả. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM QuizAttempt a WHERE a.id = :id")

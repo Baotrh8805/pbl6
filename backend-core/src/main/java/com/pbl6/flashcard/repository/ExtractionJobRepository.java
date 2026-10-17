@@ -26,6 +26,15 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
 
     long countByUserId(Long userId);
 
+    long countByStatus(String status);
+
+    long countByStatusIn(java.util.Collection<String> statuses);
+
+    /** Số job mỗi ngày theo múi giờ hiển thị (created_at là timestamptz). */
+    @Query(value = "SELECT CAST(created_at AT TIME ZONE :zone AS date) AS day, count(*) AS n FROM extraction_jobs "
+            + "WHERE created_at >= :since GROUP BY day", nativeQuery = true)
+    List<DayCount> countByDay(@Param("since") Instant since, @Param("zone") String zone);
+
     /** Admin: mọi job; status/userId null = không lọc. */
     @Query("SELECT j FROM ExtractionJob j WHERE (:status IS NULL OR j.status = :status) "
             + "AND (:userId IS NULL OR j.userId = :userId) ORDER BY j.createdAt DESC")
