@@ -1,5 +1,26 @@
 # Nhật ký thay đổi
 
+## 17/10/2026: Admin Panel (UC-38, UC-39, UC-41, UC-42)
+Spec: [Plan/specs/2026-10-17-admin-panel-design.md](Plan/specs/2026-10-17-admin-panel-design.md) · plan: [Plan/plans/2026-10-17-admin-panel.md](Plan/plans/2026-10-17-admin-panel.md).
+- **Vai trò**: `USER` (người học) + staff `VIEWER` / `ADMIN` / `SUPER_ADMIN` (`RoleHierarchy`). Một tài khoản một vai trò: staff gọi API học
+  tập bị 403, người học không vào `/api/admin/**`. Khoá tài khoản (`users.locked_at`) chặn ở đăng nhập, JWT filter và refresh.
+  `AuthResponse` có `role`; `@PreAuthorize` từ chối → 403 (trước đây sẽ thành 500).
+- **Backend** (`V14__admin_panel.sql`): `app_settings` (hạn mức bóc tách free/premium **đổi lúc chạy**, thông báo hệ thống,
+  mở/đóng đăng ký; bỏ property `app.extraction.daily-limit.*`), `users.extraction_daily_limit` (hạn mức riêng), `content_reports`
+  (1 báo cáo OPEN / người / bộ thẻ, 10 báo cáo / giờ), `admin_audit_logs` (mọi thao tác ghi, cùng transaction).
+  API: `/api/admin/stats|health|users|decks|ratings|extractions|reports|audit-logs|settings`, `/api/announcement`,
+  `POST /api/library/decks/{id}/reports`. Gắn featured mới tự bỏ cờ bộ cũ (DB chỉ cho một bộ nổi bật); xoá job đang chạy → 409.
+- **Frontend**: `AdminLayout` riêng (`/admin/*`, 8 trang: tổng quan với biểu đồ CSS, người dùng + chi tiết, nội dung 3 tab + chi tiết
+  bộ thẻ, báo cáo + modal xử lý, nhật ký, cấu hình), đăng nhập điều hướng theo vai trò, nút "Báo cáo" trên bộ thẻ public,
+  banner thông báo trong `AppLayout`. 0 dependency mới.
+- **Sao lưu**: `scripts/backup.ps1` / `backup.sh` (pg_dump custom, giữ 14 bản), quy trình khôi phục và tạo Super admin đầu tiên
+  trong [SUPABASE_SETUP.md](SUPABASE_SETUP.md).
+- Test: `AdminAuthorizationIT` (ma trận vai trò × endpoint), `AccountLockIT`, `AdminUserIT`, `AdminContentIT`, `ContentReportIT`
+  (kể cả 2 admin xử lý cùng lúc), `AdminSettingsIT`, `AdminStatsIT`, `AdminAuditIT`, `AdminStatsServiceTest`; selfcheck `roles.ts`,
+  `adminUtils.ts`. `mvn test`: 216 test xanh.
+- **Việc cần làm khi deploy**: sao lưu DB, kiểm `SELECT email, role FROM users WHERE role <> 'USER'` trước V14, tạo tài khoản
+  admin riêng rồi `UPDATE users SET role = 'SUPER_ADMIN' …`. Giao diện admin chưa kiểm tay trên trình duyệt trong đợt này.
+
 ## 14/10/2026: Lộ trình học tập từ tài liệu (UC-37, bản theo tài liệu)
 Spec: [Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md](Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md) · tài liệu: [LEARNING_PATH.md](LEARNING_PATH.md).
 - **ai-service**: `extract/chapters.py` (tách chương theo `第N課` / `Unit N` / heading DOCX), `pipeline.analyze` nhận

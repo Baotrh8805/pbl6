@@ -10,9 +10,9 @@ Toàn bộ dự án gồm **7 phân hệ** và **42 use case** (chia làm 3 Spri
 Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất: [30-9.md](Progress/30-9.md)).
 
 ### Tiến độ hiện tại (Cập nhật 14/10/2026, nhánh `backend-feature-learnmode`; phần bóc tách AI chưa commit lúc viết):
-- **Tổng tiến độ toàn dự án:** ~**52%** (22/42 use case xong, 1 làm một phần)
+- **Tổng tiến độ toàn dự án:** ~**62%** (26/42 use case xong, 1 làm một phần)
 - **Sprint 1 (Nền tảng & MVP):** ~**94%** (15/16 xong, 1 một phần: UC-01 chưa có Google OAuth). Đã có luồng AI: tải tài liệu → OCR → bóc tách → bộ thẻ.
-- **Sprint 2:** ~**54%** (7/13: quiz, SRS, Thư viện cộng đồng, OCR chữ dọc, phân cấp JLPT). **Sprint 3:** chưa bắt đầu.
+- **Sprint 2:** ~**54%** (7/13: quiz, SRS, Thư viện cộng đồng, OCR chữ dọc, phân cấp JLPT). **Sprint 3:** ~**31%** (4/13: Admin Panel UC-38, 39, 41, 42).
 - **Chất lượng:** CI chạy `mvn test` + lint/build/selfcheck frontend + `pytest` ai-service cho mọi push/PR.
 
 | Phân hệ | Use Cases | Trạng thái hiện tại | Thành phần phụ trách |
@@ -23,7 +23,7 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 | **Phân hệ 4: Quản lý & Chia sẻ Bộ thẻ** | UC-14 -> UC-16, UC-27 -> UC-29 | 🟢 85% | Xong: CRUD bộ thẻ / thẻ, thư mục lồng nhau, chia sẻ bộ thẻ & thư mục, Thư viện cộng đồng (tìm, chấm sao, lưu bản sao). Chưa có: xuất Anki/CSV (UC-29). |
 | **Phân hệ 5: Luyện tập đa giác quan** | UC-22 -> UC-26, UC-30 -> UC-33 | 🟡 35% | Xong: SRS (UC-26), Quiz chấm ở server có hạn giờ (UC-19, UC-25). DTW Kanji & Praat còn là khung sườn / mock; chưa có Canvas. |
 | **Phân hệ 6: Lộ trình & GraphRAG** | UC-34 -> UC-37 | 🟡 25% | UC-37 một phần: Lộ trình học tập từ tài liệu (tách chương → thư mục + bộ thẻ/chương → lịch theo ngày, trang `/roadmap`); chưa cá nhân hoá theo điểm yếu, chưa có Neo4j / GraphRAG. |
-| **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🔴 0% | Chưa triển khai. |
+| **Phân hệ 7: Quản trị & Thanh toán** | UC-38 -> UC-42 | 🟢 80% | Xong (17/10): Admin Panel `/admin` cho 3 vai trò staff (VIEWER / ADMIN / SUPER_ADMIN, không dùng tính năng học): thống kê, người dùng (khoá, premium, hạn mức AI, đổi vai trò), kiểm duyệt bộ thẻ / bình luận / job, báo cáo vi phạm, cấu hình runtime, audit log; script sao lưu `pg_dump`. Chưa có: thanh toán (UC-40). |
 | **Giao diện người dùng (Frontend)** | Toàn bộ UI Web | 🟢 | React + Vite: mọi màn hình gọi API thật, kể cả tải lên AI (`/extractions`). |
 
 ### Việc cần làm tiếp (theo thứ tự ưu tiên)

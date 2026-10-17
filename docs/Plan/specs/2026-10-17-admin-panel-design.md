@@ -1,6 +1,6 @@
 # Spec: Admin Panel (quản trị hệ thống) — UC-38, UC-39, UC-41, UC-42
 
-Ngày 17/10/2026 · nhánh `backend-feature-learnmode` · trạng thái: **đã duyệt 17/10/2026, chưa có code**; kế hoạch triển khai ở
+Ngày 17/10/2026 · nhánh `backend-feature-learnmode` · trạng thái: **đã duyệt và triển khai 17/10/2026** (backend + frontend, chưa kiểm tay trên trình duyệt); kế hoạch triển khai ở
 [plans/2026-10-17-admin-panel.md](../plans/2026-10-17-admin-panel.md).
 Phân hệ 7 hiện 0% ([USE_CASES_CHECKLIST.md](../../USE_CASES_CHECKLIST.md)). UC-40 (thanh toán) **không** nằm trong spec này.
 

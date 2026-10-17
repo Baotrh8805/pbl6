@@ -7,8 +7,8 @@
 | :--- | :---: | :---: | :---: | :---: |
 | Sprint 1 (UC-01 → UC-16) | 16 | 15 | 1 | 0 |
 | Sprint 2 (UC-17 → UC-29) | 13 | 7 | 0 | 6 |
-| Sprint 3 (UC-30 → UC-42) | 13 | 0 | 0 | 13 |
-| **Tổng** | **42** | **22** | **1** | **19** |
+| Sprint 3 (UC-30 → UC-42) | 13 | 4 | 0 | 9 |
+| **Tổng** | **42** | **26** | **1** | **15** |
 
 Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm vừa làm vừa học hiệu quả mà không bị ngợp, công việc được chia làm 3 Sprint:
 
@@ -83,8 +83,8 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [~] UC-37: Đề xuất lộ trình học bổ khuyết các điểm yếu của từng cá nhân. (Đã có lộ trình theo tài liệu: chương → bộ thẻ → lịch theo ngày, xem [LEARNING_PATH.md](LEARNING_PATH.md); chưa cá nhân hoá theo điểm yếu.)
 
 ### Phân hệ 7: Quản trị hệ thống & Thương mại hóa
-- [ ] UC-38: Dashboard quản trị: thống kê số lượng người dùng, bộ thẻ, lượt tạo AI.
-- [ ] UC-39: Quản lý giới hạn lượt gọi AI (Rate limit) cho tài khoản Free vs Pro.
+- [x] UC-38: Dashboard quản trị: thống kê số lượng người dùng, bộ thẻ, lượt tạo AI. *(Admin Panel `/admin`, 17/10/2026)*
+- [x] UC-39: Quản lý giới hạn lượt gọi AI (Rate limit) cho tài khoản Free vs Pro. *(`app_settings` đổi lúc chạy + hạn mức riêng từng tài khoản)*
 - [ ] UC-40: Tích hợp cổng thanh toán gói Pro (PayOS / VietQR / VNPay Sandbox).
-- [ ] UC-41: Quản lý báo cáo nội dung sai lệch / vi phạm bản quyền từ người dùng.
-- [ ] UC-42: Sao lưu và khôi phục dữ liệu hệ thống.
+- [x] UC-41: Quản lý báo cáo nội dung sai lệch / vi phạm bản quyền từ người dùng. *(nút "Báo cáo" trên bộ thẻ public; admin resolve / dismiss)*
+- [x] UC-42: Sao lưu và khôi phục dữ liệu hệ thống. *(`scripts/backup.ps1|sh` + quy trình `pg_restore` trong SUPABASE_SETUP.md; không có UI)*

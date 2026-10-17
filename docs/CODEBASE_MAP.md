@@ -29,6 +29,8 @@ Cập nhật 14/10/2026 (nhánh `backend-feature-learnmode`, trên commit `901d8
 | Số liệu dashboard dùng chung (tự tải lại sau mỗi thao tác ghi) | `frontend/src/components/layout/AppLayout.tsx` |
 | Bóc tách tài liệu → từ vựng / ngữ pháp → bộ thẻ | `controller/ExtractionController.java`, `service/ExtractionService.java` (job, duyệt, tạo bộ thẻ), `service/ExtractionWorker.java` (@Async, 3 giai đoạn), `service/AiServiceClient.java` (RestClient → ai-service). Frontend: `services/extractionService.ts`, `pages/ExtractionPage.tsx`, `features/extraction/`. Python: `ai-service/app/extract/`. Xem [EXTRACTION.md](EXTRACTION.md) |
 | Lộ trình học tập (tài liệu → chương → bộ thẻ → lịch theo ngày) | `controller/LearningPathController.java` (`/api/learning-paths`), `service/LearningPathService.java` (tạo, bản nháp, kích hoạt), `service/LearningPathScheduler.java` (chia ngày, hàm thuần), `service/ExtractionJobFinishedEvent.java`, `model/LearningPath*.java`, `V13__learning_paths.sql`. Frontend: `services/learningPathService.ts`, `pages/RoadmapPage.tsx` + `RoadmapDetailPage.tsx`, `features/roadmap/`. Python: `ai-service/app/extract/chapters.py`. Xem [LEARNING_PATH.md](LEARNING_PATH.md) |
+| Admin Panel (staff: VIEWER / ADMIN / SUPER_ADMIN; thống kê, người dùng, kiểm duyệt, báo cáo, cấu hình, audit) | Phân quyền: `config/SecurityConfig.java` (`RoleHierarchy`, `/api/admin/**` cần VIEWER, API học cần USER), `@PreAuthorize` trên method ghi. Backend: `controller/Admin*Controller.java`, `service/AdminUserService`, `AdminContentService`, `ReportService`, `SettingsService` (bảng `app_settings`), `AdminStatsService`, `AuditService` (bảng `admin_audit_logs`), `V14__admin_panel.sql`. Người học báo cáo: `POST /api/library/decks/{id}/reports`. Frontend: `components/layout/AdminLayout.tsx`, `pages/admin/*`, `features/admin/`, `lib/roles.ts`, `services/adminService.ts`. Spec: [Plan/specs/2026-10-17-admin-panel-design.md](Plan/specs/2026-10-17-admin-panel-design.md) |
+| Sao lưu / khôi phục DB | `scripts/backup.ps1`, `scripts/backup.sh` (pg_dump), xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#7-sao-lưu--khôi-phục-uc-42) |
 | AI khác (Kanji DTW, phát âm) | `ai-service/app/api/*.py` — khung sườn / mock |
 
 ---
@@ -72,12 +74,14 @@ Chủ > được chia sẻ riêng bộ thẻ (`deck_shares`: VIEWER/EDITOR) > b�
 `V5` lượt làm quiz · `V6` token đặt lại mật khẩu · `V7` refresh token · `V8` gộp ví dụ vào nghĩa · `V9` chế độ quiz & làm tiếp · `V10` bình luận đánh giá ·
 `V11` log ôn tập & reset tiến độ · `V12` job bóc tách AI (`extraction_jobs`, `extraction_items`, thêm cột vào `flashcards`) ·
 `V13` lộ trình học tập (`learning_paths`, `learning_path_chapters`, `extraction_jobs.purpose`, `extraction_items.chapter_*`) ·
+`V14` Admin Panel (vai trò `VIEWER/ADMIN/SUPER_ADMIN`, `users.locked_at`, `users.extraction_daily_limit`, `app_settings`, `content_reports`, `admin_audit_logs`) ·
 `R__seed_system_decks` bộ thẻ mẫu.
 
 ### Test
-`mvn test` chạy khoảng 96 test (unit + tích hợp `*IT.java`; đếm theo `@Test`, con số thật xem output Maven) trên Postgres nhúng (không cần Docker / Supabase).
+`mvn test` chạy khoảng 216 test (unit + tích hợp `*IT.java`; đếm theo `@Test`, con số thật xem output Maven) trên Postgres nhúng (không cần Docker / Supabase).
 Test mới cho từng tính năng nằm cạnh test cũ cùng miền: `FolderShareIT`, `QuizAttemptIT`, `PasswordResetIT`, `RefreshTokenIT`,
-`AuthValidationIT`, `RegisterRateLimitIT`, `ExtractionIT` (ai-service giả lập bằng `@MockitoBean`), `LearningPathIT`, `LearningPathSchedulerTest`.
+`AuthValidationIT`, `RegisterRateLimitIT`, `ExtractionIT` (ai-service giả lập bằng `@MockitoBean`), `LearningPathIT`, `LearningPathSchedulerTest`,
+Admin Panel: `AdminAuthorizationIT` (ma trận vai trò), `AccountLockIT`, `AdminUserIT`, `AdminContentIT`, `ContentReportIT`, `AdminSettingsIT`, `AdminStatsIT`, `AdminAuditIT`, `AdminStatsServiceTest`.
 `ai-service`: `cd ai-service && python -m pytest -q` (khoảng 123 test; test cần Tesseract / Gemini tự bỏ qua khi thiếu).
 `npm run e2e` (thư mục gốc) chạy smoke test HTTP trên backend thật + Postgres nhúng.
 

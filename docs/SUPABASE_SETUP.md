@@ -84,3 +84,40 @@ Chưa được code sử dụng. Khi làm OCR / luyện phát âm:
 2. Tạo 2 bucket (để **Private**):
    - `documents`: Lưu ảnh chụp tài liệu (OCR).
    - `audio-recordings`: Lưu file `.wav` thu âm luyện phát âm của học viên.
+
+## 7. Sao lưu & khôi phục (UC-42)
+
+Supabase gói Free không có sao lưu tự động, nên sao lưu bằng `pg_dump` (định dạng custom) theo lịch:
+
+```powershell
+# Windows (cần PostgreSQL client trong PATH; đọc DB_URL / DB_USERNAME / DB_PASSWORD từ biến môi trường)
+.\scripts\backup.ps1            # -> backups/pbl6-YYYYMMDD-HHmm.dump, giữ 14 bản mới nhất
+```
+```bash
+# Linux / macOS / cron: 0 3 * * * cd /srv/pbl6 && scripts/backup.sh
+scripts/backup.sh
+```
+Script tự đổi `jdbc:postgresql://…:6543/…` (pooler transaction mode) sang cổng 5432 vì `pg_dump` cần phiên thật.
+Thư mục `backups/` nằm trong `.gitignore`; **không** đẩy bản dump lên git hay chia sẻ công khai (chứa email, hash mật khẩu).
+
+**Khôi phục** (vào DB trống hoặc ghi đè; dừng backend trước):
+```bash
+pg_restore --clean --if-exists --no-owner --no-privileges -d "postgresql://USER@HOST:5432/postgres?sslmode=require" backups/pbl6-YYYYMMDD-HHmm.dump
+```
+Thử khôi phục định kỳ vào một Postgres cục bộ (ví dụ `docker compose up db` rồi `pg_restore … -d postgresql://postgres:postgres@localhost:5432/postgres`)
+và chạy backend trỏ vào đó để chắc bản dump dùng được. Kiểm nhanh nội dung: `pg_restore --list file.dump | grep -c "TABLE DATA"`.
+
+## 8. Tạo Super admin đầu tiên (Admin Panel)
+
+Admin Panel (`/admin`) chỉ mở cho tài khoản có vai trò `VIEWER` / `ADMIN` / `SUPER_ADMIN`; vai trò này **không dùng được
+tính năng học** (một tài khoản một vai trò). Vì vậy hãy **đăng ký một tài khoản riêng** cho quản trị (không dùng tài khoản
+đang học, càng không dùng tài khoản chủ Thư viện `dongocle2404@gmail.com`), rồi chạy một lần trong SQL Editor của Supabase:
+
+```sql
+UPDATE users SET role = 'SUPER_ADMIN' WHERE lower(email) = '<email-admin>';
+```
+Đăng nhập lại là vào thẳng `/admin`. Từ đó SUPER_ADMIN đổi vai trò người khác trong **Người dùng → Vai trò**.
+
+Trước khi chạy migration `V14` trên DB cũ: `SELECT email, role FROM users WHERE role <> 'USER';` — tài khoản đang có
+`role = 'ADMIN'` sẽ **mất quyền học** sau V14; đưa về `USER` nếu đó là người học.
+
