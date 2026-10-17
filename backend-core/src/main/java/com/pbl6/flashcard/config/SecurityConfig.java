@@ -11,6 +11,9 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.http.HttpStatus;
@@ -28,7 +31,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-
+@EnableMethodSecurity
 public class SecurityConfig {
     public SecurityConfig(CustomUserDetailsService userDetailsService, JwtAuthenticationFilter jwtAuthFilter,
             @Value("${app.cors.allowed-origins}") List<String> allowedOrigins) {
@@ -58,7 +61,12 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll() // Mở khóa
                                                                                                               // Swagger
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated() // Các API còn lại yêu cầu Token
+                        // Mọi vai trò đã đăng nhập: hồ sơ, đổi mật khẩu, thông báo hệ thống
+                        .requestMatchers("/api/auth/**", "/api/announcement").authenticated()
+                        // Admin Panel: staff (VIEWER trở lên theo RoleHierarchy); từng method ghi nâng bậc bằng @PreAuthorize
+                        .requestMatchers("/api/admin/**").hasRole("VIEWER")
+                        // API học tập chỉ cho người học: staff bị 403 (một tài khoản một vai trò)
+                        .anyRequest().hasRole("USER")
                 )
                 // Thiếu/sai/hết hạn token -> 401 (mặc định Spring trả 403, làm interceptor 401 ở
                 // frontend không bao giờ chạy). 403 chỉ dành cho "đã đăng nhập nhưng không có quyền".
@@ -67,6 +75,12 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    /** SUPER_ADMIN > ADMIN > VIEWER; USER đứng ngoài. Spring Security 6.x tự dùng bean này cho cả URL lẫn @PreAuthorize. */
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.fromHierarchy("ROLE_SUPER_ADMIN > ROLE_ADMIN > ROLE_VIEWER");
     }
 
     @Bean

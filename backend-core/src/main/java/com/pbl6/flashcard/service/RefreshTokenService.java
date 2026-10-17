@@ -53,7 +53,7 @@ public class RefreshTokenService {
         random.nextBytes(raw);
         String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
         tokenRepository.save(new RefreshToken(user.getId(), PasswordResetService.sha256(refreshToken), now.plus(ttl)));
-        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken);
+        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole());
     }
 
     /** Cấp access token mới và lùi hạn refresh token; token sai / hết hạn / đã thu hồi -> 401. */
@@ -65,8 +65,11 @@ public class RefreshTokenService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, EXPIRED));
         User user = userRepository.findById(saved.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, EXPIRED));
+        if (user.getLockedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tài khoản đã bị khoá.");
+        }
         saved.setExpiresAt(now.plus(ttl));
-        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken);
+        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole());
     }
 
     /** Đăng xuất phiên hiện tại. Token không tồn tại cũng coi như đã đăng xuất. */

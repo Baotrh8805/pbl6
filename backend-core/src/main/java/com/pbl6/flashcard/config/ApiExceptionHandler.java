@@ -86,6 +86,12 @@ public class ApiExceptionHandler {
         return error(HttpStatus.PAYLOAD_TOO_LARGE, "File vượt quá 15 MB.");
     }
 
+    /** @PreAuthorize từ chối bên trong controller: 403, không để rơi vào onOther thành 500. */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiError> onAccessDenied(org.springframework.security.access.AccessDeniedException e) {
+        return error(HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này.");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> onOther(Exception e) {
         // ResponseStatusException, NoResourceFoundException, 405... đều là ErrorResponse có sẵn mã HTTP

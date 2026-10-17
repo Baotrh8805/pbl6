@@ -32,6 +32,9 @@ public abstract class IntegrationTest {
     @Autowired
     protected ObjectMapper json;
 
+    @Autowired
+    protected com.pbl6.flashcard.repository.UserRepository userRepository;
+
     /** Đăng ký + đăng nhập, trả về access token. */
     protected String newUser() throws Exception {
         return newUser(newEmail());
@@ -48,6 +51,26 @@ public abstract class IntegrationTest {
         String res = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andReturn().getResponse().getContentAsString();
         return json.readTree(res).get("accessToken").asText();
+    }
+
+    /** Tài khoản staff: đăng ký như người thường, đặt vai trò thẳng trong DB (spec 3.4), đăng nhập lại lấy token. */
+    protected String newStaff(com.pbl6.flashcard.model.Role role) throws Exception {
+        return newStaff(role, newEmail());
+    }
+
+    protected String newStaff(com.pbl6.flashcard.model.Role role, String email) throws Exception {
+        newUser(email);
+        com.pbl6.flashcard.model.User u = userRepository.findByEmail(email).orElseThrow();
+        u.setRole(role);
+        userRepository.save(u);
+        String body = json.writeValueAsString(java.util.Map.of("email", email, "password", "secret123"));
+        String res = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn().getResponse().getContentAsString();
+        return json.readTree(res).get("accessToken").asText();
+    }
+
+    protected Long userId(String email) {
+        return userRepository.findByEmail(email).orElseThrow().getId();
     }
 
     protected ResultActions call(MockHttpServletRequestBuilder req, String token, Object body) throws Exception {

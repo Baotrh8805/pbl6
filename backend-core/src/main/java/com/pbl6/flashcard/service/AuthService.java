@@ -14,6 +14,7 @@ import com.pbl6.flashcard.security.RegisterRateLimiter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -62,6 +63,9 @@ public class AuthService {
             AuthResponse ok = refreshTokens.issueTokens(((CustomUserDetails) authentication.getPrincipal()).getUser());
             loginLimiter.reset(key);
             return ok;
+        } catch (LockedException e) {
+            // Mật khẩu đúng nhưng admin đã khoá: 403 (không phải 401), không tính là lần dò sai
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản đã bị khoá, vui lòng liên hệ hỗ trợ.");
         } catch (AuthenticationException e) {
             loginLimiter.record(key);
             // 401 (không phải 403) + thông báo chung: không lộ email tồn tại hay không

@@ -38,7 +38,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (claims != null) {
             try {
                 CustomUserDetails userDetails = (CustomUserDetails) customUserDetailsService.loadUserByUsername(claims.getSubject());
-                if (issuedBeforePasswordChange(claims, userDetails)) {
+                // Bị khoá hoặc token cấp trước lần đổi mật khẩu -> coi như chưa đăng nhập (401)
+                if (!userDetails.isAccountNonLocked() || issuedBeforePasswordChange(claims, userDetails)) {
                     filterChain.doFilter(request, response);
                     return;
                 }

@@ -41,6 +41,14 @@ public class User {
     @Column(name = "password_changed_at")
     private java.time.Instant passwordChangedAt;
 
+    /** Khác null = tài khoản bị khoá: không đăng nhập, token đang có bị từ chối (Admin Panel). */
+    @Column(name = "locked_at")
+    private java.time.Instant lockedAt;
+
+    /** Hạn mức bóc tách / ngày riêng; null = theo app_settings. */
+    @Column(name = "extraction_daily_limit")
+    private Integer extractionDailyLimit;
+
     public User() {}
 
     /** Email so khớp không phân biệt hoa thường: lưu và tra cứu luôn ở dạng này. */
@@ -71,6 +79,12 @@ public class User {
 
     public java.time.Instant getPasswordChangedAt() { return passwordChangedAt; }
     public void setPasswordChangedAt(java.time.Instant passwordChangedAt) { this.passwordChangedAt = passwordChangedAt; }
+
+    public java.time.Instant getLockedAt() { return lockedAt; }
+    public void setLockedAt(java.time.Instant lockedAt) { this.lockedAt = lockedAt; }
+
+    public Integer getExtractionDailyLimit() { return extractionDailyLimit; }
+    public void setExtractionDailyLimit(Integer extractionDailyLimit) { this.extractionDailyLimit = extractionDailyLimit; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
