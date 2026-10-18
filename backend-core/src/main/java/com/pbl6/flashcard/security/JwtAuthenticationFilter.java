@@ -55,10 +55,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /** Đổi mật khẩu thu hồi mọi token cũ. iat của JWT chỉ chính xác tới giây -> so ở mức giây. */
+    /**
+     * Đổi mật khẩu / thu hồi phiên vô hiệu mọi token cũ. Token mới mang claim {@code pcv} (phiên bản mật khẩu, ms):
+     * so chính xác. Token cũ chưa có claim: so iat ở mức giây (iat của JWT chỉ chính xác tới giây).
+     */
     static boolean issuedBeforePasswordChange(Claims claims, CustomUserDetails user) {
         Instant changedAt = user.getUser().getPasswordChangedAt();
-        if (changedAt == null || claims.getIssuedAt() == null) return false;
+        if (changedAt == null) return false;
+        Long pcv = claims.get("pcv", Long.class);
+        if (pcv != null) return pcv != changedAt.toEpochMilli();
+        if (claims.getIssuedAt() == null) return false;
         return claims.getIssuedAt().toInstant().isBefore(changedAt.truncatedTo(ChronoUnit.SECONDS));
     }
 

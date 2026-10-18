@@ -36,10 +36,18 @@ public class JwtTokenProvider {
         Date now = new Date();
         return Jwts.builder()
                 .subject(userDetails.getUsername())
+                // Phiên bản mật khẩu lúc cấp token: đổi mật khẩu / thu hồi phiên làm mọi token cũ vô hiệu ngay,
+                // không phụ thuộc độ chính xác giây của iat (JwtAuthenticationFilter.issuedBeforePasswordChange)
+                .claim("pcv", passwordVersion(userDetails))
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expirationMs))
                 .signWith(signingKey, Jwts.SIG.HS512)
                 .compact();
+    }
+
+    static long passwordVersion(CustomUserDetails userDetails) {
+        java.time.Instant changedAt = userDetails.getUser().getPasswordChangedAt();
+        return changedAt == null ? 0L : changedAt.toEpochMilli();
     }
 
     /** Trả về claims nếu token hợp lệ (đúng chữ ký, chưa hết hạn), ngược lại null. */
