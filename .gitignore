@@ -90,3 +90,6 @@ ai-service/app/extract/data/translations.sqlite
 
 # SDD scratch (executing-plans ledger)
 .superpowers/
+
+# Tài liệu nội bộ (spec, plan, hướng dẫn vận hành): không đưa lên Git
+docs/
