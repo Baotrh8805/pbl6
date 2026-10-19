@@ -17,6 +17,12 @@ public class Notification {
     public static final String COMMENT_CLEARED = "COMMENT_CLEARED";
     public static final String PREMIUM_CHANGED = "PREMIUM_CHANGED";
     public static final String ROLE_CHANGED = "ROLE_CHANGED";
+    /** Lộ trình 2.0 (spec §4.4): bản nháp sẵn sàng / thất bại, nhắc học mỗi sáng, qua chương, hoàn thành. Cột type dài 30. */
+    public static final String LEARNING_PATH_READY = "LEARNING_PATH_READY";
+    public static final String LEARNING_PATH_FAILED = "LEARNING_PATH_FAILED";
+    public static final String LEARNING_PATH_REMINDER = "LEARNING_PATH_REMINDER";
+    public static final String LEARNING_PATH_CHAPTER_PASSED = "LEARNING_PATH_CHAPTER_PASSED";
+    public static final String LEARNING_PATH_COMPLETED = "LEARNING_PATH_COMPLETED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

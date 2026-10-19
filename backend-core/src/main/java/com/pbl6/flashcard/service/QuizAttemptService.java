@@ -15,6 +15,7 @@ import com.pbl6.flashcard.model.QuizResult;
 import com.pbl6.flashcard.repository.QuizAttemptRepository;
 import com.pbl6.flashcard.repository.QuizResultRepository;
 import com.pbl6.flashcard.security.QuizRateLimiter;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -55,11 +56,13 @@ public class QuizAttemptService {
     private final QuizRateLimiter rateLimiter;
     private final ReviewService reviewService;
     private final ObjectMapper json;
+    private final ApplicationEventPublisher events;
     private final Random random = new Random();
 
     public QuizAttemptService(DeckService deckService, QuizAttemptRepository attemptRepository,
                               QuizResultRepository quizResultRepository, QuizRateLimiter rateLimiter,
-                              ReviewService reviewService, ObjectMapper json) {
+                              ReviewService reviewService, ObjectMapper json, ApplicationEventPublisher events) {
+        this.events = events;
         this.reviewService = reviewService;
         this.deckService = deckService;
         this.attemptRepository = attemptRepository;
@@ -216,6 +219,10 @@ public class QuizAttemptService {
         QuizService.Graded graded = grade(attempt, answers);
         quizResultRepository.save(new QuizResult(attempt.getUserId(), attempt.getDeckId(), graded.score(),
                 graded.total(), attempt.getMode(), attempt.getId()));
+        // Đồng bộ, cùng giao dịch: bài kiểm tra chương của lộ trình (LearningPathService.onQuizSubmitted) ghi quiz_passed_at ngay
+        // trong lần nộp; listener lỗi thì rollback cả kết quả — listener tự bắt lỗi của mình để điều đó không xảy ra.
+        events.publishEvent(new QuizSubmittedEvent(attempt.getUserId(), attempt.getDeckId(), attempt.getId(), graded.score(),
+                graded.total(), attempt.getMode()));
     }
 
     private QuizOutcomeResponse outcome(QuizAttempt attempt) {
@@ -279,6 +286,35 @@ public class QuizAttemptService {
     public long countResults(Long uid) {
         closeExpiredAttempts(uid, Instant.now());
         return quizResultRepository.countByUserId(uid);
+    }
+
+    /**
+     * "Sai quiz" (InsightService, spec §3.7): số câu trả lời sai theo thẻ trong các lượt đã nộp sau since, so answers với bản
+     * chụp đề như lúc chấm (QuizService.grade). Câu không có đáp án: exam tính sai (bài thi chấm như vậy, người học thấy điểm
+     * đó); practice thì không tính — lượt luyện tập đóng sau 24 giờ với vài câu chưa mở không nói gì về trí nhớ. Riêng câu practice
+     * người học BẤM "Bỏ qua câu này" (lưu đáp án "") là sai: đó là "không biết", {@link #answer} đã chấm nó sai và ghi "again" vào
+     * lịch ôn, nên điểm yếu đếm giống như vậy.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Integer> wrongAnswerCounts(Long uid, Instant since) {
+        Map<String, Integer> out = new HashMap<>();
+        for (QuizAttempt attempt : attemptRepository.findByUserIdAndSubmittedAtAfter(uid, since)) {
+            Map<String, String> answers;
+            List<QuizService.Item> items;
+            try {
+                answers = answers(attempt);
+                items = items(attempt);
+            } catch (IllegalStateException e) {
+                // Một bản chụp hỏng chỉ làm mất tín hiệu của lượt đó; ném tiếp thì cả trang Điểm yếu / "học gì tiếp" thành 500
+                continue;
+            }
+            for (QuizService.Item item : items) {
+                String chosen = answers.get(item.cardId());
+                boolean wrong = chosen != null ? !item.correct().equals(chosen) : !attempt.isPractice();
+                if (wrong) out.merge(item.cardId(), 1, Integer::sum);
+            }
+        }
+        return out;
     }
 
     // ---------- tiện ích ----------

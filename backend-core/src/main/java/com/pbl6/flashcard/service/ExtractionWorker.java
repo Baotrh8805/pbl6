@@ -52,9 +52,13 @@ public class ExtractionWorker {
         this.tx = new TransactionTemplate(txManager);
     }
 
-    /** Job mới: từ bước TEXT. data != null = file; text != null = văn bản dán. */
+    /**
+     * Job mới: từ bước TEXT. data != null = file; text != null = văn bản dán. ocrFallbackConfidence = cấu hình
+     * ocr_fallback_confidence lúc gửi (null = để ai-service dùng mặc định của nó).
+     */
     @Async(AsyncConfig.EXTRACTION_EXECUTOR)
-    public void runFromText(UUID jobId, byte[] data, String filename, String text, String ocrMode) {
+    public void runFromText(UUID jobId, byte[] data, String filename, String text, String ocrMode,
+                            Double ocrFallbackConfidence) {
         try {
             update(jobId, j -> {
                 j.setStatus(ExtractionJob.RUNNING);
@@ -62,12 +66,15 @@ public class ExtractionWorker {
                 j.setStartedAt(Instant.now());
                 j.setErrorMessage(null);
             });
-            TextResult tr = ai.extractText(data, filename, text, ocrMode);
+            TextResult tr = ai.extractText(data, filename, text, ocrMode, ocrFallbackConfidence);
             if (tr.text() == null || tr.text().isBlank()) {
                 throw new AiServiceClient.AiServiceException("Không trích được chữ tiếng Nhật nào từ tài liệu.");
             }
             Map<String, Object> meta = new LinkedHashMap<>(tr.meta() != null ? tr.meta() : Map.of());
             if (tr.blocks() != null) meta.put("blocks", tr.blocks());
+            // Ghi ngưỡng đã dùng để soát lỗi OCR sau này; ai-service mới tự trả lại ngưỡng nó thật sự dùng (ưu tiên giá trị đó),
+            // bản cũ không trả thì ghi giá trị đã gửi
+            if (ocrFallbackConfidence != null) meta.putIfAbsent("ocrFallbackConfidence", ocrFallbackConfidence);
             update(jobId, j -> {
                 j.setExtractedText(tr.text());
                 j.setTextMeta(meta);

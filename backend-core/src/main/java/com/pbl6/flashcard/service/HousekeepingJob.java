@@ -17,7 +17,9 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Dọn dẹp đêm (plan G2/B6): token hết hạn và job bóc tách đã kết thúc quá lâu (cột extracted_text nặng).
+ * Dọn dẹp đêm (plan G2/B6): token hết hạn và job bóc tách đã kết thúc quá lâu (cột extracted_text nặng). Job của lộ
+ * trình còn lộ trình không bị xoá (LP-1): chỉ xoá trắng extracted_text khi lộ trình đã ACTIVE, bản nháp giữ nguyên để còn kích
+ * hoạt; job lộ trình mồ côi (lộ trình đã xoá, LP-10 giữ dòng CANCELLED để không hoàn lượt) bị xoá như job thường.
  * ponytail: mốc giữ là hằng số (90 ngày); đưa vào app_settings khi admin cần chỉnh. Một server -> không cần khoá phân tán.
  */
 @Service
@@ -40,8 +42,14 @@ public class HousekeepingJob {
         this.notifications = notifications;
     }
 
-    /** 03:30 giờ Việt Nam mỗi ngày (ít người học). */
+    /**
+     * 03:30 giờ Việt Nam mỗi ngày (ít người học). Phải tự mở transaction: scheduler gọi nightly() qua proxy, nhưng run() được gọi
+     * từ this (không qua proxy) nên @Transactional của run() không có tác dụng — @Modifying đầu tiên ném
+     * TransactionRequiredException và cả đêm dọn dẹp (kể cả LP-1) không chạy. run() tham gia transaction này (REQUIRED);
+     * HousekeepingIT gọi thẳng nightly() để giữ lối vào thật được kiểm.
+     */
     @Scheduled(cron = "0 30 3 * * *", zone = "Asia/Ho_Chi_Minh")
+    @Transactional
     public void nightly() {
         run(Instant.now());
     }
@@ -50,7 +58,10 @@ public class HousekeepingJob {
     public int[] run(Instant now) {
         int a = refreshTokens.deleteExpired(now);
         int b = resetTokens.deleteExpired(now);
-        int c = jobs.deleteFinishedBefore(now.minus(KEEP_FINISHED_JOBS));
+        Instant cutoff = now.minus(KEEP_FINISHED_JOBS);
+        int c = jobs.deleteFinishedBefore(cutoff);
+        int e = jobs.clearTextOfOldPathJobs(cutoff); // LP-1: job lộ trình chỉ bị xoá trắng văn bản
+        int f = jobs.deleteOrphanPathJobsBefore(cutoff); // LP-10: job của lộ trình đã xoá (giữ lại vì hạn mức) quá hạn
         int d = 0;
         for (User u : users.findByIsPremiumTrueAndPremiumUntilBefore(now)) { // Premium có hạn đã hết (G5)
             u.setIsPremium(false);
@@ -59,7 +70,8 @@ public class HousekeepingJob {
             notifications.notify(u.getId(), Notification.PREMIUM_CHANGED, Map.of("premium", false, "expired", true));
             d++;
         }
-        log.info("Housekeeping: xoá {} refresh token, {} reset token, {} job bóc tách cũ; {} Premium hết hạn", a, b, c, d);
-        return new int[] {a, b, c, d};
+        log.info("Housekeeping: xoá {} refresh token, {} reset token, {} job bóc tách cũ; {} Premium hết hạn; "
+                + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi", a, b, c, d, e, f);
+        return new int[] {a, b, c, d, e, f};
     }
 }

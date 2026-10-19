@@ -45,10 +45,11 @@ public class StudyController {
         return reviewService.reviews(uid(me));
     }
 
-    /** Client chỉ gửi cardId + grade; ngày ôn kế tiếp do server quyết định. */
+    /** Client chỉ gửi cardId + grade (+ reactionMs?, pathId? — E1, chỉ ghi nhật ký); ngày ôn kế tiếp do server quyết định. */
     @PostMapping("/reviews")
     public ReviewResponse submitReview(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody ReviewRequest body) {
-        return reviewService.review(uid(me), body.cardId(), body.grade(), Boolean.TRUE.equals(body.cram()));
+        return reviewService.review(uid(me), body.cardId(), body.grade(), Boolean.TRUE.equals(body.cram()),
+                body.reactionMs(), body.pathId());
     }
 
     /** Câu hỏi mẫu (xem trước đề), không mở lượt làm bài. */

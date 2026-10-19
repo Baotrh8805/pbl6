@@ -150,7 +150,9 @@ public class AdminContentService {
     public AdminPage<AdminExtractionResponse> listExtractions(String status, Long userId, int page, int size) {
         Page<ExtractionJob> p = jobs.searchAdmin(status, userId, PageRequest.of(page, size));
         Map<Long, String> emails = audit.emailsOf(p.getContent().stream().map(ExtractionJob::getUserId).distinct().toList());
-        return AdminPage.of(p, p.getContent().stream().map(j -> AdminExtractionResponse.of(j, emails.get(j.getUserId()))).toList());
+        double lowLine = extractionService.lowLineConfidence();
+        return AdminPage.of(p, p.getContent().stream()
+                .map(j -> AdminExtractionResponse.of(j, emails.get(j.getUserId()), lowLine)).toList());
     }
 
     @Transactional

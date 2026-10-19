@@ -1,21 +1,49 @@
 package com.pbl6.flashcard.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.pbl6.flashcard.config.AsyncConfig;
 import com.pbl6.flashcard.dto.extraction.AiDtos;
+import com.pbl6.flashcard.model.LearningPath;
 import com.pbl6.flashcard.service.AiServiceClient;
+import com.pbl6.flashcard.service.LearningPathService;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockPart;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.pbl6.flashcard.repository.LearningPathRepository;
+
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +56,14 @@ class LearningPathIT extends IntegrationTest {
 
     @MockitoBean
     private AiServiceClient ai;
+
+    /**
+     * Spy trên executor của worker (không spy ExtractionWorker: bean ấy là proxy @Async, stub trên target chỉ ném trong thread nền).
+     * Stub submit() ném RejectedExecutionException = "hàng đợi đầy" ngay ở thread web, đúng nhánh dispatch → 429. Mockito reset sau
+     * mỗi test (MockReset.AFTER) nên các test khác dùng executor thật.
+     */
+    @MockitoSpyBean(name = AsyncConfig.EXTRACTION_EXECUTOR)
+    private ThreadPoolTaskExecutor extractionExecutor;
 
     private static final String TEXT = "第1課 あいさつ\nこんにちは。\n第2課 かいもの\nりんごを買います。";
 
@@ -59,7 +95,7 @@ class LearningPathIT extends IntegrationTest {
     @BeforeEach
     void stubAi() {
         Mockito.reset(ai);
-        Mockito.when(ai.extractText(any(), any(), any(), any())).thenAnswer(inv -> {
+        Mockito.when(ai.extractText(any(), any(), any(), any(), any())).thenAnswer(inv -> {
             byte[] data = inv.getArgument(0);
             String text = data != null ? new String(data, StandardCharsets.UTF_8) : inv.getArgument(2);
             return new AiDtos.TextResult(text, Map.of("engine", "text", "sourceType", "text", "pages", 1),
@@ -364,14 +400,19 @@ class LearningPathIT extends IntegrationTest {
         job.get("deckIds").forEach(n -> deckIds.add(n.asText()));
         assertTrue(deckIds.containsAll(List.of(d1, d2)), job.toString());
 
-        // Ngày 2: chương 1 (1–2, perDay ceil(11/2) = 6) -> thẻ 7..11
+        // Ngày 2 (2.0: việc = thẻ xếp cho ngày đó; 19 thẻ / 4 ngày tất định -> {5, 6, 5, 3}, ngày 1 lấy 5 thẻ đầu): chương 1
+        // còn đang học, dải vị trí 1.0 (fromPos/toPos) khớp đúng cardIds nên client cũ học qua ?range= vẫn ra đúng thẻ
         JsonNode day2 = read(call(get(BASE + id).param("date", "2026-11-02"), token, null).andExpect(status().isOk()));
         assertEquals(2, day2.get("today").get("dayIndex").asInt());
         assertEquals("during", day2.get("today").get("state").asText());
         JsonNode task = day2.get("today").get("tasks").get(0);
         assertEquals(d1, task.get("deckId").asText());
-        assertEquals(7, task.get("fromPos").asInt());
+        int count = task.get("count").asInt();
+        assertEquals(count, task.get("cardIds").size());
+        assertEquals(6, count, task.toString());
+        assertEquals(6, task.get("fromPos").asInt());
         assertEquals(11, task.get("toPos").asInt());
+        assertEquals(count, day2.get("today").get("newCount").asInt());
 
         // Sau khi kích hoạt: không sửa chương nữa, nhưng đổi số ngày tính lại dải trên số thẻ đã chốt
         JsonNode five = read(call(patch(BASE + id), token, Map.of("totalDays", 5, "title", "Minna mới")).andExpect(status().isOk()));
@@ -380,7 +421,9 @@ class LearningPathIT extends IntegrationTest {
 
         call(delete(BASE + id), token, null).andExpect(status().isNoContent());
         call(get(BASE + id), token, null).andExpect(status().isNotFound());
-        call(get("/api/extractions/" + jobId), token, null).andExpect(status().isNotFound());
+        // LP-10: dòng job giữ lại (CANCELLED) để lượt hạn mức không bị hoàn, chỉ văn bản + item bị xoá
+        JsonNode cancelled = read(call(get("/api/extractions/" + jobId), token, null).andExpect(status().isOk()));
+        assertEquals("CANCELLED", cancelled.get("status").asText(), cancelled.toString());
         call(get("/api/decks/" + d1), token, null).andExpect(status().isOk());
         call(get("/api/folders/" + folderId), token, null).andExpect(status().isOk());
     }
@@ -433,9 +476,15 @@ class LearningPathIT extends IntegrationTest {
         call(post(BASE + id + "/activate"), stranger, Map.of()).andExpect(status().isNotFound());
         call(delete(BASE + id), stranger, null).andExpect(status().isNotFound());
         call(get(BASE + id + "/chapters/" + c1 + "/items"), stranger, null).andExpect(status().isNotFound());
-        // Chương của lộ trình khác -> 404
+        // Chương không tồn tại, và chương THẬT của một lộ trình khác của chính mình -> 404: ownedChapter lọc theo pathId chứ không
+        // chỉ theo quyền sở hữu lộ trình (không thì sửa / gộp / đọc chương của bản nháp này được qua id lộ trình kia)
         call(patch(BASE + id + "/chapters/" + java.util.UUID.randomUUID()), token, Map.of("title", "x"))
                 .andExpect(status().isNotFound());
+        String cx = draftPath(token, "5", null).get("chapters").get(0).get("id").asText();
+        call(patch(BASE + id + "/chapters/" + cx), token, Map.of("title", "x")).andExpect(status().isNotFound());
+        call(post(BASE + id + "/chapters/" + cx + "/merge-up"), token, null).andExpect(status().isNotFound());
+        call(get(BASE + id + "/chapters/" + cx + "/items"), token, null).andExpect(status().isNotFound());
+        assertEquals(2, read(call(get(BASE + id), token, null)).get("chapters").size());
 
         activate(token, id, Map.of());
         JsonNode again = read(call(post(BASE + id + "/activate"), token, Map.of()).andExpect(status().isConflict()));
@@ -553,8 +602,20 @@ class LearningPathIT extends IntegrationTest {
     @Test
     void extraction_delete_refuses_path_job() throws Exception {
         String token = newUser();
-        String jobId = draftPath(token, "5", null).get("jobId").asText();
-        call(delete("/api/extractions/" + jobId), token, null).andExpect(status().isConflict());
+        JsonNode draft = draftPath(token, "5", null);
+        String id = draft.get("id").asText();
+        String jobId = draft.get("jobId").asText();
+        JsonNode owned = read(call(delete("/api/extractions/" + jobId), token, null).andExpect(status().isConflict()));
+        assertEquals("Lượt này thuộc một lộ trình học, hãy xoá lộ trình.", owned.get("message").asText(), owned.toString());
+
+        // LP-10: xoá lộ trình để lại job CANCELLED mồ côi. Trong 24 giờ dòng ấy vẫn tính vào hạn mức ngày nên không xoá được (xoá rồi
+        // tạo lại là lách hạn mức); qua 24 giờ chủ sở hữu (và Admin Panel, cùng deleteJob) xoá được, không phải chờ housekeeping 90 ngày
+        call(delete(BASE + id), token, null).andExpect(status().isNoContent());
+        JsonNode fresh = read(call(delete("/api/extractions/" + jobId), token, null).andExpect(status().isConflict()));
+        assertTrue(fresh.get("message").asText().contains("24 giờ"), fresh.toString());
+        jdbc.update("UPDATE extraction_jobs SET created_at = created_at - interval '25 hours' WHERE id = ?", UUID.fromString(jobId));
+        call(delete("/api/extractions/" + jobId), token, null).andExpect(status().isNoContent());
+        call(get("/api/extractions/" + jobId), token, null).andExpect(status().isNotFound());
     }
 
     @Test
@@ -603,34 +664,1694 @@ class LearningPathIT extends IntegrationTest {
     }
 
     @Test
-    void active_total_days_change_skips_deleted_deck_chapters() throws Exception {
+    void active_total_days_change_replans_remaining_cards_and_deleted_deck_chapter_has_no_range() throws Exception {
         String token = newUser();
         String id = draftPath(token, "10", null).get("id").asText();
         JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
         String d1 = active.get("chapters").get(0).get("deckId").asText();
         call(delete("/api/decks/" + d1), token, null).andExpect(status().isNoContent());
 
-        JsonNode four = read(call(patch(BASE + id), token, Map.of("totalDays", 4)).andExpect(status().isOk()));
+        JsonNode four = read(call(patch(BASE + id).param("date", "2026-11-01"), token, Map.of("totalDays", 4))
+                .andExpect(status().isOk()));
         JsonNode c1 = four.get("chapters").get(0);
         JsonNode c2 = four.get("chapters").get(1);
-        // chương mất bộ thẻ giữ dải cũ (1–6), không chiếm ngày; chương còn lại dùng hết 4 ngày
-        assertEquals(1, c1.get("dayFrom").asInt());
-        assertEquals(6, c1.get("dayTo").asInt());
+        // chương mất bộ thẻ không còn thẻ trong lịch (CASCADE): không có dải ngày, không chiếm ngày; chương còn lại dùng hết 4 ngày
+        assertTrue(c1.get("deckDeleted").asBoolean());
+        assertEquals(0, c1.get("cardCount").asInt());
+        assertFalse(c1.has("dayFrom"), c1.toString());
+        assertFalse(c1.has("dayTo"), c1.toString());
+        assertEquals("open", c1.get("state").asText());
+        assertEquals(8, c2.get("cardCount").asInt());
         assertEquals(1, c2.get("dayFrom").asInt());
         assertEquals(4, c2.get("dayTo").asInt());
+        assertEquals("current", c2.get("state").asText());
+        assertEquals(4, four.get("days").size());
+        for (JsonNode d : four.get("days")) {
+            assertEquals(1, d.get("tasks").size(), d.toString());
+            assertEquals(c2.get("id").asText(), d.get("tasks").get(0).get("chapterId").asText());
+        }
+        assertEquals(8, four.get("completion").get("total").asInt());
     }
 
     @Test
     void listener_never_breaks_job() throws Exception {
         // stats.chapters sai kiểu -> buildDraft ném -> lộ trình FAILED, job vẫn DONE
         stubAnalyze(chapterItems(), Map.of("vocab", 20, "grammar", 1, "chaptersDetected", true, "chapters", "oops"));
-        String token = newUser();
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
         JsonNode created = read(postPath(token, TEXT, "5", null).andExpect(status().isAccepted()));
-        JsonNode failed = awaitDraft(token, created.get("id").asText());
+        String id = created.get("id").asText();
+        String jobId = created.get("jobId").asText();
+        JsonNode failed = awaitDraft(token, id);
         assertEquals("FAILED", failed.get("status").asText());
         assertEquals("Không dựng được lộ trình từ kết quả bóc tách.", failed.get("errorMessage").asText());
-        JsonNode job = read(call(get("/api/extractions/" + created.get("jobId").asText()), token, null)
-                .andExpect(status().isOk()));
+        JsonNode job = read(call(get("/api/extractions/" + jobId), token, null).andExpect(status().isOk()));
         assertEquals("DONE", job.get("status").asText());
+
+        // LP-6: job DONE còn item nhưng dựng nháp lỗi -> "Chạy lại" vẫn đi qua ANALYZE trên job DONE: item cũ bị thay (21, không
+        // nhân đôi), không tạo job mới; stats hợp lệ thì bản nháp dựng được
+        int jobsBefore = jobCount(uid);
+        stubAi();
+        assertEquals("PROCESSING", read(call(post(BASE + id + "/retry"), token, null).andExpect(status().isAccepted()))
+                .get("status").asText());
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        assertEquals(2, draft.get("chapters").size());
+        assertEquals(12, draft.get("chapters").get(0).get("cardCount").asInt());
+        assertEquals(8, draft.get("chapters").get(1).get("cardCount").asInt());
+        assertEquals(Integer.valueOf(21), jdbc.queryForObject("SELECT count(*) FROM extraction_items WHERE job_id = ?",
+                Integer.class, UUID.fromString(jobId)));
+        assertEquals(jobsBefore, jobCount(uid), "chạy lại không tạo job mới");
+    }
+
+    // ---------- 2.0: lịch theo thẻ, phiên học hợp nhất, cân lại lịch, danh sách batch ----------
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    private static final ZoneId ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+
+    private ResultActions postPathParts(String token, Map<String, String> parts) throws Exception {
+        MockMultipartHttpServletRequestBuilder req = multipart("/api/learning-paths");
+        parts.forEach((k, v) -> req.part(new MockPart(k, v.getBytes(StandardCharsets.UTF_8))));
+        return call(req, token, null);
+    }
+
+    private JsonNode pathOn(String token, String id, String date) throws Exception {
+        return read(call(get(BASE + id).param("date", date), token, null).andExpect(status().isOk()));
+    }
+
+    private JsonNode session(String token, String id, String kind, String date) throws Exception {
+        return read(call(get(BASE + id + "/session").param("kind", kind).param("date", date), token, null)
+                .andExpect(status().isOk()));
+    }
+
+    private void review(String token, String cardId, String grade) throws Exception {
+        call(post("/api/reviews"), token, Map.of("cardId", cardId, "grade", grade, "cram", false))
+                .andExpect(status().isOk());
+    }
+
+    /** Thẻ xếp cho ngày dayIndex theo days[] của GET /{id}. */
+    private static List<String> cardIdsOfDay(JsonNode path, int dayIndex) {
+        List<String> out = new ArrayList<>();
+        for (JsonNode d : path.get("days")) {
+            if (d.get("dayIndex").asInt() != dayIndex) continue;
+            for (JsonNode t : d.get("tasks")) t.get("cardIds").forEach(c -> out.add(c.asText()));
+        }
+        return out;
+    }
+
+    private int scheduledDay(String pathId, String cardId) {
+        return jdbc.queryForObject("SELECT scheduled_day FROM learning_path_cards WHERE path_id = ? AND card_id = ?",
+                Integer.class, UUID.fromString(pathId), cardId);
+    }
+
+    private int cardRows(String pathId) {
+        return jdbc.queryForObject("SELECT count(*) FROM learning_path_cards WHERE path_id = ?", Integer.class,
+                UUID.fromString(pathId));
+    }
+
+    /**
+     * Ghim hạn ôn (reviews.due_at) của một thẻ về một thời điểm cố định: POST /api/reviews đặt due_at = now (thật) + khoảng ôn, nên
+     * mọi khẳng định "đến hạn ngày X" với ngày cố định phải đi qua đây để không phụ thuộc ngày chạy test. Thẻ của lộ trình chỉ thuộc
+     * một người dùng (vừa tạo) nên lọc theo card_id là đủ.
+     */
+    private void pinDue(String cardId, String isoInstant) {
+        jdbc.update("UPDATE reviews SET due_at = ? WHERE card_id = ?",
+                OffsetDateTime.ofInstant(Instant.parse(isoInstant), ZoneOffset.UTC), cardId);
+    }
+
+    /** dueCount của GET /{id}, /today-summary, /session?kind=today và GET / phải là cùng một con số cho cùng một ngày. */
+    private void assertDue(String token, String id, String date, int expected) throws Exception {
+        assertEquals(expected, pathOn(token, id, date).get("today").get("dueCount").asInt(), "GET /{id} " + date);
+        JsonNode summary = read(call(get(BASE + "today-summary").param("date", date), token, null).andExpect(status().isOk()));
+        assertEquals(expected, summary.get(0).get("dueCount").asInt(), "today-summary " + date);
+        assertEquals(expected, session(token, id, "today", date).get("counts").get("due").asInt(), "session " + date);
+        JsonNode list = read(call(get("/api/learning-paths").param("date", date), token, null).andExpect(status().isOk()));
+        assertEquals(expected, list.get(0).get("today").get("dueCount").asInt(), "GET / " + date);
+    }
+
+    @Test
+    void activation_writes_cards_with_seq_day_weight_and_chapter_ranges() throws Exception { // IT-01
+        String token = newUser();
+        JsonNode draft = draftPath(token, "10", "Thẻ");
+        String id = draft.get("id").asText();
+        assertEquals(50, draft.get("dailyCap").asInt()); // learning_path_daily_cap_default (V20)
+        assertEquals("1111111", draft.get("studyDays").asText());
+        assertTrue(draft.get("reminder").asBoolean());
+        assertEquals(3, draft.get("suggestedDays").asInt(), draft.toString()); // 20.2 trọng số / trần 50: sàn 3 ngày đã vừa
+        assertFalse(draft.get("overCap").asBoolean()); // 20 thẻ / 10 ngày / trần 50
+
+        JsonNode active = read(call(post(BASE + id + "/activate").param("date", "2026-11-01"), token,
+                Map.of("startDate", "2026-11-01")).andExpect(status().isCreated()));
+        assertFalse(active.has("overflow"));
+        assertFalse(active.has("suggestedDays"));
+        JsonNode ch = active.get("chapters");
+        assertEquals(12, ch.get(0).get("cardCount").asInt());
+        assertEquals(8, ch.get(1).get("cardCount").asInt());
+        assertEquals(1, ch.get(0).get("dayFrom").asInt());
+        // 20 thẻ / 10 ngày (quota 2), tất định: {3, 2, 2, 2, 3, 2, 2, 2, 2} — đuôi 1 thẻ của chương 1 được học nốt trong ngày 5
+        // nên lịch kết thúc ở ngày 9 (ngày 10 thành ngày ôn); số cụ thể ghim lại để một thay đổi phân bố không lọt qua
+        int lastDay = ch.get(1).get("dayTo").asInt();
+        assertEquals(9, lastDay, ch.toString());
+        assertEquals(5, ch.get(0).get("dayTo").asInt());   // 3+2+2+2 rồi 2 + đuôi 1 thẻ học nốt
+        assertEquals(6, ch.get(1).get("dayFrom").asInt()); // chương 1 ≥ q/2 và ngày 5 đã đầy -> chương 2 sang ngày mới
+        assertEquals("current", ch.get(0).get("state").asText());
+        assertEquals("locked", ch.get(1).get("state").asText());
+        assertEquals(0, ch.get(0).get("learned").asInt());
+        assertEquals(0, ch.get(0).get("mastered").asInt());
+        assertEquals(7, ch.get(1).get("vocabCount").asInt());
+        assertEquals(1, ch.get(1).get("grammarCount").asInt());
+
+        JsonNode completion = active.get("completion");
+        assertEquals(20, completion.get("total").asInt());
+        assertEquals(0, completion.get("learned").asInt());
+        assertEquals(0, completion.get("learnedPct").asInt());
+        assertEquals(2, completion.get("chaptersTotal").asInt());
+        assertEquals(0, completion.get("chaptersPassed").asInt());
+        assertFalse(completion.get("done").asBoolean());
+
+        JsonNode today = active.get("today");
+        assertEquals("2026-11-01", today.get("date").asText());
+        assertEquals(1, today.get("dayIndex").asInt());
+        assertEquals("during", today.get("state").asText());
+        assertEquals(0, today.get("dueCount").asInt());
+        assertEquals(0, today.get("behindCount").asInt());
+        assertEquals(3, today.get("newCount").asInt());
+        JsonNode task = today.get("tasks").get(0);
+        assertEquals(ch.get(0).get("deckId").asText(), task.get("deckId").asText());
+        assertEquals(today.get("newCount").asInt(), task.get("count").asInt());
+        assertEquals(task.get("count").asInt(), task.get("cardIds").size());
+        assertEquals(1, task.get("fromPos").asInt());
+        assertEquals(task.get("count").asInt(), task.get("toPos").asInt());
+
+        JsonNode days = active.get("days");
+        assertEquals(10, days.size());
+        assertEquals("2026-11-01", days.get(0).get("date").asText());
+        assertEquals("2026-11-10", days.get(9).get("date").asText());
+        int sum = 0;
+        for (JsonNode d : days) {
+            int idx = d.get("dayIndex").asInt();
+            assertEquals(idx <= lastDay, !d.get("tasks").isEmpty(), "ngày " + idx + ": " + d);
+            for (JsonNode t : d.get("tasks")) sum += t.get("count").asInt();
+        }
+        assertEquals(20, sum);
+
+        JsonNode forecast = active.get("forecast");
+        assertEquals(10, forecast.size());
+        assertEquals(today.get("newCount").asInt(), forecast.get(0).get("newCount").asInt());
+        assertEquals(0.0, forecast.get(0).get("predictedReviews").asDouble(), 1e-9);
+        assertEquals(0.9 * today.get("newCount").asInt(), forecast.get(1).get("predictedReviews").asDouble(), 1e-9);
+        assertFalse(forecast.get(1).get("overCap").asBoolean());
+
+        UUID pid = UUID.fromString(id);
+        assertEquals(20, cardRows(id));
+        assertEquals(Integer.valueOf(20), jdbc.queryForObject(
+                "SELECT count(DISTINCT seq) FROM learning_path_cards WHERE path_id = ? AND seq BETWEEN 1 AND 20", Integer.class, pid));
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+                "SELECT count(*) FROM learning_path_cards WHERE path_id = ? AND scheduled_day NOT BETWEEN 1 AND 10", Integer.class, pid));
+        // ngày không giảm theo seq
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject("SELECT count(*) FROM (SELECT scheduled_day - lag(scheduled_day) "
+                + "OVER (ORDER BY seq) AS d FROM learning_path_cards WHERE path_id = ?) t WHERE d < 0", Integer.class, pid));
+        // trọng số: người học N5, thẻ N5 -> 1.0; ngữ pháp +0.2
+        assertEquals(1.2, jdbc.queryForObject("SELECT c.weight FROM learning_path_cards c JOIN flashcards f ON f.id = c.card_id "
+                + "WHERE c.path_id = ? AND f.kind = 'grammar'", Double.class, pid), 1e-9);
+        assertEquals(Integer.valueOf(19), jdbc.queryForObject(
+                "SELECT count(*) FROM learning_path_cards WHERE path_id = ? AND weight = 1.0", Integer.class, pid));
+        // seq: chương 1 (12 thẻ) đứng trước chương 2
+        assertEquals(Integer.valueOf(12), jdbc.queryForObject(
+                "SELECT max(seq) FROM learning_path_cards WHERE path_id = ? AND chapter_id = ?", Integer.class, pid,
+                UUID.fromString(ch.get(0).get("id").asText())));
+    }
+
+    @Test
+    void session_today_has_only_new_cards_then_due_cards_next_day() throws Exception { // IT-02
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        LocalDate start = LocalDate.now(ZONE);
+        activate(token, id, Map.of("startDate", start.toString()));
+
+        JsonNode s1 = session(token, id, "today", start.toString());
+        assertEquals("today", s1.get("kind").asText());
+        assertEquals(1, s1.get("dayIndex").asInt());
+        assertEquals("during", s1.get("state").asText());
+        int n1 = s1.get("counts").get("new").asInt();
+        assertEquals(3, n1, s1.toString()); // 20 thẻ / 10 ngày: ngày 1 nhận 3 (xem IT-01)
+        assertEquals(0, s1.get("counts").get("due").asInt());
+        assertEquals(0, s1.get("counts").get("catchup").asInt());
+        assertEquals(n1, s1.get("counts").get("total").asInt());
+        assertEquals(n1, s1.get("cards").size());
+        for (JsonNode c : s1.get("cards")) assertEquals("new", c.get("mode").asText());
+        JsonNode first = s1.get("cards").get(0);
+        assertEquals("語1", first.get("term").asText());
+        assertEquals("第1課 あいさつ", first.get("chapterTitle").asText());
+        assertEquals("vocab", first.get("kind").asText());
+        assertEquals("N5", first.get("level").asText());
+        assertTrue(first.hasNonNull("deckId") && first.hasNonNull("chapterId") && first.hasNonNull("meaning"), first.toString());
+
+        // chấm 3 thẻ "Tốt" -> khoảng ôn 1 ngày -> đến hạn ngày mai
+        List<String> graded = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            String cid = s1.get("cards").get(i).get("cardId").asText();
+            review(token, cid, "good");
+            graded.add(cid);
+        }
+        // vẫn hôm nay: 3 thẻ vừa chấm rời nhóm mới, chưa đến hạn nên không vào nhóm đến hạn
+        JsonNode s1b = session(token, id, "today", start.toString());
+        assertEquals(n1 - 3, s1b.get("counts").get("new").asInt());
+        assertEquals(0, s1b.get("counts").get("due").asInt());
+
+        String tomorrow = start.plusDays(1).toString();
+        JsonNode s2 = session(token, id, "today", tomorrow);
+        assertEquals(2, s2.get("dayIndex").asInt());
+        JsonNode counts = s2.get("counts");
+        assertEquals(3, counts.get("due").asInt());
+        assertEquals(n1 - 3, counts.get("catchup").asInt());
+        int n2 = counts.get("new").asInt();
+        assertEquals(2, n2, s2.toString()); // ngày 2 nhận 2
+        assertEquals(3 + (n1 - 3) + n2, counts.get("total").asInt());
+        JsonNode cards = s2.get("cards");
+        for (int i = 0; i < 3; i++) {
+            assertEquals("due", cards.get(i).get("mode").asText());
+            assertTrue(graded.contains(cards.get(i).get("cardId").asText()));
+        }
+        for (int i = 3; i < cards.size(); i++) assertEquals("new", cards.get(i).get("mode").asText());
+
+        JsonNode p2 = pathOn(token, id, tomorrow);
+        assertEquals(3, p2.get("today").get("dueCount").asInt());
+        assertEquals(n1 - 3, p2.get("today").get("behindCount").asInt());
+        assertEquals(n2, p2.get("today").get("newCount").asInt());
+        assertEquals(3, p2.get("chapters").get(0).get("learned").asInt());
+        assertEquals(0, p2.get("chapters").get(0).get("mastered").asInt());
+        assertEquals(3, p2.get("completion").get("learned").asInt());
+        assertEquals(15, p2.get("completion").get("learnedPct").asInt());
+        // dự báo: thẻ đã học dùng lịch thật (3 đến hạn ngày 2) + dự báo k = 1 của thẻ chưa học ngày 1
+        assertEquals(3 + 0.9 * (n1 - 3), p2.get("forecast").get(1).get("predictedReviews").asDouble(), 1e-9);
+
+        assertEquals(3, session(token, id, "due", tomorrow).get("cards").size());
+        JsonNode catchup = session(token, id, "catchup", tomorrow);
+        assertEquals(n1 - 3, catchup.get("counts").get("catchup").asInt());
+        assertEquals(n1 - 3, catchup.get("cards").size());
+        String c1 = p2.get("chapters").get(0).get("id").asText();
+        JsonNode chapter = read(call(get(BASE + id + "/session").param("kind", "chapter").param("chapterId", c1)
+                .param("date", tomorrow), token, null).andExpect(status().isOk()));
+        assertEquals(12, chapter.get("cards").size());
+        assertEquals(9, chapter.get("counts").get("new").asInt());
+        assertEquals(3, chapter.get("counts").get("due").asInt());
+        call(get(BASE + id + "/session").param("kind", "chapter"), token, null).andExpect(status().isBadRequest());
+        call(get(BASE + id + "/session").param("kind", "bogus"), token, null).andExpect(status().isBadRequest());
+        // trước ngày bắt đầu: chỉ thẻ đến hạn (chưa có) -> rỗng
+        JsonNode before = session(token, id, "today", start.minusDays(1).toString());
+        assertEquals("before", before.get("state").asText());
+        assertEquals(0, before.get("cards").size());
+
+        // chưa kích hoạt -> 409; người lạ -> 404
+        String draft = draftPath(token, "5", null).get("id").asText();
+        call(get(BASE + draft + "/session"), token, null).andExpect(status().isConflict());
+        call(post(BASE + draft + "/rebalance"), token, Map.of("extend", false)).andExpect(status().isConflict());
+        String stranger = newUser();
+        call(get(BASE + id + "/session"), stranger, null).andExpect(status().isNotFound());
+        call(post(BASE + id + "/rebalance"), stranger, Map.of("extend", false)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void catchup_lists_overdue_and_rebalance_moves_them_keeping_learned_days() throws Exception { // S-04 qua API
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        JsonNode p1 = pathOn(token, id, "2026-11-01");
+        List<String> day1 = cardIdsOfDay(p1, 1);
+        assertTrue(day1.size() >= 2, p1.toString());
+        int firstFour = 0;
+        for (int d = 1; d <= 4; d++) firstFour += cardIdsOfDay(p1, d).size();
+        review(token, day1.get(0), "good");
+        review(token, day1.get(1), "good");
+        // SrsService đặt due_at = now (thật) + 1 ngày; ghim về 17:00 +07 ngày 4/11 để test không phụ thuộc ngày chạy
+        pinDue(day1.get(0), "2026-11-04T10:00:00Z");
+        pinDue(day1.get(1), "2026-11-04T10:00:00Z");
+
+        JsonNode catchup = session(token, id, "catchup", "2026-11-05");
+        assertEquals(firstFour - 2, catchup.get("counts").get("catchup").asInt());
+        assertEquals(firstFour - 2, catchup.get("cards").size());
+        for (JsonNode c : catchup.get("cards")) assertEquals("new", c.get("mode").asText());
+        JsonNode p5 = pathOn(token, id, "2026-11-05");
+        assertEquals(firstFour - 2, p5.get("today").get("behindCount").asInt());
+        assertEquals(2, p5.get("today").get("dueCount").asInt()); // đến hạn 4/11 -> vẫn đến hạn (quá hạn) ngày 5/11
+        assertEquals(0, pathOn(token, id, "2026-11-03").get("today").get("dueCount").asInt()); // chưa tới 4/11
+        assertEquals("current", p5.get("chapters").get(0).get("state").asText());
+
+        JsonNode r = read(call(post(BASE + id + "/rebalance").param("date", "2026-11-05"), token, Map.of("extend", false))
+                .andExpect(status().isOk()));
+        assertTrue(r.has("lastRebalancedAt"));
+        assertEquals(10, r.get("totalDays").asInt());
+        assertEquals(0, r.get("today").get("behindCount").asInt());
+        assertTrue(r.get("today").get("newCount").asInt() > 0);
+        assertEquals(1, r.get("chapters").get(0).get("dayFrom").asInt()); // thẻ đã học ghim ở ngày 1
+        assertEquals(10, r.get("chapters").get(1).get("dayTo").asInt());
+        assertEquals(1, scheduledDay(id, day1.get(0)));
+        assertEquals(1, scheduledDay(id, day1.get(1)));
+        UUID pid = UUID.fromString(id);
+        assertEquals(Integer.valueOf(5), jdbc.queryForObject("SELECT min(scheduled_day) FROM learning_path_cards "
+                + "WHERE path_id = ? AND card_id NOT IN (?, ?)", Integer.class, pid, day1.get(0), day1.get(1)));
+        assertEquals(Integer.valueOf(10), jdbc.queryForObject(
+                "SELECT max(scheduled_day) FROM learning_path_cards WHERE path_id = ?", Integer.class, pid));
+        assertEquals(2, cardIdsOfDay(r, 1).size());
+        for (int d = 2; d <= 4; d++) assertEquals(0, cardIdsOfDay(r, d).size(), "ngày " + d);
+        for (int d = 5; d <= 10; d++) assertFalse(cardIdsOfDay(r, d).isEmpty(), "ngày " + d);
+
+        // không còn nợ -> kéo dài không đổi gì
+        JsonNode again = read(call(post(BASE + id + "/rebalance").param("date", "2026-11-05"), token, Map.of("extend", true))
+                .andExpect(status().isOk()));
+        assertEquals(10, again.get("totalDays").asInt());
+        assertEquals(r.get("days"), again.get("days"));
+
+        // qua ngày cuối mà còn nợ, kéo dài: tổng số ngày tăng, không thẻ nào trước hôm nay
+        JsonNode ext = read(call(post(BASE + id + "/rebalance").param("date", "2026-11-12"), token, Map.of("extend", true))
+                .andExpect(status().isOk()));
+        assertTrue(ext.get("totalDays").asInt() >= 12, ext.get("totalDays").toString());
+        assertEquals(0, ext.get("today").get("behindCount").asInt());
+        assertEquals("during", ext.get("today").get("state").asText());
+        assertEquals(Integer.valueOf(12), jdbc.queryForObject("SELECT min(scheduled_day) FROM learning_path_cards "
+                + "WHERE path_id = ? AND card_id NOT IN (?, ?)", Integer.class, pid, day1.get(0), day1.get(1)));
+        // total_days mới = ngày cuối thật sự của lịch (daysUsed), không hơn không kém
+        assertEquals(Integer.valueOf(ext.get("totalDays").asInt()), jdbc.queryForObject(
+                "SELECT max(scheduled_day) FROM learning_path_cards WHERE path_id = ?", Integer.class, pid));
+        assertEquals(ext.get("totalDays").asInt(), ext.get("days").size());
+    }
+
+    @Test
+    void patch_on_active_replans_only_unlearned_cards_and_validates_settings() throws Exception {
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01")); // chủ nhật
+        JsonNode p1 = pathOn(token, id, "2026-11-01");
+        List<String> day1 = cardIdsOfDay(p1, 1);
+        review(token, day1.get(0), "good");
+        review(token, day1.get(1), "good");
+
+        // Nghỉ cuối tuần + trần + nhắc: ngày học 1 dời sang thứ 2 (2/11); chủ nhật 1/11 là trước ngày học 1; thứ 7 7/11 là ngày nghỉ
+        JsonNode p = read(call(patch(BASE + id).param("date", "2026-11-01"), token,
+                Map.of("studyDays", "1111100", "dailyCap", 20, "reminder", false)).andExpect(status().isOk()));
+        assertEquals("1111100", p.get("studyDays").asText());
+        assertEquals(20, p.get("dailyCap").asInt());
+        assertFalse(p.get("reminder").asBoolean());
+        assertEquals("2026-11-02", p.get("days").get(0).get("date").asText());
+        assertEquals("2026-11-06", p.get("days").get(4).get("date").asText());
+        assertEquals("2026-11-09", p.get("days").get(5).get("date").asText());
+        assertEquals("before", p.get("today").get("state").asText());
+        JsonNode sat = pathOn(token, id, "2026-11-07");
+        assertEquals("rest", sat.get("today").get("state").asText());
+        assertEquals(5, sat.get("today").get("dayIndex").asInt());
+        assertEquals(0, sat.get("today").get("newCount").asInt());
+        assertEquals(0, sat.get("today").get("tasks").size());
+        assertEquals(1, scheduledDay(id, day1.get(0)));
+
+        // Rút còn 4 ngày từ ngày 1: thẻ đã học giữ ngày 1, mọi thẻ còn lại nằm trong 1..4
+        JsonNode four = read(call(patch(BASE + id).param("date", "2026-11-02"), token, Map.of("totalDays", 4))
+                .andExpect(status().isOk()));
+        assertEquals(4, four.get("totalDays").asInt());
+        assertEquals(4, four.get("days").size());
+        assertEquals(1, four.get("chapters").get(0).get("dayFrom").asInt());
+        assertEquals(4, four.get("chapters").get(1).get("dayTo").asInt());
+        UUID pid = UUID.fromString(id);
+        assertEquals(Integer.valueOf(4), jdbc.queryForObject(
+                "SELECT max(scheduled_day) FROM learning_path_cards WHERE path_id = ?", Integer.class, pid));
+        assertEquals(1, scheduledDay(id, day1.get(0)));
+        assertEquals(1, scheduledDay(id, day1.get(1)));
+        int sum = 0;
+        for (int d = 1; d <= 4; d++) sum += cardIdsOfDay(four, d).size();
+        assertEquals(20, sum);
+
+        // Đổi khung giữa chừng (thứ 4 4/11 = ngày học 3): thẻ chưa học không bị xếp vào ngày đã qua
+        JsonNode six = read(call(patch(BASE + id).param("date", "2026-11-04"), token, Map.of("totalDays", 6))
+                .andExpect(status().isOk()));
+        assertEquals(6, six.get("totalDays").asInt());
+        assertEquals(3, six.get("today").get("dayIndex").asInt());
+        assertEquals(2, cardIdsOfDay(six, 1).size());
+        assertEquals(0, cardIdsOfDay(six, 2).size());
+        assertEquals(0, six.get("today").get("behindCount").asInt());
+        assertTrue(six.get("today").get("newCount").asInt() > 0);
+
+        // Đổi tên không đụng lịch
+        JsonNode renamed = read(call(patch(BASE + id).param("date", "2026-11-04"), token, Map.of("title", "Tên mới"))
+                .andExpect(status().isOk()));
+        assertEquals(six.get("days"), renamed.get("days"));
+
+        // Kiểm tra đầu vào
+        call(patch(BASE + id), token, Map.of("studyDays", "0000000")).andExpect(status().isBadRequest());
+        call(patch(BASE + id), token, Map.of("studyDays", "11")).andExpect(status().isBadRequest());
+        call(patch(BASE + id), token, Map.of("dailyCap", 3)).andExpect(status().isBadRequest());
+        call(patch(BASE + id), token, Map.of("dailyCap", 201)).andExpect(status().isBadRequest());
+        // ACTIVE: số ngày mới không được nhỏ hơn ngày học đang đứng (thứ 4 4/11 = ngày 3) — không âm thầm ghi đè bằng chỉ số hôm nay
+        JsonNode tooShort = read(call(patch(BASE + id).param("date", "2026-11-04"), token, Map.of("totalDays", 2))
+                .andExpect(status().isBadRequest()));
+        assertEquals("Số ngày không thể nhỏ hơn ngày học hiện tại (3).", tooShort.get("message").asText(), tooShort.toString());
+        // thứ 7 7/11 là ngày nghỉ sau ngày 5 -> ngày học hiện tại là 6
+        JsonNode restShort = read(call(patch(BASE + id).param("date", "2026-11-07"), token, Map.of("totalDays", 5))
+                .andExpect(status().isBadRequest()));
+        assertEquals("Số ngày không thể nhỏ hơn ngày học hiện tại (6).", restShort.get("message").asText(), restShort.toString());
+        JsonNode unchanged = read(call(get(BASE + id), token, null));
+        assertEquals("1111100", unchanged.get("studyDays").asText());
+        assertEquals(6, unchanged.get("totalDays").asInt());
+        assertEquals(six.get("days"), unchanged.get("days"));
+    }
+
+    @Test
+    void deleting_a_card_removes_it_from_session_without_error() throws Exception { // IT-01 (xoá thẻ)
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        JsonNode p1 = pathOn(token, id, "2026-11-01");
+        JsonNode task = p1.get("today").get("tasks").get(0);
+        String deckId = task.get("deckId").asText();
+        String cardId = task.get("cardIds").get(0).asText();
+        int before = p1.get("today").get("newCount").asInt();
+
+        call(delete("/api/decks/" + deckId + "/cards/" + cardId), token, null).andExpect(status().isNoContent());
+        JsonNode s = session(token, id, "today", "2026-11-01");
+        assertEquals(before - 1, s.get("counts").get("new").asInt());
+        for (JsonNode c : s.get("cards")) assertNotEquals(cardId, c.get("cardId").asText());
+        JsonNode p = pathOn(token, id, "2026-11-01");
+        assertEquals(11, p.get("chapters").get(0).get("cardCount").asInt());
+        assertEquals(19, p.get("completion").get("total").asInt());
+        assertEquals(before - 1, p.get("today").get("newCount").asInt());
+        assertEquals(19, cardRows(id));
+    }
+
+    @Autowired
+    LearningPathRepository pathRepo;
+
+    @Autowired
+    PlatformTransactionManager txm;
+
+    @Test
+    void activate_concurrent_single_folder() throws Exception { // LP-13
+        String token = newUser();
+        String id = draftPath(token, "10", "Đồng thời").get("id").asText();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<MvcResult>> futures = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    assertTrue(go.await(10, TimeUnit.SECONDS), "hiệu lệnh xuất phát không tới");
+                    return call(post(BASE + id + "/activate"), token, Map.of()).andReturn();
+                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            go.countDown();
+            List<Integer> statuses = new ArrayList<>();
+            for (Future<MvcResult> f : futures) {
+                MvcResult r = f.get(60, TimeUnit.SECONDS);
+                statuses.add(r.getResponse().getStatus());
+                if (r.getResponse().getStatus() == 409) {
+                    // đúng xung đột "không còn DRAFT" (đọc dòng sau khi request kia commit), không phải 4xx nào khác
+                    assertEquals("Chỉ sửa được khi lộ trình đang ở bước xem trước.",
+                            json.readTree(r.getResponse().getContentAsString()).get("message").asText());
+                }
+            }
+            Collections.sort(statuses);
+            assertEquals(List.of(201, 409), statuses, statuses.toString());
+        } finally {
+            pool.shutdownNow();
+        }
+        JsonNode folders = read(call(get("/api/folders"), token, null).andExpect(status().isOk()));
+        int n = 0;
+        for (JsonNode f : folders) if (f.get("title").asText().startsWith("Đồng thời")) n++;
+        assertEquals(1, n, folders.toString());
+        JsonNode p = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals("ACTIVE", p.get("status").asText());
+        JsonNode decks = read(call(get("/api/decks").param("folderId", p.get("folderId").asText()), token, null)
+                .andExpect(status().isOk()));
+        assertEquals(2, decks.size());
+        assertEquals(20, cardRows(id));
+
+        // Chứng minh chính khoá dòng xếp hàng (không phải B tình cờ chạy sau khi A commit): test giữ SELECT ... FOR UPDATE trên một
+        // bản nháp khác trong transaction của mình -> activate ở thread khác đứng chờ (chưa xong sau 500 ms), commit xong mới
+        // chạy tiếp và thành công
+        String email = newEmail();
+        String token2 = newUser(email);
+        Long uid = userId(email);
+        String id2 = draftPath(token2, "10", "Khoá dòng").get("id").asText();
+        ExecutorService single = Executors.newSingleThreadExecutor();
+        try {
+            Future<Integer> blocked = new TransactionTemplate(txm).execute(s -> {
+                assertTrue(pathRepo.lockByIdAndUserId(UUID.fromString(id2), uid).isPresent());
+                Future<Integer> f = single.submit(() ->
+                        call(post(BASE + id2 + "/activate"), token2, Map.of()).andReturn().getResponse().getStatus());
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                assertFalse(f.isDone(), "activate phải chờ khoá dòng của lộ trình");
+                return f;
+            });
+            assertEquals(201, blocked.get(10, TimeUnit.SECONDS).intValue());
+        } finally {
+            single.shutdownNow();
+        }
+        assertEquals("ACTIVE", read(call(get(BASE + id2), token2, null)).get("status").asText());
+    }
+
+    @Test
+    void list_and_today_summary_batch_counts() throws Exception { // LP-7, LP-16
+        String token = newUser();
+        String id = draftPath(token, "10", "Batch").get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        String draftId = draftPath(token, "5", "Nháp").get("id").asText();
+        JsonNode full = pathOn(token, id, "2026-11-02");
+        int n1 = cardIdsOfDay(full, 1).size();
+        int n2 = cardIdsOfDay(full, 2).size();
+
+        JsonNode list = read(call(get("/api/learning-paths").param("date", "2026-11-02"), token, null).andExpect(status().isOk()));
+        assertEquals(2, list.size());
+        JsonNode draft = list.get(0); // mới nhất trước
+        assertEquals(draftId, draft.get("id").asText());
+        assertFalse(draft.has("today"));
+        assertFalse(draft.has("completion"));
+        assertEquals("DONE", draft.get("job").get("status").asText());
+        JsonNode active = list.get(1);
+        assertEquals(id, active.get("id").asText());
+        assertFalse(active.has("chapters"));
+        assertFalse(active.has("days"));
+        assertFalse(active.has("forecast"));
+        JsonNode today = active.get("today");
+        assertEquals(2, today.get("dayIndex").asInt());
+        assertEquals("during", today.get("state").asText());
+        assertEquals(n2, today.get("newCount").asInt());
+        assertEquals(0, today.get("dueCount").asInt());
+        assertEquals(n1, today.get("behindCount").asInt());
+        JsonNode task = today.get("tasks").get(0);
+        assertEquals(n2, task.get("count").asInt());
+        assertEquals(n2, task.get("cardIds").size());
+        assertEquals(task.get("fromPos").asInt() + n2 - 1, task.get("toPos").asInt());
+        assertEquals(20, active.get("completion").get("total").asInt());
+
+        JsonNode summary = read(call(get("/api/learning-paths/today-summary").param("date", "2026-11-02"), token, null)
+                .andExpect(status().isOk()));
+        assertEquals(1, summary.size());
+        JsonNode s = summary.get(0);
+        assertEquals(id, s.get("pathId").asText());
+        assertEquals("Batch", s.get("title").asText());
+        assertEquals(2, s.get("dayIndex").asInt());
+        assertEquals(10, s.get("totalDays").asInt());
+        assertEquals("during", s.get("state").asText());
+        assertEquals(n2, s.get("newCount").asInt());
+        assertEquals(0, s.get("dueCount").asInt());
+        assertEquals(n1, s.get("behindCount").asInt());
+        assertEquals("1111111", s.get("studyDays").asText());
+        assertEquals(50, s.get("dailyCap").asInt());
+
+        JsonNode before = read(call(get("/api/learning-paths/today-summary").param("date", "2026-10-31"), token, null)).get(0);
+        assertEquals("before", before.get("state").asText());
+        assertEquals(0, before.get("dayIndex").asInt());
+        assertEquals(0, before.get("newCount").asInt());
+        assertEquals(0, before.get("behindCount").asInt());
+        JsonNode after = read(call(get("/api/learning-paths/today-summary").param("date", "2026-11-20"), token, null)).get(0);
+        assertEquals("after", after.get("state").asText());
+        assertEquals(20, after.get("dayIndex").asInt());
+        assertEquals(20, after.get("behindCount").asInt());
+        assertEquals(0, after.get("newCount").asInt());
+        assertEquals(0, read(call(get("/api/learning-paths/today-summary"), newUser(), null).andExpect(status().isOk())).size());
+    }
+
+    @Test
+    void create_accepts_daily_cap_and_study_days_and_validates_them() throws Exception {
+        String token = newUser();
+        JsonNode created = read(postPathParts(token, Map.of("text", TEXT, "days", "7", "dailyCap", "20", "studyDays", "1111100",
+                "startDate", "2026-11-06")).andExpect(status().isAccepted()));
+        assertEquals(20, created.get("dailyCap").asInt());
+        assertEquals("1111100", created.get("studyDays").asText());
+        assertTrue(created.get("reminder").asBoolean());
+
+        // §3.5: days[].date của BẢN NHÁP đi qua dateForDay theo studyDays y như lúc ACTIVE — 6/11 là thứ 6, ngày 2 là thứ 2 9/11,
+        // không phải thứ 7 7/11; kích hoạt xong các ngày không được nhảy chỗ
+        String id = created.get("id").asText();
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        List<String> draftDates = new ArrayList<>();
+        draft.get("days").forEach(d -> draftDates.add(d.get("date").asText()));
+        assertEquals(List.of("2026-11-06", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-16"),
+                draftDates);
+        JsonNode sat = read(call(patch(BASE + id), token, Map.of("startDate", "2026-11-07")).andExpect(status().isOk()));
+        assertEquals("2026-11-09", sat.get("days").get(0).get("date").asText()); // bắt đầu thứ 7 -> ngày 1 là thứ 2 kế tiếp
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-06"));
+        List<String> activeDates = new ArrayList<>();
+        active.get("days").forEach(d -> activeDates.add(d.get("date").asText()));
+        assertEquals(draftDates, activeDates);
+
+        postPathParts(token, Map.of("text", TEXT, "days", "7", "dailyCap", "3")).andExpect(status().isBadRequest());
+        postPathParts(token, Map.of("text", TEXT, "days", "7", "dailyCap", "abc")).andExpect(status().isBadRequest());
+        postPathParts(token, Map.of("text", TEXT, "days", "7", "studyDays", "0000000")).andExpect(status().isBadRequest());
+        postPathParts(token, Map.of("text", TEXT, "days", "7", "studyDays", "1234567")).andExpect(status().isBadRequest());
+        // Lỗi kiểm tra đầu vào không tốn lượt hạn mức (5 lượt / ngày): còn tạo được đúng 4 lộ trình nữa
+        for (int i = 0; i < 4; i++) postPath(token, TEXT, "5", null).andExpect(status().isAccepted());
+        postPath(token, TEXT, "5", null).andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void replan_past_day_365_is_a_business_error_not_500() throws Exception {
+        // total_days có CHECK ≤ 365 (V13): xếp lại / kéo dài quá mốc đó phải là 409 trước khi ghi, không phải vỡ ở flush
+        String token = newUser();
+        String id = draftPath(token, "365", null).get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        String day366 = LocalDate.of(2026, 11, 1).plusDays(365).toString();
+        JsonNode res = read(call(post(BASE + id + "/rebalance").param("date", day366), token, Map.of("extend", false))
+                .andExpect(status().isConflict()));
+        assertTrue(res.get("message").asText().contains("365"), res.toString());
+        call(post(BASE + id + "/rebalance").param("date", day366), token, Map.of("extend", true)).andExpect(status().isConflict());
+        call(patch(BASE + id).param("date", day366), token, Map.of("dailyCap", 20)).andExpect(status().isConflict());
+        // không ghi dở: trần, số ngày, lịch thẻ y nguyên
+        JsonNode p = pathOn(token, id, day366);
+        assertEquals(365, p.get("totalDays").asInt());
+        assertEquals(50, p.get("dailyCap").asInt());
+        assertEquals("after", p.get("today").get("state").asText());
+        assertFalse(p.has("lastRebalancedAt"));
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+                "SELECT count(*) FROM learning_path_cards WHERE path_id = ? AND scheduled_day > 365", Integer.class, UUID.fromString(id)));
+        // kéo dài trong giới hạn vẫn chạy: ngày 300 còn 20 thẻ nợ -> dồn vào các ngày 300.., total_days giữ 365
+        String day300 = LocalDate.of(2026, 11, 1).plusDays(299).toString();
+        JsonNode ok = read(call(post(BASE + id + "/rebalance").param("date", day300), token, Map.of("extend", true))
+                .andExpect(status().isOk()));
+        assertEquals(365, ok.get("totalDays").asInt());
+        assertEquals(0, ok.get("today").get("behindCount").asInt());
+    }
+
+    @Test
+    void due_boundary_is_start_of_next_day_in_zone() throws Exception {
+        // "đến hạn trong ngày" = due_at < 00:00 ngày kế tiếp theo Asia/Ho_Chi_Minh, cùng một mốc ở cả bốn nơi đếm
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        JsonNode p1 = pathOn(token, id, "2026-11-01");
+        String cid = cardIdsOfDay(p1, 1).get(0);
+        String c1 = p1.get("chapters").get(0).get("id").asText();
+        review(token, cid, "good");
+
+        pinDue(cid, "2026-11-02T16:59:59Z"); // 23:59:59 +07 ngày 2/11 -> đến hạn ngày 2/11
+        assertDue(token, id, "2026-11-02", 1);
+        JsonNode s = session(token, id, "today", "2026-11-02");
+        assertEquals("due", s.get("cards").get(0).get("mode").asText());
+        assertEquals(cid, s.get("cards").get(0).get("cardId").asText());
+
+        pinDue(cid, "2026-11-02T17:00:00Z"); // 00:00 +07 ngày 3/11 -> chưa đến hạn ngày 2/11, đến hạn ngày 3/11
+        assertDue(token, id, "2026-11-02", 0);
+        assertDue(token, id, "2026-11-03", 1);
+        JsonNode chapter = read(call(get(BASE + id + "/session").param("kind", "chapter").param("chapterId", c1)
+                .param("date", "2026-11-02"), token, null).andExpect(status().isOk()));
+        JsonNode learned = null;
+        for (JsonNode c : chapter.get("cards")) if (cid.equals(c.get("cardId").asText())) learned = c;
+        assertNotNull(learned, chapter.toString());
+        assertEquals("cram", learned.get("mode").asText()); // đã ôn, chưa đến hạn -> luyện (chỉ ghi log)
+        assertEquals(0, chapter.get("counts").get("due").asInt());
+        // dự báo ngày 3 = 0.9 × thẻ mới ngày 2 + 1 thẻ đến hạn thật (rơi đúng ngày 3, không phải ngày 2)
+        JsonNode f = pathOn(token, id, "2026-11-02").get("forecast");
+        assertEquals(0.9 * f.get(1).get("newCount").asInt() + 1, f.get(2).get("predictedReviews").asDouble(), 1e-9);
+        // ngày 2: thẻ đã học (lịch thật) không còn được dự báo -> chỉ (thẻ mới ngày 1 − 1) × 0.9, và không có đến hạn thật
+        assertEquals(0.9 * (f.get(0).get("newCount").asInt() - 1), f.get(1).get("predictedReviews").asDouble(), 1e-9);
+    }
+
+    @Test
+    void overflow_flag_and_draft_overcap_follow_the_plan() throws Exception { // S-02 + §3.6 qua API
+        String token = newUser();
+        String id = read(postPathParts(token, Map.of("text", TEXT, "days", "1", "dailyCap", "10")).andExpect(status().isAccepted()))
+                .get("id").asText();
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        assertTrue(draft.get("overCap").asBoolean(), draft.toString()); // 20 thẻ / 1 ngày / trần 10
+        assertEquals(7, draft.get("suggestedDays").asInt(), draft.toString());
+
+        JsonNode active = read(call(post(BASE + id + "/activate").param("date", "2026-11-01"), token,
+                Map.of("startDate", "2026-11-01")).andExpect(status().isCreated()));
+        assertTrue(active.get("overflow").asBoolean(), active.toString()); // vẫn kích hoạt, UI cảnh báo
+        assertEquals(20, active.get("today").get("newCount").asInt());
+        assertTrue(active.get("forecast").get(0).get("overCap").asBoolean());
+
+        JsonNode seven = read(call(patch(BASE + id).param("date", "2026-11-01"), token, Map.of("totalDays", 7))
+                .andExpect(status().isOk()));
+        assertFalse(seven.has("overflow"), seven.toString());
+        for (JsonNode f : seven.get("forecast")) assertFalse(f.get("overCap").asBoolean(), f.toString());
+        UUID pid = UUID.fromString(id);
+        assertEquals(Integer.valueOf(7), jdbc.queryForObject(
+                "SELECT max(scheduled_day) FROM learning_path_cards WHERE path_id = ?", Integer.class, pid));
+
+        JsonNode one = read(call(patch(BASE + id).param("date", "2026-11-01"), token, Map.of("totalDays", 1))
+                .andExpect(status().isOk()));
+        assertTrue(one.get("overflow").asBoolean(), one.toString());
+        assertEquals(1, one.get("totalDays").asInt());
+
+        // Áp dụng gợi ý ở bản nháp rồi kích hoạt: không bao giờ cảnh báo (§3.6)
+        String other = newUser();
+        String id2 = read(postPathParts(other, Map.of("text", TEXT, "days", "1", "dailyCap", "10")).andExpect(status().isAccepted()))
+                .get("id").asText();
+        int suggested = awaitDraft(other, id2).get("suggestedDays").asInt();
+        JsonNode applied = read(call(patch(BASE + id2), other, Map.of("totalDays", suggested)).andExpect(status().isOk()));
+        assertFalse(applied.get("overCap").asBoolean(), applied.toString());
+        assertEquals(suggested, applied.get("suggestedDays").asInt());
+        JsonNode a2 = activate(other, id2, Map.of("startDate", "2026-11-01"));
+        assertFalse(a2.has("overflow"), a2.toString());
+        for (JsonNode f : a2.get("forecast")) assertFalse(f.get("overCap").asBoolean(), f.toString());
+    }
+
+    @Test
+    void rest_and_after_day_sessions() throws Exception {
+        String token = newUser();
+        String id = read(postPathParts(token, Map.of("text", TEXT, "days", "6", "studyDays", "1111100")).andExpect(status().isAccepted()))
+                .get("id").asText();
+        assertEquals("DRAFT", awaitDraft(token, id).get("status").asText());
+        // /today-summary chỉ gồm lộ trình ACTIVE: người chỉ có bản nháp nhận []
+        assertEquals(0, read(call(get(BASE + "today-summary"), token, null).andExpect(status().isOk())).size());
+        activate(token, id, Map.of("startDate", "2026-11-02")); // thứ 2: ngày 1..5 = 2–6/11, ngày 6 = thứ 2 9/11
+        JsonNode p = pathOn(token, id, "2026-11-02");
+        assertEquals("2026-11-06", p.get("days").get(4).get("date").asText());
+        assertEquals("2026-11-09", p.get("days").get(5).get("date").asText());
+        int firstFive = 0;
+        for (int d = 1; d <= 5; d++) firstFive += cardIdsOfDay(p, d).size();
+        String cid = cardIdsOfDay(p, 1).get(0);
+        review(token, cid, "good");
+        pinDue(cid, "2026-11-07T03:00:00Z"); // 10:00 +07 thứ 7 7/11 (ngày nghỉ)
+
+        // ngày nghỉ: phiên chỉ có thẻ đến hạn; nợ tính cả ngày học 5 vừa trôi qua
+        JsonNode rest = session(token, id, "today", "2026-11-07");
+        assertEquals("rest", rest.get("state").asText());
+        assertEquals(5, rest.get("dayIndex").asInt());
+        JsonNode rc = rest.get("counts");
+        assertEquals(0, rc.get("new").asInt());
+        assertEquals(1, rc.get("due").asInt());
+        assertEquals(0, rc.get("catchup").asInt());
+        assertEquals(1, rc.get("total").asInt());
+        assertEquals(cid, rest.get("cards").get(0).get("cardId").asText());
+        assertEquals("due", rest.get("cards").get(0).get("mode").asText());
+        JsonNode sat = pathOn(token, id, "2026-11-07").get("today");
+        assertEquals("rest", sat.get("state").asText());
+        assertEquals(0, sat.get("newCount").asInt());
+        assertEquals(1, sat.get("dueCount").asInt());
+        assertEquals(firstFive - 1, sat.get("behindCount").asInt());
+        assertEquals(0, sat.get("tasks").size());
+        JsonNode summary = read(call(get(BASE + "today-summary").param("date", "2026-11-07"), token, null).andExpect(status().isOk()));
+        assertEquals(1, summary.size());
+        assertEquals("rest", summary.get(0).get("state").asText());
+        assertEquals(5, summary.get(0).get("dayIndex").asInt());
+        assertEquals(0, summary.get(0).get("newCount").asInt());
+        assertEquals(1, summary.get(0).get("dueCount").asInt());
+        assertEquals(firstFive - 1, summary.get(0).get("behindCount").asInt());
+        assertEquals(firstFive - 1, session(token, id, "catchup", "2026-11-07").get("cards").size());
+
+        // qua ngày cuối (thứ 3 10/11 = ngày 7 > 6): đến hạn + nợ, không có thẻ mới
+        JsonNode after = session(token, id, "today", "2026-11-10");
+        assertEquals("after", after.get("state").asText());
+        assertEquals(7, after.get("dayIndex").asInt());
+        JsonNode ac = after.get("counts");
+        assertEquals(0, ac.get("new").asInt());
+        assertEquals(1, ac.get("due").asInt());
+        assertEquals(19, ac.get("catchup").asInt());
+        assertEquals(20, ac.get("total").asInt());
+        assertEquals("due", after.get("cards").get(0).get("mode").asText());
+        for (int i = 1; i < 20; i++) assertEquals("new", after.get("cards").get(i).get("mode").asText());
+    }
+
+    @Test
+    void today_session_caps_catchup_but_keeps_new_cards() throws Exception {
+        // room = dailyCap − đến hạn − mới hôm nay; nợ bị cắt về room, thẻ mới của hôm nay không bao giờ bị bỏ
+        String token = newUser();
+        String id = read(postPathParts(token, Map.of("text", TEXT, "days", "20", "dailyCap", "5")).andExpect(status().isAccepted()))
+                .get("id").asText();
+        assertEquals("DRAFT", awaitDraft(token, id).get("status").asText());
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        JsonNode p = pathOn(token, id, "2026-11-10");
+        List<String> fresh = cardIdsOfDay(p, 10);
+        int behind = 0;
+        for (int d = 1; d <= 9; d++) behind += cardIdsOfDay(p, d).size();
+        assertTrue(!fresh.isEmpty() && behind > 5 - fresh.size(), "ngày 10 phải có thẻ mới và nợ vượt chỗ trống: mới "
+                + fresh.size() + ", nợ " + behind);
+        assertEquals(behind, p.get("today").get("behindCount").asInt());
+
+        JsonNode s = session(token, id, "today", "2026-11-10");
+        JsonNode c = s.get("counts");
+        assertEquals(fresh.size(), c.get("new").asInt());
+        assertEquals(0, c.get("due").asInt());
+        assertEquals(Math.min(behind, 5 - fresh.size()), c.get("catchup").asInt());
+        assertEquals(c.get("new").asInt() + c.get("catchup").asInt(), c.get("total").asInt());
+        assertEquals(c.get("total").asInt(), s.get("cards").size());
+        List<String> tail = new ArrayList<>();
+        for (int i = 0; i < s.get("cards").size(); i++) {
+            assertEquals("new", s.get("cards").get(i).get("mode").asText());
+            if (i >= c.get("catchup").asInt()) tail.add(s.get("cards").get(i).get("cardId").asText());
+        }
+        assertEquals(fresh, tail); // phần cuối phiên là đúng các thẻ xếp cho ngày 10, theo seq
+        assertEquals(behind, session(token, id, "catchup", "2026-11-10").get("cards").size()); // kind=catchup: không cắt
+    }
+
+    @Test
+    void patch_start_date_on_active_replans_from_new_start() throws Exception {
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        List<String> day1 = cardIdsOfDay(pathOn(token, id, "2026-11-01"), 1);
+        review(token, day1.get(0), "good");
+        review(token, day1.get(1), "good");
+        UUID pid = UUID.fromString(id);
+
+        // Dời ngày bắt đầu về sau: hôm nay (1/11) thành "trước ngày học 1" -> xếp lại từ ngày 1; thẻ đã học vẫn ngày 1
+        JsonNode later = read(call(patch(BASE + id).param("date", "2026-11-01"), token, Map.of("startDate", "2026-11-03"))
+                .andExpect(status().isOk()));
+        assertEquals("2026-11-03", later.get("startDate").asText());
+        assertEquals("2026-11-03", later.get("days").get(0).get("date").asText());
+        assertEquals("before", later.get("today").get("state").asText());
+        assertEquals(1, scheduledDay(id, day1.get(0)));
+        assertEquals(1, scheduledDay(id, day1.get(1)));
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+                "SELECT count(*) FROM learning_path_cards WHERE path_id = ? AND scheduled_day NOT BETWEEN 1 AND 10", Integer.class, pid));
+        int sum = 0;
+        for (int d = 1; d <= 10; d++) sum += cardIdsOfDay(later, d).size();
+        assertEquals(20, sum);
+
+        // Kéo ngày bắt đầu về trước: 1/11 thành ngày 8 theo startDate MỚI -> thẻ chưa học chỉ từ ngày 8 (không vào quá khứ),
+        // thẻ đã học giữ ngày 1, total_days không đổi
+        JsonNode earlier = read(call(patch(BASE + id).param("date", "2026-11-01"), token, Map.of("startDate", "2026-10-25"))
+                .andExpect(status().isOk()));
+        assertEquals(8, earlier.get("today").get("dayIndex").asInt());
+        assertEquals("during", earlier.get("today").get("state").asText());
+        assertEquals(0, earlier.get("today").get("behindCount").asInt());
+        assertEquals(10, earlier.get("totalDays").asInt());
+        assertFalse(earlier.has("overflow"));
+        assertEquals(Integer.valueOf(8), jdbc.queryForObject("SELECT min(scheduled_day) FROM learning_path_cards "
+                + "WHERE path_id = ? AND card_id NOT IN (?, ?)", Integer.class, pid, day1.get(0), day1.get(1)));
+        assertEquals(Integer.valueOf(10), jdbc.queryForObject(
+                "SELECT max(scheduled_day) FROM learning_path_cards WHERE path_id = ?", Integer.class, pid));
+        assertEquals(1, scheduledDay(id, day1.get(0)));
+        assertEquals(1, scheduledDay(id, day1.get(1)));
+        assertEquals(2, cardIdsOfDay(earlier, 1).size());
+        for (int d = 2; d <= 7; d++) assertEquals(0, cardIdsOfDay(earlier, d).size(), "ngày " + d);
+        assertEquals(18, cardIdsOfDay(earlier, 8).size() + cardIdsOfDay(earlier, 9).size() + cardIdsOfDay(earlier, 10).size());
+    }
+
+    @Test
+    void delete_while_processing_is_409_and_delete_keeps_cancelled_job() throws Exception { // LP-10
+        String token = newUser();
+        CountDownLatch gate = new CountDownLatch(1);
+        AiDtos.AnalyzeResult result = new AiDtos.AnalyzeResult(chapterItems(), Map.of("chaptersDetected", false), false);
+        Mockito.doAnswer(inv -> {
+            gate.await(10, TimeUnit.SECONDS);
+            return result;
+        }).when(ai).analyze(anyString(), any(), any());
+        JsonNode created = read(postPath(token, TEXT, "5", null).andExpect(status().isAccepted()));
+        String id = created.get("id").asText();
+        String jobId = created.get("jobId").asText();
+        try {
+            // worker đang ghi vào job -> không xoá dưới chân nó
+            JsonNode res = read(call(delete(BASE + id), token, null).andExpect(status().isConflict()));
+            assertEquals("Đang xử lý, hãy chờ xong rồi xoá.", res.get("message").asText(), res.toString());
+        } finally {
+            gate.countDown();
+        }
+        assertEquals("DRAFT", awaitDraft(token, id).get("status").asText());
+        UUID jid = UUID.fromString(jobId);
+        assertTrue(jdbc.queryForObject("SELECT count(*) FROM extraction_items WHERE job_id = ?", Integer.class, jid) > 0);
+        assertNotNull(jdbc.queryForObject("SELECT extracted_text FROM extraction_jobs WHERE id = ?", String.class, jid));
+
+        call(delete(BASE + id), token, null).andExpect(status().isNoContent());
+        call(get(BASE + id), token, null).andExpect(status().isNotFound());
+        // dòng job giữ lại ở CANCELLED (hạn mức đếm theo job nên không được hoàn lượt); văn bản + item đã xoá
+        assertEquals("CANCELLED", jdbc.queryForObject("SELECT status FROM extraction_jobs WHERE id = ?", String.class, jid));
+        assertNull(jdbc.queryForObject("SELECT extracted_text FROM extraction_jobs WHERE id = ?", String.class, jid));
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject("SELECT count(*) FROM extraction_items WHERE job_id = ?", Integer.class, jid));
+        JsonNode viaApi = read(call(get("/api/extractions/" + jobId), token, null).andExpect(status().isOk()));
+        assertEquals("CANCELLED", viaApi.get("status").asText());
+        // lượt đã dùng vẫn tính: 5 lượt / 24 giờ -> còn đúng 4
+        for (int i = 0; i < 4; i++) postPath(token, TEXT, "5", null).andExpect(status().isAccepted());
+        postPath(token, TEXT, "5", null).andExpect(status().isTooManyRequests());
+    }
+    // ---------- 2.0 phần B: chạy lại / dịch lại (LP-6), kiểm tra chương (D4), hoàn thành, thông báo (§4.4) ----------
+
+    /** Từ vựng với nghĩa VI tuỳ ý (null = chưa có nghĩa VI, chờ bước dịch) — nghĩa khác nhau mới sinh được 4 lựa chọn quiz. */
+    private static AiDtos.Item vocabVi(int pos, String term, Integer chapter, String meaningVi) {
+        return new AiDtos.Item("vocab", pos, term, term, null, null, null, "名詞", "en", meaningVi, "N5", 1.0,
+                List.of(), 1, null, null, false, chapter);
+    }
+
+    private JsonNode notifications(String token) throws Exception {
+        return read(call(get("/api/notifications"), token, null).andExpect(status().isOk())).get("items");
+    }
+
+    private List<JsonNode> notificationsOf(String token, String type) throws Exception {
+        List<JsonNode> out = new ArrayList<>();
+        for (JsonNode n : notifications(token)) if (type.equals(n.get("type").asText())) out.add(n);
+        return out;
+    }
+
+    private int jobCount(Long uid) {
+        return jdbc.queryForObject("SELECT count(*) FROM extraction_jobs WHERE user_id = ?", Integer.class, uid);
+    }
+
+    @Test
+    void retry_failed_path_reruns_analyze_without_consuming_quota() throws Exception { // IT-03, LP-6
+        Mockito.when(ai.analyze(anyString(), any(), any()))
+                .thenThrow(new AiServiceClient.AiServiceException("Không kết nối được dịch vụ AI (phân tích từ vựng)."));
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        JsonNode created = read(postPath(token, TEXT, "5", "Thử lại").andExpect(status().isAccepted()));
+        String id = created.get("id").asText();
+        assertEquals("FAILED", awaitDraft(token, id).get("status").asText());
+        List<JsonNode> failedNotes = notificationsOf(token, "LEARNING_PATH_FAILED");
+        assertEquals(1, failedNotes.size(), notifications(token).toString());
+        JsonNode failedPayload = failedNotes.get(0).get("payload");
+        assertEquals(id, failedPayload.get("pathId").asText());
+        assertEquals("Thử lại", failedPayload.get("title").asText());
+        assertTrue(failedPayload.get("reason").asText().contains("dịch vụ AI"), failedPayload.toString());
+        assertEquals(0, notificationsOf(token, "LEARNING_PATH_READY").size());
+        int jobsBefore = jobCount(uid);
+
+        // FAILED nhưng job đã mất văn bản (housekeeping) -> 400, trạng thái không đổi
+        String other = newUser();
+        JsonNode c2 = read(postPath(other, TEXT, "5", null).andExpect(status().isAccepted()));
+        String id2 = c2.get("id").asText();
+        assertEquals("FAILED", awaitDraft(other, id2).get("status").asText());
+        jdbc.update("UPDATE extraction_jobs SET extracted_text = NULL WHERE id = ?", UUID.fromString(c2.get("jobId").asText()));
+        JsonNode noText = read(call(post(BASE + id2 + "/retry"), other, null).andExpect(status().isBadRequest()));
+        assertEquals("Hãy tạo lại lộ trình với tài liệu mới.", noText.get("message").asText(), noText.toString());
+        assertEquals("FAILED", read(call(get(BASE + id2), other, null)).get("status").asText());
+        call(post(BASE + id + "/retry"), other, null).andExpect(status().isNotFound());
+
+        // Hàng đợi worker đầy (executor ném RejectedExecutionException lúc đẩy job): 429, lộ trình về FAILED kèm lý do — không kẹt
+        // PROCESSING mà không có worker nào chạy — job cũng FAILED; sau đó chạy lại vẫn được
+        Mockito.doThrow(new RejectedExecutionException("đầy")).when(extractionExecutor).submit(any(Callable.class));
+        JsonNode busy = read(call(post(BASE + id + "/retry"), token, null).andExpect(status().isTooManyRequests()));
+        assertEquals("Hệ thống đang bận, vui lòng thử lại sau ít phút.", busy.get("message").asText(), busy.toString());
+        JsonNode stuck = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals("FAILED", stuck.get("status").asText(), stuck.toString());
+        assertEquals("Hệ thống đang bận, vui lòng thử lại sau ít phút.", stuck.get("errorMessage").asText());
+        assertEquals("FAILED", stuck.get("job").get("status").asText());
+        Mockito.doCallRealMethod().when(extractionExecutor).submit(any(Callable.class));
+
+        // ai-service hồi phục -> chạy lại chỉ bước ANALYZE trên văn bản đã trích, không tạo job mới
+        Mockito.reset(ai);
+        stubAi();
+        JsonNode retried = read(call(post(BASE + id + "/retry").param("date", "2026-11-01"), token, null)
+                .andExpect(status().isAccepted()));
+        assertEquals("PROCESSING", retried.get("status").asText());
+        assertFalse(retried.has("errorMessage"), retried.toString());
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        assertEquals(2, draft.get("chapters").size());
+        assertEquals(12, draft.get("chapters").get(0).get("cardCount").asInt());
+        assertEquals("DONE", draft.get("job").get("status").asText());
+        assertFalse(draft.has("errorMessage"));
+        assertEquals(jobsBefore, jobCount(uid), "chạy lại không tạo job mới");
+        Mockito.verify(ai, Mockito.never()).extractText(any(), any(), any(), any(), any());
+        List<JsonNode> ready = notificationsOf(token, "LEARNING_PATH_READY");
+        assertEquals(1, ready.size());
+        assertEquals(id, ready.get(0).get("payload").get("pathId").asText());
+        assertEquals("Thử lại", ready.get(0).get("payload").get("title").asText());
+        assertEquals(2, ready.get(0).get("payload").get("chapters").asInt());
+        // không còn FAILED -> 409; bản nháp kích hoạt được như thường
+        JsonNode res = read(call(post(BASE + id + "/retry"), token, null).andExpect(status().isConflict()));
+        assertEquals("Chỉ chạy lại được lộ trình đã lỗi.", res.get("message").asText(), res.toString());
+        assertEquals("ACTIVE", activate(token, id, Map.of("startDate", "2026-11-01")).get("status").asText());
+        // lượt hạn mức (5 / 24 giờ): lần tạo đầu tốn 1, chạy lại không tốn -> còn đúng 4
+        for (int i = 0; i < 4; i++) postPath(token, TEXT, "5", null).andExpect(status().isAccepted());
+        postPath(token, TEXT, "5", null).andExpect(status().isTooManyRequests());
+    }
+
+    private JsonNode awaitEnriched(String token, String id) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            JsonNode path = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+            JsonNode job = path.get("job");
+            if ("DONE".equals(job.get("status").asText()) && job.get("stats").has("enrichedAt")) return path;
+            Thread.sleep(100);
+        }
+        throw new AssertionError("dịch lại nghĩa không xong sau 10 giây");
+    }
+
+    @Test
+    void enrich_retranslates_items_without_changing_status_and_throttles() throws Exception { // LP-6
+        // ANALYZE trả item chưa có nghĩa VI, ENRICH lần đầu hết quota -> bản nháp mang enrichReason
+        List<AiDtos.Item> list = new ArrayList<>();
+        int pos = 0;
+        for (int i = 0; i < 12; i++) list.add(vocabVi(++pos, "語" + pos, 1, null));
+        for (int i = 0; i < 8; i++) list.add(vocabVi(++pos, "語" + pos, 2, null));
+        stubAnalyze(list, Map.of("vocab", 20, "grammar", 0, "chaptersDetected", true, "chapters", List.of(
+                Map.of("index", 1, "title", "Bài 1"), Map.of("index", 2, "title", "Bài 2"))));
+        Mockito.doReturn(new AiDtos.EnrichResult(false, List.of(), "quota")).when(ai).enrich(any());
+        String token = newUser();
+        JsonNode draft = draftPath(token, "10", null);
+        String id = draft.get("id").asText();
+        String c1 = draft.get("chapters").get(0).get("id").asText();
+        assertEquals("quota", draft.get("job").get("stats").get("enrichReason").asText(), draft.toString());
+        assertTrue(read(call(get(BASE + id + "/chapters/" + c1 + "/items"), token, null)).get(0).get("meaningVi").isNull());
+
+        call(post(BASE + id + "/enrich"), newUser(), null).andExpect(status().isNotFound());
+        Mockito.doAnswer(inv -> {
+            AiDtos.EnrichRequest req = inv.getArgument(0);
+            return new AiDtos.EnrichResult(true, req.items().stream()
+                    .map(i -> new AiDtos.EnrichOutput(i.ref(), "nghĩa " + i.term(), null)).toList(), null);
+        }).when(ai).enrich(any());
+        JsonNode res = read(call(post(BASE + id + "/enrich").param("date", "2026-11-01"), token, null)
+                .andExpect(status().isAccepted()));
+        assertEquals("DRAFT", res.get("status").asText()); // trạng thái lộ trình không đổi, job chạy nền
+        assertEquals(2, res.get("chapters").size());
+        JsonNode after = awaitEnriched(token, id);
+        assertEquals("DRAFT", after.get("status").asText());
+        assertTrue(after.get("job").get("stats").get("enriched").asBoolean());
+        assertFalse(after.get("job").get("stats").has("enrichReason"));
+        JsonNode items = read(call(get(BASE + id + "/chapters/" + c1 + "/items"), token, null));
+        assertEquals("nghĩa 語1", items.get(0).get("meaningVi").asText());
+        // trong 5 phút -> 429 như bóc tách thường
+        call(post(BASE + id + "/enrich"), token, null).andExpect(status().isTooManyRequests());
+        UUID jid = UUID.fromString(draft.get("jobId").asText());
+        String c2 = draft.get("chapters").get(1).get("id").asText();
+
+        // Trong lúc worker đang dịch lại (job RUNNING, lộ trình vẫn DRAFT): kích hoạt / sửa item / gộp chương / xoá đều 409 — worker
+        // ghi item và job bằng UPDATE cả dòng nên ghi chen vào lúc này là ghi đè nhau (job kẹt RUNNING, sửa tay bị trả về bản cũ,
+        // CANCELLED thành DONE). Xong rồi thì mọi thao tác chạy như thường.
+        jdbc.update("UPDATE extraction_jobs SET stats = stats - 'enrichedAt' WHERE id = ?", jid);
+        jdbc.update("UPDATE extraction_items SET meaning_vi = NULL WHERE job_id = ?", jid);
+        CountDownLatch gate = new CountDownLatch(1);
+        Mockito.doAnswer(inv -> {
+            gate.await(10, TimeUnit.SECONDS);
+            AiDtos.EnrichRequest req = inv.getArgument(0);
+            return new AiDtos.EnrichResult(true, req.items().stream()
+                    .map(i -> new AiDtos.EnrichOutput(i.ref(), "nghĩa " + i.term(), null)).toList(), null);
+        }).when(ai).enrich(any());
+        call(post(BASE + id + "/enrich"), token, null).andExpect(status().isAccepted());
+        try {
+            JsonNode busy = read(call(post(BASE + id + "/activate"), token, Map.of()).andExpect(status().isConflict()));
+            assertEquals("Đang dịch lại nghĩa, hãy chờ xong.", busy.get("message").asText(), busy.toString());
+            call(patch(BASE + id + "/items"), token, List.of()).andExpect(status().isConflict());
+            call(post(BASE + id + "/chapters/" + c2 + "/merge-up"), token, null).andExpect(status().isConflict());
+            JsonNode del = read(call(delete(BASE + id), token, null).andExpect(status().isConflict()));
+            assertEquals("Đang dịch lại nghĩa, hãy chờ xong rồi xoá.", del.get("message").asText(), del.toString());
+            assertEquals("DRAFT", read(call(get(BASE + id), token, null)).get("status").asText());
+        } finally {
+            gate.countDown();
+        }
+        assertEquals("DRAFT", awaitEnriched(token, id).get("status").asText());
+        assertEquals("nghĩa 語1", read(call(get(BASE + id + "/chapters/" + c1 + "/items"), token, null)).get(0).get("meaningVi").asText());
+        assertEquals(2, read(call(get(BASE + id), token, null)).get("chapters").size());
+
+        // Lần dịch lại bị ngắt (khởi động lại giữa chừng -> failUnfinished): job FAILED nhưng lộ trình vẫn DRAFT và item còn nguyên ->
+        // "Dịch lại nghĩa" vẫn nhận (lộ trình không FAILED nên không có đường "Chạy lại"), worker ghi lại DONE
+        jdbc.update("UPDATE extraction_jobs SET status = 'FAILED', error_message = 'Máy chủ đã khởi động lại trong lúc xử lý. Hãy chạy lại.', "
+                + "stats = stats - 'enrichedAt' WHERE id = ?", jid);
+        assertEquals("FAILED", read(call(get(BASE + id), token, null)).get("job").get("status").asText());
+        call(post(BASE + id + "/enrich"), token, null).andExpect(status().isAccepted());
+        JsonNode recovered = awaitEnriched(token, id);
+        assertEquals("DRAFT", recovered.get("status").asText());
+        assertEquals("DONE", recovered.get("job").get("status").asText());
+        assertFalse(recovered.get("job").hasNonNull("errorMessage"), recovered.get("job").toString()); // JobSummary ghi null tường minh
+
+        // ACTIVE vẫn dịch lại được (qua cooldown), trạng thái giữ ACTIVE và response vẫn là lộ trình đầy đủ; chỉ item được dịch lại,
+        // thẻ đã tạo lúc kích hoạt giữ nguyên nghĩa. Kích hoạt sau các lượt dịch lại: job vẫn DONE, deck_ids ghi nhận 2 bộ thẻ
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
+        String deck1 = active.get("chapters").get(0).get("deckId").asText();
+        JsonNode jobAfter = read(call(get("/api/extractions/" + jid), token, null).andExpect(status().isOk()));
+        assertEquals("DONE", jobAfter.get("status").asText(), jobAfter.toString());
+        assertEquals(2, jobAfter.get("deckIds").size(), jobAfter.toString());
+        JsonNode cardsBefore = read(call(get("/api/decks/" + deck1), token, null).andExpect(status().isOk())).get("cards");
+        assertEquals("nghĩa 語1", cardsBefore.get(0).get("meaning").asText().lines().findFirst().orElse(""));
+        jdbc.update("UPDATE extraction_jobs SET stats = stats - 'enrichedAt' WHERE id = ?", jid);
+        jdbc.update("UPDATE extraction_items SET meaning_vi = NULL WHERE job_id = ?", jid);
+        Mockito.doAnswer(inv -> {
+            AiDtos.EnrichRequest req = inv.getArgument(0);
+            return new AiDtos.EnrichResult(true, req.items().stream()
+                    .map(i -> new AiDtos.EnrichOutput(i.ref(), "nghĩa mới " + i.term(), null)).toList(), null);
+        }).when(ai).enrich(any());
+        JsonNode act = read(call(post(BASE + id + "/enrich").param("date", "2026-11-01"), token, null)
+                .andExpect(status().isAccepted()));
+        assertEquals("ACTIVE", act.get("status").asText());
+        assertEquals("during", act.get("today").get("state").asText());
+        assertEquals("ACTIVE", awaitEnriched(token, id).get("status").asText());
+        assertEquals("nghĩa mới 語1", read(call(get(BASE + id + "/chapters/" + c1 + "/items"), token, null)).get(0).get("meaningVi").asText());
+        assertEquals(cardsBefore, read(call(get("/api/decks/" + deck1), token, null)).get("cards"), "thẻ đã tạo không bị viết lại");
+
+        // lộ trình không còn job (learning_paths.job_id SET NULL khi dòng job mất) -> 400
+        jdbc.update("UPDATE learning_paths SET job_id = NULL WHERE id = ?", UUID.fromString(id));
+        JsonNode noJob = read(call(post(BASE + id + "/enrich"), token, null).andExpect(status().isBadRequest()));
+        assertEquals("Dữ liệu bóc tách của lộ trình không còn.", noJob.get("message").asText(), noJob.toString());
+
+        // FAILED -> 409
+        Mockito.when(ai.analyze(anyString(), any(), any())).thenThrow(new AiServiceClient.AiServiceException("lỗi"));
+        String other = newUser();
+        String failed = read(postPath(other, TEXT, "5", null).andExpect(status().isAccepted())).get("id").asText();
+        assertEquals("FAILED", awaitDraft(other, failed).get("status").asText());
+        JsonNode conflict = read(call(post(BASE + failed + "/enrich"), other, null).andExpect(status().isConflict()));
+        assertEquals("Chỉ dịch lại được khi lộ trình ở bản nháp hoặc đang học.", conflict.get("message").asText());
+    }
+
+    /** Đáp án đúng của mỗi thẻ trong bộ = dòng đầu nội dung (QuizService.headline), đọc qua API bộ thẻ như người dùng. */
+    private Map<String, String> correctAnswers(String token, String deckId) throws Exception {
+        Map<String, String> out = new HashMap<>();
+        for (JsonNode c : read(call(get("/api/decks/" + deckId), token, null).andExpect(status().isOk())).get("cards")) {
+            out.put(c.get("id").asText(), c.get("meaning").asText().lines().findFirst().orElse(""));
+        }
+        return out;
+    }
+
+    private JsonNode openChapterQuiz(String token, String id, String cid) throws Exception {
+        return read(call(post(BASE + id + "/chapters/" + cid + "/quiz"), token, null).andExpect(status().isOk()));
+    }
+
+    /** Nộp bài với đúng `right` câu đầu đúng, các câu còn lại chọn sai; trả kết quả chấm. */
+    private JsonNode submitQuiz(String token, JsonNode paper, int right) throws Exception {
+        Map<String, String> correct = correctAnswers(token, paper.get("deckId").asText());
+        Map<String, String> answers = new HashMap<>();
+        int i = 0;
+        for (JsonNode q : paper.get("questions")) {
+            String cardId = q.get("cardId").asText();
+            String ok = correct.get(cardId);
+            String wrong = null;
+            for (JsonNode o : q.get("options")) if (!o.asText().equals(ok)) wrong = o.asText();
+            assertNotNull(wrong, q.toString());
+            answers.put(cardId, i++ < right ? ok : wrong);
+        }
+        return read(call(post("/api/quiz-attempts/" + paper.get("attemptId").asText() + "/submit"), token,
+                Map.of("answers", answers)).andExpect(status().isOk()));
+    }
+
+    @Test
+    void chapter_quiz_pass_marks_chapter_passed_and_notifies() throws Exception { // IT-04, D4
+        List<AiDtos.Item> list = new ArrayList<>();
+        int pos = 0;
+        for (int i = 0; i < 12; i++) list.add(vocabVi(++pos, "語" + pos, 1, "nghĩa " + pos));
+        for (int i = 0; i < 8; i++) list.add(vocabVi(++pos, "語" + pos, 2, "nghĩa " + pos));
+        stubAnalyze(list, Map.of("vocab", 20, "grammar", 0, "chaptersDetected", true, "chapters", List.of(
+                Map.of("index", 1, "title", "Bài 1"), Map.of("index", 2, "title", "Bài 2"))));
+        String token = newUser();
+        JsonNode draft = draftPath(token, "10", "Kiểm tra");
+        String id = draft.get("id").asText();
+        String c1 = draft.get("chapters").get(0).get("id").asText();
+        String c2 = draft.get("chapters").get(1).get("id").asText();
+        call(post(BASE + id + "/chapters/" + c1 + "/quiz"), token, null).andExpect(status().isConflict()); // chưa ACTIVE
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
+        String deck1 = active.get("chapters").get(0).get("deckId").asText();
+        String deck2 = active.get("chapters").get(1).get("deckId").asText();
+        call(post(BASE + id + "/chapters/" + UUID.randomUUID() + "/quiz"), token, null).andExpect(status().isNotFound());
+        call(post(BASE + id + "/chapters/" + c1 + "/quiz"), newUser(), null).andExpect(status().isNotFound());
+        // chương thật của một lộ trình KHÁC của chính mình (bản nháp, chưa qua được requireActive) đi qua id lộ trình ACTIVE -> 404
+        String cx = draftPath(token, "5", null).get("chapters").get(0).get("id").asText();
+        call(post(BASE + id + "/chapters/" + cx + "/quiz"), token, null).andExpect(status().isNotFound());
+
+        // 5/10: chưa qua, điểm tốt nhất 50
+        JsonNode paper = openChapterQuiz(token, id, c1);
+        assertEquals("exam", paper.get("mode").asText());
+        assertFalse(paper.get("resumed").asBoolean());
+        assertEquals(deck1, paper.get("deckId").asText());
+        assertEquals(10, paper.get("questions").size()); // min(10, 12 thẻ)
+        JsonNode same = openChapterQuiz(token, id, c1); // đang có lượt mở -> trả lại đúng lượt đó
+        assertTrue(same.get("resumed").asBoolean());
+        assertEquals(paper.get("attemptId"), same.get("attemptId"));
+        JsonNode half = submitQuiz(token, paper, 5);
+        assertEquals(5, half.get("score").asInt());
+        assertEquals(10, half.get("total").asInt());
+        JsonNode p = pathOn(token, id, "2026-11-01");
+        JsonNode ch1 = p.get("chapters").get(0);
+        assertEquals(50, ch1.get("quizBestPct").asInt(), ch1.toString());
+        assertFalse(ch1.has("quizPassedAt"));
+        assertEquals("current", ch1.get("state").asText()); // D4: không qua cũng không chặn gì
+        assertEquals(0, p.get("completion").get("chaptersPassed").asInt());
+        assertEquals(0, notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED").size());
+
+        // exam mở qua POST /api/quiz-attempts với 1 câu trên bộ của chương: 1/1 = 100 % nhưng không đủ cỡ đề min(10, số thẻ) -> bỏ qua
+        JsonNode tiny = read(call(post("/api/quiz-attempts"), token, Map.of("deckId", deck1, "size", 1, "mode", "exam"))
+                .andExpect(status().isOk()));
+        assertEquals(1, tiny.get("questions").size());
+        assertEquals(1, submitQuiz(token, tiny, 1).get("score").asInt());
+        ch1 = pathOn(token, id, "2026-11-01").get("chapters").get(0);
+        assertEquals(50, ch1.get("quizBestPct").asInt(), ch1.toString());
+        assertFalse(ch1.has("quizPassedAt"));
+        assertEquals(0, notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED").size());
+
+        // 9/10 ≥ 80 % (learning_path_quiz_pass_pct) -> qua chương + thông báo
+        JsonNode nine = submitQuiz(token, openChapterQuiz(token, id, c1), 9);
+        assertEquals(9, nine.get("score").asInt());
+        p = pathOn(token, id, "2026-11-01");
+        ch1 = p.get("chapters").get(0);
+        assertEquals(90, ch1.get("quizBestPct").asInt());
+        assertTrue(ch1.has("quizPassedAt"), ch1.toString());
+        assertEquals("passed", ch1.get("state").asText());
+        assertEquals(1, p.get("completion").get("chaptersPassed").asInt());
+        List<JsonNode> passed = notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED");
+        assertEquals(1, passed.size());
+        JsonNode payload = passed.get(0).get("payload");
+        assertEquals(id, payload.get("pathId").asText());
+        assertEquals("Kiểm tra", payload.get("pathTitle").asText());
+        assertEquals(c1, payload.get("chapterId").asText());
+        assertEquals("Bài 1", payload.get("chapterTitle").asText());
+        assertEquals(90, payload.get("pct").asInt());
+
+        // 3/10 sau đó: điểm tốt nhất và mốc qua chương giữ nguyên, không thông báo lại
+        String passedAt = ch1.get("quizPassedAt").asText();
+        submitQuiz(token, openChapterQuiz(token, id, c1), 3);
+        ch1 = pathOn(token, id, "2026-11-01").get("chapters").get(0);
+        assertEquals(90, ch1.get("quizBestPct").asInt());
+        assertEquals(passedAt, ch1.get("quizPassedAt").asText());
+        assertEquals(1, notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED").size());
+
+        // exam trên bộ thẻ không thuộc lộ trình nào: listener không đụng chương nào, không thông báo (lỗi ở đó chỉ ra log)
+        JsonNode outside = read(call(post("/api/quiz-attempts"), token, Map.of("deckId", "n5-core", "size", 5, "mode", "exam"))
+                .andExpect(status().isOk()));
+        assertEquals(5, submitQuiz(token, outside, 5).get("score").asInt());
+        p = pathOn(token, id, "2026-11-01");
+        assertEquals(90, p.get("chapters").get(0).get("quizBestPct").asInt());
+        assertEquals(passedAt, p.get("chapters").get(0).get("quizPassedAt").asText());
+        assertFalse(p.get("chapters").get(1).has("quizBestPct"), p.toString());
+        assertEquals(1, notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED").size());
+
+        // practice trên bộ của chương 2 (ngoài lộ trình, lộ đáp án từng câu) không phải bài kiểm tra chương
+        JsonNode practice = read(call(post("/api/quiz-attempts"), token, Map.of("deckId", deck2, "size", 8, "mode", "practice"))
+                .andExpect(status().isOk()));
+        Map<String, String> correct2 = correctAnswers(token, deck2);
+        for (JsonNode q : practice.get("questions")) {
+            call(put("/api/quiz-attempts/" + practice.get("attemptId").asText() + "/answers/" + q.get("cardId").asText()), token,
+                    Map.of("option", correct2.get(q.get("cardId").asText()))).andExpect(status().isOk());
+        }
+        call(post("/api/quiz-attempts/" + practice.get("attemptId").asText() + "/submit"), token, Map.of()).andExpect(status().isOk());
+        JsonNode ch2 = pathOn(token, id, "2026-11-01").get("chapters").get(1);
+        assertFalse(ch2.has("quizBestPct"), ch2.toString());
+        assertFalse(ch2.has("quizPassedAt"));
+        assertEquals(1, notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED").size());
+
+        // chương 2 (8 thẻ): đề min(10, 8) = 8 câu. Bỏ dở với 7/8 đáp án đã lưu rồi hết giờ: lượt được đóng lúc đọc lại
+        // (closeExpiredAttempts) cũng đi qua QuizSubmittedEvent -> 88 % -> qua chương + thông báo
+        JsonNode paper2 = openChapterQuiz(token, id, c2);
+        assertEquals(8, paper2.get("questions").size(), paper2.toString());
+        String attempt2 = paper2.get("attemptId").asText();
+        Map<String, String> correct2b = correctAnswers(token, deck2);
+        int saved = 0;
+        for (JsonNode q : paper2.get("questions")) {
+            if (saved++ == 7) break;
+            String cid = q.get("cardId").asText();
+            call(put("/api/quiz-attempts/" + attempt2 + "/answers/" + cid), token, Map.of("option", correct2b.get(cid)))
+                    .andExpect(status().isOk());
+        }
+        jdbc.update("UPDATE quiz_attempts SET expires_at = ? WHERE id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1), UUID.fromString(attempt2));
+        JsonNode closed = read(call(get("/api/quiz-attempts/" + attempt2), token, null).andExpect(status().isOk()));
+        assertTrue(closed.get("finished").asBoolean(), closed.toString());
+        assertTrue(closed.get("expired").asBoolean());
+        assertEquals(7, closed.get("score").asInt());
+        assertEquals(8, closed.get("total").asInt());
+        p = pathOn(token, id, "2026-11-01");
+        ch2 = p.get("chapters").get(1);
+        assertEquals(88, ch2.get("quizBestPct").asInt(), ch2.toString());
+        assertTrue(ch2.has("quizPassedAt"));
+        assertEquals("passed", ch2.get("state").asText());
+        assertEquals(2, p.get("completion").get("chaptersPassed").asInt());
+        List<JsonNode> passed2 = notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED");
+        assertEquals(2, passed2.size());
+        JsonNode payload2 = null;
+        for (JsonNode n : passed2) if (c2.equals(n.get("payload").get("chapterId").asText())) payload2 = n.get("payload");
+        assertNotNull(payload2, passed2.toString());
+        assertEquals(88, payload2.get("pct").asInt());
+        assertEquals("Bài 2", payload2.get("chapterTitle").asText());
+
+        // xoá từng thẻ của chương 2 khỏi bộ (bộ thẻ còn): chương hết thẻ trong lịch -> không còn gì để kiểm tra, "passed" giữ nguyên
+        for (String cid : jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ? AND chapter_id = ?",
+                String.class, UUID.fromString(id), UUID.fromString(c2))) {
+            call(delete("/api/decks/" + deck2 + "/cards/" + cid), token, null).andExpect(status().isNoContent());
+        }
+        JsonNode empty = read(call(post(BASE + id + "/chapters/" + c2 + "/quiz"), token, null).andExpect(status().isConflict()));
+        assertEquals("Chương không còn thẻ nào để kiểm tra.", empty.get("message").asText(), empty.toString());
+        ch2 = pathOn(token, id, "2026-11-01").get("chapters").get(1);
+        assertEquals(0, ch2.get("cardCount").asInt());
+        assertEquals("passed", ch2.get("state").asText());
+
+        // bộ thẻ của chương bị xoá -> 409
+        call(delete("/api/decks/" + deck2), token, null).andExpect(status().isNoContent());
+        JsonNode gone = read(call(post(BASE + id + "/chapters/" + c2 + "/quiz"), token, null).andExpect(status().isConflict()));
+        assertEquals("Bộ thẻ của chương đã bị xoá, không thể kiểm tra.", gone.get("message").asText());
+    }
+
+    @Test
+    void complete_requires_every_card_learned_and_auto_completes_after_last_day() throws Exception {
+        String token = newUser();
+        String id = draftPath(token, "3", "Xong").get("id").asText();
+        activate(token, id, Map.of("startDate", "2026-11-01"));
+        call(post(BASE + id + "/complete"), newUser(), null).andExpect(status().isNotFound());
+        JsonNode early = read(call(post(BASE + id + "/complete").param("date", "2026-11-03"), token, null)
+                .andExpect(status().isConflict()));
+        assertEquals("Chưa học hết thẻ của lộ trình (còn 20 thẻ chưa học).", early.get("message").asText(), early.toString());
+        UUID pid = UUID.fromString(id);
+        List<String> all = jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ? ORDER BY seq", String.class, pid);
+        assertEquals(20, all.size());
+        // học hết, gửi kèm thời gian phản xạ + lộ trình (E1): review_logs ghi reaction_ms / path_id
+        for (String cid : all) {
+            call(post("/api/reviews"), token, Map.of("cardId", cid, "grade", "good", "reactionMs", 1500, "pathId", id))
+                    .andExpect(status().isOk());
+        }
+        assertEquals(Integer.valueOf(20), jdbc.queryForObject(
+                "SELECT count(*) FROM review_logs WHERE path_id = ? AND reaction_ms = 1500", Integer.class, pid));
+        JsonNode p = pathOn(token, id, "2026-11-03");
+        assertEquals(100, p.get("completion").get("learnedPct").asInt());
+        assertTrue(p.get("completion").get("done").asBoolean());
+        assertFalse(p.has("completedAt"), "GET không tự chốt (đọc không có tác dụng phụ)");
+        for (JsonNode c : p.get("chapters")) assertEquals("review", c.get("state").asText(), c.toString());
+
+        JsonNode done = read(call(post(BASE + id + "/complete").param("date", "2026-11-03"), token, null).andExpect(status().isOk()));
+        assertEquals("ACTIVE", done.get("status").asText());
+        assertTrue(done.has("completedAt"), done.toString());
+        assertTrue(done.get("completion").get("done").asBoolean());
+        assertEquals(3, done.get("today").get("dayIndex").asInt());
+        String at = done.get("completedAt").asText();
+        JsonNode again = read(call(post(BASE + id + "/complete").param("date", "2026-11-04"), token, null).andExpect(status().isOk()));
+        // lần đầu trả mốc trong RAM (nano giây), lần sau đọc lại từ DB đã làm tròn micro giây (timestamptz(6)): cùng một mốc
+        assertTrue(Math.abs(Duration.between(Instant.parse(at), Instant.parse(again.get("completedAt").asText())).toNanos()) < 1_000_000,
+                "gọi lại không đổi mốc: " + at + " / " + again.get("completedAt").asText());
+        assertEquals(again.get("completedAt").asText(), pathOn(token, id, "2026-11-04").get("completedAt").asText());
+        List<JsonNode> notes = notificationsOf(token, "LEARNING_PATH_COMPLETED");
+        assertEquals(1, notes.size());
+        assertEquals(id, notes.get(0).get("payload").get("pathId").asText());
+        assertEquals("Xong", notes.get(0).get("payload").get("title").asText());
+        assertTrue(read(call(get("/api/learning-paths"), token, null)).get(0).has("completedAt"));
+        // đã chốt rồi thì xoá hết bộ thẻ (lịch thẻ mất theo CASCADE) cũng không làm POST /complete thành 409: vẫn cùng completedAt
+        for (JsonNode c : done.get("chapters")) {
+            call(delete("/api/decks/" + c.get("deckId").asText()), token, null).andExpect(status().isNoContent());
+        }
+        JsonNode still = read(call(post(BASE + id + "/complete").param("date", "2026-11-04"), token, null).andExpect(status().isOk()));
+        assertEquals(again.get("completedAt").asText(), still.get("completedAt").asText());
+        assertEquals(0, still.get("completion").get("total").asInt());
+        assertTrue(still.get("completion").get("done").asBoolean());
+        assertEquals(1, notificationsOf(token, "LEARNING_PATH_COMPLETED").size());
+        String draftId = draftPath(token, "5", null).get("id").asText();
+        call(post(BASE + draftId + "/complete"), token, null).andExpect(status().isConflict());
+
+        // tự chốt (spec §4.1): học hết + qua ngày cuối -> thao tác ghi kế tiếp (PATCH ở ACTIVE, cân lại lịch) đặt completedAt; trong
+        // kỳ thì không, và đã chốt thì lối ghi sau không thông báo lần hai
+        String id2 = draftPath(token, "2", "Tự xong").get("id").asText();
+        activate(token, id2, Map.of("startDate", "2026-11-01"));
+        for (String cid : jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ?", String.class,
+                UUID.fromString(id2))) {
+            review(token, cid, "good");
+        }
+        assertFalse(pathOn(token, id2, "2026-11-05").has("completedAt"));
+        JsonNode within = read(call(post(BASE + id2 + "/rebalance").param("date", "2026-11-02"), token, Map.of("extend", false))
+                .andExpect(status().isOk()));
+        assertFalse(within.has("completedAt"), "còn trong kỳ học: không tự chốt");
+        JsonNode auto = read(call(patch(BASE + id2).param("date", "2026-11-05"), token, Map.of("title", "Tự xong rồi"))
+                .andExpect(status().isOk()));
+        assertEquals("after", auto.get("today").get("state").asText());
+        assertEquals("Tự xong rồi", auto.get("title").asText());
+        assertTrue(auto.has("completedAt"), auto.toString());
+        assertEquals(2, notificationsOf(token, "LEARNING_PATH_COMPLETED").size());
+        JsonNode later = read(call(post(BASE + id2 + "/rebalance").param("date", "2026-11-06"), token, Map.of("extend", false))
+                .andExpect(status().isOk()));
+        // auto trả mốc trong RAM (nano giây), later đọc lại từ DB đã làm tròn micro giây: cùng một mốc
+        assertTrue(Math.abs(Duration.between(Instant.parse(auto.get("completedAt").asText()),
+                Instant.parse(later.get("completedAt").asText())).toNanos()) < 1_000_000, auto.get("completedAt") + " / " + later.get("completedAt"));
+        assertEquals(2, notificationsOf(token, "LEARNING_PATH_COMPLETED").size());
+
+        // Người khác: lộ trình không còn thẻ nào (bộ thẻ xoá trước khi chốt) -> 409, không chốt; còn một thẻ chưa học thì qua ngày
+        // cuối lối ghi cũng không tự chốt
+        String other = newUser();
+        String id0 = draftPath(other, "2", "Trống").get("id").asText();
+        JsonNode a0 = activate(other, id0, Map.of("startDate", "2026-11-01"));
+        for (JsonNode c : a0.get("chapters")) {
+            call(delete("/api/decks/" + c.get("deckId").asText()), other, null).andExpect(status().isNoContent());
+        }
+        JsonNode none = read(call(post(BASE + id0 + "/complete").param("date", "2026-11-05"), other, null)
+                .andExpect(status().isConflict()));
+        assertEquals("Lộ trình không còn thẻ nào để hoàn thành.", none.get("message").asText(), none.toString());
+        assertFalse(pathOn(other, id0, "2026-11-05").has("completedAt"));
+        String id3 = draftPath(other, "2", "Dở").get("id").asText();
+        activate(other, id3, Map.of("startDate", "2026-11-01"));
+        List<String> all3 = jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ? ORDER BY seq",
+                String.class, UUID.fromString(id3));
+        for (int i = 1; i < all3.size(); i++) review(other, all3.get(i), "good"); // chừa thẻ đầu
+        JsonNode notYet = read(call(patch(BASE + id3).param("date", "2026-11-05"), other, Map.of("title", "Dở dang"))
+                .andExpect(status().isOk()));
+        assertEquals("after", notYet.get("today").get("state").asText());
+        assertEquals(1, notYet.get("today").get("behindCount").asInt());
+        assertFalse(notYet.has("completedAt"), notYet.toString());
+        assertFalse(notYet.get("completion").get("done").asBoolean());
+        assertEquals(0, notificationsOf(other, "LEARNING_PATH_COMPLETED").size());
+    }
+
+    @Autowired
+    LearningPathService pathService;
+
+    @Test
+    void restart_marks_processing_paths_failed_and_notifies() throws Exception { // §4.4: mọi lần FAILED đều có thông báo
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        LearningPath stuck = bare(uid, "Dở dang", LearningPath.PROCESSING);
+        LearningPath fine = bare(uid, "Đang học", LearningPath.ACTIVE);
+        String message = "Máy chủ đã khởi động lại trong lúc xử lý. Hãy tạo lại lộ trình.";
+
+        pathService.failOrphans(); // như ApplicationReadyEvent sau khi khởi động lại: worker trong RAM đã mất
+
+        JsonNode failed = read(call(get(BASE + stuck.getId()), token, null).andExpect(status().isOk()));
+        assertEquals("FAILED", failed.get("status").asText(), failed.toString());
+        assertEquals(message, failed.get("errorMessage").asText());
+        assertEquals("ACTIVE", pathRepo.findById(fine.getId()).orElseThrow().getStatus());
+        List<JsonNode> notes = notificationsOf(token, "LEARNING_PATH_FAILED");
+        assertEquals(1, notes.size(), notifications(token).toString());
+        JsonNode payload = notes.get(0).get("payload");
+        assertEquals(stuck.getId().toString(), payload.get("pathId").asText());
+        assertEquals("Dở dang", payload.get("title").asText());
+        assertEquals(message, payload.get("reason").asText());
+    }
+
+    /** Lộ trình chèn thẳng qua repository (không job, không chương): đủ để kiểm trạng thái / thông báo. */
+    private LearningPath bare(Long uid, String title, String status) {
+        LearningPath p = new LearningPath();
+        p.setId(UUID.randomUUID());
+        p.setUserId(uid);
+        p.setTitle(title);
+        p.setSourceType("text");
+        p.setStatus(status);
+        p.setTotalDays(5);
+        p.setStartDate(LocalDate.of(2026, 11, 1));
+        p.setCreatedAt(Instant.now());
+        return pathRepo.save(p);
+    }
+
+    // ---------- lộ trình bổ khuyết (§3.8, IT-06) ----------
+
+    /** Bộ thẻ riêng (POST /api/decks); trả id thẻ theo thứ tự trong bộ. */
+    private List<String> ownDeck(String token, String title, List<Map<String, Object>> cards) throws Exception {
+        JsonNode d = read(call(post("/api/decks"), token, Map.of("title", title, "level", "N5", "cards", cards))
+                .andExpect(status().isCreated()));
+        List<String> ids = new ArrayList<>();
+        d.get("cards").forEach(c -> ids.add(c.get("id").asText()));
+        return ids;
+    }
+
+    private static Map<String, Object> plainCard(String term, String level) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("term", term);
+        m.put("reading", "よみ");
+        m.put("meaning", "nghĩa " + term);
+        m.put("hanViet", "HV");
+        if (level != null) m.put("level", level);
+        return m;
+    }
+
+    /** Ba lần "again" trong 14 ngày = thẻ "hay quên" (InsightService) — tín hiệu duy nhất, không cần chỉnh DB. */
+    private void makeWeak(String token, List<String> cardIds) throws Exception {
+        for (String id : cardIds) {
+            for (int i = 0; i < 3; i++) review(token, id, "again");
+        }
+    }
+
+    private static List<String> chapterTitles(JsonNode path) {
+        List<String> out = new ArrayList<>();
+        path.get("chapters").forEach(c -> out.add(c.get("title").asText()));
+        return out;
+    }
+
+    @Test
+    void remedial_needs_eight_weak_cards_and_validates_input() throws Exception {
+        String token = newUser();
+        Map<String, Object> ok = Map.of("days", 5, "groupBy", "kanji");
+        call(post(BASE + "remedial"), token, ok).andExpect(status().isConflict()); // chưa có thẻ yếu nào
+
+        List<Map<String, Object>> seven = new ArrayList<>();
+        for (String t : List.of("水", "火", "金", "木", "土", "日", "月")) seven.add(plainCard(t + "曜", "N5"));
+        makeWeak(token, ownDeck(token, "Bảy thẻ", seven));
+        JsonNode res = read(call(post(BASE + "remedial"), token, ok).andExpect(status().isConflict()));
+        assertTrue(res.get("message").asText().contains("hiện có 7"), res.toString());
+
+        call(post(BASE + "remedial"), token, Map.of("days", 2, "groupBy", "kanji")).andExpect(status().isBadRequest());
+        call(post(BASE + "remedial"), token, Map.of("days", 31, "groupBy", "kanji")).andExpect(status().isBadRequest());
+        call(post(BASE + "remedial"), token, Map.of("days", 5, "groupBy", "tag")).andExpect(status().isBadRequest());
+        call(post(BASE + "remedial"), token, Map.of("days", 5)).andExpect(status().isBadRequest());
+        call(post(BASE + "remedial"), token, Map.of("groupBy", "kanji")).andExpect(status().isBadRequest());
+        call(post(BASE + "remedial"), token, Map.of("days", 5, "groupBy", "kanji", "title", "x".repeat(101)))
+                .andExpect(status().isBadRequest());
+        call(post(BASE + "remedial"), null, ok).andExpect(status().isUnauthorized());
+        assertEquals(0, read(call(get("/api/learning-paths"), token, null).andExpect(status().isOk())).size(),
+                "409 / 400 không để lại lộ trình nào");
+        JsonNode folders = read(call(get("/api/folders"), token, null).andExpect(status().isOk()));
+        for (JsonNode f : folders) assertFalse(f.get("title").asText().startsWith("Bổ khuyết"), folders.toString());
+    }
+
+    @Test
+    void remedial_from_twelve_weak_cards_groups_by_kanji_and_studies_like_a_normal_path() throws Exception { // IT-06
+        String token = newUser();
+        // 水 ×2, 8 chữ Hán một thẻ, 2 thẻ kana (không có chữ Hán -> "Khác"); 山 / 川 cấp N4
+        List<String> terms = List.of("水曜日", "水道", "火山", "金魚", "木曜日", "土", "日本", "月", "山", "川", "ひらがな", "カタカナ");
+        List<Map<String, Object>> cards = new ArrayList<>();
+        for (String t : terms) cards.add(plainCard(t, t.equals("山") || t.equals("川") ? "N4" : "N5"));
+        List<String> originals = ownDeck(token, "Gốc", cards);
+        makeWeak(token, originals);
+        assertEquals(12, read(call(get("/api/insights/weaknesses"), token, null).andExpect(status().isOk()))
+                .get("total").asInt());
+
+        String day = "2026-11-02";
+        JsonNode path = read(call(post(BASE + "remedial").param("date", day), token, Map.of("days", 5, "groupBy", "kanji"))
+                .andExpect(status().isCreated()));
+        String id = path.get("id").asText();
+        assertEquals("ACTIVE", path.get("status").asText(), path.toString());
+        assertEquals("remedial", path.get("sourceType").asText());
+        assertEquals("Điểm yếu", path.get("sourceName").asText());
+        assertEquals("Bổ khuyết 02/11/2026", path.get("title").asText());
+        assertEquals(5, path.get("totalDays").asInt());
+        assertEquals(day, path.get("startDate").asText());
+        assertEquals(50, path.get("dailyCap").asInt()); // learning_path_daily_cap_default
+        assertEquals("1111111", path.get("studyDays").asText());
+        assertTrue(path.has("activatedAt"));
+        assertFalse(path.has("jobId"), "bổ khuyết không có job bóc tách");
+        assertFalse(path.has("job"));
+
+        // Chương = nhóm: đông trước, hoà theo chữ, "Khác" luôn cuối
+        assertEquals(List.of("Chữ 水", "Chữ 土", "Chữ 山", "Chữ 川", "Chữ 日", "Chữ 月", "Chữ 木", "Chữ 火", "Chữ 金", "Khác"),
+                chapterTitles(path));
+        JsonNode chapters = path.get("chapters");
+        int total = 0;
+        for (JsonNode c : chapters) {
+            assertTrue(c.hasNonNull("deckId"), c.toString());
+            total += c.get("cardCount").asInt();
+        }
+        assertEquals(12, total);
+        assertEquals(2, chapters.get(0).get("cardCount").asInt());
+        assertEquals(2, chapters.get(9).get("cardCount").asInt());
+        assertEquals(12, cardRows(id));
+        assertEquals(1, chapters.get(0).get("dayFrom").asInt());
+        assertEquals(5, chapters.get(9).get("dayTo").asInt(), "12 thẻ trải hết 5 ngày");
+
+        // Thư mục "Bổ khuyết dd/MM/yyyy" + mỗi chương một bộ thẻ CLONE (thẻ gốc giữ nguyên lịch SRS)
+        String folderId = path.get("folderId").asText();
+        JsonNode folder = read(call(get("/api/folders/" + folderId), token, null).andExpect(status().isOk()));
+        assertEquals("Bổ khuyết 02/11/2026", folder.get("title").asText());
+        assertTrue(folder.get("metadata").asText().contains("\"learningPathId\":\"" + id + "\""), folder.toString());
+        JsonNode decks = read(call(get("/api/decks").param("folderId", folderId), token, null).andExpect(status().isOk()));
+        assertEquals(10, decks.size());
+        String d1 = chapters.get(0).get("deckId").asText();
+        JsonNode deck1 = read(call(get("/api/decks/" + d1), token, null).andExpect(status().isOk()));
+        assertEquals("Chữ 水", deck1.get("title").asText());
+        assertEquals("kanji", deck1.get("category").asText());
+        assertEquals("N5", deck1.get("level").asText());
+        assertEquals("Chương 1 của lộ trình Bổ khuyết 02/11/2026", deck1.get("description").asText());
+        assertEquals(2, deck1.get("cards").size());
+        JsonNode clone = deck1.get("cards").get(0);
+        assertEquals("水曜日", clone.get("term").asText());
+        assertEquals("よみ", clone.get("reading").asText());
+        assertEquals("nghĩa 水曜日", clone.get("meaning").asText());
+        assertEquals("HV", clone.get("hanViet").asText());
+        assertEquals("N5", clone.get("level").asText());
+        assertFalse(originals.contains(clone.get("id").asText()), "thẻ mới, không dùng lại thẻ gốc");
+        assertEquals("N4", read(call(get("/api/decks/" + chapters.get(2).get("deckId").asText()), token, null))
+                .get("level").asText(), "chương 山 chỉ có thẻ N4");
+
+        // Phiên hôm nay chạy như lộ trình thường: chỉ thẻ mới (clone) của ngày 1, bắt đầu từ chương 1
+        int todayNew = path.get("today").get("newCount").asInt();
+        assertTrue(todayNew > 0, path.toString());
+        JsonNode s = session(token, id, "today", day);
+        assertEquals("during", s.get("state").asText());
+        assertEquals(1, s.get("dayIndex").asInt());
+        assertEquals(todayNew, s.get("counts").get("new").asInt());
+        assertEquals(0, s.get("counts").get("due").asInt(), "thẻ gốc đến hạn không thuộc lộ trình");
+        for (JsonNode c : s.get("cards")) {
+            assertEquals("new", c.get("mode").asText());
+            assertFalse(originals.contains(c.get("cardId").asText()));
+        }
+        assertEquals("水曜日", s.get("cards").get(0).get("term").asText());
+        String learned = s.get("cards").get(0).get("cardId").asText();
+        call(post("/api/reviews"), token, Map.of("cardId", learned, "grade", "good", "pathId", id)).andExpect(status().isOk());
+        assertEquals(todayNew - 1, session(token, id, "today", day).get("counts").get("new").asInt());
+
+        // Lộ trình thứ hai cùng ngày: gom theo cấp, tên tuỳ chọn; thư mục trùng tên được đánh số
+        JsonNode byLevel = read(call(post(BASE + "remedial").param("date", day), token,
+                Map.of("days", 3, "groupBy", "level", "title", "  Ôn N4  ")).andExpect(status().isCreated()));
+        assertEquals("Ôn N4", byLevel.get("title").asText());
+        assertEquals(List.of("N5", "N4"), chapterTitles(byLevel));
+        assertEquals(10, byLevel.get("chapters").get(0).get("cardCount").asInt());
+        assertEquals(2, byLevel.get("chapters").get(1).get("cardCount").asInt());
+        JsonNode folder2 = read(call(get("/api/folders/" + byLevel.get("folderId").asText()), token, null)
+                .andExpect(status().isOk()));
+        assertEquals("Bổ khuyết 02/11/2026 (2)", folder2.get("title").asText());
+
+        // Xoá như lộ trình thường: lịch theo thẻ mất (CASCADE), thư mục + bộ thẻ còn
+        call(delete(BASE + id), token, null).andExpect(status().isNoContent());
+        call(get(BASE + id), token, null).andExpect(status().isNotFound());
+        assertEquals(0, cardRows(id));
+        call(get("/api/decks/" + d1), token, null).andExpect(status().isOk());
+        call(get("/api/folders/" + folderId), token, null).andExpect(status().isOk());
+        JsonNode list = read(call(get("/api/learning-paths"), token, null).andExpect(status().isOk()));
+        assertEquals(1, list.size());
+        assertEquals(byLevel.get("id").asText(), list.get(0).get("id").asText());
+    }
+
+    /** Lịch SRS của người dùng (thẻ, ease, khoảng ôn, hạn ôn, số lần) — để so trước / sau khi tạo lộ trình bổ khuyết. */
+    private List<Map<String, Object>> srsSnapshot(Long uid) {
+        return jdbc.queryForList("SELECT card_id, ease, interval_days, due_at, reps FROM reviews WHERE user_id = ? ORDER BY card_id",
+                uid);
+    }
+
+    /** Chủ đề (category) của bộ thẻ từng chương, theo thứ tự chương. */
+    private List<String> chapterCategories(String token, JsonNode path) throws Exception {
+        List<String> out = new ArrayList<>();
+        for (JsonNode c : path.get("chapters")) {
+            out.add(read(call(get("/api/decks/" + c.get("deckId").asText()), token, null).andExpect(status().isOk()))
+                    .get("category").asText());
+        }
+        return out;
+    }
+
+    @Test
+    void remedial_groups_by_source_deck_or_kind_with_matching_categories_and_leaves_original_srs_untouched() throws Exception {
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        // Bộ từ vựng 6 thẻ + bộ ngữ pháp 4 thẻ, đều yếu
+        List<Map<String, Object>> vocab = new ArrayList<>();
+        for (String t : List.of("水", "火", "金", "木", "土", "日")) vocab.add(plainCard(t + "曜", "N5"));
+        List<Map<String, Object>> grammar = new ArrayList<>();
+        for (String t : List.of("〜ている", "〜てから", "〜たい", "〜ながら")) {
+            Map<String, Object> g = plainCard(t, "N5");
+            g.put("kind", "grammar");
+            grammar.add(g);
+        }
+        List<String> originals = new ArrayList<>(ownDeck(token, "Từ vựng gốc", vocab));
+        originals.addAll(ownDeck(token, "Mẫu câu gốc", grammar));
+        makeWeak(token, originals);
+        List<Map<String, Object>> before = srsSnapshot(uid);
+        assertEquals(10, before.size());
+
+        // Theo bộ nguồn: chương = tên bộ gốc (đông trước); bộ toàn ngữ pháp -> bunpou, còn lại goi
+        JsonNode byDeck = read(call(post(BASE + "remedial"), token, Map.of("days", 3, "groupBy", "deck"))
+                .andExpect(status().isCreated()));
+        assertEquals(List.of("Từ vựng gốc", "Mẫu câu gốc"), chapterTitles(byDeck), byDeck.toString());
+        assertEquals(6, byDeck.get("chapters").get(0).get("cardCount").asInt());
+        assertEquals(4, byDeck.get("chapters").get(1).get("cardCount").asInt());
+        assertEquals(List.of("goi", "bunpou"), chapterCategories(token, byDeck));
+        JsonNode grammarClone = read(call(get("/api/decks/" + byDeck.get("chapters").get(1).get("deckId").asText()), token, null))
+                .get("cards").get(0);
+        assertEquals("grammar", grammarClone.get("kind").asText(), "clone giữ loại thẻ");
+
+        // Theo loại: "Từ vựng" / "Ngữ pháp"
+        JsonNode byKind = read(call(post(BASE + "remedial"), token, Map.of("days", 3, "groupBy", "kind"))
+                .andExpect(status().isCreated()));
+        assertEquals(List.of("Từ vựng", "Ngữ pháp"), chapterTitles(byKind), byKind.toString());
+        assertEquals(List.of("goi", "bunpou"), chapterCategories(token, byKind));
+
+        // Thẻ gốc: lịch SRS y nguyên, không thêm dòng reviews nào (bản clone chưa học)
+        assertEquals(before, srsSnapshot(uid));
     }
 }

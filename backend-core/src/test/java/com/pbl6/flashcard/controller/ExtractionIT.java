@@ -37,7 +37,7 @@ class ExtractionIT extends IntegrationTest {
     @BeforeEach
     void stubAi() {
         Mockito.reset(ai);
-        Mockito.when(ai.extractText(any(), any(), any(), any())).thenAnswer(inv -> {
+        Mockito.when(ai.extractText(any(), any(), any(), any(), any())).thenAnswer(inv -> {
             byte[] data = inv.getArgument(0);
             String text = data != null ? new String(data, StandardCharsets.UTF_8) : inv.getArgument(2);
             // lines như OCR Tesseract trả: một dòng conf thấp để kiểm tra textMeta.lowLines
@@ -83,6 +83,52 @@ class ExtractionIT extends IntegrationTest {
             Thread.sleep(100);
         }
         throw new AssertionError("job không kết thúc sau 10 giây");
+    }
+
+    /** Ghi thẳng app_settings (không qua API: cần SUPER_ADMIN) rồi trả lại giá trị cũ sau test. */
+    private String setSetting(String key, String value) {
+        com.pbl6.flashcard.model.AppSetting s = appSettings.findById(key).orElseThrow();
+        String old = s.getValue();
+        s.setValue(value);
+        appSettings.save(s);
+        return old;
+    }
+
+    /** V21 (WP-G5): ngưỡng OCR lấy từ Admin > Cấu hình thay cho hằng số — gửi sang ai-service và lọc dòng nghi sai. */
+    @Test
+    void ocr_thresholds_come_from_settings() throws Exception {
+        String token = newUser();
+        String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+        JsonNode done = awaitTerminal(token, id);
+        // Mặc định seed: 0.85 gửi đi và ghi lại trong textMeta; lowLines theo 0.75 như hằng số cũ
+        Mockito.verify(ai, Mockito.atLeastOnce()).extractText(isNull(), isNull(), org.mockito.ArgumentMatchers.eq(TEXT),
+                org.mockito.ArgumentMatchers.eq("auto"), org.mockito.ArgumentMatchers.eq(0.85));
+        assertEquals(0.85, done.get("textMeta").get("ocrFallbackConfidence").asDouble(), 1e-9);
+        assertEquals(1, done.get("textMeta").get("lowLines").size());
+
+        String oldFallback = setSetting(com.pbl6.flashcard.service.SettingsService.KEY_OCR_FALLBACK, "0.6");
+        String oldLowLine = setSetting(com.pbl6.flashcard.service.SettingsService.KEY_OCR_LOW_LINE, "0.95");
+        try {
+            // Ngưỡng dòng nghi sai đọc lúc trả response: áp ngay cho job đã xong
+            JsonNode again = read(call(get("/api/extractions/" + id), token, null).andExpect(status().isOk()));
+            assertEquals(2, again.get("textMeta").get("lowLines").size(), "0.91 và 0.42 đều < 0.95");
+            assertEquals(0.85, again.get("textMeta").get("ocrFallbackConfidence").asDouble(), 1e-9,
+                    "job cũ giữ ngưỡng đã dùng lúc chạy");
+
+            String id2 = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+            JsonNode done2 = awaitTerminal(token, id2);
+            Mockito.verify(ai, Mockito.atLeastOnce()).extractText(isNull(), isNull(), org.mockito.ArgumentMatchers.eq(TEXT),
+                    org.mockito.ArgumentMatchers.eq("auto"), org.mockito.ArgumentMatchers.eq(0.6));
+            assertEquals(0.6, done2.get("textMeta").get("ocrFallbackConfidence").asDouble(), 1e-9);
+
+            // Cấu hình hỏng (sửa tay DB) không làm hỏng lượt bóc tách: về mặc định
+            setSetting(com.pbl6.flashcard.service.SettingsService.KEY_OCR_LOW_LINE, "abc");
+            JsonNode fallback = read(call(get("/api/extractions/" + id), token, null).andExpect(status().isOk()));
+            assertEquals(1, fallback.get("textMeta").get("lowLines").size(), "hằng dự phòng 0.75");
+        } finally {
+            setSetting(com.pbl6.flashcard.service.SettingsService.KEY_OCR_FALLBACK, oldFallback);
+            setSetting(com.pbl6.flashcard.service.SettingsService.KEY_OCR_LOW_LINE, oldLowLine);
+        }
     }
 
     @Test
@@ -203,7 +249,7 @@ class ExtractionIT extends IntegrationTest {
         assertEquals("DONE", done.get("status").asText());
         assertTrue(done.get("errorMessage") == null || done.get("errorMessage").isNull());
         // stubAi() đã reset mock trước khi chạy lại: chạy lại chỉ gọi ANALYZE, không gọi lại bước TEXT
-        Mockito.verify(ai, Mockito.never()).extractText(any(), any(), any(), any());
+        Mockito.verify(ai, Mockito.never()).extractText(any(), any(), any(), any(), any());
     }
 
     @Test

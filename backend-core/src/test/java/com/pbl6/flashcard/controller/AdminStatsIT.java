@@ -1,7 +1,9 @@
 package com.pbl6.flashcard.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.pbl6.flashcard.model.LearningPath;
 import com.pbl6.flashcard.model.Role;
+import com.pbl6.flashcard.repository.LearningPathRepository;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,10 +12,12 @@ import org.springframework.mock.web.MockPart;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -26,6 +30,9 @@ class AdminStatsIT extends IntegrationTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    LearningPathRepository pathRepo;
 
     private JsonNode stats(String token, String days) throws Exception {
         var req = get("/api/admin/stats");
@@ -113,5 +120,46 @@ class AdminStatsIT extends IntegrationTest {
         String user = newUser();
         call(get("/api/admin/stats"), user, null).andExpect(status().isForbidden());
         call(get("/api/admin/health"), user, null).andExpect(status().isForbidden());
+    }
+    /** Lộ trình chèn thẳng qua repository (không cần ai-service): đủ trạng thái để kiểm từng ô của breakdown. */
+    private void path(Long uid, String status, String sourceType, boolean completed) {
+        LearningPath p = new LearningPath();
+        p.setId(UUID.randomUUID());
+        p.setUserId(uid);
+        p.setTitle("LP");
+        p.setSourceType(sourceType);
+        p.setStatus(status);
+        p.setTotalDays(7);
+        p.setStartDate(LocalDate.now(VN));
+        p.setCreatedAt(Instant.now());
+        if (completed) p.setCompletedAt(Instant.now());
+        pathRepo.save(p);
+    }
+
+    @Test
+    void learning_path_breakdown_counts_active_completed_failed_remedial_draft() throws Exception { // 2.0 §4.5
+        String viewer = newStaff(Role.ADMIN);
+        String email = newEmail();
+        newUser(email);
+        Long uid = userId(email);
+        JsonNode before = stats(viewer, null);
+        JsonNode b = before.get("learningPathBreakdown");
+        assertNotNull(b, before.toString());
+        for (String k : new String[]{"active", "completed", "failed", "remedial", "draft"}) assertTrue(b.get(k).asLong() >= 0, k);
+
+        path(uid, LearningPath.ACTIVE, "text", false);
+        path(uid, LearningPath.ACTIVE, "text", true);          // đã chốt hoàn thành: không còn "active"
+        path(uid, LearningPath.FAILED, "text", false);
+        path(uid, LearningPath.DRAFT, "pdf", false);
+        path(uid, LearningPath.ACTIVE, LearningPath.SOURCE_REMEDIAL, false); // bổ khuyết: đếm chéo, vẫn là active
+
+        JsonNode after = stats(viewer, null);
+        JsonNode a = after.get("learningPathBreakdown");
+        assertEquals(before.get("learningPaths").asLong() + 5, after.get("learningPaths").asLong(), "tổng giữ kiểu long cho client cũ");
+        assertEquals(b.get("active").asLong() + 2, a.get("active").asLong());
+        assertEquals(b.get("completed").asLong() + 1, a.get("completed").asLong());
+        assertEquals(b.get("failed").asLong() + 1, a.get("failed").asLong());
+        assertEquals(b.get("draft").asLong() + 1, a.get("draft").asLong());
+        assertEquals(b.get("remedial").asLong() + 1, a.get("remedial").asLong());
     }
 }

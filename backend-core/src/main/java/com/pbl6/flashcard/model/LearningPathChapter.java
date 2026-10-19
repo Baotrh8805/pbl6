@@ -2,6 +2,7 @@ package com.pbl6.flashcard.model;
 
 import jakarta.persistence.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /** Một chương của lộ trình (V13): gắn một bộ thẻ và khoảng ngày học [dayFrom, dayTo]. */
@@ -34,6 +35,14 @@ public class LearningPathChapter {
     @Column(name = "day_to")
     private Integer dayTo;
 
+    /** Điểm % cao nhất của bài kiểm tra cuối chương (V20); null = chưa làm. */
+    @Column(name = "quiz_best_pct")
+    private Integer quizBestPct;
+
+    /** Thời điểm đạt ngưỡng learning_path_quiz_pass_pct lần đầu (V20); null = chưa qua chương. */
+    @Column(name = "quiz_passed_at")
+    private Instant quizPassedAt;
+
     public LearningPathChapter() {}
 
     public UUID getId() { return id; }
@@ -52,4 +61,8 @@ public class LearningPathChapter {
     public void setDayFrom(Integer dayFrom) { this.dayFrom = dayFrom; }
     public Integer getDayTo() { return dayTo; }
     public void setDayTo(Integer dayTo) { this.dayTo = dayTo; }
+    public Integer getQuizBestPct() { return quizBestPct; }
+    public void setQuizBestPct(Integer quizBestPct) { this.quizBestPct = quizBestPct; }
+    public Instant getQuizPassedAt() { return quizPassedAt; }
+    public void setQuizPassedAt(Instant quizPassedAt) { this.quizPassedAt = quizPassedAt; }
 }

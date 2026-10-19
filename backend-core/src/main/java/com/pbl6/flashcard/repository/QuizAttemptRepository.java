@@ -38,6 +38,12 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
             + "AND a.expiresAt >= :now")
     Optional<QuizAttempt> findOpen(@Param("uid") Long uid, @Param("deckId") String deckId, @Param("now") Instant now);
 
+    /**
+     * Lượt đã nộp (hoặc bị đóng vì quá hạn) sau :since của user — InsightService đếm câu sai theo thẻ từ answers / questions
+     * (QuizAttemptService.wrongAnswerCounts) để nhận ra "sai quiz" (spec §3.7).
+     */
+    List<QuizAttempt> findByUserIdAndSubmittedAtAfter(Long userId, Instant since);
+
     /** Lượt quá hạn chưa nộp của user (khoá để không chốt điểm 2 lần). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.submittedAt IS NULL AND a.expiresAt < :now")

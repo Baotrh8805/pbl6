@@ -1,12 +1,17 @@
 package com.pbl6.flashcard.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.pbl6.flashcard.model.LearningPath;
+import com.pbl6.flashcard.repository.LearningPathRepository;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -17,6 +22,23 @@ class ReviewSrsIT extends IntegrationTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    LearningPathRepository paths;
+
+    /** Lộ trình chèn thẳng qua repository (không cần ai-service) để kiểm việc gắn lượt ôn với lộ trình. */
+    private LearningPath path(Long uid) {
+        LearningPath p = new LearningPath();
+        p.setId(UUID.randomUUID());
+        p.setUserId(uid);
+        p.setTitle("LP");
+        p.setSourceType("text");
+        p.setStatus(LearningPath.ACTIVE);
+        p.setTotalDays(7);
+        p.setStartDate(LocalDate.of(2026, 11, 1));
+        p.setCreatedAt(Instant.now());
+        return paths.save(p);
+    }
 
     private String firstCard(String token) throws Exception {
         return read(call(get("/api/decks/n5-core"), token, null)).get("cards").get(0).get("id").asText();
@@ -72,5 +94,54 @@ class ReviewSrsIT extends IntegrationTest {
         String token = newUser();
         call(post("/api/reviews"), token, Map.of("cardId", "khong-ton-tai", "grade", "good", "cram", true))
                 .andExpect(status().isNotFound());
+    }
+    /**
+     * E1 (V20): reactionMs / pathId đi vào review_logs — cả phiên cram — chỉ là nhật ký (lịch SRS không đổi); client cũ không gửi
+     * thì NULL; pathId không phải lộ trình của mình bị bỏ qua chứ không chặn; reactionMs ngoài 0–600000 → 400 và không ghi gì.
+     */
+    @Test
+    void review_logs_keep_reaction_time_and_path_attribution() throws Exception {
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        String card = firstCard(token);
+
+        JsonNode r = read(call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "good", "reactionMs", 1234))
+                .andExpect(status().isOk()));
+        assertEquals(1, r.get("intervalDays").asInt(), "reactionMs không đổi thuật toán SRS");
+        assertEquals(Integer.valueOf(1234), jdbc.queryForObject(
+                "SELECT reaction_ms FROM review_logs WHERE user_id = ? AND card_id = ? AND source = 'flip'", Integer.class, uid, card));
+        assertNull(jdbc.queryForObject(
+                "SELECT path_id FROM review_logs WHERE user_id = ? AND card_id = ? AND source = 'flip'", Object.class, uid, card));
+
+        // cram cũng ghi; pathId lạ (không tồn tại) hay lộ trình CỦA NGƯỜI KHÁC -> NULL (existsByIdAndUserId lọc theo người gọi, không
+        // chỉ theo id), lượt chấm vẫn 200; lộ trình của chính mình -> ghi path_id
+        String otherEmail = newEmail();
+        newUser(otherEmail);
+        LearningPath foreign = path(userId(otherEmail));
+        LearningPath mine = path(uid);
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "easy", "cram", true, "reactionMs", 777,
+                "pathId", UUID.randomUUID().toString())).andExpect(status().isOk());
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "easy", "cram", true, "reactionMs", 777,
+                "pathId", foreign.getId().toString())).andExpect(status().isOk());
+        assertEquals(Integer.valueOf(2), jdbc.queryForObject("SELECT count(*) FROM review_logs WHERE user_id = ? AND card_id = ? "
+                + "AND source = 'cram' AND reaction_ms = 777 AND path_id IS NULL", Integer.class, uid, card));
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject(
+                "SELECT count(*) FROM review_logs WHERE user_id = ? AND path_id IS NOT NULL", Integer.class, uid));
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "easy", "cram", true, "reactionMs", 10,
+                "pathId", mine.getId().toString())).andExpect(status().isOk());
+        assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+                "SELECT count(*) FROM review_logs WHERE user_id = ? AND path_id = ?", Integer.class, uid, mine.getId()));
+
+        // client 1.0 không gửi gì thêm
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "good")).andExpect(status().isOk());
+        assertEquals(Integer.valueOf(1), jdbc.queryForObject(
+                "SELECT count(*) FROM review_logs WHERE user_id = ? AND reaction_ms IS NULL", Integer.class, uid));
+
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "good", "reactionMs", -1)).andExpect(status().isBadRequest());
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "good", "reactionMs", 600001)).andExpect(status().isBadRequest());
+        call(post("/api/reviews"), token, Map.of("cardId", card, "grade", "good", "pathId", "không-phải-uuid")).andExpect(status().isBadRequest());
+        assertEquals(Integer.valueOf(5), jdbc.queryForObject(
+                "SELECT count(*) FROM review_logs WHERE user_id = ?", Integer.class, uid), "request bị từ chối không ghi log");
     }
 }

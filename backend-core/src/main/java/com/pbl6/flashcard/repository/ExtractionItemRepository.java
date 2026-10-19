@@ -15,4 +15,7 @@ public interface ExtractionItemRepository extends JpaRepository<ExtractionItem, 
     List<ExtractionItem> findByChapterIdOrderByPositionAsc(UUID chapterId);
 
     void deleteByJobId(UUID jobId);
+
+    /** Job lộ trình FAILED mà vẫn còn item = lần dịch lại nghĩa bị ngắt, không phải phân tích lỗi (ExtractionService.reEnrichJob). */
+    boolean existsByJobId(UUID jobId);
 }

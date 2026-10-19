@@ -4,6 +4,7 @@ import com.pbl6.flashcard.dto.admin.AdminStatsResponse;
 import com.pbl6.flashcard.dto.admin.AdminStatsResponse.DayPoint;
 import com.pbl6.flashcard.model.Deck;
 import com.pbl6.flashcard.model.ExtractionJob;
+import com.pbl6.flashcard.model.LearningPath;
 import com.pbl6.flashcard.repository.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -78,7 +79,10 @@ public class AdminStatsService {
                 new AdminStatsResponse.Extractions(jobs.count(), jobs.countByStatus(ExtractionJob.DONE),
                         jobs.countByStatus(ExtractionJob.FAILED),
                         jobs.countByStatusIn(List.of(ExtractionJob.QUEUED, ExtractionJob.RUNNING))),
-                quizzes.count(), paths.count(), reports.countOpen(), series);
+                quizzes.count(), paths.count(), reports.countOpen(), series,
+                new AdminStatsResponse.LearningPathBreakdown(paths.countByStatusAndCompletedAtIsNull(LearningPath.ACTIVE),
+                        paths.countByCompletedAtIsNotNull(), paths.countByStatus(LearningPath.FAILED),
+                        paths.countBySourceType(LearningPath.SOURCE_REMEDIAL), paths.countByStatus(LearningPath.DRAFT)));
     }
 
     public Map<String, String> health() {

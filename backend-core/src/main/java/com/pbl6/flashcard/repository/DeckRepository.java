@@ -47,6 +47,10 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
 
     long countByOfficialTrue();
 
+    /** Bộ thẻ gốc mà người dùng đã lưu bản sao ("Học gì tiếp" không gợi ý lại bộ Thư viện đã có trong Bộ thẻ của tôi). */
+    @Query("SELECT d.sourceDeckId FROM Deck d WHERE d.ownerId = :uid AND d.sourceDeckId IS NOT NULL")
+    List<String> findClonedSourceIds(@Param("uid") Long uid);
+
     /** Bỏ cờ nổi bật hiện có (chỉ một bộ thẻ được featured). */
     @org.springframework.data.jpa.repository.Modifying
     @Query("UPDATE Deck d SET d.featured = false WHERE d.featured = true")

@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pbl6.flashcard.dto.deck.DeckRequest;
@@ -15,6 +16,7 @@ import com.pbl6.flashcard.model.ExtractionJob;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.repository.ExtractionItemRepository;
 import com.pbl6.flashcard.repository.ExtractionJobRepository;
+import com.pbl6.flashcard.repository.LearningPathRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -62,15 +64,19 @@ public class ExtractionService {
     private final DeckService deckService;
     private final ObjectMapper json;
     private final SettingsService settings;
+    // Chỉ để biết job lộ trình còn lộ trình trỏ tới hay đã mồ côi (deleteJob); không gọi ngược LearningPathService (vòng phụ thuộc)
+    private final LearningPathRepository paths;
 
     public ExtractionService(ExtractionJobRepository jobs, ExtractionItemRepository items, ExtractionWorker worker,
-                             DeckService deckService, ObjectMapper json, SettingsService settings) {
+                             DeckService deckService, ObjectMapper json, SettingsService settings,
+                             LearningPathRepository paths) {
         this.jobs = jobs;
         this.items = items;
         this.worker = worker;
         this.deckService = deckService;
         this.json = json;
         this.settings = settings;
+        this.paths = paths;
     }
 
     /** Worker sống trong RAM: sau restart mọi job QUEUED/RUNNING không bao giờ chạy tiếp -> báo FAILED rõ ràng. */
@@ -91,7 +97,7 @@ public class ExtractionService {
         ExtractionOptions options = parseOptions(optionsJson).withDefaults(user.getJlptLevel());
         ExtractionJob job = prepareJob(user, data, filename, text, options, ExtractionJob.PURPOSE_EXTRACTION);
         startJob(job, data, filename, text);
-        return ExtractionJobResponse.of(job, false);
+        return view(job, false);
     }
 
     /** Kiểm đầu vào + giới hạn ngày rồi lưu job (chưa chạy). options đã được điền mặc định. */
@@ -123,13 +129,38 @@ public class ExtractionService {
         return job;
     }
 
-    /** Đẩy job đã lưu sang worker nền. */
+    /**
+     * Đẩy job đã lưu sang worker nền. Ngưỡng OCR dự phòng đọc ở đây (thread request) rồi chuyển cho worker, để một lượt dùng
+     * đúng giá trị lúc người dùng gửi dù admin đổi cấu hình trong lúc job còn xếp hàng.
+     */
     void startJob(ExtractionJob job, byte[] data, String filename, String text) {
         boolean hasFile = data != null && data.length > 0;
         boolean hasText = text != null && !text.isBlank();
         String ocrMode = job.getOptions() != null ? (String) job.getOptions().get("ocrMode") : null;
+        double ocrFallback = ocrFallbackConfidence();
         dispatch(job, () -> worker.runFromText(job.getId(), hasFile ? data : null, filename,
-                hasText ? text : null, ocrMode != null ? ocrMode : "auto"));
+                hasText ? text : null, ocrMode != null ? ocrMode : "auto", ocrFallback));
+    }
+
+    /** Giá trị seed của ocr_fallback_confidence (V21) = mặc định OCR_FALLBACK_CONFIDENCE của ai-service. */
+    static final double DEFAULT_OCR_FALLBACK = 0.85;
+
+    /**
+     * ocr_fallback_confidence (Admin > Cấu hình): Tesseract dưới ngưỡng thì ai-service nhờ Gemini chép lại. Cấu hình hỏng không
+     * được làm hỏng lượt bóc tách: không đọc được -> mặc định; ngoài 0..1 (ai-service trả 422) -> kẹp lại.
+     */
+    double ocrFallbackConfidence() {
+        double v = settings.getDouble(SettingsService.KEY_OCR_FALLBACK, DEFAULT_OCR_FALLBACK);
+        return Math.max(0, Math.min(1, v));
+    }
+
+    /** ocr_low_line_confidence (Admin > Cấu hình): ngưỡng dòng OCR nghi sai trả cho client; không đọc được -> hằng dự phòng. */
+    public double lowLineConfidence() {
+        return settings.getDouble(SettingsService.KEY_OCR_LOW_LINE, ExtractionJobResponse.LOW_LINE_CONF);
+    }
+
+    private ExtractionJobResponse view(ExtractionJob job, boolean includeText) {
+        return ExtractionJobResponse.of(job, includeText, lowLineConfidence());
     }
 
     ExtractionOptions parseOptions(String optionsJson) {
@@ -225,12 +256,14 @@ public class ExtractionService {
 
     @Transactional(readOnly = true)
     public List<ExtractionJobResponse> list(Long uid) {
-        return jobs.findTop50ByUserIdAndPurposeOrderByCreatedAtDesc(uid, ExtractionJob.PURPOSE_EXTRACTION).stream().map(j -> ExtractionJobResponse.of(j, false)).toList();
+        double lowLine = lowLineConfidence();
+        return jobs.findTop50ByUserIdAndPurposeOrderByCreatedAtDesc(uid, ExtractionJob.PURPOSE_EXTRACTION).stream()
+                .map(j -> ExtractionJobResponse.of(j, false, lowLine)).toList();
     }
 
     @Transactional(readOnly = true)
     public ExtractionJobResponse get(Long uid, UUID id, boolean includeText) {
-        return ExtractionJobResponse.of(owned(uid, id), includeText);
+        return view(owned(uid, id), includeText);
     }
 
     @Transactional(readOnly = true)
@@ -255,11 +288,51 @@ public class ExtractionService {
         job.setErrorMessage(null);
         jobs.save(job);
         dispatch(job, () -> worker.runFromAnalyze(job.getId()));
-        return ExtractionJobResponse.of(job, false);
+        return view(job, false);
     }
 
     public ExtractionJobResponse rerun(Long uid, UUID id) {
-        ExtractionJob job = ownedEditable(uid, id);
+        return rerunJob(ownedEditable(uid, id));
+    }
+
+    /**
+     * Lộ trình FAILED "Chạy lại" (LP-6): job purpose = learning_path nên không qua ownedEditable — chủ sở hữu và trạng thái lộ
+     * trình đã được LearningPathService kiểm dưới khoá dòng. Không tạo job mới nên KHÔNG tốn lượt hạn mức ngày. Gọi NGOÀI giao dịch
+     * (như {@link #rerun}): QUEUED phải commit trước khi worker (thread khác) chạy, nếu không giao dịch gọi có thể ghi đè kết quả
+     * worker vừa ghi (ai-service nhanh hơn commit).
+     */
+    public ExtractionJobResponse rerunForPath(UUID jobId) {
+        return rerunJob(pathJob(jobId));
+    }
+
+    /**
+     * Lộ trình DRAFT / ACTIVE "Dịch lại nghĩa" (LP-6): cùng kiểm tra + cooldown 5 phút như {@link #reEnrich}, bỏ ownedEditable.
+     * Khác bóc tách thường: job FAILED mà vẫn còn item cũng được nhận (lần dịch lại trước bị ngắt), xem {@link #reEnrichJob}.
+     */
+    public ExtractionJobResponse reEnrichForPath(UUID jobId) {
+        return reEnrichJob(pathJob(jobId), true);
+    }
+
+    private ExtractionJob pathJob(UUID jobId) {
+        return jobs.findById(jobId).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dữ liệu bóc tách của lộ trình không còn."));
+    }
+
+    /**
+     * Kích hoạt lộ trình ghi nhận bộ thẻ vừa tạo vào job: UPDATE một cột ({@link ExtractionJobRepository#setDeckIds}) thay vì sửa
+     * entity đã nạp, để giao dịch kích hoạt dài không mang status / stage / stats cũ của job ghi đè kết quả worker. Gọi trong
+     * giao dịch của caller.
+     */
+    void setDeckIds(UUID jobId, List<String> deckIds) {
+        try {
+            jobs.setDeckIds(jobId, json.writeValueAsString(deckIds));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Không ghi được deck_ids cho job " + jobId, e);
+        }
+    }
+
+    /** Phân tích lại từ văn bản đã trích (ANALYZE → ENRICH), không gọi lại bước TEXT / OCR. */
+    private ExtractionJobResponse rerunJob(ExtractionJob job) {
         requireIdle(job);
         if (job.getExtractedText() == null || job.getExtractedText().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -270,7 +343,7 @@ public class ExtractionService {
         job.setErrorMessage(null);
         jobs.save(job);
         dispatch(job, () -> worker.runFromAnalyze(job.getId()));
-        return ExtractionJobResponse.of(job, false);
+        return view(job, false);
     }
 
     /** Khoảng cách tối thiểu giữa hai lần "Dịch lại nghĩa" của cùng một job (chống spam Gemini). */
@@ -278,9 +351,19 @@ public class ExtractionService {
 
     /** Chạy lại riêng bước dịch nghĩa VN (Gemini hết quota / lỗi). Không tính vào hạn mức ngày, không phân tích lại. */
     public ExtractionJobResponse reEnrich(Long uid, UUID id) {
-        ExtractionJob job = ownedEditable(uid, id);
+        return reEnrichJob(ownedEditable(uid, id), false);
+    }
+
+    /**
+     * forPath: job lộ trình FAILED nhưng vẫn còn item là lần dịch lại nghĩa trước bị ngắt (khởi động lại giữa chừng → failUnfinished,
+     * hoặc lỗi DB lúc ghi DONE) — item / stats còn nguyên, lộ trình vẫn DRAFT / ACTIVE nên không có đường "Chạy lại" nào khác; coi
+     * như DONE để "Dịch lại nghĩa" còn dùng được (worker ghi lại DONE khi xong). Job thường vẫn đòi DONE: FAILED ở đó là phân tích
+     * lỗi và người dùng có /rerun.
+     */
+    private ExtractionJobResponse reEnrichJob(ExtractionJob job, boolean forPath) {
         requireIdle(job);
-        if (!ExtractionJob.DONE.equals(job.getStatus())) {
+        boolean interrupted = forPath && ExtractionJob.FAILED.equals(job.getStatus()) && items.existsByJobId(job.getId());
+        if (!ExtractionJob.DONE.equals(job.getStatus()) && !interrupted) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Lượt này chưa hoàn tất, không thể dịch lại.");
         }
         if (job.getOptions() == null || !"vi".equals(job.getOptions().get("meaningLang"))) {
@@ -302,7 +385,7 @@ public class ExtractionService {
         job.setErrorMessage(null);
         jobs.save(job);
         dispatch(job, () -> worker.runEnrich(job.getId()));
-        return ExtractionJobResponse.of(job, false);
+        return view(job, false);
     }
 
     private static void requireIdle(ExtractionJob job) {
@@ -354,10 +437,20 @@ public class ExtractionService {
         deleteJob(owned(uid, id));
     }
 
-    /** Phần xoá không kiểm tra chủ: người dùng (delete) và Admin Panel dùng chung. Gọi trong transaction. */
+    /**
+     * Phần xoá không kiểm tra chủ: người dùng (delete) và Admin Panel dùng chung. Gọi trong transaction. Job lộ trình: còn lộ
+     * trình trỏ tới → chỉ xoá qua lộ trình; mồ côi (lộ trình đã xoá, LP-10 giữ dòng CANCELLED để hạn mức ngày không được hoàn) →
+     * xoá được khi đã ra khỏi cửa sổ 24 giờ của hạn mức, trước đó 409 (không để xoá-tạo-lại lách hạn mức).
+     */
     public void deleteJob(ExtractionJob job) {
         if (ExtractionJob.PURPOSE_LEARNING_PATH.equals(job.getPurpose())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt này thuộc một lộ trình học, hãy xoá lộ trình.");
+            if (paths.existsByJobId(job.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt này thuộc một lộ trình học, hãy xoá lộ trình.");
+            }
+            if (job.getCreatedAt() != null && job.getCreatedAt().isAfter(Instant.now().minus(Duration.ofHours(24)))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Lượt này thuộc một lộ trình đã xoá và vẫn tính vào hạn mức 24 giờ, chỉ xoá được sau 24 giờ.");
+            }
         }
         if (ExtractionJob.QUEUED.equals(job.getStatus()) || ExtractionJob.RUNNING.equals(job.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt bóc tách đang chạy, không thể xoá.");

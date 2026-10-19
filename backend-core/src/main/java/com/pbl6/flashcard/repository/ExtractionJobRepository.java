@@ -41,14 +41,50 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
     org.springframework.data.domain.Page<ExtractionJob> searchAdmin(@Param("status") String status, @Param("userId") Long userId,
                                                                    org.springframework.data.domain.Pageable pageable);
 
-    /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
-    /** Dọn dẹp định kỳ: job đã kết thúc quá lâu (extracted_text nặng); learning_paths.job_id -> NULL, bộ thẻ đã tạo giữ nguyên. */
+    /**
+     * Dọn dẹp định kỳ: job bóc tách thường đã kết thúc quá lâu (extracted_text nặng); bộ thẻ đã tạo giữ nguyên.
+     * Job của lộ trình (purpose = 'learning_path') không bị xoá ở đây (LP-1): bản nháp cần item để kích hoạt, lộ trình đang học cần
+     * số từ vựng / ngữ pháp từng chương; chúng chỉ bị xoá trắng extracted_text qua {@link #clearTextOfOldPathJobs}, còn job lộ trình
+     * mồ côi đi qua {@link #deleteOrphanPathJobsBefore}.
+     */
     @Modifying
-    @Query("DELETE FROM ExtractionJob j WHERE j.status IN ('DONE','FAILED','CANCELLED') AND j.createdAt < :before")
+    @Query("DELETE FROM ExtractionJob j WHERE j.status IN ('DONE','FAILED','CANCELLED') AND j.createdAt < :before "
+            + "AND j.purpose <> 'learning_path'")
     int deleteFinishedBefore(@Param("before") java.time.Instant before);
 
+    /**
+     * LP-10: xoá lộ trình GIỮ dòng job (CANCELLED, extracted_text NULL) để lượt hạn mức 24 giờ — đếm theo số dòng job — không bị
+     * hoàn lại. Quá 90 ngày dòng mồ côi ấy không còn vai trò gì → xoá như job thường. Job còn lộ trình trỏ tới (kể cả FAILED chờ
+     * "Chạy lại") không bao giờ bị xoá.
+     */
+    @Modifying
+    @Query("DELETE FROM ExtractionJob j WHERE j.purpose = 'learning_path' AND j.status IN ('DONE','FAILED','CANCELLED') "
+            + "AND j.createdAt < :before AND NOT EXISTS (SELECT 1 FROM LearningPath p WHERE p.jobId = j.id)")
+    int deleteOrphanPathJobsBefore(@Param("before") Instant before);
+
+    /**
+     * LP-1: job lộ trình đã kết thúc, tạo trước :before (cùng mốc với {@link #deleteFinishedBefore}) và lộ trình đã ACTIVE
+     * -> xoá trắng extracted_text (phần nặng nhất), item / stats giữ lại. DRAFT và FAILED giữ văn bản để còn kích hoạt
+     * hoặc chạy lại. Trả số job thực sự bị xoá trắng (job đã NULL không đếm lại).
+     */
+    @Modifying
+    @Query("UPDATE ExtractionJob j SET j.extractedText = NULL WHERE j.purpose = 'learning_path' "
+            + "AND j.status IN ('DONE','FAILED','CANCELLED') AND j.createdAt < :before AND j.extractedText IS NOT NULL "
+            + "AND EXISTS (SELECT 1 FROM LearningPath p WHERE p.jobId = j.id AND p.status = 'ACTIVE')")
+    int clearTextOfOldPathJobs(@Param("before") Instant before);
+
+    /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
     @Modifying
     @Query("UPDATE ExtractionJob j SET j.status = 'FAILED', j.errorMessage = :message, j.finishedAt = :now "
             + "WHERE j.status IN ('QUEUED', 'RUNNING')")
     int failUnfinished(@Param("message") String message, @Param("now") Instant now);
+
+    /**
+     * Kích hoạt lộ trình ghi deck_ids bằng UPDATE đúng một cột thay vì sửa entity đã nạp: giao dịch kích hoạt dài (thư mục, bộ
+     * thẻ, lịch) mà flush entity là UPDATE cả dòng (không @DynamicUpdate) mang theo status / stage / stats đọc lúc đầu — worker
+     * "Dịch lại nghĩa" vừa ghi DONE / enrichedAt ở giữa sẽ bị ghi đè thành RUNNING vĩnh viễn. :ids là JSON mảng chuỗi.
+     */
+    @Modifying
+    @Query(value = "UPDATE extraction_jobs SET deck_ids = CAST(:ids AS jsonb) WHERE id = :id", nativeQuery = true)
+    int setDeckIds(@Param("id") UUID id, @Param("ids") String idsJson);
 }
