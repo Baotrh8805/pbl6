@@ -72,14 +72,25 @@ public class AdminContentService {
         return Detail.of(row, cards);
     }
 
-    /** Gỡ khỏi Thư viện = private. Trả true nếu có thay đổi (ReportService dùng lại). */
+    /**
+     * Gỡ khỏi Thư viện = private. Trả true nếu có thay đổi (ReportService dùng lại).
+     * Nổi bật chỉ có nghĩa với bộ public (Thư viện lọc visibility = 'public'): gỡ thì bỏ luôn cờ, ghi cùng một dòng
+     * audit — không thì bộ riêng tư vẫn giữ suất nổi bật duy nhất và tự lên lại Thư viện khi chủ mở public.
+     * Quy tắc chỉ nằm ở tầng code (đây, setFlags, DeckService.update), không CHECK ở DB: Supabase dùng chung với bản
+     * backend cũ của cả nhóm, ràng buộc mới sẽ làm thao tác đổi hiển thị của họ lỗi 500 (D7 — migration chỉ thêm).
+     */
     @Transactional
     public boolean unpublish(User actor, String deckId) {
         Deck deck = lockedDeck(deckId);
         if (Deck.PRIVATE.equals(deck.getVisibility())) return false;
+        Map<String, Object> changes = new HashMap<>(AuditService.diff("visibility", Deck.PUBLIC, Deck.PRIVATE));
+        if (deck.isFeatured()) {
+            changes.putAll(AuditService.diff("featured", true, false));
+            deck.setFeatured(false);
+        }
         deck.setVisibility(Deck.PRIVATE);
         decks.save(deck);
-        audit.log(actor.getId(), "DECK_UNPUBLISH", "DECK", deckId, AuditService.diff("visibility", Deck.PUBLIC, Deck.PRIVATE));
+        audit.log(actor.getId(), "DECK_UNPUBLISH", "DECK", deckId, changes);
         notifications.notify(deck.getOwnerId(), com.pbl6.flashcard.model.Notification.DECK_UNPUBLISHED,
                 Map.of("deckId", deckId, "deckTitle", deck.getTitle()));
         return true;
@@ -88,6 +99,12 @@ public class AdminContentService {
     @Transactional
     public Row setFlags(User actor, String deckId, DeckFlagsRequest req) {
         Deck deck = lockedDeck(deckId);
+        // Bộ riêng tư không lên Thư viện: bật nổi bật chỉ chiếm suất duy nhất mà không ai thấy -> 400. Bỏ cờ thì vẫn
+        // cho, giữ nguyên cờ cũng cho: DB không có CHECK nên dữ liệu cũ có thể còn bộ riêng tư mang cờ, và form admin
+        // gửi kèm cả hai cờ khi chỉ đổi Official — chặn cả "featured=true" không đổi gì thì bộ đó kẹt, không sửa được.
+        if (Boolean.TRUE.equals(req.featured()) && !deck.isFeatured() && !deck.isPublic()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chỉ bộ thẻ công khai mới gắn được Nổi bật.");
+        }
         Map<String, Object> changes = new HashMap<>();
         if (req.official() != null && req.official() != deck.isOfficial()) {
             changes.putAll(AuditService.diff("official", deck.isOfficial(), req.official()));

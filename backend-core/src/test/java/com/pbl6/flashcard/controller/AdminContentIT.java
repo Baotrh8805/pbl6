@@ -63,6 +63,20 @@ class AdminContentIT extends IntegrationTest {
         return n;
     }
 
+    /** detail của dòng audit mới nhất theo hành động trên đối tượng; MissingNode nếu không có. */
+    private JsonNode auditDetail(String token, String targetType, String targetId, String action) throws Exception {
+        JsonNode p = read(call(get("/api/admin/audit-logs").param("targetType", targetType).param("size", "100"), token, null));
+        for (JsonNode r : p.get("items")) {
+            if (r.get("targetId").asText().equals(targetId) && r.get("action").asText().equals(action)) return r.get("detail");
+        }
+        return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+    }
+
+    private String libraryFeaturedId(String token) throws Exception {
+        return read(call(get("/api/library/decks"), token, null).andExpect(status().isOk()))
+                .path("featured").path("deck").path("id").asText("");
+    }
+
     private void openReport(Long reporterId, String deckId) {
         ContentReport r = new ContentReport();
         r.setDeckId(deckId);
@@ -111,6 +125,79 @@ class AdminContentIT extends IntegrationTest {
         assertEquals(id, lib.get("featured").get("deck").get("id").asText(), "bộ nổi bật của Thư viện");
         assertTrue(lib.get("items").findValuesAsText("id").contains(id), "có trong tab official");
         assertEquals(1, auditCount(admin.token, "DECK", id));
+    }
+
+    @Test
+    void unpublish_clears_featured_in_same_audit_and_republish_does_not_restore_it() throws Exception { // CT-14 (NEW-11)
+        Account owner = user();
+        Account admin = staff(Role.ADMIN);
+        String id = publicDeck(owner.token, "Gỡ nổi bật").get("id").asText();
+        call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("featured", true)).andExpect(status().isOk());
+        assertEquals(id, libraryFeaturedId(owner.token));
+
+        JsonNode res = read(call(post("/api/admin/decks/" + id + "/unpublish"), admin.token, null).andExpect(status().isOk()));
+        assertEquals("private", res.get("visibility").asText());
+        assertFalse(res.get("featured").asBoolean(), "bộ riêng tư không giữ cờ nổi bật");
+        JsonNode detail = auditDetail(admin.token, "DECK", id, "DECK_UNPUBLISH");
+        assertEquals("private", detail.path("visibility").path("after").asText());
+        assertTrue(detail.path("featured").path("before").asBoolean());
+        assertFalse(detail.path("featured").path("after").asBoolean(true), "bỏ cờ ghi cùng dòng audit gỡ");
+        assertEquals(2, auditCount(admin.token, "DECK", id), "DECK_FLAGS + DECK_UNPUBLISH");
+
+        // Chủ mở public lại: lên Thư viện như bộ thường, không tự chiếm lại suất nổi bật
+        call(put("/api/decks/" + id), owner.token, Map.of("title", "Gỡ nổi bật", "level", "N5", "visibility", "public"))
+                .andExpect(status().isOk());
+        assertFalse(read(call(get("/api/admin/decks/" + id), admin.token, null)).get("featured").asBoolean());
+        assertNotEquals(id, libraryFeaturedId(owner.token));
+    }
+
+    @Test
+    void owner_making_deck_private_clears_featured_and_private_deck_cannot_be_featured() throws Exception { // CT-15 (NEW-11)
+        Account owner = user();
+        Account admin = staff(Role.ADMIN);
+        String id = publicDeck(owner.token, "Chủ ẩn").get("id").asText();
+        call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("featured", true)).andExpect(status().isOk());
+
+        call(put("/api/decks/" + id), owner.token, Map.of("title", "Chủ ẩn", "level", "N5", "visibility", "private"))
+                .andExpect(status().isOk());
+        assertFalse(read(call(get("/api/admin/decks/" + id), admin.token, null)).get("featured").asBoolean());
+        assertNotEquals(id, libraryFeaturedId(owner.token));
+        assertEquals(1, auditCount(admin.token, "DECK", id), "chủ tự đổi -> không audit");
+
+        // Gắn nổi bật cho bộ riêng tư: 400, không đổi gì (kể cả cờ Official gửi kèm), không audit
+        call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("official", true, "featured", true))
+                .andExpect(status().isBadRequest());
+        JsonNode row = read(call(get("/api/admin/decks/" + id), admin.token, null));
+        assertFalse(row.get("featured").asBoolean());
+        assertFalse(row.get("official").asBoolean());
+        assertEquals(1, auditCount(admin.token, "DECK", id));
+        // Official thì vẫn gắn được cho bộ riêng tư
+        call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("official", true)).andExpect(status().isOk());
+    }
+
+    @Test
+    void legacy_private_featured_deck_stays_editable_and_can_be_unflagged() throws Exception { // CT-16 (NEW-11, bỏ V29)
+        Account owner = user();
+        Account admin = staff(Role.ADMIN);
+        String id = publicDeck(owner.token, "Cờ cũ").get("id").asText();
+        call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("featured", true)).andExpect(status().isOk());
+        // Dữ liệu cũ: quy tắc chỉ ở tầng code (không CHECK ở DB dùng chung), bản backend cũ vẫn để lại bộ riêng tư mang cờ
+        jdbc.update("UPDATE decks SET visibility = 'private' WHERE id = ?", id);
+
+        // Form admin gửi kèm cả hai cờ khi chỉ đổi Official: cờ nổi bật không đổi -> không bị 400 kẹt bộ thẻ
+        JsonNode row = read(call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("official", true, "featured", true))
+                .andExpect(status().isOk()));
+        assertTrue(row.get("official").asBoolean());
+        assertTrue(row.get("featured").asBoolean());
+        JsonNode detail = auditDetail(admin.token, "DECK", id, "DECK_FLAGS");
+        assertTrue(detail.has("official"));
+        assertFalse(detail.has("featured"), "giữ nguyên cờ nổi bật -> không ghi vào audit");
+
+        // Bỏ cờ sót lại vẫn được; bỏ rồi thì không gắn lại được nữa
+        row = read(call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("featured", false)).andExpect(status().isOk()));
+        assertFalse(row.get("featured").asBoolean());
+        call(patch("/api/admin/decks/" + id + "/flags"), admin.token, Map.of("featured", true)).andExpect(status().isBadRequest());
+        assertEquals(3, auditCount(admin.token, "DECK", id), "gắn + Official + bỏ cờ; lần 400 không audit");
     }
 
     @Test

@@ -252,6 +252,9 @@ public class DeckService {
         if (owner) {
             deck.setFolder(ownedFolder(uid, req.folderId()));
             if (req.visibility() != null) deck.setVisibility(req.visibility());
+            // Chủ chuyển riêng tư = rời Thư viện: bỏ luôn cờ nổi bật, mở public lại không tự nổi bật. Quy tắc chỉ ở tầng
+            // code (xem AdminContentService.unpublish). Thao tác của chủ, không phải staff -> không ghi audit.
+            if (!deck.isPublic()) deck.setFeatured(false);
             if (req.category() != null) deck.setCategory(req.category());
         }
 
