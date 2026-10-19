@@ -10,18 +10,23 @@ venv\Scripts\python.exe -I scripts\build_dicts.py --only kanjivg    # jlpt | uni
 ```
 
 Script tải về thư mục cache `scripts/.download_cache/` (đã gitignore), chỉ parse bằng
-`json` / `zipfile` / `csv` / `re` của stdlib, không giải nén ra đĩa.
+`json` / `zipfile` / `csv` / `re` của stdlib, không giải nén ra đĩa. File đã có trong cache (cùng tên) không tải lại.
+`kanjivg` và `pitch` lọc theo từ vựng JLPT nên cần `jlpt/n*.csv` (đã commit; mất thì chạy `--only jlpt` trước).
+Máy mới clone chỉ cần dựng 4 file không commit: `--only jmdict`, `--only kanjivg`, `--only kradfile`, `--only pitch`
+(hoặc chạy không tham số, dựng lại cả file đã commit — kiểm `git diff` trước khi commit vì nguồn Unihan / JLPT có thể đã đổi).
 
 | File | Commit? | Nguồn | Giấy phép |
 |---|---|---|---|
 | `jlpt/n5.csv … n1.csv` | Có (~500 KB) | [elzup/jlpt-word-list](https://github.com/elzup/jlpt-word-list) `src/n*.csv`, gốc từ danh sách của Jonathan Waller (tanos.co.uk) | CC BY 4.0 theo tanos.co.uk (repo elzup ghi "dữ liệu theo giấy phép của tanos") |
-| `unihan_vietnamese.csv` | Có (~95 KB) | Unicode [Unihan](https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip) trường `kVietnamese` (giữ âm đầu nếu có nhiều) | [Unicode License](https://www.unicode.org/license.txt) |
+| `unihan_vietnamese.csv` | Có (~120 KB) | Unicode [Unihan](https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip) trường `kVietnamese` (giữ âm đầu nếu có nhiều) | [Unicode License](https://www.unicode.org/license.txt) |
 | `unihan_japanese.csv` | Có (~480 KB) | Unihan trường `kJapanese` (on katakana + kun hiragana), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
-| `unihan_rs.csv` | Có (~250 KB) | Unihan `Unihan_IRGSources.txt`: `kRSUnicode` (bộ thủ Khang Hi `.` nét ngoài bộ; lấy giá trị đầu, bỏ dấu `'` của bộ dạng giản thể) và `kTotalStrokes` (giá trị đầu), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
+| `unihan_rs.csv` | Có (~280 KB) | Unihan `Unihan_IRGSources.txt`: `kRSUnicode` (bộ thủ Khang Hi `.` nét ngoài bộ; lấy giá trị đầu, bỏ dấu `'` của bộ dạng giản thể) và `kTotalStrokes` (giá trị đầu), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
 | `radicals_214.csv` | Có (~10 KB) | 214 bộ thủ Khang Hi: khối Unicode [Kangxi Radicals](https://www.unicode.org/charts/PDF/U2F00.pdf) U+2F00–U+2FD5 theo thứ tự (`no` = vị trí + 1), `unified` = NFKC (chữ CJK thống nhất) **trừ 5 bộ ghi dạng JIS** mà người học gặp trong chữ JLPT (Unihan `kRSUnicode` xếp chính dạng JIS là bộ đó, nét ngoài bộ = 0): 63 戶 → 戸, 174 靑 → 青, 199 麥 → 麦, 201 黃 → 黄, 203 黑 → 黒 (dạng NFKC vẫn tra được qua `radical_of`); `strokes` = `kanjidata.radical_strokes` (Unihan `kTotalStrokes`) **trừ 114 禸 = 5** (Khang Hi và mọi bảng bộ thủ in đếm 5, Unihan ghi 4); `han_viet` = `han_viet.han_viet` (Unihan `kVietnamese` + overrides) **sửa tay** ở 26 bộ Unihan ghi âm Nôm / âm chữ giản thể (角 GÓC → GIÁC, 貝 BUỔI → BỐI, 厂 XƯỞNG → HÁN, 广 QUẢNG → NGHIỄM, 示 KÌ → THỊ…), `name_vi` / `meaning_vi` biên soạn tay theo tên bộ thủ quen dùng trong sách Hán-Việt (bộ Nhân, bộ Thủy, bộ Sước…). Dạng viết trong chữ của bộ (氵 艹 辶 扌 忄 礻 衤 阝 灬 犭 飠…) không nằm trong CSV mà ở `radicals.RADICAL_VARIANTS` (chỉ dùng để bộ lọc mẹo nhớ chấp nhận chúng). Không có script tải về: file là nguồn gốc, sửa trực tiếp | Unicode License (mã / nét) + nội dung tự biên soạn |
+| `han_viet_overrides.csv` | Có (~3 KB) | `char,reading` — âm Hán-Việt sửa tay cho chữ thông dụng mà Unihan thiếu hoặc xếp âm Nôm trước (電, 食, 校…); `han_viet.py` ưu tiên bảng này hơn `unihan_vietnamese.csv`. Không có script tải về, sửa trực tiếp | Nội dung tự biên soạn |
+| `heteronyms.yaml` | Có (~14 KB) | Từ đồng tự dị âm biên soạn tay (mục cuối tệp này). Không có script tải về | Nội dung tự biên soạn |
 | `jmdict.sqlite` | **Không** (~4 MB, gitignore) | [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified) bản `jmdict-eng-common` (chỉ từ phổ biến), dựng từ JMdict của EDRDG | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) — phải ghi nhận nguồn khi phân phối |
-| `kanji_strokes.json` | **Không** (~8 MB, gitignore) | [KanjiVG](https://kanjivg.tagaini.net/) — [GitHub KanjiVG/kanjivg](https://github.com/KanjiVG/kanjivg), release `kanjivg-YYYYMMDD-all.zip` (API lỗi thì zip nhánh `master`); © Ulrich Apel. Chỉ giữ kanji xuất hiện trong từ vựng JLPT, bỏ biến thể (`-Kaisho`, …) | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) — phải ghi nhận KanjiVG / Ulrich Apel và chia sẻ cùng giấy phép khi phân phối |
-| `kradfile.csv` | **Không** (~150 KB, gitignore) | [KRADFILE / kradfile-u](https://www.edrdg.org/krad/kradinf.html) của EDRDG, tải từ thư mục [`pub/Nihongo/`](https://www.edrdg.org/pub/Nihongo/) (`kradfile-u.gz` UTF-8, dự phòng `kradfile.gz` EUC-JP); KRADFILE2 © Jim Rose | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) |
+| `kanji_strokes.json` | **Không** (~9 MB, gitignore) | [KanjiVG](https://kanjivg.tagaini.net/) — [GitHub KanjiVG/kanjivg](https://github.com/KanjiVG/kanjivg), release `kanjivg-YYYYMMDD-all.zip` (API lỗi thì zip nhánh `master`); © Ulrich Apel. Chỉ giữ kanji xuất hiện trong từ vựng JLPT, bỏ biến thể (`-Kaisho`, …) | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) — phải ghi nhận KanjiVG / Ulrich Apel và chia sẻ cùng giấy phép khi phân phối |
+| `kradfile.csv` | **Không** (~300 KB, gitignore) | [KRADFILE / kradfile-u](https://www.edrdg.org/krad/kradinf.html) của EDRDG, tải từ thư mục [`pub/Nihongo/`](https://www.edrdg.org/pub/Nihongo/) (`kradfile-u.gz` UTF-8, dự phòng `kradfile.gz` EUC-JP); KRADFILE2 © Jim Rose | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) |
 | `pitch_accent.csv` | **Không** (~200 KB, gitignore) | [mifunetoshiro/kanjium](https://github.com/mifunetoshiro/kanjium) `data/source_files/raw/accents.txt`, lọc theo từ vựng JLPT | [CC BY-SA 4.0](https://github.com/mifunetoshiro/kanjium/blob/master/LICENSE.txt) |
 | (SudachiDict `core`) | pip | [WorksApplications/SudachiDict](https://github.com/WorksApplications/SudachiDict) | Apache-2.0 |
 | (wordfreq) | pip | [rspeer/wordfreq](https://github.com/rspeer/wordfreq) | MIT (dữ liệu CC BY-SA 4.0) |
@@ -29,6 +34,29 @@ Script tải về thư mục cache `scripts/.download_cache/` (đã gitignore), 
 Bảng `entries` trong `jmdict.sqlite`: `kanji TEXT, kana TEXT, gloss TEXT, common INTEGER, jlpt TEXT`
 (index trên `(kanji, kana)` và `kana`). `gloss` = 2 nghĩa đầu × 2 gloss đầu, nối bằng `; `.
 Thiếu file này thì service vẫn chạy: `meaningEn` lấy từ cột `meaning` của CSV JLPT, health báo `jmdict=false`.
+
+## Thiếu dữ liệu thì tính năng nào giảm
+
+Không file nào bắt buộc để service khởi động; thiếu file thì tính năng tương ứng giảm chất lượng hoặc trả 404, và
+`GET /api/extract/health` báo cờ đó `false` (Admin Panel đọc lại qua `GET /api/admin/health` của backend):
+
+| Thiếu | Cờ health | Ảnh hưởng |
+|---|---|---|
+| `jmdict.sqlite` | `jmdict` | Nghĩa EN chỉ còn cột `meaning` của CSV JLPT (từ ngoài JLPT không có nghĩa); đồ thị Hán-Việt (`han_viet_graph`) chỉ còn từ JLPT; từ đồng âm / từ dễ nhầm (`distractors`, `kanji_similar`) và cảnh báo mâu thuẫn (`conflicts`) chỉ còn đối chiếu danh sách JLPT; câu i+1 (`sentence_mining`) thiếu nghĩa |
+| `kanji_strokes.json` | `kanjivg`, `kanjiStrokes` | `/api/kanji/{ch}/strokes` và `/api/kanji/score` trả 404 → luyện viết không có nét mẫu, không chấm (frontend vẫn cho vẽ / hoàn tác / đếm nét) |
+| `kradfile.csv` | `kradfile` | Chữ Hán giống hình chỉ còn tín hiệu yếu (cùng bộ thủ, lệch ≤ 2 nét, điểm tối đa 0.3) → ít phương án nhiễu "giống hình", độ tin cậy thấp và bị ngưỡng `distractor_min_confidence` lọc bớt |
+| `pitch_accent.csv` | `pitch` | `/api/audio/pitch-reference` trả 404; `/api/audio/pitch-score` chỉ chấm được khi client gửi `accentType` → luyện trọng âm không có mẫu chuẩn (luyện phát âm bằng Web Speech API không ảnh hưởng) |
+| `unihan_rs.csv` (đã commit) | `radicals` | Không tra được bộ thủ / số nét: thẻ chữ Hán và thẻ bộ thủ thiếu bộ; kanji giống hình mất tín hiệu bộ thủ / số nét (thiếu cả KRADFILE thì không còn ứng viên) |
+| `radicals_214.csv` (đã commit) | `radicalCards` | `/api/radicals/cards` vẫn trả thẻ nhưng không có bộ thủ; mẹo nhớ mẫu thiếu phần bộ |
+| CSV JLPT / Unihan khác (đã commit) | `jlpt`, `unihan` | Phân cấp JLPT rơi về wordfreq, không có âm Hán-Việt — chỉ xảy ra khi file bị xoá nhầm |
+
+Bảng nạp lười **một lần** (cache cả kết quả rỗng) → dựng file xong phải **khởi động lại service**.
+
+## Ghi nguồn khi phân phối
+
+KanjiVG (CC BY-SA 3.0, © Ulrich Apel), JMdict / KRADFILE (giấy phép EDRDG, CC BY-SA 4.0) và kanjium (CC BY-SA 4.0) yêu cầu
+ghi nguồn và chia sẻ dữ liệu phái sinh cùng giấy phép khi phân phối. Bốn file phái sinh từ các nguồn này không commit; khi
+triển khai công khai cần thêm trang / chân trang ghi nguồn trên giao diện (hiện frontend chưa có).
 
 ## Dữ liệu chữ Hán (`app/extract/kanjidata.py`, lộ trình học 2 §0.1 LP-17)
 
