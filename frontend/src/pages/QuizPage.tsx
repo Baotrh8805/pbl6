@@ -52,6 +52,9 @@ export const QuizPage: React.FC = () => {
     // E5 – chế độ chỉ nghe (cài đặt hoặc ?mode=audio): chốt lúc mở trang vì setParams({ attempt }) bên dưới xoá ?mode=.
     const { userEmail } = useAuth();
     const [audioOnly] = useState(() => canSpeak && (parseAudioMode(params.get("mode")) ?? loadLearningSettings(userEmail).audioOnly));
+    // "Kiểm tra chương" của lộ trình mở trang với ?path=: giữ qua mọi lần đổi ?attempt= để màn kết quả có lối về lộ trình.
+    const [pathId] = useState(() => params.get("path"));
+    const withPath = (next: Record<string, string>): Record<string, string> => (pathId ? { ...next, path: pathId } : next);
 
     const [size, setSize] = useState(10);
     const [mode, setMode] = useState<QuizMode>("practice");
@@ -167,7 +170,7 @@ export const QuizPage: React.FC = () => {
                 if (!cancelled) setOpenAttempt(open?.attemptId ? open : null);
             } catch {
                 // Không khôi phục được (404, mạng): về màn bắt đầu, người dùng vẫn bắt đầu bài mới được.
-                if (!cancelled && attemptParam) setParams({}, { replace: true });
+                if (!cancelled && attemptParam) setParams(withPath({}), { replace: true });
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -199,7 +202,7 @@ export const QuizPage: React.FC = () => {
                 // Đã có lượt đang mở (vd. ở tab khác): không tạo lượt mới, nói rõ để người dùng không tưởng đang ở chế độ vừa chọn
                 setNotice(`Bạn đang có bài ${modeLabel(state.mode).toLowerCase()} chưa nộp nên đã tiếp tục bài đó.`);
             }
-            setParams({ attempt: state.attemptId }, { replace: true });
+            setParams(withPath({ attempt: state.attemptId }), { replace: true });
         } catch (e) {
             setError(extractErrorMessage(e));
         } finally {
@@ -210,7 +213,7 @@ export const QuizPage: React.FC = () => {
     const resume = () => {
         if (!openAttempt?.attemptId) return;
         load(openAttempt);
-        setParams({ attempt: openAttempt.attemptId }, { replace: true });
+        setParams(withPath({ attempt: openAttempt.attemptId }), { replace: true });
         setOpenAttempt(null);
     };
 
@@ -374,7 +377,7 @@ export const QuizPage: React.FC = () => {
         setFeedbacks({});
         setDrafts({});
         setFlagNotice(null);
-        setParams({}, { replace: true });
+        setParams(withPath({}), { replace: true });
         void fetchOpenQuizAttempt(deckId)
             .then((o) => setOpenAttempt(o?.attemptId ? o : null))
             .catch(() => setOpenAttempt(null));
@@ -395,6 +398,7 @@ export const QuizPage: React.FC = () => {
             <QuizReview
                 attempt={attempt}
                 deckId={deckId}
+                pathId={pathId}
                 flaggedIds={flaggedIds}
                 flagNotice={flagNotice}
                 onFlag={openFlag}
@@ -410,6 +414,7 @@ export const QuizPage: React.FC = () => {
         return (
             <QuizStartScreen
                 deckId={deckId}
+                pathId={pathId}
                 openAttempt={openAttempt}
                 onResume={resume}
                 mode={mode}

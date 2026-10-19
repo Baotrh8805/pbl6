@@ -113,6 +113,7 @@ export const AdminUserDetailPage: React.FC = () => {
     });
     if (ok) {
       setLockReason("");
+      setStatus({ ok: true, text: locking ? `Đã khoá tài khoản ${u.email}.` : `Đã mở khoá tài khoản ${u.email}.` });
       setReload((n) => n + 1);
     }
   };
@@ -146,6 +147,7 @@ export const AdminUserDetailPage: React.FC = () => {
     });
     if (ok) {
       setRoleDraft("");
+      setStatus({ ok: true, text: `Đã đổi vai trò của ${user.email} thành ${ROLE_LABELS[roleDraft]}; mọi phiên đăng nhập đã bị thu hồi.` });
       setReload((n) => n + 1);
     }
   };
@@ -567,7 +569,10 @@ export const AdminUserDetailPage: React.FC = () => {
                       tone: "warning",
                       action: () => revokeUserSessions(user.id),
                     });
-                    if (ok) setReload((n) => n + 1);
+                    if (ok) {
+                      setStatus({ ok: true, text: `Đã thu hồi mọi phiên đăng nhập của ${user.email}.` });
+                      setReload((n) => n + 1);
+                    }
                   }}
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px]">

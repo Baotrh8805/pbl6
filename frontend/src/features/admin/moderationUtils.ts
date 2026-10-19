@@ -430,3 +430,26 @@ export const appealActionState = (
   }
   return { canHandle, canUnlock: true, unlockHint: null };
 };
+
+// ---------- Sửa sau kiểm tay trên trình duyệt (STAFF-07/08) ----------
+
+/**
+ * Lý do khoá để hiện trong bảng khiếu nại. `lockedReason` của AppealResponse là trạng thái HIỆN TẠI (null khi tài khoản
+ * không còn khoá), không phải lý do lúc gửi khiếu nại -> chỉ hiện khi tài khoản còn khoá; còn lại null (xem placeholder).
+ */
+export const appealLockReason = (a: AppealAccount & { lockedReason?: string | null }): string | null =>
+  a.userLocked === true && a.lockedReason?.trim() ? a.lockedReason.trim() : null;
+
+/** Chữ mờ thay cho lý do khi không có: đang khoá mà không ghi lý do / đã mở khoá (lý do cũ không lưu) / mất tài khoản. */
+export const appealLockReasonPlaceholder = (a: AppealAccount): string =>
+  a.userId == null ? "—" : a.userLocked === true ? "Không ghi lý do" : "— (không còn khoá)";
+
+/** Nhãn kết quả xử lý báo cáo; NONE là "Không làm gì" (đã xử lý), khác với trạng thái "Đã bỏ qua" (DISMISSED). */
+export const reportActionLabel = (action: string | null | undefined): string =>
+  action === "UNPUBLISH_DECK"
+    ? "Gỡ bộ thẻ"
+    : action === "CLEAR_COMMENT"
+      ? "Xoá bình luận"
+      : action === "NONE"
+        ? "Không làm gì"
+        : (action ?? "—");

@@ -200,3 +200,60 @@ export const stringToTextColor = (str: string): string => {
 };
 
 
+
+// ---------- Sửa sau kiểm tay trên trình duyệt (STAFF-04/06/12) ----------
+
+/** Giá trị ?role= của tab "Đội ngũ Staff": backend chỉ lọc một vai trò mỗi lần nên máy khách gộp ADMIN + SUPER_ADMIN. */
+export const STAFF_ROLE_FILTER = "STAFF";
+export const STAFF_ROLES: Role[] = ["ADMIN", "SUPER_ADMIN"];
+
+/**
+ * Gộp danh sách staff của các vai trò (mỗi vai trò một lần gọi) theo đúng thứ tự server (mới tạo trước, rồi id giảm dần,
+ * UserRepository.search) và cắt đúng trang đang xem.
+ */
+export function mergeStaffPage<T extends { id: number; createdAt: string | null }>(
+  rows: readonly T[],
+  page: number,
+  size: number
+): { items: T[]; total: number; page: number; size: number } {
+  const seen = new Set<number>();
+  const sorted = rows
+    .filter((r) => !seen.has(r.id) && seen.add(r.id))
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id - a.id);
+  return { items: sorted.slice(page * size, (page + 1) * size), total: sorted.length, page, size };
+}
+
+/** Bộ lọc Nhật ký sai thì báo ngay ở máy khách thay vì gửi lên server (400) hoặc lặng lẽ ra 0 dòng; hợp lệ -> null. */
+export function auditFilterError(f: { actorId: string; from: string; to: string }): string | null {
+  const actor = f.actorId.trim();
+  if (actor && !/^[1-9]\d{0,17}$/.test(actor)) return "ID người thao tác phải là số nguyên dương (vd. 1).";
+  if (f.from && f.to && f.from > f.to) return "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.";
+  return null;
+}
+
+/**
+ * Tỉ lệ (%) các nhóm của "Cơ cấu Bóc tách AI". "Khác" = phần còn lại của 100 % chỉ khi thật sự có lượt khác: tổng 0
+ * (hoặc không có lượt khác) thì 0 %, không phải "Khác: 0 (100%)".
+ */
+export function extractionBreakdown(total: number, done: number, running: number, failed: number) {
+  const pct = (v: number) => (total > 0 && v > 0 ? Math.min(100, Math.round((v / total) * 100)) : 0);
+  const other = Math.max(0, total - done - running - failed);
+  const donePct = pct(done);
+  const runningPct = pct(running);
+  const failedPct = pct(failed);
+  const otherPct = total > 0 && other > 0 ? Math.max(0, 100 - donePct - runningPct - failedPct) : 0;
+  return { other, donePct, runningPct, failedPct, otherPct };
+}
+
+/**
+ * Bề rộng vẽ của biểu đồ xu hướng (đơn vị viewBox) theo bề rộng khung đo được: bằng đúng số px (1 đơn vị ≈ 1 px, chữ
+ * trục 11 px đọc được trên điện thoại), kẹp [240, max] — khung rộng hơn max thì phóng to như trước.
+ */
+export const chartWidthFor = (containerWidth: number, max: number): number =>
+  Math.round(Math.min(max, Math.max(240, containerWidth)));
+
+/** Bước nhãn trục X: tối đa 6 nhãn, và mỗi nhãn "dd/mm" cần ~70 px nên khung hẹp ít nhãn hơn (tối thiểu 2). */
+export const xLabelStep = (points: number, width: number): number => {
+  const maxLabels = Math.max(2, Math.min(6, Math.floor(width / 70)));
+  return Math.max(1, Math.ceil(points / maxLabels));
+};

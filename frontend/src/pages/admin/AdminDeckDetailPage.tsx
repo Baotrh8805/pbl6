@@ -197,7 +197,10 @@ export const AdminDeckDetailPage: React.FC = () => {
                     tone: "warning",
                     action: () => unpublishDeck(deck.id),
                   });
-                  if (ok) setReload((n) => n + 1);
+                  if (ok) {
+                    setStatus({ ok: true, text: "Đã gỡ bộ thẻ khỏi Thư viện, chuyển về chế độ riêng tư." });
+                    setReload((n) => n + 1);
+                  }
                 }}
               >
                 Gỡ khỏi Thư viện

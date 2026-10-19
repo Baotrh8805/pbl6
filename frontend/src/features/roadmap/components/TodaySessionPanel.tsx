@@ -1,7 +1,13 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import type { LearningPath, LearningPathTask, LearningPathTodayState } from "@/types/api.types";
-import { sessionUrl, todayHeading, todaySessionSize, type TodayCounts } from "@/features/roadmap/roadmapUtils";
+import {
+  sessionUrl,
+  todayHeading,
+  todayNewTasksLine,
+  todaySessionSize,
+  type TodayCounts,
+} from "@/features/roadmap/roadmapUtils";
 
 interface TodaySessionPanelProps {
   path: LearningPath;
@@ -30,6 +36,9 @@ export const TodaySessionPanel: React.FC<TodaySessionPanelProps> = ({ path, stat
   const sizeOf = (t: LearningPathTask) => t.count ?? Math.max(t.toPos - t.fromPos + 1, 0);
   const total = todaySessionSize(counts, cap, state);
   const heading = todayHeading(state, dayIndex, path.totalDays, date, path.startDate);
+  // Học hết thẻ mới của hôm nay (Mới 0) thì dòng này nói "đã học xong", không còn như việc đang chờ.
+  const tasksLine =
+    state === "during" ? todayNewTasksLine(tasks.map((t) => `${titleOf(t)} (${sizeOf(t)} thẻ)`), counts.newCount) : null;
   const emptyNote =
     state === "rest"
       ? "Không có thẻ nào đến hạn. Nghỉ ngơi nhé!"
@@ -67,11 +76,7 @@ export const TodaySessionPanel: React.FC<TodaySessionPanelProps> = ({ path, stat
         ))}
       </dl>
 
-      {state === "during" && tasks.length > 0 && (
-        <p className="text-body-sm text-on-surface-variant">
-          Thẻ mới hôm nay: {tasks.map((t) => `${titleOf(t)} (${sizeOf(t)} thẻ)`).join(" · ")}
-        </p>
-      )}
+      {tasksLine && <p className="text-body-sm text-on-surface-variant">{tasksLine}</p>}
       {state === "rest" && counts.dueCount > 0 && (
         <p className="text-body-sm text-on-surface-variant">Vẫn có {counts.dueCount} thẻ đến hạn nếu muốn ôn.</p>
       )}

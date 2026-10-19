@@ -1,14 +1,15 @@
 // Hằng số + helper dùng chung cho trang Thư viện bộ thẻ (tách khỏi .tsx để không vướng rule only-export-components).
 
+// short: tên gọn cho chip trên thẻ bộ thẻ (nhãn đầy đủ có emoji + tên tiếng Nhật, quá dài cho chip).
 export const CATEGORIES = [
-  { id: "all", label: "Tất Cả Môn" },
-  { id: "dokkai", label: "📖 Đọc hiểu Dokkai" },
-  { id: "goi", label: "🔤 Từ vựng Goi" },
-  { id: "kanji", label: "🈯 Kanji Hán tự" },
-  { id: "bunpou", label: "⛩️ Ngữ pháp Bunpou" },
-  { id: "kaiwa", label: "🗣️ Hội thoại Kaiwa" },
-  { id: "it", label: "💻 Tiếng Nhật CNTT (BrSE)" },
-  { id: "business", label: "💼 Thương Mại (BJT)" },
+  { id: "all", label: "Tất Cả Môn", short: "Tất cả" },
+  { id: "dokkai", label: "📖 Đọc hiểu Dokkai", short: "Đọc hiểu" },
+  { id: "goi", label: "🔤 Từ vựng Goi", short: "Từ vựng" },
+  { id: "kanji", label: "🈯 Kanji Hán tự", short: "Kanji" },
+  { id: "bunpou", label: "⛩️ Ngữ pháp Bunpou", short: "Ngữ pháp" },
+  { id: "kaiwa", label: "🗣️ Hội thoại Kaiwa", short: "Hội thoại" },
+  { id: "it", label: "💻 Tiếng Nhật CNTT (BrSE)", short: "Tiếng Nhật CNTT" },
+  { id: "business", label: "💼 Thương Mại (BJT)", short: "Thương Mại" },
 ];
 
 export { JLPT_LEVELS as LEVELS } from "../../../lib/deckUtils.ts";
@@ -17,6 +18,23 @@ export { JLPT_LEVELS as LEVELS } from "../../../lib/deckUtils.ts";
 export function categoryLabel(id: string | null | undefined): string | null {
   return CATEGORIES.find((c) => c.id === id && c.id !== "all")?.label ?? null;
 }
+
+/** Tên chủ đề gọn cho chip ("kaiwa" -> "Hội thoại"); null/lạ -> null. */
+export function categoryShortLabel(id: string | null | undefined): string | null {
+  return CATEGORIES.find((c) => c.id === id && c.id !== "all")?.short ?? null;
+}
+
+/** Ctrl+K / ⌘K (không kèm Alt/Shift) -> focus ô tìm kiếm Thư viện. */
+export const isSearchShortcut = (e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): boolean => e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+
+/** Nhãn phím tắt theo nền tảng: máy Apple "⌘K", còn lại "Ctrl K". */
+export const searchShortcutLabel = (apple: boolean): string => (apple ? "⌘K" : "Ctrl K");
 
 export type LibraryTab = "all" | "popular" | "official" | "community";
 

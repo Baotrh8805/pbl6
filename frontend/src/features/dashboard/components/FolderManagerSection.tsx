@@ -1,6 +1,5 @@
 import React, { useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { ComingSoonBadge } from "@/components/ui/Modal";
 import type { FolderItem } from "../types/dashboard.types";
 
 interface FolderManagerSectionProps {
@@ -73,7 +72,6 @@ export const FolderManagerSection: React.FC<FolderManagerSectionProps> = ({
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">file_upload</span>
             <span>Tải tài liệu (AI)</span>
-            <ComingSoonBadge />
           </button>
 
           <button

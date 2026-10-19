@@ -119,7 +119,7 @@ export const DeckLibraryPage: React.FC = () => {
         />
       )}
 
-      <LibraryHeader />
+      <LibraryHeader deckCount={view?.allCount ?? null} />
 
       {view?.featured && (
         <FeaturedDeckHero

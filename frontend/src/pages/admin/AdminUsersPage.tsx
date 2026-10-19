@@ -4,10 +4,13 @@ import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { fetchAdminUsers } from "@/services/adminService";
 import {
+  STAFF_ROLES,
+  STAFF_ROLE_FILTER,
   adminAccountStatus,
   downloadCsv,
   fetchAllPages,
   formatShort,
+  mergeStaffPage,
   stringToHslColor,
   stringToTextColor,
 } from "@/features/admin/adminUtils";
@@ -29,16 +32,22 @@ export const AdminUsersPage: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
+  // ?role=STAFF (tab "Đội ngũ Staff"): backend chỉ lọc một vai trò mỗi lần -> tải đủ ADMIN và SUPER_ADMIN (đội staff
+  // ít người) rồi gộp, phân trang ở máy khách. Vai trò khác: gọi thẳng như trước.
+  const isStaffFilter = q.get("role") === STAFF_ROLE_FILTER;
+  const baseFilter = () => ({ q: q.get("q"), premium: q.get("premium"), locked: q.get("locked") });
+  const fetchAllStaff = async () =>
+    (
+      await Promise.all(
+        STAFF_ROLES.map((role) => fetchAllPages((page, size) => fetchAdminUsers({ ...baseFilter(), role, page, size })))
+      )
+    ).flat();
+
   const { data, loading, error } = useAsync(
-    () =>
-      fetchAdminUsers({
-        q: q.get("q"),
-        role: q.get("role"),
-        premium: q.get("premium"),
-        locked: q.get("locked"),
-        page: q.page,
-        size: PAGE_SIZE,
-      }),
+    async () =>
+      isStaffFilter
+        ? mergeStaffPage(await fetchAllStaff(), q.page, PAGE_SIZE)
+        : fetchAdminUsers({ ...baseFilter(), role: q.get("role"), page: q.page, size: PAGE_SIZE }),
     [q.key, retry]
   );
   const users = data?.items ?? [];
@@ -46,16 +55,9 @@ export const AdminUsersPage: React.FC = () => {
   const handleExportCsv = async () => {
     setExporting(true);
     try {
-      const rows = await fetchAllPages((page, size) =>
-        fetchAdminUsers({
-          q: q.get("q"),
-          role: q.get("role"),
-          premium: q.get("premium"),
-          locked: q.get("locked"),
-          page,
-          size,
-        })
-      );
+      const rows = isStaffFilter
+        ? mergeStaffPage(await fetchAllStaff(), 0, Number.MAX_SAFE_INTEGER).items
+        : await fetchAllPages((page, size) => fetchAdminUsers({ ...baseFilter(), role: q.get("role"), page, size }));
       downloadCsv(
         `nguoi-dung-${new Date().toISOString().slice(0, 10)}.csv`,
         rows.map((u) => ({
@@ -149,9 +151,9 @@ export const AdminUsersPage: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => q.set({ role: "ADMIN", premium: undefined, locked: undefined })}
+          onClick={() => q.set({ role: STAFF_ROLE_FILTER, premium: undefined, locked: undefined })}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
-            currentRole === "ADMIN"
+            currentRole === STAFF_ROLE_FILTER
               ? "bg-surface-container-lowest text-primary shadow-xs"
               : "text-on-surface-variant hover:text-on-surface"
           }`}
@@ -185,6 +187,7 @@ export const AdminUsersPage: React.FC = () => {
             className={adminFieldClass}
           >
             <option value="">Tất cả vai trò</option>
+            <option value={STAFF_ROLE_FILTER}>Toàn bộ staff (Admin + Super admin)</option>
             {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r]}
@@ -238,6 +241,7 @@ export const AdminUsersPage: React.FC = () => {
 
       <AdminTableShell
         caption="Danh sách người dùng"
+        stickyActions
         loading={loading}
         error={error}
         empty={users.length === 0}

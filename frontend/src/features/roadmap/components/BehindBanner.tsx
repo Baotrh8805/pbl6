@@ -1,12 +1,15 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
-import { sessionUrl, type BehindSeverity } from "@/features/roadmap/roadmapUtils";
+import { behindMessage, sessionUrl, type BehindSeverity } from "@/features/roadmap/roadmapUtils";
 
 interface BehindBannerProps {
   pathId: string;
   behind: number;
   severity: BehindSeverity;
+  /** Trần thẻ/ngày và số thẻ còn chưa học: câu giải thích nói đúng lý do mức "severe" (vượt trần hay vượt 20 %). */
+  cap: number;
+  remaining: number;
   busy: boolean;
   onRebalance: (extend: boolean) => void;
 }
@@ -17,7 +20,7 @@ const TONE: Record<Exclude<BehindSeverity, "none">, string> = {
 };
 
 // LP-4: nợ không chỉ là nhãn — học bù ngay, hoặc nhờ server chia lại (giữ ngày cuối) / kéo dài lộ trình (giữ nhịp).
-export const BehindBanner: React.FC<BehindBannerProps> = ({ pathId, behind, severity, busy, onRebalance }) => {
+export const BehindBanner: React.FC<BehindBannerProps> = ({ pathId, behind, severity, cap, remaining, busy, onRebalance }) => {
   if (behind <= 0 || severity === "none") return null;
   return (
     <section
@@ -31,11 +34,7 @@ export const BehindBanner: React.FC<BehindBannerProps> = ({ pathId, behind, seve
         </span>
         <div className="min-w-0">
           <p className="font-semibold">Bạn đang trễ {behind} thẻ</p>
-          <p className="text-body-sm opacity-90">
-            {severity === "severe"
-              ? "Phần nợ đã lớn hơn sức học một ngày. Hãy học bù dần, hoặc cân lại lịch để các ngày còn lại gánh bớt."
-              : "Học bù trong phiên hôm nay, hoặc cân lại lịch nếu muốn chia đều phần còn lại."}
-          </p>
+          <p className="text-body-sm opacity-90">{behindMessage(behind, cap, remaining)}</p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">

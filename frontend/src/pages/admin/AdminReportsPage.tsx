@@ -12,6 +12,7 @@ import { Pager } from "@/features/admin/components/Pager";
 import { ResolveReportModal } from "@/features/admin/components/ResolveReportModal";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
+import { reportActionLabel } from "@/features/admin/moderationUtils";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
 
 const PAGE_SIZE = 20;
@@ -137,6 +138,7 @@ export const AdminReportsPage: React.FC = () => {
 
       <AdminTableShell
         caption={`Báo cáo ${REPORT_STATUS_LABELS[status]}`}
+        stickyActions={status === "OPEN"}
         loading={loading}
         error={error}
         empty={rows.length === 0}
@@ -204,7 +206,7 @@ export const AdminReportsPage: React.FC = () => {
                   {r.action && (
                     <div className="font-semibold text-on-surface mb-0.5">
                       <AdminStatusBadge
-                        label={r.action === "UNPUBLISH_DECK" ? "Gỡ bộ thẻ" : r.action === "CLEAR_COMMENT" ? "Xoá bình luận" : "Bỏ qua"}
+                        label={reportActionLabel(r.action)}
                         tone={r.action === "NONE" ? "neutral" : "warn"}
                       />
                     </div>

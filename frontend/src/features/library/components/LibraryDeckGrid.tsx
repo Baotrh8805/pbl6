@@ -1,6 +1,6 @@
 import React from "react";
 import type { LibraryDeck } from "@/types/api.types";
-import { categoryLabel, formatCompactCount, getLevelBadgeClass, initials } from "./libraryOptions";
+import { categoryLabel, categoryShortLabel, formatCompactCount, getLevelBadgeClass, initials } from "./libraryOptions";
 
 interface LibraryDeckCardProps {
   deck: LibraryDeck;
@@ -18,9 +18,12 @@ export const LibraryDeckCard: React.FC<LibraryDeckCardProps> = ({ deck, onPrevie
           <span className={`px-2 py-0.5 rounded font-label-sm text-xs font-bold ${getLevelBadgeClass(deck.level)}`}>
             {deck.level}
           </span>
-          {categoryLabel(deck.category) && (
-            <span className="px-2 py-0.5 rounded font-label-sm text-[10px] font-semibold bg-surface-container text-on-surface">
-              {categoryLabel(deck.category)?.split(" ")[1]}
+          {categoryShortLabel(deck.category) && (
+            <span
+              title={categoryLabel(deck.category) ?? undefined}
+              className="px-2 py-0.5 rounded font-label-sm text-[10px] font-semibold bg-surface-container text-on-surface"
+            >
+              {categoryShortLabel(deck.category)}
             </span>
           )}
         </div>

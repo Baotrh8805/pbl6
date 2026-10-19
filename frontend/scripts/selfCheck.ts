@@ -198,6 +198,8 @@ import { runAdminChecks } from "./selfcheck/admin.ts";
 import { runLearnerChecks } from "./selfcheck/learner.ts";
 import { runPracticeChecks } from "./selfcheck/practice.ts";
 import { runQuizChecks } from "./selfcheck/quiz.ts";
+// Lỗi phát hiện khi kiểm tay trên trình duyệt (LC-*, LP-*, STAFF-*): file riêng, không chạm các khối trên.
+import { runManualChecks } from "./selfcheck/manual.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -1173,6 +1175,7 @@ async function runSelfCheck() {
   runQuizChecks(assertTrue);
   runPracticeChecks(assertTrue);
   runLearnerChecks(assertTrue);
+  runManualChecks(assertTrue);
   assertStrictEqual(parseProfileTab("practice"), "practice", "Tab Luyện tập hợp lệ từ URL");
 
   console.log(" All self-check assertions passed successfully!");

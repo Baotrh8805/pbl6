@@ -61,6 +61,10 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   const [activating, setActivating] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [quizBusy, setQuizBusy] = useState<string | null>(null);
+  // Lỗi mở "Kiểm tra chương" hiện ngay dưới nút của chương đó (nút nằm sâu trong trang, báo ở đầu trang thì không ai thấy).
+  const [quizError, setQuizError] = useState<{ chapterId: string; message: string } | null>(null);
+  // Lỗi thao tác khác hiện ở đầu trang: cuộn tới để người dùng thấy dù đang ở cuối trang.
+  const actionErrorRef = useRef<HTMLParagraphElement>(null);
   const [decksPending, setDecksPending] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -103,6 +107,10 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (actionError) actionErrorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [actionError]);
 
   // Tải lại sau khi sửa bản nháp / kích hoạt / cân lại lịch (cùng bộ đếm `refreshSeq` với vòng poll ở trên).
   const refreshPath = useCallback(async () => {
@@ -291,17 +299,24 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   };
 
   // Kiểm tra chương: server mở (hoặc nối lại) lượt quiz exam trên bộ của chương; QuizPage khôi phục đúng lượt qua ?attempt=.
+  // ?path= để màn kết quả quiz có nút "Về lộ trình" (chương hiện "Đã qua" ngay khi đạt ngưỡng).
   const handleStartQuiz = async (cid: string) => {
     setQuizBusy(cid);
+    setQuizError(null);
     try {
       const state = await startChapterQuiz(id, cid);
       if (!state?.attemptId) {
-        setActionError("Không mở được lượt kiểm tra: bộ thẻ của chương cần ít nhất 2 thẻ có nghĩa khác nhau.");
+        setQuizError({
+          chapterId: cid,
+          message: "Không mở được lượt kiểm tra: bộ thẻ của chương cần ít nhất 2 thẻ có nghĩa khác nhau.",
+        });
         return;
       }
-      navigate(`/decks/${encodeURIComponent(state.deckId)}/quiz?attempt=${encodeURIComponent(state.attemptId)}`);
+      navigate(
+        `/decks/${encodeURIComponent(state.deckId)}/quiz?attempt=${encodeURIComponent(state.attemptId)}&path=${encodeURIComponent(id)}`
+      );
     } catch (e) {
-      setActionError(extractErrorMessage(e));
+      setQuizError({ chapterId: cid, message: extractErrorMessage(e) });
     } finally {
       setQuizBusy(null);
     }
@@ -349,7 +364,7 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <PathStatusChip status={path.status} />
+              <PathStatusChip status={path.status} completed={!!path.completedAt} />
               {path.sourceType === "remedial" && <RemedialChip />}
             </div>
             <h1 className="mt-2 font-headline-sm text-headline-sm font-bold text-on-surface truncate">{path.title}</h1>
@@ -392,7 +407,7 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
 
       {/* Bản nháp / thất bại tự hiện lỗi trong khối của mình. */}
       {actionError && path.status !== "DRAFT" && path.status !== "FAILED" && (
-        <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
+        <p ref={actionErrorRef} role="alert" className="scroll-mt-20 p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
           {actionError}
         </p>
       )}
@@ -439,6 +454,7 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
             onRebalance={(extend) => void handleRebalance(extend)}
             onComplete={() => void handleComplete()}
             onStartQuiz={(cid) => void handleStartQuiz(cid)}
+            quizError={quizError}
             onOpenSettings={() => setSettingsOpen(true)}
           />
           <PathSettingsDrawer

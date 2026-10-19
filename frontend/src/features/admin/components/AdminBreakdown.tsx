@@ -1,5 +1,6 @@
 import React from "react";
 import type { AdminStats } from "@/types/api.types";
+import { extractionBreakdown } from "../adminUtils.ts";
 
 interface AdminBreakdownProps {
   stats: AdminStats;
@@ -18,12 +19,13 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
   const extDone = extractions.done || 0;
   const extRunning = extractions.running || 0;
   const extFailed = extractions.failed || 0;
-  const extOther = Math.max(0, extTotal - extDone - extRunning - extFailed);
-
-  const donePct = toPct(extDone, extTotal);
-  const runningPct = toPct(extRunning, extTotal);
-  const failedPct = toPct(extFailed, extTotal);
-  const otherPct = Math.max(0, 100 - donePct - runningPct - failedPct);
+  const {
+    other: extOther,
+    donePct,
+    runningPct,
+    failedPct,
+    otherPct,
+  } = extractionBreakdown(extTotal, extDone, extRunning, extFailed);
 
   // 2. Tỉ lệ người dùng
   const userTotal = users.total || 0;

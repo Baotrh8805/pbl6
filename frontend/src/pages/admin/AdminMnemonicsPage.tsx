@@ -192,6 +192,7 @@ export const AdminMnemonicsPage: React.FC = () => {
       ) : (
         <AdminTableShell
           caption={`Mẹo nhớ ${MNEMONIC_STATUS_LABELS[status].toLowerCase()}`}
+          stickyActions={status === "PENDING"}
           loading={loading}
           error={error}
           empty={rows.length === 0}

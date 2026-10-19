@@ -1,7 +1,7 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
-import { atLeast, homeFor, isStaff, setupPending, type Role } from "@/lib/roles";
+import { atLeast, homeFor, isStaff, setupPending, staffRedirectFor, type Role } from "@/lib/roles";
 import { Loader2 } from "lucide-react";
 
 interface ProtectedRouteProps {
@@ -41,7 +41,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, minRol
     if (!pending && location.pathname === "/setup") return <Navigate to={homeFor(role)} replace />;
     if (pending) return <>{children}</>;
     if (minRole && !atLeast(role, minRole)) return <Navigate to={homeFor(role)} replace />;
-    if (!minRole && isStaff(role)) return <Navigate to="/admin" replace />;
+    if (!minRole && isStaff(role)) return <Navigate to={staffRedirectFor(location.pathname)} replace />;
   }
 
   return <>{children}</>;

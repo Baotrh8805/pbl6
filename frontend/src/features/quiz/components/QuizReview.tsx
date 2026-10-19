@@ -12,6 +12,8 @@ interface QuizReviewProps {
     /** Lượt đã nộp (finished): tổng kết + xem lại toàn bộ đáp án và lời giải. */
     attempt: TypedQuizAttempt;
     deckId: string;
+    /** Bài "Kiểm tra chương" mở từ lộ trình: nút chính là quay về lộ trình (chương hiện "Đã qua" nếu đạt ngưỡng). */
+    pathId?: string | null;
     flaggedIds: ReadonlySet<string>;
     /** Thông báo sau khi báo lỗi, chỉ hiện dưới đúng câu vừa báo. */
     flagNotice: { questionId: string; text: string } | null;
@@ -22,7 +24,16 @@ interface QuizReviewProps {
 }
 
 /** Màn xem lại sau khi nộp: điểm, thanh tỉ lệ, từng câu kèm phản hồi + nút báo lỗi câu hỏi. */
-export const QuizReview: React.FC<QuizReviewProps> = ({ attempt, deckId, flaggedIds, flagNotice, onFlag, onRestart, children }) => {
+export const QuizReview: React.FC<QuizReviewProps> = ({
+    attempt,
+    deckId,
+    pathId,
+    flaggedIds,
+    flagNotice,
+    onFlag,
+    onRestart,
+    children,
+}) => {
     const total = attempt.total ?? attempt.questions.length;
     const score = attempt.score ?? 0;
     const pct = total ? Math.round((score / total) * 100) : 0;
@@ -71,8 +82,16 @@ export const QuizReview: React.FC<QuizReviewProps> = ({ attempt, deckId, flagged
                     ))}
                 </ol>
                 {children}
-                <div className="flex gap-space-sm">
-                    <button type="button" onClick={onRestart} className={quizPrimaryBtn}>
+                <div className="flex flex-wrap gap-space-sm">
+                    {pathId && (
+                        <Link
+                            to={`/roadmap/${encodeURIComponent(pathId)}`}
+                            className={`${quizPrimaryBtn} inline-flex items-center justify-center`}
+                        >
+                            Về lộ trình
+                        </Link>
+                    )}
+                    <button type="button" onClick={onRestart} className={pathId ? quizSecondaryBtn : quizPrimaryBtn}>
                         Làm lại
                     </button>
                     <Link to={`/decks/${deckId}`} className={`${quizSecondaryBtn} inline-flex items-center`}>

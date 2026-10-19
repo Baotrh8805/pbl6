@@ -4,6 +4,8 @@ import { summarizeJson } from "../adminUtils.ts";
 export interface AdminJsonViewerProps {
   data: unknown;
   maxSummaryLength?: number;
+  /** Bề rộng tối đa của dòng tóm tắt (bảng nhiều cột truyền hẹp hơn để vừa khung). */
+  summaryClassName?: string;
 }
 
 /**
@@ -12,6 +14,7 @@ export interface AdminJsonViewerProps {
 export const AdminJsonViewer: React.FC<AdminJsonViewerProps> = ({
   data,
   maxSummaryLength = 60,
+  summaryClassName = "max-w-[240px] sm:max-w-md",
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -36,7 +39,7 @@ export const AdminJsonViewer: React.FC<AdminJsonViewerProps> = ({
   return (
     <details className="group rounded-lg border border-surface-container-high bg-surface-container-low/40 p-1.5 text-label-sm transition-all">
       <summary className="flex items-center justify-between gap-2 cursor-pointer select-none font-mono text-outline hover:text-on-surface">
-        <span className="truncate max-w-[240px] sm:max-w-md font-mono" title={jsonString}>
+        <span className={`truncate min-w-0 ${summaryClassName} font-mono`} title={jsonString}>
           {summary}
         </span>
         <span className="flex items-center gap-1.5 shrink-0 ml-2">

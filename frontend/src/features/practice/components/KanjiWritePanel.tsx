@@ -239,8 +239,9 @@ export const KanjiWritePanel: React.FC<KanjiWritePanelProps> = ({
                     </div>
                 </div>
 
-                {/* Ô vẽ: key theo lượt để "Vẽ lại" dựng canvas mới, bỏ nét cũ */}
-                <div className="flex flex-col items-center gap-3">
+                {/* Ô vẽ: key theo lượt để "Vẽ lại" dựng canvas mới, bỏ nét cũ. Cột rộng đúng bằng canvas và dòng nhắc
+                    giữ sẵn 2 dòng: chữ nhắc đổi sau nét đầu không làm cột co/giãn, canvas đứng yên khi đang vẽ. */}
+                <div className="flex flex-col items-center gap-3 shrink-0 max-w-full self-center sm:self-auto" style={{ width: CANVAS_SIZE }}>
                     <KanjiCanvas
                         key={attempt}
                         size={CANVAS_SIZE}
@@ -249,7 +250,7 @@ export const KanjiWritePanel: React.FC<KanjiWritePanelProps> = ({
                         disabled={busy}
                         onChange={handleStrokes}
                     />
-                    <p aria-live="polite" className={`text-body-sm min-h-5 text-center ${precheck ? PRECHECK_TEXT[precheck.tone] : "text-on-surface-variant"}`}>
+                    <p aria-live="polite" className={`w-full text-body-sm min-h-10 text-center ${precheck ? PRECHECK_TEXT[precheck.tone] : "text-on-surface-variant"}`}>
                         {precheck?.text ?? "Vẽ từng nét theo đúng thứ tự và hướng (trái → phải, trên → dưới)."}
                     </p>
                 </div>
@@ -273,7 +274,8 @@ export const KanjiWritePanel: React.FC<KanjiWritePanelProps> = ({
                     <Icon name="replay" />
                     Vẽ lại
                 </Button>
-                {scoreHint && drawn > 0 && (
+                {/* Gợi ý "chưa có nét mẫu" hiện ngay từ đầu (không đợi nét đầu) để hàng nút không đổi cao khi bắt đầu vẽ. */}
+                {scoreHint && (drawn > 0 || (!hasReference && !refLoading)) && (
                     <p className="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
                         <Icon name="info" className="text-[16px]" />
                         {scoreHint}

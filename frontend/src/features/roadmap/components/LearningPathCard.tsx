@@ -28,17 +28,11 @@ export const LearningPathCard: React.FC<LearningPathCardProps> = ({ path, now, o
     <li className="relative p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant transition-colors">
       <Link to={`/roadmap/${encodeURIComponent(path.id)}`} className="flex flex-col gap-2 min-w-0 group">
         <div className="flex items-center gap-2 flex-wrap pr-10">
-          <PathStatusChip status={path.status} />
+          <PathStatusChip status={path.status} completed={!!path.completedAt} />
           {path.sourceType === "remedial" ? (
             <RemedialChip />
           ) : (
             <span className="text-label-sm text-outline">{SOURCE_TYPE_LABELS[path.sourceType]}</span>
-          )}
-          {path.completedAt && (
-            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-secondary-container/50 text-on-secondary-container text-label-sm font-semibold">
-              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">verified</span>
-              Đã hoàn thành
-            </span>
           )}
         </div>
         <h2 className="text-title-md font-semibold text-on-surface truncate group-hover:text-primary">{path.title}</h2>

@@ -5,7 +5,7 @@ import { fetchDeckRatings } from "@/services/libraryService";
 import type { DeckRatingItem, LibraryRating } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
 import { getInitials } from "@/lib/textUtils";
-import { formatRatingAverage } from "@/lib/ratingUtils";
+import { formatRatingAverage, ratingFormKey } from "@/lib/ratingUtils";
 import { DeckRatingForm } from "./DeckRatingForm";
 import { RatingStars } from "./RatingStars";
 
@@ -64,7 +64,7 @@ export const DeckRatings: React.FC<DeckRatingsProps> = ({ deckId, isOwner, onCha
                 <p className="text-body-sm text-on-surface-variant">Đây là bộ thẻ bạn đã đăng nên không thể tự đánh giá.</p>
             ) : (
                 <DeckRatingForm
-                    key={reload}
+                    key={ratingFormKey(data.mine)}
                     deckId={deckId}
                     initial={data.mine}
                     onChanged={(r) => {

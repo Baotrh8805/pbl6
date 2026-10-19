@@ -22,6 +22,8 @@ export interface QuizCapabilitiesState {
     error: string | null;
     /** Chủ bộ thẻ / người được chia sẻ quyền sửa: được bấm "Sinh câu nhiễu". */
     canGenerate: boolean;
+    /** Số thẻ của bộ (mỗi thẻ ra tối đa một câu); chưa tải / lỗi -> null. */
+    cardCount: number | null;
     reload: () => void;
 }
 
@@ -50,9 +52,14 @@ export function useQuizCapabilities(deckId: string, enabled: boolean): QuizCapab
         version
     );
 
-    // Quyền trên bộ thẻ chỉ cần một lần cho màn bắt đầu; lỗi -> coi như không được sửa (backend vẫn chặn 403).
-    const accessQuery = useAsync(
-        async () => (enabled && deckId ? canEditDeck(await fetchDeck(deckId)) : false),
+    // Quyền + số thẻ của bộ chỉ cần một lần cho màn bắt đầu; lỗi -> coi như không được sửa (backend vẫn chặn 403) và
+    // không biết số thẻ (không hiện cảnh báo số câu).
+    const deckQuery = useAsync(
+        async () => {
+            if (!enabled || !deckId) return null;
+            const deck = await fetchDeck(deckId);
+            return { canEdit: canEditDeck(deck), cardCount: deck.cards.length };
+        },
         [deckId, enabled]
     );
 
@@ -62,7 +69,8 @@ export function useQuizCapabilities(deckId: string, enabled: boolean): QuizCapab
         caps: result?.status === "ok" ? result.caps : null,
         loading: enabled && capsQuery.loading,
         error: result?.error ?? null,
-        canGenerate: accessQuery.data === true,
+        canGenerate: deckQuery.data?.canEdit === true,
+        cardCount: deckQuery.data?.cardCount ?? null,
         reload: () => setVersion((v) => v + 1),
     };
 }

@@ -120,6 +120,23 @@ export const questionTypesForRequest = (
     return QUESTION_TYPES.filter((t) => selected.includes(t) && enabled.includes(t));
 };
 
+/** Số câu chọn được trên màn bắt đầu. */
+export const QUIZ_SIZE_OPTIONS: readonly number[] = [10, 20, 50];
+
+/**
+ * Server sinh mỗi thẻ tối đa một câu (QuizService.build: min(size, số thẻ)) -> chọn nhiều câu hơn số thẻ thì bài chỉ có
+ * bằng số thẻ. Báo trước thay vì để người học thấy "Câu 1/8" sau khi chọn 10 câu. Chưa biết số thẻ -> null.
+ */
+export const quizSizeNote = (size: number, cardCount: number | null | undefined): string | null => {
+    if (cardCount == null || cardCount < 0 || size <= cardCount) return null;
+    if (cardCount === 0) return "Bộ thẻ chưa có thẻ nào để làm bài.";
+    return `Bộ thẻ chỉ có ${cardCount} thẻ nên bài sẽ có tối đa ${cardCount} câu.`;
+};
+
+/** Nhãn từng lựa chọn số câu: lựa chọn vượt số thẻ ghi rõ bài thực tế có bao nhiêu câu. */
+export const quizSizeOptionLabel = (size: number, cardCount: number | null | undefined): string =>
+    cardCount != null && cardCount > 0 && size > cardCount ? `${size} câu (bộ chỉ đủ ${cardCount} câu)` : `${size} câu`;
+
 // ---------- hiển thị câu hỏi ----------
 
 export interface QuestionDisplay {

@@ -9,7 +9,7 @@ import { LevelChip } from "@/features/hanviet/components/HanVietBits";
 import { SpeakButton } from "@/features/kanji/components/KanjiBits";
 import type { ExtractionItem } from "@/types/api.types";
 import type { IPlusOneResponse, IPlusOneSentence } from "@/types/learner.types";
-import { highlightRuby, sentenceCountsLabel, splitHighlight } from "../iPlusOneUtils";
+import { assumeKnownScope, highlightRuby, sentenceCountsLabel, splitHighlight } from "../iPlusOneUtils";
 
 interface IPlusOnePanelProps {
   jobId: string;
@@ -119,7 +119,7 @@ export const IPlusOnePanel: React.FC<IPlusOnePanelProps> = ({ jobId, items, user
           onChange={(e) => setAssumeLevelKnown(e.target.checked)}
           className="mt-0.5 rounded accent-primary cursor-pointer"
         />
-        <span>Coi các từ thuộc cấp dễ hơn trình độ {userLevel} là đã biết</span>
+        <span>Coi {assumeKnownScope(userLevel)} là đã biết</span>
       </label>
 
       {result.loading ? (
@@ -147,7 +147,7 @@ export const IPlusOnePanel: React.FC<IPlusOnePanelProps> = ({ jobId, items, user
               ? `Bạn đã biết ${data.knownCount} từ, nhưng câu nào trong tài liệu cũng còn từ 2 từ mới trở lên.`
               : "Bạn chưa có từ nào được tính là đã biết."}{" "}
             Hãy ôn thêm thẻ (mỗi thẻ ôn từ 2 lần) rồi quay lại
-            {assumeLevelKnown ? "." : ", hoặc bật tuỳ chọn coi từ dễ hơn trình độ là đã biết."}
+            {assumeLevelKnown ? "." : `, hoặc bật tuỳ chọn coi ${assumeKnownScope(userLevel)} là đã biết.`}
           </p>
         </div>
       ) : (

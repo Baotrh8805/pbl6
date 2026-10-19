@@ -32,6 +32,8 @@ interface PathActiveViewProps {
   onRebalance: (extend: boolean) => void;
   onComplete: () => void;
   onStartQuiz: (chapterId: string) => void;
+  /** Lỗi mở "Kiểm tra chương" gần nhất, hiện dưới nút của đúng chương đó. */
+  quizError: { chapterId: string; message: string } | null;
   onOpenSettings: () => void;
 }
 
@@ -51,6 +53,7 @@ export const PathActiveView: React.FC<PathActiveViewProps> = ({
   onRebalance,
   onComplete,
   onStartQuiz,
+  quizError,
   onOpenSettings,
 }) => {
   const chapters = path.chapters ?? [];
@@ -88,7 +91,15 @@ export const PathActiveView: React.FC<PathActiveViewProps> = ({
         onOpenSettings={onOpenSettings}
       />
 
-      <BehindBanner pathId={path.id} behind={counts.behindCount} severity={severity} busy={busy} onRebalance={onRebalance} />
+      <BehindBanner
+        pathId={path.id}
+        behind={counts.behindCount}
+        severity={severity}
+        cap={cap}
+        remaining={completion.total - completion.learned}
+        busy={busy}
+        onRebalance={onRebalance}
+      />
 
       <TodaySessionPanel path={path} state={state} dayIndex={dayIndex} date={date} counts={counts} tasks={tasks} cap={cap} />
 
@@ -105,6 +116,7 @@ export const PathActiveView: React.FC<PathActiveViewProps> = ({
         decksPending={decksPending}
         quizBusy={quizBusy}
         onStartQuiz={onStartQuiz}
+        quizError={quizError}
       />
     </div>
   );

@@ -19,6 +19,13 @@ export const setupPending = (p: { role?: string | null; mustChangePassword?: boo
 
 export const homeFor = (role: string | undefined | null): "/" | "/admin" => (isStaff(role) ? "/admin" : "/");
 
+/** Hồ sơ của staff (đổi mật khẩu) nằm trong Admin Panel. */
+export const STAFF_ACCOUNT_PATH = "/admin/account";
+
+/** Staff mở trang học: /profile -> Hồ sơ của staff (cùng mục đích), trang khác -> /admin. */
+export const staffRedirectFor = (pathname: string): string =>
+  pathname === "/profile" ? STAFF_ACCOUNT_PATH : "/admin";
+
 export const ROLE_LABELS: Record<Role, string> = {
   USER: "Người học",
   ADMIN: "Admin",

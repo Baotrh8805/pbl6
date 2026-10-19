@@ -1,13 +1,43 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   CATEGORIES,
   LEVELS,
   SORT_OPTIONS,
   getLevelBadgeClass,
+  isSearchShortcut,
   isSortOption,
+  searchShortcutLabel,
   type LibraryTab,
   type SortOption,
 } from "./libraryOptions";
+
+const IS_APPLE =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+
+/** Gợi ý phím tắt + bắt Ctrl+K (⌘K trên máy Apple) ở cả trang để focus ô tìm kiếm — gợi ý hiện ra thì phím phải chạy. */
+const SearchShortcut: React.FC<{ targetId: string }> = ({ targetId }) => {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing || !isSearchShortcut(e)) return;
+      const input = document.getElementById(targetId);
+      if (!(input instanceof HTMLInputElement)) return;
+      e.preventDefault(); // Ctrl+K của trình duyệt (tìm trên thanh địa chỉ) nhường cho ô tìm của trang
+      input.focus();
+      input.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [targetId]);
+
+  return (
+    <kbd
+      title="Phím tắt: focus ô tìm kiếm"
+      className="hidden sm:inline-block px-2 py-1 rounded bg-surface-container text-on-surface-variant font-label-sm text-[11px]"
+    >
+      {searchShortcutLabel(IS_APPLE)}
+    </kbd>
+  );
+};
 
 interface LibraryFilterBarProps {
   searchTerm: string;
@@ -65,9 +95,7 @@ export const LibraryFilterBar: React.FC<LibraryFilterBarProps> = ({
         className="w-full pl-12 pr-28 py-3.5 rounded-xl bg-surface-container-low text-on-surface font-body-md text-body-md placeholder:text-outline focus:outline-none focus:bg-surface-container transition-all"
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-        <kbd className="hidden sm:inline-block px-2 py-1 rounded bg-surface-container text-on-surface-variant font-label-sm text-[11px]">
-          ⌘K
-        </kbd>
+        <SearchShortcut targetId="library-search" />
         {searchTerm && (
           <button
             type="button"

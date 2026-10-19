@@ -25,6 +25,8 @@ interface ChapterTimelineProps {
   /** Chương đang mở lượt kiểm tra (khoá nút của chương đó). */
   quizBusy: string | null;
   onStartQuiz: (chapterId: string) => void;
+  /** Lỗi mở lượt kiểm tra gần nhất: hiện ngay dưới hàng nút của chương đó (role="alert"). */
+  quizError?: { chapterId: string; message: string } | null;
 }
 
 const STATE_TONE: Record<LearningPathChapterState, string> = {
@@ -46,6 +48,7 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
   decksPending,
   quizBusy,
   onStartQuiz,
+  quizError = null,
 }) => {
   const chapters = path.chapters ?? [];
   if (chapters.length === 0) return <p className="text-on-surface-variant">Lộ trình chưa có chương nào.</p>;
@@ -161,6 +164,12 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
                     </div>
                   )}
                 </div>
+                {quizError?.chapterId === ch.id && (
+                  <p role="alert" className="flex items-start gap-1.5 p-2.5 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">error</span>
+                    <span className="min-w-0 break-words">{quizError.message}</span>
+                  </p>
+                )}
               </div>
             </li>
           );

@@ -114,7 +114,7 @@ export const AdminDashboardPage: React.FC = () => {
 
       {s && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
             <StatCard
               label="Người dùng"
               value={s.users.total}
@@ -154,7 +154,7 @@ export const AdminDashboardPage: React.FC = () => {
                 icon="shield_person"
                 tone="warn"
                 sub={
-                  <Link to="/admin/users?role=ADMIN" className="underline font-semibold">
+                  <Link to="/admin/users?role=STAFF" className="underline font-semibold">
                     chưa đổi mật khẩu mặc định
                   </Link>
                 }

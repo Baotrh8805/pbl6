@@ -177,6 +177,7 @@ const DecksTab: React.FC<{ q: ReturnType<typeof useAdminQuery> }> = ({ q }) => {
 
       <AdminTableShell
         caption="Danh sách bộ thẻ"
+        stickyActions
         loading={loading}
         error={error}
         empty={rows.length === 0}
@@ -323,6 +324,7 @@ const RatingsTab: React.FC<{ q: ReturnType<typeof useAdminQuery>; canAct: boolea
 
       <AdminTableShell
         caption="Bình luận đánh giá"
+        stickyActions={canAct}
         loading={loading}
         error={error}
         empty={rows.length === 0}
@@ -447,6 +449,7 @@ const ExtractionsTab: React.FC<{ q: ReturnType<typeof useAdminQuery>; canAct: bo
 
       <AdminTableShell
         caption="Lượt bóc tách"
+        stickyActions={canAct}
         loading={loading}
         error={error}
         empty={rows.length === 0}

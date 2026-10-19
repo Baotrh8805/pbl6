@@ -571,3 +571,59 @@ export function settingsPatch(
     if (v.reminder !== (path.reminder ?? false)) patch.reminder = v.reminder;
     return patch;
 }
+
+// ===== Sửa sau kiểm tay trên trình duyệt (LP-06/07/09/10/11) =====
+
+/** Nhãn trạng thái lộ trình: ACTIVE đã chốt hoàn thành thì là "Đã hoàn thành" (thay "Đang học", không hiện cả hai). */
+export const pathStatusLabel = (status: LearningPathStatus, completed: boolean): string =>
+    status === "ACTIVE" && completed ? "Đã hoàn thành" : PATH_STATUS_LABELS[status];
+
+/**
+ * Bước dịch nghĩa không chạy và "Dịch lại nghĩa" cũng vô ích (vd. no_api_key: chưa cấu hình khoá Gemini) -> lý do để hiện
+ * thông báo bình tĩnh thay cho dải nút. Job đang chạy / đã dịch / còn dịch lại được (quota, error) -> null.
+ */
+export const enrichNoticeReason = (job: LearningPathJob | null | undefined): string | null => {
+    if (!job || job.status === "QUEUED" || job.status === "RUNNING") return null;
+    const reason = job.stats?.enrichReason;
+    if (!reason || job.stats?.enriched === true || canReEnrichPath(job)) return null;
+    return reason;
+};
+
+/** Lỗi ô "Số ngày học" của bản nháp (chuỗi đang gõ); hợp lệ -> null. */
+export const daysFieldError = (value: string): string | null =>
+    value.trim() !== "" && isValidDays(Number(value)) ? null : `Nhập số nguyên từ ${MIN_DAYS} đến ${MAX_DAYS} ngày.`;
+
+/** Lỗi ô "Trần thẻ mỗi ngày"; hợp lệ -> null. */
+export const capFieldError = (value: string): string | null =>
+    value.trim() !== "" && isValidDailyCap(Number(value)) ? null : `Nhập số nguyên từ ${MIN_DAILY_CAP} đến ${MAX_DAILY_CAP} thẻ.`;
+
+/** Vì sao "Tạo lộ trình" đang bị khoá (hiện cạnh nút); bấm được -> null. */
+export function activateBlockReason(o: { totalCards: number; daysError: string | null; capError: string | null }): string | null {
+    if (o.totalCards <= 0) return "Chưa chọn thẻ nào: hãy tick ít nhất một mục trong các chương để tạo lộ trình.";
+    if (o.daysError) return "Sửa ô «Số ngày học» trước khi tạo lộ trình.";
+    if (o.capError) return "Sửa ô «Trần thẻ mỗi ngày» trước khi tạo lộ trình.";
+    return null;
+}
+
+/**
+ * Câu giải thích của dải nợ theo đúng lý do làm nó "severe" (behindSeverity có hai ngưỡng): vượt trần/ngày thì nói
+ * "lớn hơn sức học một ngày"; chỉ vượt 20 % thẻ còn lại thì nói theo tỉ lệ — 6 thẻ nợ với trần 30 không phải quá sức.
+ */
+export function behindMessage(behind: number, cap: number, remaining: number): string {
+    if (behindSeverity(behind, cap, remaining) !== "severe") {
+        return "Học bù trong phiên hôm nay, hoặc cân lại lịch nếu muốn chia đều phần còn lại.";
+    }
+    if (cap > 0 && behind > cap) {
+        return `Phần nợ đã lớn hơn sức học một ngày (trần ${cap} thẻ). Hãy học bù dần, hoặc cân lại lịch để các ngày còn lại gánh bớt.`;
+    }
+    const rest = remaining > 0 ? ` (${remaining} thẻ)` : "";
+    return `Phần nợ đã chiếm hơn 20 % số thẻ còn lại chưa học${rest}. Học bù sớm để khỏi dồn về cuối lộ trình, hoặc cân lại lịch để các ngày còn lại gánh bớt.`;
+}
+
+/** Dòng "Thẻ mới hôm nay" của panel Hôm nay: học hết thẻ mới rồi thì nói rõ, không để lệch với ô "Mới 0". */
+export const todayNewTasksLine = (parts: readonly string[], newCount: number): string | null =>
+    parts.length === 0
+        ? null
+        : newCount > 0
+          ? `Thẻ mới hôm nay: ${parts.join(" · ")}`
+          : `Thẻ mới hôm nay (đã học xong): ${parts.join(" · ")}`;

@@ -22,7 +22,7 @@ import { CreateDecksModal } from "@/features/extraction/components/CreateDecksMo
 import { LevelDistributionBar } from "@/features/extraction/components/LevelDistributionBar";
 import { RecheckConflictsButton } from "@/features/extraction/components/RecheckConflictsButton";
 import { IPlusOnePanel } from "@/features/extraction/components/IPlusOnePanel";
-import { conflictsByFieldSummary, statsConflictCount } from "@/features/extraction/conflictUtils";
+import { conflictsByFieldSummary, recheckResultText, statsConflictCount } from "@/features/extraction/conflictUtils";
 import {
   LEVEL_TONE,
   OVERALL_RULE_HINT,
@@ -185,10 +185,7 @@ export const ExtractionPage: React.FC = () => {
     // Response không kèm văn bản (chỉ GET ?includeText=true có): giữ văn bản đang hiện cho khung "Văn bản đã bóc".
     setJob((prev) => ({ ...next, extractedText: next.extractedText ?? prev?.extractedText }));
     setItems(await fetchExtractionItems(id));
-    const n = statsConflictCount(next.stats);
-    setRecheckNote(
-      n == null ? "Đã kiểm tra lại." : n > 0 ? `Đã kiểm tra lại: còn ${n} cảnh báo mâu thuẫn.` : "Đã kiểm tra lại: không còn mâu thuẫn."
-    );
+    setRecheckNote(recheckResultText(next.stats));
   };
 
   // i+1 "Dùng làm câu ví dụ": thay item server trả vào danh sách; response hỏng thì tải lại cả danh sách.

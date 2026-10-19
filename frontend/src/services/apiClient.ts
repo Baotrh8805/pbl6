@@ -95,6 +95,18 @@ apiClient.interceptors.response.use(
 );
 
 /**
+ * Lỗi kiểm tra dữ liệu của Spring (ApiExceptionHandler.onInvalidBody, HTTP 400) có dạng
+ * "newPassword: Mật khẩu mới phải từ 6 đến 72 ký tự; email: …" — tên trường là của lập trình viên, người dùng chỉ cần
+ * câu tiếng Việt. Chỉ bỏ tiền tố là định danh kiểu camelCase (chữ thường đầu, có thể có .con / [0]) ngay trước ": ".
+ */
+export function stripFieldPrefixes(message: string): string {
+  return message
+    .split("; ")
+    .map((part) => part.replace(/^[a-z][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\[\d+\])?)*: (?=\S)/, ""))
+    .join("; ");
+}
+
+/**
  * Safely extracts human-readable error messages from backend responses.
  * Handles both Spring Boot plain-text errors (e.g. register) and JSON error bodies.
  */
@@ -114,7 +126,7 @@ export function extractErrorMessage(error: unknown): string {
     }
     if (data && typeof data === "object") {
       if ("message" in data && typeof data.message === "string") {
-        return data.message;
+        return error.response?.status === 400 ? stripFieldPrefixes(data.message) : data.message;
       }
       if ("error" in data && typeof data.error === "string") {
         return data.error;

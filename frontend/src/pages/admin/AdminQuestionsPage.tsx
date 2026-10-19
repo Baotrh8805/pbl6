@@ -202,6 +202,7 @@ export const AdminQuestionsPage: React.FC = () => {
       ) : (
         <AdminTableShell
           caption="Ngân hàng câu hỏi quiz"
+          stickyActions
           loading={loading}
           error={data?.error}
           empty={rows.length === 0}

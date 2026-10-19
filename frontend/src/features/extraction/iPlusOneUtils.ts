@@ -128,3 +128,10 @@ export function highlightRuby(
 /** "1 từ mới · 8 từ đã biết" */
 export const sentenceCountsLabel = (s: Pick<IPlusOneSentence, "unknownCount" | "knownCount">): string =>
     `${s.unknownCount} từ mới · ${s.knownCount} từ đã biết`;
+
+/**
+ * Phạm vi của tuỳ chọn "coi từ theo cấp là đã biết", khớp ai-service (sentence_mining._is_known: cấp ≤ cấp người học,
+ * tức là GỒM cả cấp của người học): "các từ cấp N4 và các cấp dễ hơn"; N5 là cấp dễ nhất nên chỉ "các từ cấp N5".
+ */
+export const assumeKnownScope = (userLevel: string): string =>
+    userLevel === "N5" || !LEVELS.includes(userLevel) ? `các từ cấp ${userLevel}` : `các từ cấp ${userLevel} và các cấp dễ hơn`;

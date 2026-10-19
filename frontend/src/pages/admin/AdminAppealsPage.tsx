@@ -9,6 +9,8 @@ import { formatShort } from "@/features/admin/adminUtils";
 import {
   APPEAL_STATUS_LABELS,
   appealLockLabel,
+  appealLockReason,
+  appealLockReasonPlaceholder,
   isPendingError,
   parseAppealStatus,
   type AppealStatusKey,
@@ -16,6 +18,7 @@ import {
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 import { AdminTableShell } from "@/features/admin/components/AdminTableShell";
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
+import { BreakableEmail } from "@/features/admin/components/BreakableEmail";
 import { AdminStatusTabs } from "@/features/admin/components/AdminStatusTabs";
 import { AdminPendingNotice } from "@/features/admin/components/AdminPendingNotice";
 import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
@@ -81,6 +84,7 @@ export const AdminAppealsPage: React.FC = () => {
       ) : (
         <AdminTableShell
           caption={`Khiếu nại ${APPEAL_STATUS_LABELS[status].toLowerCase()}`}
+          stickyActions={status === "OPEN"}
           loading={loading}
           error={error}
           empty={rows.length === 0}
@@ -93,7 +97,9 @@ export const AdminAppealsPage: React.FC = () => {
               <th scope="col" className="w-36">Gửi lúc</th>
               <th scope="col">Email</th>
               <th scope="col">Tài khoản</th>
-              <th scope="col">Lý do khoá</th>
+              <th scope="col" title="Lý do của lần khoá đang còn hiệu lực; tài khoản đã mở khoá thì không còn lý do">
+                Lý do khoá hiện tại
+              </th>
               <th scope="col" className="min-w-[240px]">Nội dung khiếu nại</th>
               {status === "OPEN" ? (
                 <th scope="col" className="w-24">
@@ -108,13 +114,13 @@ export const AdminAppealsPage: React.FC = () => {
             {rows.map((a) => (
               <tr key={a.id} className="hover:bg-surface-container-low/40 transition-colors">
                 <td className="whitespace-nowrap text-label-sm text-on-surface-variant">{formatShort(a.createdAt)}</td>
-                <td className="font-semibold break-all">
+                <td className="font-semibold break-words">
                   {a.userId != null ? (
                     <Link to={`/admin/users/${a.userId}`} className="text-primary hover:underline">
-                      {a.email}
+                      <BreakableEmail email={a.email} />
                     </Link>
                   ) : (
-                    a.email
+                    <BreakableEmail email={a.email} />
                   )}
                 </td>
                 <td>
@@ -125,7 +131,7 @@ export const AdminAppealsPage: React.FC = () => {
                   />
                 </td>
                 <td className="text-on-surface-variant break-words max-w-[220px]">
-                  {a.lockedReason || <span className="italic text-outline">Không ghi lý do</span>}
+                  {appealLockReason(a) ?? <span className="italic text-outline">{appealLockReasonPlaceholder(a)}</span>}
                 </td>
                 <td>
                   <p className="whitespace-pre-line break-words line-clamp-4 max-w-md" title={a.message}>

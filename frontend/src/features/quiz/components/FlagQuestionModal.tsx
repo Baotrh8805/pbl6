@@ -72,18 +72,23 @@ const FlagForm: React.FC<{
 }> = ({ formId, target, onBusyChange, onFlagged, onDone }) => {
     const [reason, setReason] = useState<QuestionFlagReason | null>(null);
     const [detail, setDetail] = useState("");
-    const [error, setError] = useState<string | null>(null);
+    // Lỗi kiểm tra tính lại theo giá trị hiện tại sau lần bấm gửi đầu: chọn lý do / gõ mô tả là lỗi tự mất,
+    // không phải đợi gửi lại. Lỗi máy chủ giữ tới lần gửi sau.
+    const [submitted, setSubmitted] = useState(false);
+    const [serverError, setServerError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const detailId = useId();
     const errorId = useId();
     const reasons = flagReasonsFor(target.inputMode);
     const detailRequired = reason === "OTHER";
+    const error = (submitted ? validateFlag(reason, detail) : null) ?? serverError;
 
     const submit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (busy) return;
+        setSubmitted(true);
+        setServerError(null);
         const invalid = validateFlag(reason, detail);
-        setError(invalid);
         if (invalid || !reason) return;
         setBusy(true);
         onBusyChange(true);
@@ -101,7 +106,7 @@ const FlagForm: React.FC<{
                 return;
             }
             // 429 / server chưa có endpoint / lỗi khác: giữ hộp thoại để người học đọc lý do và thử lại sau.
-            setError(flagErrorMessage(err) ?? extractErrorMessage(err));
+            setServerError(flagErrorMessage(err) ?? extractErrorMessage(err));
             setBusy(false);
             onBusyChange(false);
         }

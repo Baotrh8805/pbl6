@@ -70,3 +70,16 @@ export const canEditDeck = (deck: Pick<Deck, "access">): boolean => deck.access 
  */
 export const deckShareUrl = (origin: string, deckId: string): string =>
     `${origin.replace(/\/+$/, "")}/decks/${encodeURIComponent(deckId)}`;
+
+/** So khớp thuật ngữ thẻ: NFKC (全角/半角 như nhau), bỏ khoảng trắng hai đầu; rỗng -> "". */
+const termKey = (term: string | null | undefined): string => (term ?? "").normalize("NFKC").trim();
+
+/**
+ * Thẻ trong bộ đã có đúng thuật ngữ này (vd. thêm 学校 từ bản đồ Hán–Việt vào bộ đã có 学校) -> trả thẻ đó để báo trùng;
+ * backend không chặn thẻ trùng nên máy khách tự kiểm trước khi thêm. Thuật ngữ rỗng -> null.
+ */
+export const findCardByTerm = (cards: readonly Pick<Card, "term" | "reading" | "meaning">[], term: string) => {
+    const key = termKey(term);
+    if (!key) return null;
+    return cards.find((c) => termKey(c.term) === key) ?? null;
+};

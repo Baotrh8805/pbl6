@@ -187,11 +187,82 @@ const polar = (c: number, r: number, angle: number): NodePosition => ({
     y: round1(c + r * Math.sin(angle)),
 });
 
+/** Quạt từ: khoảng cách theo cung (đơn vị viewBox) giữa hai viên liền kề — dưới mức một viên rộng thì so le hai bán kính; */
+const FAN_SINGLE_STEP = 80;
+/** ... và khi đã so le, hai viên liền kề (khác bán kính) cũng phải cách nhau chừng này để nhãn không đè nhau. */
+const FAN_MIN_STEP = 40;
+/** Quạt luôn chừa mép 10 % mỗi bên: cung dùng được = 80 % góc của chữ. */
+const FAN_SPAN = 0.8;
+
+/**
+ * Số viên tối đa (kể cả viên "+N từ") quạt của mỗi chữ chứa được mà nhãn không chồng nhau: cung quạt trên vòng 2 chia
+ * cho FAN_MIN_STEP. Kẹp 3..24 — âm có một chữ cũng không vẽ quá 24 viên (danh sách dưới đồ thị vẫn đủ từ).
+ */
+export function wordCapPerKanji(kanjiCount: number, size: number): number {
+    const arc = size * RING_RATIO.word * ((2 * Math.PI) / Math.max(kanjiCount, 1)) * FAN_SPAN;
+    return Math.max(3, Math.min(24, Math.floor(arc / FAN_MIN_STEP) + 1));
+}
+
+/** Tiền tố id của viên "+N từ" (nút giả chỉ có trong đồ thị để vẽ, không có trong response). */
+export const MORE_NODE_PREFIX = "more:";
+
+export interface CappedGraph {
+    /** Đồ thị để vẽ: mỗi chữ tối đa `cap` viên — từ dễ trước (N5 -> N1 -> chưa rõ), phần dư gom vào một viên "+N". */
+    graph: HanVietGraph;
+    /** id viên "+N" -> chữ Hán của nó và số từ bị ẩn khỏi đồ thị (vẫn có trong danh sách theo cấp). */
+    more: Record<string, { kanjiId: string; hidden: number }>;
+}
+
+const levelRank = (w: HanVietWordNode): number => {
+    const i = LEVEL_BUCKET_ORDER.indexOf(isJlptLevel(w.level) ? w.level : HAN_VIET_UNKNOWN_LEVEL);
+    return i < 0 ? LEVEL_BUCKET_ORDER.length : i;
+};
+
+/**
+ * Âm có chữ nhiều từ (HỌC: 学 có ~80 từ) vẽ hết thì quạt thành một đống viên chồng nhau. Giữ `cap - 1` từ dễ nhất của
+ * mỗi chữ (cùng cấp thì theo thứ tự response) + một viên "+N" nối với chữ đó ở cuối quạt; chữ ít từ giữ nguyên. Từ được
+ * gán cho chữ đứng trước như radialLayout, nên một từ không bị đếm ẩn hai lần. Không có chữ nào vượt -> trả nguyên đồ thị.
+ */
+export function capGraphWords(graph: HanVietGraph, cap: number): CappedGraph {
+    const keep = Math.max(1, Math.floor(cap) - 1);
+    const claimed = new Set<string>();
+    const hidden = new Set<string>();
+    const more: CappedGraph["more"] = {};
+    const extraNodes: HanVietWordNode[] = [];
+    const extraEdges: HanVietEdge[] = [];
+    for (const entry of kanjiOfGraph(graph)) {
+        const own = entry.words.filter((w) => !claimed.has(w.id));
+        own.forEach((w) => claimed.add(w.id));
+        if (own.length <= keep + 1) continue;
+        const dropped = own
+            .map((w, i) => ({ w, i }))
+            .sort((a, b) => levelRank(a.w) - levelRank(b.w) || a.i - b.i)
+            .slice(keep)
+            .map((x) => x.w);
+        dropped.forEach((w) => hidden.add(w.id));
+        const id = `${MORE_NODE_PREFIX}${entry.node.id}`;
+        more[id] = { kanjiId: entry.node.id, hidden: dropped.length };
+        extraNodes.push({ id, type: "word", label: `+${dropped.length}`, reading: "", meaning: "", level: null, hanViet: "" });
+        extraEdges.push({ from: entry.node.id, to: id, type: "in_word" });
+    }
+    if (extraNodes.length === 0) return { graph, more };
+    return {
+        graph: {
+            ...graph,
+            // Viên "+N" nối vào cuối danh sách nút -> radialLayout đặt nó ở cuối quạt của chữ.
+            nodes: [...graph.nodes.filter((n) => !hidden.has(n.id)), ...extraNodes],
+            edges: [...graph.edges.filter((e) => !hidden.has(e.from) && !hidden.has(e.to)), ...extraEdges],
+        },
+        more,
+    };
+}
+
 /**
  * Vị trí từng nút trong khung vuông `size`×`size`: âm ở tâm; chữ Hán rải đều vòng 1 (chữ đầu ở đỉnh, đi theo chiều kim
- * đồng hồ); từ ghép của mỗi chữ xếp quạt trên vòng 2 quanh góc của chữ đó (chừa mép 10 % mỗi bên quạt; quạt đông từ
- * thì so le hai bán kính để nhãn đỡ chồng). Từ chứa hai chữ cùng âm gắn với chữ đứng trước; từ không nối chữ nào
- * (thiếu cạnh) rải đều vòng ngoài. Hoàn toàn xác định theo thứ tự nút / cạnh trong response.
+ * đồng hồ); từ ghép của mỗi chữ xếp quạt trên vòng 2 quanh góc của chữ đó (chừa mép 10 % mỗi bên quạt; quạt chật —
+ * hai viên liền kề cách nhau chưa tới một viên — thì so le hai bán kính để nhãn đỡ chồng). Từ chứa hai chữ cùng âm gắn
+ * với chữ đứng trước; từ không nối chữ nào (thiếu cạnh) rải đều vòng ngoài. Hoàn toàn xác định theo thứ tự nút / cạnh
+ * trong response. Quạt quá đông thì gọi capGraphWords trước.
  */
 export function radialLayout(graph: HanVietGraph, size: number): Record<string, NodePosition> {
     const c = size / 2;
@@ -213,10 +284,11 @@ export function radialLayout(graph: HanVietGraph, size: number): Record<string, 
         positions[entry.node.id] = polar(c, r1, angle);
         const own = entry.words.filter((w) => !placed.has(w.id));
         const n = own.length;
+        const step = n > 1 ? (r2 * sector * FAN_SPAN) / (n - 1) : Infinity;
         own.forEach((w, j) => {
             const t = n === 1 ? 0.5 : 0.1 + (0.8 * j) / (n - 1);
             const a = angle - sector / 2 + sector * t;
-            const r = n > 6 && j % 2 === 1 ? r2b : r2;
+            const r = step < FAN_SINGLE_STEP && j % 2 === 1 ? r2b : r2;
             positions[w.id] = polar(c, r, a);
             placed.add(w.id);
         });

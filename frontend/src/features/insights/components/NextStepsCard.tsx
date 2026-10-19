@@ -1,6 +1,7 @@
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAsync } from "@/lib/useAsync";
+import { DATA_CHANGED_EVENT } from "@/services/apiClient";
 import { dayKey } from "@/lib/learningStats";
 import { NEXT_STEP_META, nextStepCountLabel } from "@/lib/insightUtils";
 import { fetchNextSteps } from "@/services/insightService";
@@ -29,9 +30,24 @@ const KIND_TONE: Record<NextStepKind, string> = {
 export const NextStepsCard: React.FC<NextStepsCardProps> = ({ compact = false, exclude }) => {
   const headingId = useId();
   const [reload, setReload] = useState(0);
+  // Sau mỗi request ghi thành công (xoá / tạo lộ trình, học xong phiên...) tải lại NGẦM: gợi ý cũ có thể trỏ tới lộ trình
+  // vừa xoá (link 404). Gộp các request liên tiếp thành một lần tải như AppLayout.
+  const [changed, setChanged] = useState(0);
+  useEffect(() => {
+    let timer: number | undefined;
+    const onChanged = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setChanged((n) => n + 1), 300);
+    };
+    window.addEventListener(DATA_CHANGED_EVENT, onChanged);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(DATA_CHANGED_EVENT, onChanged);
+    };
+  }, []);
   // Ngày máy khách nằm trong deps: để tab mở qua nửa đêm, lần render kế tiếp tải lại theo ngày mới.
   const today = dayKey(new Date());
-  const { data, error, loading } = useAsync(() => fetchNextSteps(today), [today, reload]);
+  const { data, error, loading } = useAsync(() => fetchNextSteps(today), [today, reload], changed);
   const items = (data ?? []).filter((i) => !exclude?.includes(i.kind));
   const shown = compact ? items.slice(0, COMPACT_LIMIT) : items;
 

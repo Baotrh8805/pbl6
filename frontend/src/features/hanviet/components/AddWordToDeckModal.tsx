@@ -2,11 +2,11 @@ import React, { useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { addCard } from "@/services/deckService";
+import { addCard, fetchDeck } from "@/services/deckService";
 import { extractErrorMessage } from "@/services/apiClient";
-import { sortDecksByLevel } from "@/lib/deckUtils";
+import { findCardByTerm, sortDecksByLevel } from "@/lib/deckUtils";
 import { wordToCardDto } from "@/lib/hanVietUtils";
-import type { Deck, HanVietWordNode } from "@/types/api.types";
+import type { Card, Deck, HanVietWordNode } from "@/types/api.types";
 import { LevelChip } from "./HanVietBits";
 
 export interface AddWordToDeckModalProps {
@@ -33,19 +33,36 @@ export const AddWordToDeckModal: React.FC<AddWordToDeckModalProps> = (props) =>
 const AddWordDialog: React.FC<AddWordToDeckModalProps & { word: HanVietWordNode }> = ({ word, decks, decksLoading, onClose }) => {
   const formId = useId();
   const sorted = sortDecksByLevel(decks);
-  const [deckId, setDeckId] = useState(sorted[0]?.id ?? "");
+  const dto = wordToCardDto(word);
+  const term = dto?.term ?? word.label;
+  // Mặc định chọn bộ đầu tiên CHƯA có từ này (backend không chặn thẻ trùng nên máy khách tự kiểm).
+  const [deckId, setDeckId] = useState(
+    () => (sorted.find((d) => !findCardByTerm(d.cards, term)) ?? sorted[0])?.id ?? ""
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<Deck | null>(null);
-  const dto = wordToCardDto(word);
+  // Thẻ trùng chỉ thấy khi tải lại bộ lúc bấm "Thêm thẻ" (danh sách của shell có thể chưa có thẻ vừa thêm ở tab khác).
+  const [freshDup, setFreshDup] = useState<Record<string, Pick<Card, "term" | "reading" | "meaning">>>({});
+  const dupIn = (d: Deck) => freshDup[d.id] ?? findCardByTerm(d.cards, term);
   const target = sorted.find((d) => d.id === deckId) ?? null;
+  const duplicate = target ? dupIn(target) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dto || !target || saving) return;
+    if (!dto || !target || saving || duplicate) return;
     setSaving(true);
     setError(null);
     try {
+      // Kiểm lại trên bản mới nhất của bộ; không tải được thì dựa vào danh sách đang có (đã kiểm ở trên).
+      const fresh = await fetchDeck(target.id).then(
+        (d) => findCardByTerm(d.cards, term),
+        () => null
+      );
+      if (fresh) {
+        setFreshDup((m) => ({ ...m, [target.id]: fresh }));
+        return;
+      }
       await addCard(target.id, dto);
       setAdded(target);
     } catch (err) {
@@ -82,7 +99,13 @@ const AddWordDialog: React.FC<AddWordToDeckModalProps & { word: HanVietWordNode 
             <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
               Hủy
             </Button>
-            <Button type="submit" form={formId} size="sm" isLoading={saving} disabled={!dto || !target || decksLoading}>
+            <Button
+              type="submit"
+              form={formId}
+              size="sm"
+              isLoading={saving}
+              disabled={!dto || !target || decksLoading || !!duplicate}
+            >
               Thêm thẻ
             </Button>
           </>
@@ -146,6 +169,9 @@ const AddWordDialog: React.FC<AddWordToDeckModalProps & { word: HanVietWordNode 
                     />
                     <span className="truncate">{d.title}</span>
                     <span className="shrink-0 flex items-center gap-1.5 text-[11px] text-outline">
+                      {dupIn(d) && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] font-semibold">Đã có</span>
+                      )}
                       {d.cards.length} thẻ
                       <LevelChip level={d.level} />
                     </span>
@@ -153,6 +179,31 @@ const AddWordDialog: React.FC<AddWordToDeckModalProps & { word: HanVietWordNode 
                 ))}
               </div>
             </fieldset>
+          )}
+
+          {target && duplicate && (
+            <p
+              role="status"
+              className="flex items-start gap-2 p-3 rounded-lg bg-[#FEF3C7] border border-[#F59E0B]/40 text-[#92400E] text-body-sm"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">
+                content_copy
+              </span>
+              <span>
+                Bộ «{target.title}» đã có thẻ <strong lang="ja">{duplicate.term}</strong>
+                {duplicate.reading && (
+                  <>
+                    {" "}
+                    (<span lang="ja">{duplicate.reading}</span>)
+                  </>
+                )}
+                {duplicate.meaning.trim() && ` — ${duplicate.meaning.split("\n")[0]}`}. Hãy chọn bộ khác, hoặc{" "}
+                <Link to={`/decks/${encodeURIComponent(target.id)}`} className="font-semibold underline">
+                  mở bộ thẻ
+                </Link>{" "}
+                để sửa thẻ đã có.
+              </span>
+            </p>
           )}
         </form>
       )}

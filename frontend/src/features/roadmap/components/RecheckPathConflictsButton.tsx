@@ -1,6 +1,7 @@
 import React from "react";
 import { recheckConflicts } from "@/services/learningPathService";
 import { RecheckConflictsButton } from "@/features/extraction/components/RecheckConflictsButton";
+import { recheckResultText } from "@/features/extraction/conflictUtils";
 import type { LearningPath } from "@/types/api.types";
 
 interface RecheckPathConflictsButtonProps {
@@ -12,10 +13,15 @@ interface RecheckPathConflictsButtonProps {
 
 // F2 cho bản nháp lộ trình: "Kiểm tra lại" mâu thuẫn của mọi mục trong lộ trình với nguồn tri thức chuẩn ACTIVE.
 // Trang lộ trình chỉ cần đặt nút này cạnh các thao tác của bản nháp (PathDraftEditor) và nhận lộ trình mới qua onUpdated.
+// Xong thì nút hiện câu kết quả (còn bao nhiêu cảnh báo) để người dùng biết đã kiểm tra, kể cả khi không có gì đổi.
 export const RecheckPathConflictsButton: React.FC<RecheckPathConflictsButtonProps> = ({ pathId, onUpdated, disabled }) => (
   <RecheckConflictsButton
     label="Kiểm tra lại mâu thuẫn"
     disabled={disabled}
-    onRecheck={async () => onUpdated(await recheckConflicts(pathId))}
+    onRecheck={async () => {
+      const next = await recheckConflicts(pathId);
+      onUpdated(next);
+      return recheckResultText(next.job?.stats);
+    }}
   />
 );

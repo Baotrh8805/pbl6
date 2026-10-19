@@ -4,15 +4,21 @@ import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 
 interface RecheckConflictsButtonProps {
-  /** Gọi POST …/recheck-conflicts và cập nhật state nơi gọi; ném lỗi khi thất bại (nút tự hiện lỗi). */
-  onRecheck: () => Promise<void>;
+  /**
+   * Gọi POST …/recheck-conflicts và cập nhật state nơi gọi; ném lỗi khi thất bại (nút tự hiện lỗi). Trả câu kết quả
+   * (vd. "Đã kiểm tra lại: không còn mâu thuẫn.") thì nút hiện câu đó; trả void khi nơi gọi tự hiện kết quả.
+   */
+  onRecheck: () => Promise<string | void>;
   disabled?: boolean;
   label?: string;
   size?: "sm" | "md";
 }
 
-/** Kết quả lần bấm gần nhất: lỗi thật (đỏ, role="alert") tách khỏi "máy chủ chưa có endpoint" (trung tính, role="status"). */
-type Notice = { kind: "error" | "pending"; text: string };
+/**
+ * Kết quả lần bấm gần nhất: lỗi thật (đỏ, role="alert") tách khỏi "máy chủ chưa có endpoint" (trung tính, role="status")
+ * và câu báo đã kiểm tra xong (role="status").
+ */
+type Notice = { kind: "error" | "pending" | "done"; text: string };
 
 // Nút "Kiểm tra lại" mâu thuẫn (F2) dùng chung cho trang bóc tách và bản nháp lộ trình: đối chiếu lại item với nguồn
 // tri thức chuẩn ĐANG ACTIVE (admin vừa tải nguồn mới thì kết quả đổi). Tự lo trạng thái chờ + lỗi; backend chưa có
@@ -31,7 +37,8 @@ export const RecheckConflictsButton: React.FC<RecheckConflictsButtonProps> = ({
     setBusy(true);
     setNotice(null);
     try {
-      await onRecheck();
+      const result = await onRecheck();
+      if (result) setNotice({ kind: "done", text: result });
     } catch (e) {
       setNotice(
         isEndpointMissing(e) ? { kind: "pending", text: SERVER_PENDING_MESSAGE } : { kind: "error", text: extractErrorMessage(e) }
@@ -68,6 +75,14 @@ export const RecheckConflictsButton: React.FC<RecheckConflictsButtonProps> = ({
         <span role="status" className="inline-flex items-start gap-1 text-label-sm text-on-surface-variant break-words">
           <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-primary shrink-0">
             info
+          </span>
+          {notice.text}
+        </span>
+      )}
+      {notice?.kind === "done" && (
+        <span role="status" className="inline-flex items-start gap-1 text-label-sm text-on-surface-variant break-words">
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-secondary shrink-0">
+            task_alt
           </span>
           {notice.text}
         </span>

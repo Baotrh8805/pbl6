@@ -9,24 +9,31 @@ import { AdminFilterBar, adminFieldClass, adminLabelClass } from "@/features/adm
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { AdminJsonViewer } from "@/features/admin/components/AdminJsonViewer";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
-import { AUDIT_TARGET_LABELS, formatShort } from "@/features/admin/adminUtils";
+import { AUDIT_TARGET_LABELS, auditFilterError, formatShort } from "@/features/admin/adminUtils";
+import { BreakableEmail } from "@/features/admin/components/BreakableEmail";
 
 const PAGE_SIZE = 50;
 
 export const AdminAuditPage: React.FC = () => {
   const q = useAdminQuery();
   const [actor, setActor] = useState(q.get("actorId"));
+  const [actorError, setActorError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  // Bộ lọc trên URL sai (ID không phải số, từ ngày > đến ngày — kể cả link gõ tay): không gửi lên server (400 / 0 dòng
+  // không rõ lý do), báo ngay câu sửa thế nào.
+  const filterError = auditFilterError({ actorId: q.get("actorId"), from: q.get("from"), to: q.get("to") });
   const { data, loading, error } = useAsync(
     () =>
-      fetchAuditLogs({
-        actorId: q.get("actorId"),
-        targetType: q.get("targetType"),
-        from: q.get("from"),
-        to: q.get("to"),
-        page: q.page,
-        size: PAGE_SIZE,
-      }),
+      filterError
+        ? Promise.resolve(null)
+        : fetchAuditLogs({
+            actorId: q.get("actorId"),
+            targetType: q.get("targetType"),
+            from: q.get("from"),
+            to: q.get("to"),
+            page: q.page,
+            size: PAGE_SIZE,
+          }),
     [q.key, retry]
   );
   const rows = data?.items ?? [];
@@ -52,18 +59,31 @@ export const AdminAuditPage: React.FC = () => {
       <AdminFilterBar
         onSubmit={(e) => {
           e.preventDefault();
-          q.set({ actorId: actor.trim() });
+          const invalid = auditFilterError({ actorId: actor, from: "", to: "" });
+          setActorError(invalid);
+          if (!invalid) q.set({ actorId: actor.trim() });
         }}
       >
         <label className={adminLabelClass}>
           ID người thao tác
           <input
             value={actor}
-            onChange={(e) => setActor(e.target.value)}
+            onChange={(e) => {
+              setActor(e.target.value);
+              if (actorError) setActorError(auditFilterError({ actorId: e.target.value, from: "", to: "" }));
+            }}
             inputMode="numeric"
+            pattern="[0-9]*"
             placeholder="Ví dụ: 1"
+            aria-invalid={!!actorError}
+            aria-describedby={actorError ? "audit-actor-error" : undefined}
             className={`${adminFieldClass} w-32`}
           />
+          {actorError && (
+            <span id="audit-actor-error" role="alert" className="text-label-sm text-error font-normal normal-case max-w-[12rem]">
+              {actorError}
+            </span>
+          )}
         </label>
         <label className={adminLabelClass}>
           Đối tượng
@@ -85,6 +105,7 @@ export const AdminAuditPage: React.FC = () => {
           <input
             type="date"
             value={q.get("from")}
+            max={q.get("to") || undefined}
             onChange={(e) => q.set({ from: e.target.value })}
             className={adminFieldClass}
           />
@@ -94,6 +115,7 @@ export const AdminAuditPage: React.FC = () => {
           <input
             type="date"
             value={q.get("to")}
+            min={q.get("from") || undefined}
             onChange={(e) => q.set({ to: e.target.value })}
             className={adminFieldClass}
           />
@@ -112,6 +134,7 @@ export const AdminAuditPage: React.FC = () => {
               size="sm"
               onClick={() => {
                 setActor("");
+                setActorError(null);
                 q.set({ actorId: undefined, targetType: undefined, from: undefined, to: undefined });
               }}
             >
@@ -121,47 +144,58 @@ export const AdminAuditPage: React.FC = () => {
         </div>
       </AdminFilterBar>
 
-      <AdminTableShell
-        caption="Nhật ký quản trị"
-        loading={loading}
-        error={error}
-        empty={rows.length === 0}
-        emptyText="Chưa ghi nhận thao tác quản trị nào trong khoảng thời gian này."
-        onRetry={() => setRetry((n) => n + 1)}
-        statusText={data ? `${data.total.toLocaleString("vi-VN")} bản ghi` : undefined}
-      >
-        <thead>
-          <tr>
-            <th scope="col" className="w-36">Thời điểm</th>
-            <th scope="col">Người thực hiện</th>
-            <th scope="col">Hành động</th>
-            <th scope="col">Đối tượng</th>
-            <th scope="col">Chi tiết thay đổi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((l) => (
-            <tr key={l.id} className="hover:bg-surface-container-low/40 transition-colors">
-              <td className="whitespace-nowrap text-on-surface-variant text-label-sm">
-                {formatShort(l.createdAt)}
-              </td>
-              <td className="font-semibold text-on-surface">{l.actorEmail}</td>
-              <td>
-                <AdminStatusBadge label={l.action} tone="info" />
-              </td>
-              <td>
-                <div className="flex items-center gap-1">
-                  <span className="font-medium text-on-surface">{AUDIT_TARGET_LABELS[l.targetType] ?? l.targetType}</span>
-                  <span className="font-mono text-outline text-label-sm">#{l.targetId}</span>
-                </div>
-              </td>
-              <td className="max-w-md">
-                <AdminJsonViewer data={l.detail} />
-              </td>
+      {filterError && (
+        <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
+          Bộ lọc chưa hợp lệ: {filterError}
+        </p>
+      )}
+
+      {!filterError && (
+        <AdminTableShell
+          caption="Nhật ký quản trị"
+          loading={loading}
+          error={error}
+          empty={rows.length === 0}
+          emptyText="Chưa ghi nhận thao tác quản trị nào trong khoảng thời gian này."
+          onRetry={() => setRetry((n) => n + 1)}
+          statusText={data ? `${data.total.toLocaleString("vi-VN")} bản ghi` : undefined}
+        >
+          <thead>
+            <tr>
+              <th scope="col" className="w-36">Thời điểm</th>
+              <th scope="col">Người thực hiện</th>
+              <th scope="col">Hành động</th>
+              <th scope="col">Đối tượng</th>
+              <th scope="col">Chi tiết thay đổi</th>
             </tr>
-          ))}
-        </tbody>
-      </AdminTableShell>
+          </thead>
+          <tbody>
+            {rows.map((l) => (
+              <tr key={l.id} className="hover:bg-surface-container-low/40 transition-colors">
+                <td className="whitespace-nowrap text-on-surface-variant text-label-sm">
+                  {formatShort(l.createdAt)}
+                </td>
+                <td className="font-semibold text-on-surface break-words min-w-[8rem]">
+                  <BreakableEmail email={l.actorEmail} />
+                </td>
+                <td>
+                  <AdminStatusBadge label={l.action} tone="info" />
+                </td>
+                <td>
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium text-on-surface">{AUDIT_TARGET_LABELS[l.targetType] ?? l.targetType}</span>
+                    <span className="font-mono text-outline text-label-sm">#{l.targetId}</span>
+                  </div>
+                </td>
+                <td className="max-w-md">
+                  {/* Tóm tắt hẹp hơn dưới 2xl: bảng 5 cột vừa khung ~960 px ở 1280 px, nút Sao chép / mở rộng không phải cuộn ngang mới thấy */}
+                  <AdminJsonViewer data={l.detail} summaryClassName="max-w-[11rem] 2xl:max-w-md" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </AdminTableShell>
+      )}
       {data && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
     </section>
   );

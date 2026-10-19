@@ -16,3 +16,12 @@ export function normalizeComment(comment: string): string | null {
     const trimmed = comment.trim();
     return trimmed === "" ? null : trimmed;
 }
+
+/**
+ * key của form đánh giá: dựng lại form khi đánh giá CỦA MÌNH trên server đổi (gửi / sửa / xoá xong và đã tải lại), để
+ * form mở lại với đúng số sao + bình luận vừa lưu. Không dùng số lần tải lại làm key: form dựng lại ngay lúc bấm gửi,
+ * trước khi dữ liệu mới về, nên useState khởi tạo bằng `mine` cũ (rỗng) và giữ rỗng.
+ */
+export function ratingFormKey(mine: { stars: number; comment: string | null } | null | undefined): string {
+    return mine ? `${mine.stars}|${mine.comment ?? ""}` : "none";
+}

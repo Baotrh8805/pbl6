@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState } from "react";
+import React, { useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useShell } from "@/components/layout/shellContext";
 import { Button } from "@/components/ui/Button";
@@ -280,6 +280,13 @@ const GraphResult: React.FC<{ graph: HanVietGraph; reading: string }> = ({ graph
     setFocusKanjiId((cur) => (id === null || cur === id ? null : id));
     if (id) setSelectedId(id);
   };
+  // Viên "+N từ": luôn lọc theo chữ đó (không đảo lọc như bấm chữ) rồi cuộn tới danh sách đủ từ.
+  const listHeadingRef = useRef<HTMLHeadingElement>(null);
+  const showAllWords = (kanjiId: string) => {
+    setFocusKanjiId(kanjiId);
+    setSelectedId(kanjiId);
+    listHeadingRef.current?.scrollIntoView({ block: "start" });
+  };
 
   if (kanji.length === 0 && words.length === 0) {
     return (
@@ -308,6 +315,7 @@ const GraphResult: React.FC<{ graph: HanVietGraph; reading: string }> = ({ graph
               selectedId={selectedId}
               onSelect={setSelectedId}
               onFocusKanji={toggleKanji}
+              onShowAllWords={showAllWords}
             />
           </div>
           <p className="text-label-sm text-outline sm:hidden">Kéo ngang để xem toàn bộ mạng lưới.</p>
@@ -332,7 +340,7 @@ const GraphResult: React.FC<{ graph: HanVietGraph; reading: string }> = ({ graph
       </div>
 
       <div className="flex flex-col gap-space-sm">
-        <h2 className="font-title-md text-title-md font-bold text-on-surface">
+        <h2 ref={listHeadingRef} className="font-title-md text-title-md font-bold text-on-surface scroll-mt-20">
           Từ ghép theo cấp
           <span className="ml-2 text-label-sm font-medium text-outline">
             {focused ? `${focused.wordCount} từ của chữ ${focused.node.label}` : `${words.length} từ`}

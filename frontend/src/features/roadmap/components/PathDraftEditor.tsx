@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { LearningPath, LearningPathPatch } from "@/types/api.types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -10,8 +10,12 @@ import {
   MAX_DAYS,
   MIN_DAILY_CAP,
   MIN_DAYS,
+  activateBlockReason,
   canReEnrichPath,
+  capFieldError,
+  daysFieldError,
   enrichCooldownLeft,
+  enrichNoticeReason,
   formatCountdown,
   isValidDailyCap,
   isValidDays,
@@ -82,6 +86,12 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   const start = useField(path.startDate);
   const cap = useField(String(serverCap));
   const mask = useField(serverMask);
+  // Số ngày / trần sai: giữ nguyên chữ đang gõ + báo lỗi ngay dưới ô (không lặng lẽ trả về giá trị server). Lỗi hiện
+  // sau khi rời ô (blur / Enter) và tự mất khi sửa đúng; gửi PATCH chỉ khi hợp lệ.
+  const [daysTouched, setDaysTouched] = useState(false);
+  const [capTouched, setCapTouched] = useState(false);
+  const daysError = daysTouched ? daysFieldError(days.value) : null;
+  const capError = capTouched ? capFieldError(cap.value) : null;
 
   const commitTitle = () => {
     const next = title.value.trim();
@@ -89,18 +99,18 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
     else if (next !== path.title) onPatchPath({ title: next });
   };
   const commitDays = () => {
+    setDaysTouched(true);
     const n = Number(days.value);
-    if (!isValidDays(n)) days.reset();
-    else if (n !== path.totalDays) onPatchPath({ totalDays: n });
+    if (daysFieldError(days.value) === null && n !== path.totalDays) onPatchPath({ totalDays: n });
   };
   const commitStart = () => {
     if (!start.value) start.reset();
     else if (start.value !== path.startDate) onPatchPath({ startDate: start.value });
   };
   const commitCap = () => {
+    setCapTouched(true);
     const n = Number(cap.value);
-    if (!isValidDailyCap(n)) cap.reset();
-    else if (n !== serverCap) onPatchPath({ dailyCap: n });
+    if (capFieldError(cap.value) === null && n !== serverCap) onPatchPath({ dailyCap: n });
   };
   // Bật/tắt ngày học lưu ngay (không có blur); giữ bản cục bộ để nút đổi màu tức thì trong lúc chờ server.
   const toggleMask = (next: string) => {
@@ -140,7 +150,14 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   // F2: mỗi lần "Kiểm tra lại mâu thuẫn" đổi reloadKey để chương đang mở tải lại `conflicts` của từng mục.
   const [recheckCount, setRecheckCount] = useState(0);
 
-  const activate = () =>
+  const blockReason = activateBlockReason({ totalCards, daysError, capError });
+  const activate = () => {
+    // Ô số đang sai (kể cả chưa rời ô): hiện lỗi thay vì kích hoạt bằng giá trị cũ của server.
+    if (daysFieldError(days.value) || capFieldError(cap.value)) {
+      setDaysTouched(true);
+      setCapTouched(true);
+      return;
+    }
     onActivate({
       title: title.value.trim() || path.title,
       startDate: start.value || path.startDate,
@@ -148,12 +165,38 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
       dailyCap: isValidDailyCap(capNum) ? capNum : serverCap,
       studyDays: isValidStudyDays(mask.value) ? mask.value : serverMask,
     });
+  };
+
+  // Lỗi thao tác (gộp chương, lưu...) hiện ở đầu khối: cuộn tới để thấy được cả khi đang ở chương cuối.
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error]);
+  // Chưa cấu hình khoá Gemini (dịch lại vô ích): chỉ báo vì sao thẻ dùng nghĩa tiếng Anh, như trang bóc tách.
+  const enrichNotice = jobRunning ? null : enrichNoticeReason(path.job);
 
   return (
     <div className="flex flex-col gap-space-md">
       {error && (
-        <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm break-words">
+        <p
+          ref={errorRef}
+          role="alert"
+          className="scroll-mt-20 p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm break-words"
+        >
           {error}
+        </p>
+      )}
+
+      {enrichNotice && (
+        <p
+          role="status"
+          className="p-3 rounded-lg bg-surface-container-low border border-surface-container-high text-on-surface-variant text-body-sm flex items-start gap-1.5"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0 text-primary">translate</span>
+          <span>
+            {geminiReasonText(enrichNotice)} nên chưa có nghĩa tiếng Việt; thẻ đang dùng nghĩa tiếng Anh. Bạn vẫn sửa được
+            nghĩa từng thẻ khi mở chương bên dưới.
+          </span>
         </p>
       )}
 
@@ -208,6 +251,8 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             onChange={(e) => days.set(e.target.value)}
             onBlur={commitDays}
             onKeyDown={blurOnEnter}
+            aria-invalid={!!daysError}
+            error={daysError ?? undefined}
             helperText={`Từ ${MIN_DAYS} đến ${MAX_DAYS} ngày`}
           />
           <Input
@@ -230,6 +275,8 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             onChange={(e) => cap.set(e.target.value)}
             onBlur={commitCap}
             onKeyDown={blurOnEnter}
+            aria-invalid={!!capError}
+            error={capError ?? undefined}
             helperText={`Mới + ôn dự báo, ${MIN_DAILY_CAP}–${MAX_DAILY_CAP}`}
           />
         </div>
@@ -314,10 +361,25 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
 
       {/* Dính đáy khung nhìn khi cuộn; nằm cuối luồng nên không che chương cuối. */}
       <div className="sticky bottom-3 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-surface-container-lowest/95 backdrop-blur-md border border-surface-container-high shadow-lg">
-        <p className="min-w-0 text-label-md text-on-surface">
-          {chapters.length} chương · {totalCards} thẻ · ~{perDay} thẻ mới/ngày · {studyDaysLabel(serverMask)}
-        </p>
-        <Button size="md" onClick={activate} isLoading={activating} disabled={activating || totalCards === 0} className="shrink-0">
+        <div className="min-w-0 flex flex-col gap-0.5">
+          <p className="text-label-md text-on-surface">
+            {chapters.length} chương · {totalCards} thẻ · ~{perDay} thẻ mới/ngày · {studyDaysLabel(serverMask)}
+          </p>
+          {blockReason && (
+            <p id="path-activate-hint" className="text-label-sm text-error flex items-start gap-1">
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px] shrink-0">info</span>
+              {blockReason}
+            </p>
+          )}
+        </div>
+        <Button
+          size="md"
+          onClick={activate}
+          isLoading={activating}
+          disabled={activating || blockReason !== null}
+          aria-describedby={blockReason ? "path-activate-hint" : undefined}
+          className="shrink-0"
+        >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">rocket_launch</span>
           Tạo lộ trình
         </Button>

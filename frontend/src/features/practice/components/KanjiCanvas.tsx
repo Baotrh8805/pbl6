@@ -213,8 +213,10 @@ export const KanjiCanvas: React.FC<KanjiCanvasProps> = ({ size = 280, reference 
                 }`}
             />
             <div className="flex items-center gap-2" style={{ width: size }}>
-                {/* Vùng live: báo số nét cho trình đọc màn hình mỗi khi vẽ / hoàn tác / xoá. */}
-                <p aria-live="polite" className="flex-1 text-label-md text-on-surface-variant">
+                {/* Vùng live: báo số nét cho trình đọc màn hình mỗi khi vẽ / hoàn tác / xoá. Giữ sẵn cao 2 dòng:
+                    "Chưa có nét nào" xuống dòng còn "Đã vẽ 1 nét" thì không — hàng đổi cao làm hộp thoại căn giữa lại
+                    và canvas nhảy sau nét đầu. */}
+                <p aria-live="polite" className="flex-1 min-w-0 min-h-9 flex items-center text-label-md text-on-surface-variant">
                     {count === 0 ? "Chưa có nét nào" : `Đã vẽ ${count} nét`}
                 </p>
                 <Button type="button" variant="ghost" size="sm" onClick={undo} disabled={disabled || count === 0} title="Hoàn tác nét vừa vẽ (Ctrl+Z)">

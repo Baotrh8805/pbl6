@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import type { HanVietEdge, HanVietGraph, HanVietNode } from "@/types/api.types";
 import { LEVEL_TONE, UNKNOWN_LEVEL_TONE } from "@/features/extraction/extractionUtils";
 import {
+  capGraphWords,
   edgePath,
   graphSummary,
   isKanjiNode,
@@ -10,6 +11,7 @@ import {
   pillWidth,
   radialLayout,
   readingNodeOf,
+  wordCapPerKanji,
   wordNodesOf,
 } from "@/lib/hanVietUtils";
 
@@ -35,6 +37,8 @@ interface HanVietGraphSvgProps {
   onSelect: (id: string) => void;
   /** Bấm chữ Hán (nơi gọi tự đảo lọc); null = bấm nút âm ở tâm để bỏ lọc. */
   onFocusKanji: (id: string | null) => void;
+  /** Bấm viên "+N từ" của một chữ: lọc theo chữ đó và đưa tới danh sách đủ từ bên dưới. */
+  onShowAllWords: (kanjiId: string) => void;
 }
 
 // Nút nào cũng là <g role="button" tabIndex=0>: bàn phím Tab tới được, Enter/Space kích hoạt; <title> làm tooltip gốc.
@@ -42,17 +46,27 @@ interface HanVietGraphSvgProps {
 const nodeBase =
   "cursor-pointer focus:outline-none transition-opacity [&:hover_.halo]:opacity-60 [&:focus-visible_.halo]:opacity-100";
 
-export const HanVietGraphSvg: React.FC<HanVietGraphSvgProps> = ({ graph, focusKanjiId, selectedId, onSelect, onFocusKanji }) => {
-  const positions = useMemo(() => radialLayout(graph, GRAPH_SIZE), [graph]);
+export const HanVietGraphSvg: React.FC<HanVietGraphSvgProps> = ({
+  graph,
+  focusKanjiId,
+  selectedId,
+  onSelect,
+  onFocusKanji,
+  onShowAllWords,
+}) => {
+  // Số đếm / lọc theo đồ thị đầy đủ; chỉ phần vẽ dùng bản đã cắt (mỗi chữ tối đa vài viên + "+N từ").
   const kanji = useMemo(() => kanjiOfGraph(graph), [graph]);
+  const drawn = useMemo(() => capGraphWords(graph, wordCapPerKanji(kanji.length, GRAPH_SIZE)), [graph, kanji.length]);
+  const positions = useMemo(() => radialLayout(drawn.graph, GRAPH_SIZE), [drawn]);
   // từ -> các chữ Hán nối với nó (để biết từ nào thuộc chữ đang lọc)
   const wordKanji = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const k of kanji) for (const w of k.words) m.set(w.id, [...(m.get(w.id) ?? []), k.node.id]);
+    for (const [id, info] of Object.entries(drawn.more)) m.set(id, [info.kanjiId]);
     return m;
-  }, [kanji]);
+  }, [kanji, drawn]);
   const reading = readingNodeOf(graph);
-  const words = wordNodesOf(graph);
+  const words = wordNodesOf(drawn.graph);
 
   const wordVisible = (id: string) => !focusKanjiId || (wordKanji.get(id) ?? []).includes(focusKanjiId);
   const edgeActive = (e: HanVietEdge) => !focusKanjiId || e.from === focusKanjiId || e.to === focusKanjiId;
@@ -82,7 +96,7 @@ export const HanVietGraphSvg: React.FC<HanVietGraphSvgProps> = ({ graph, focusKa
       className="block w-full h-auto min-w-[36rem] max-w-[52rem] mx-auto select-none"
     >
       {/* Cạnh vẽ trước để nằm dưới nút */}
-      {graph.edges.map((e, i) => {
+      {drawn.graph.edges.map((e, i) => {
         const a = positions[e.from];
         const b = positions[e.to];
         if (!a || !b) return null;
@@ -91,6 +105,7 @@ export const HanVietGraphSvg: React.FC<HanVietGraphSvgProps> = ({ graph, focusKa
             key={`${e.from}|${e.to}|${i}`}
             d={edgePath(a, b)}
             strokeWidth={1.5}
+            strokeDasharray={drawn.more[e.to] ? "4 4" : undefined}
             className={`fill-none stroke-outline-variant transition-opacity ${edgeActive(e) ? "" : "opacity-20"}`}
           />
         );
@@ -99,6 +114,47 @@ export const HanVietGraphSvg: React.FC<HanVietGraphSvgProps> = ({ graph, focusKa
       {words.map((w) => {
         const p = positions[w.id];
         if (!p) return null;
+        const more = drawn.more[w.id];
+        if (more) {
+          const owner = kanji.find((k) => k.node.id === more.kanjiId)?.node.label ?? "";
+          const text = `+${more.hidden} từ`;
+          const moreWidth = pillWidth(text, 8, 18);
+          const moreVisible = wordVisible(w.id);
+          return (
+            <g
+              key={w.id}
+              transform={`translate(${p.x} ${p.y})`}
+              role="button"
+              tabIndex={moreVisible ? 0 : -1}
+              aria-hidden={moreVisible ? undefined : true}
+              aria-label={`Còn ${more.hidden} từ của chữ ${owner} không vẽ trên đồ thị. Bấm để xem đủ trong danh sách bên dưới`}
+              onClick={() => onShowAllWords(more.kanjiId)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onShowAllWords(more.kanjiId);
+                }
+              }}
+              className={`${nodeBase} ${moreVisible ? "" : "opacity-20 pointer-events-none"}`}
+            >
+              <title>{`${text} của chữ ${owner} — xem trong danh sách bên dưới`}</title>
+              <rect className={haloClass(w.id)} x={-moreWidth / 2 - 3} y={-15} width={moreWidth + 6} height={30} rx={15} strokeWidth={2} />
+              <rect
+                x={-moreWidth / 2}
+                y={-12}
+                width={moreWidth}
+                height={24}
+                rx={12}
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                className="fill-surface-container-lowest stroke-primary"
+              />
+              <text fontSize={12} fontWeight={700} textAnchor="middle" dominantBaseline="central" className="fill-primary">
+                {text}
+              </text>
+            </g>
+          );
+        }
         const width = pillWidth(w.label);
         const visible = wordVisible(w.id);
         const tone = (w.level && LEVEL_TONE[w.level]) || UNKNOWN_LEVEL_TONE;

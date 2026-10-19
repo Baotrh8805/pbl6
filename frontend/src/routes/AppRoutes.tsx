@@ -36,6 +36,7 @@ import { AdminQuestionsPage } from "@/pages/admin/AdminQuestionsPage";
 import { AdminKnowledgePage } from "@/pages/admin/AdminKnowledgePage";
 import { AdminKnowledgeDetailPage } from "@/pages/admin/AdminKnowledgeDetailPage";
 import { AdminAppealsPage } from "@/pages/admin/AdminAppealsPage";
+import { AdminAccountPage } from "@/pages/admin/AdminAccountPage";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicRoute } from "./PublicRoute";
 import { StaffSetupPage } from "@/pages/StaffSetupPage";
@@ -135,6 +136,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="appeals" element={<AdminAppealsPage />} />
         <Route path="audit" element={<AdminAuditPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
+        {/* Hồ sơ của staff: đổi mật khẩu sau lần bắt buộc ở /setup (staff không dùng /profile của người học) */}
+        <Route path="account" element={<AdminAccountPage />} />
       </Route>
 
       {/* Ngoài layout: học và kiểm tra chiếm trọn màn hình */}

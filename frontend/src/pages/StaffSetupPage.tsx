@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/useAuth";
 import { authService } from "@/features/auth/services/authService";
 import { extractErrorMessage } from "@/services/apiClient";
+import { PASSWORD_MAX, PASSWORD_MIN, passwordChangeError } from "@/lib/passwordRules";
 
 /**
  * Staff mới (mật khẩu seed) chỉ có ROLE_SETUP ở backend: ProtectedRoute đưa mọi trang về đây cho tới khi đổi mật khẩu.
@@ -36,8 +37,8 @@ export const StaffSetupPage: React.FC = () => {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (next !== again) return setError("Mật khẩu nhập lại không khớp.");
-    if (next === current) return setError("Mật khẩu mới phải khác mật khẩu mặc định.");
+    const clientError = passwordChangeError(current, next, again, "Mật khẩu mới phải khác mật khẩu mặc định.");
+    if (clientError) return setError(clientError);
     setBusy(true);
     try {
       const r = await authService.changePassword(current, next);
@@ -67,7 +68,7 @@ export const StaffSetupPage: React.FC = () => {
             </p>
           )}
           <Input id="cur" type={type} label="Mật khẩu hiện tại" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required rightAction={toggle} />
-          <Input id="new" type={type} label="Mật khẩu mới (6–72 ký tự)" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" required rightAction={toggle} />
+          <Input id="new" type={type} label={`Mật khẩu mới (${PASSWORD_MIN}–${PASSWORD_MAX} ký tự)`} value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" required rightAction={toggle} />
           <Input id="again" type={type} label="Nhập lại mật khẩu mới" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required rightAction={toggle} />
           <Button type="submit" variant="primary" isLoading={busy} disabled={!current || !next || !again}>
             Đổi mật khẩu và vào Admin Panel

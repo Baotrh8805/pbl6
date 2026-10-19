@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useId } from "react";
+import React, { useState, useMemo, useRef, useId, useEffect } from "react";
 import gsap from "gsap";
 import { useGsap } from "../useGsap.ts";
 import {
@@ -7,6 +7,8 @@ import {
   buildAreaPath,
   periodDelta,
   indexAtX,
+  chartWidthFor,
+  xLabelStep,
 } from "../adminUtils.ts";
 
 export type TrendSeriesKey = "newUsers" | "extractions" | "quizzes";
@@ -87,7 +89,8 @@ const CARD_GRID_MANY = "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5
 const formatValue = (v: number, unit?: string): string =>
   unit ? `${v.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}${unit}` : v.toLocaleString("vi-VN");
 
-// Kích thước chuẩn đồ họa SVG
+// Kích thước chuẩn đồ họa SVG. Bề rộng thật = bề rộng khung đo được (chartWidthFor, tối đa CHART_W) để 1 đơn vị
+// viewBox ≈ 1 px: chữ 11 px vẫn là 11 px trên điện thoại thay vì bị thu nhỏ theo tỉ lệ.
 const CHART_W = 800;
 const CHART_H = 220;
 const PADDING_TOP = 15;
@@ -151,6 +154,17 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartW, setChartW] = useState(CHART_W);
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setChartW(chartWidthFor(w, CHART_W));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const currentValues = useMemo(
     () => series.map((p) => valueOf(p, activeSeries)),
@@ -167,13 +181,13 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
 
   // Tính đường line & area
   const linePath = useMemo(
-    () => buildLinePath(currentValues, CHART_W, PLOT_H, yMax),
-    [currentValues, yMax],
+    () => buildLinePath(currentValues, chartW, PLOT_H, yMax),
+    [currentValues, chartW, yMax],
   );
 
   const areaPath = useMemo(
-    () => buildAreaPath(linePath, CHART_W, PLOT_H),
-    [linePath],
+    () => buildAreaPath(linePath, chartW, PLOT_H),
+    [linePath, chartW],
   );
 
   // Hiệu ứng GSAP: vẽ nét mượt mà khi đường line thay đổi + area fade-in nhẹ
@@ -212,10 +226,10 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
   // Tính các mốc nhãn X (cách nhau N ngày)
   const xLabels = useMemo(() => {
     if (series.length === 0) return [];
-    const step = Math.max(1, Math.ceil(series.length / 6));
+    const step = xLabelStep(series.length, chartW);
     const labels: { index: number; text: string; x: number }[] = [];
     for (let i = 0; i < series.length; i += step) {
-      const x = (i / Math.max(1, series.length - 1)) * CHART_W;
+      const x = (i / Math.max(1, series.length - 1)) * chartW;
       labels.push({ index: i, text: shortDate(series[i].date), x });
     }
     // Đảm bảo mốc cuối cùng luôn có
@@ -224,11 +238,11 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
       labels.push({
         index: lastIdx,
         text: shortDate(series[lastIdx].date),
-        x: CHART_W,
+        x: chartW,
       });
     }
     return labels;
-  }, [series]);
+  }, [series, chartW]);
 
   // Xử lý hover
   const handleMouseMove = (e: React.MouseEvent<SVGRectElement>) => {
@@ -256,7 +270,7 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
   const activePoint = hoverIndex !== null && series[hoverIndex] ? series[hoverIndex] : null;
   const activeX =
     hoverIndex !== null && series.length > 1
-      ? (hoverIndex / (series.length - 1)) * CHART_W
+      ? (hoverIndex / (series.length - 1)) * chartW
       : 0;
   const activeY =
     activePoint && yMax > 0
@@ -392,7 +406,7 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
         aria-label={`Biểu đồ ${currentCfg.label}, dùng phím mũi tên trái phải để xem từng ngày`}
       >
         <svg
-          viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+          viewBox={`0 0 ${chartW} ${CHART_H}`}
           className="w-full h-auto overflow-visible block"
           aria-hidden="true"
         >
@@ -418,7 +432,7 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
                   : PADDING_TOP + PLOT_H;
               return (
                 <g key={val}>
-                  <line x1="0" y1={y} x2={CHART_W} y2={y} strokeWidth="1" />
+                  <line x1="0" y1={y} x2={chartW} y2={y} strokeWidth="1" />
                   <text
                     x="4"
                     y={y - 4}
@@ -465,7 +479,7 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
                 x={lbl.x}
                 y={CHART_H - 4}
                 textAnchor={
-                  lbl.index === 0 ? "start" : lbl.x >= CHART_W - 20 ? "end" : "middle"
+                  lbl.index === 0 ? "start" : lbl.x >= chartW - 20 ? "end" : "middle"
                 }
                 fill="#75777f"
                 fontSize="11"
@@ -505,7 +519,7 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
           <rect
             x="0"
             y={PADDING_TOP}
-            width={CHART_W}
+            width={chartW}
             height={PLOT_H}
             fill="transparent"
             className="cursor-crosshair"
@@ -520,9 +534,9 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
             className="absolute z-20 pointer-events-none p-3 rounded-xl bg-primary text-on-primary shadow-lg text-body-sm transition-all duration-75 min-w-[170px]"
             style={{
               top: "16px",
-              left: `${Math.max(2, Math.min(98, (activeX / CHART_W) * 100))}%`,
+              left: `${Math.max(2, Math.min(98, (activeX / chartW) * 100))}%`,
               transform:
-                activeX > CHART_W - 190
+                activeX > chartW - 190
                   ? "translateX(calc(-100% - 12px))"
                   : "translateX(12px)",
             }}

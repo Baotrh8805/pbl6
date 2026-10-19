@@ -106,3 +106,9 @@ export const conflictsByFieldSummary = (stats: unknown): string =>
     statsConflictsByField(stats)
         .map((f) => `${f.label} ${f.count}`)
         .join(" · ");
+
+/** Câu báo sau "Kiểm tra lại" mâu thuẫn (trang bóc tách lẫn bản nháp lộ trình), theo `stats.conflicts` server trả. */
+export const recheckResultText = (stats: unknown): string => {
+    const n = statsConflictCount(stats);
+    return n == null ? "Đã kiểm tra lại." : n > 0 ? `Đã kiểm tra lại: còn ${n} cảnh báo mâu thuẫn.` : "Đã kiểm tra lại: không còn mâu thuẫn.";
+};

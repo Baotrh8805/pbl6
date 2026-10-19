@@ -42,7 +42,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     >
       <div>
         <div className="flex items-center justify-between gap-2">
-          <div className="text-label-sm uppercase tracking-wider text-outline font-bold truncate">
+          <div className="min-w-0 text-label-sm uppercase tracking-wider text-outline font-bold break-words">
             {label}
           </div>
           {icon && (
@@ -75,7 +75,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         </div>
       </div>
 
-      {sub && <div className="mt-2 text-body-sm text-on-surface-variant truncate">{sub}</div>}
+      {sub && <div className="mt-2 text-body-sm text-on-surface-variant break-words">{sub}</div>}
     </div>
   );
 };

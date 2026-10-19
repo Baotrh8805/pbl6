@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
-import type { Role } from "@/lib/roles";
+import { STAFF_ACCOUNT_PATH, type Role } from "@/lib/roles";
 import { DATA_CHANGED_EVENT } from "@/services/apiClient";
 import { fetchAdminQueueCounts } from "@/services/adminService";
 import { fetchFlaggedQuestionCount } from "@/services/adminQuestionService";
@@ -44,6 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/admin/audit", icon: "history", label: "Nhật ký" },
       { to: "/admin/settings", icon: "settings", label: "Cấu hình" },
+      { to: STAFF_ACCOUNT_PATH, icon: "manage_accounts", label: "Hồ sơ của tôi" },
     ],
   },
 ];
@@ -140,9 +141,13 @@ export const AdminLayout: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center gap-space-sm min-w-0">
-            <span className="hidden sm:block text-body-sm text-on-surface-variant truncate max-w-[200px]" title={userEmail ?? ""}>
+            <Link
+              to={STAFF_ACCOUNT_PATH}
+              className="hidden sm:block text-body-sm text-on-surface-variant hover:text-primary hover:underline truncate max-w-[200px]"
+              title={`${userEmail ?? ""} · Hồ sơ của tôi (đổi mật khẩu)`}
+            >
               {userEmail}
-            </span>
+            </Link>
             {role && <RoleStatusBadge role={role} />}
             <button
               type="button"
