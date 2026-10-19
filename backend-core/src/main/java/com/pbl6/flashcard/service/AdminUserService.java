@@ -35,11 +35,14 @@ public class AdminUserService {
     private final RefreshTokenRepository sessions;
     private final RefreshTokenService refreshTokens;
     private final AuditService audit;
+    private final EmailVerificationTokenRepository verificationTokens;
 
     public AdminUserService(UserRepository users, DeckRepository decks, FlashcardRepository cards,
                             ExtractionJobRepository jobs, QuizResultRepository quizzes, RefreshTokenRepository sessions,
-                            RefreshTokenService refreshTokens, AuditService audit, NotificationService notifications) {
+                            RefreshTokenService refreshTokens, AuditService audit, NotificationService notifications,
+                            EmailVerificationTokenRepository verificationTokens) {
         this.notifications = notifications;
+        this.verificationTokens = verificationTokens;
         this.users = users;
         this.decks = decks;
         this.cards = cards;
@@ -79,7 +82,24 @@ public class AdminUserService {
                 decks.countByOwnerId(u.getId()), cards.countByDeck_OwnerId(u.getId()),
                 jobs.countByUserId(u.getId()), jobs.countByUserIdAndCreatedAtAfter(u.getId(), now.minus(Duration.ofHours(24))),
                 quizzes.countByUserId(u.getId()), users.lastReviewAt(u.getId()),
-                sessions.countByUserIdAndExpiresAtAfter(u.getId(), now), u.isMustChangePassword());
+                sessions.countByUserIdAndExpiresAtAfter(u.getId(), now), u.isMustChangePassword(), u.getEmailVerifiedAt() != null);
+    }
+
+    /**
+     * Xác thực email hộ (người dùng không nhận được mail, hộp thư công ty chặn link...). Theo quy tắc bậc như mọi thao tác ghi.
+     * Đã xác thực rồi -> trả chi tiết, không ghi gì và không audit (thao tác không đổi dữ liệu). Link còn trong hộp thư bị huỷ.
+     */
+    @Transactional
+    public Detail verifyEmail(User actor, Long id) {
+        User target = find(id);
+        requireBelow(actor, target);
+        if (target.getEmailVerifiedAt() == null) {
+            target.setEmailVerifiedAt(Instant.now());
+            users.save(target);
+            verificationTokens.deleteByUserId(target.getId());
+            audit.log(actor.getId(), "USER_VERIFY_EMAIL", "USER", String.valueOf(id), Map.of("email", target.getEmail()));
+        }
+        return detail(target);
     }
 
     private final NotificationService notifications;

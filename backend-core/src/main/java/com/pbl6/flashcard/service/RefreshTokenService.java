@@ -32,15 +32,17 @@ public class RefreshTokenService {
     private final RefreshTokenRepository tokenRepository;
     private final UserRepository userRepository;
     private final JwtTokenProvider jwtTokenProvider;
+    private final EmailVerificationService emailVerification;
     private final Duration ttl;
     private final SecureRandom random = new SecureRandom();
 
     public RefreshTokenService(RefreshTokenRepository tokenRepository, UserRepository userRepository,
-                               JwtTokenProvider jwtTokenProvider,
+                               JwtTokenProvider jwtTokenProvider, EmailVerificationService emailVerification,
                                @Value("${jwt.refresh-expiration}") Duration ttl) {
         this.tokenRepository = tokenRepository;
         this.userRepository = userRepository;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.emailVerification = emailVerification;
         this.ttl = ttl;
     }
 
@@ -67,6 +69,11 @@ public class RefreshTokenService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, EXPIRED));
         if (user.getLockedAt() != null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tài khoản đã bị khoá.");
+        }
+        // 401 như khoá (frontend coi làm mới thất bại = hết phiên) nhưng kèm mã để hiện đúng lý do khi về trang đăng nhập
+        if (emailVerification.mustVerify(user)) {
+            throw new com.pbl6.flashcard.config.CodedStatusException(HttpStatus.UNAUTHORIZED,
+                    EmailVerificationService.NOT_VERIFIED_CODE, EmailVerificationService.NOT_VERIFIED_MESSAGE);
         }
         saved.setExpiresAt(now.plus(ttl));
         return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole(), user.isMustChangePassword());

@@ -1,8 +1,10 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.config.CodedStatusException;
 import com.pbl6.flashcard.dto.AuthRequest;
 import com.pbl6.flashcard.dto.AuthResponse;
 import com.pbl6.flashcard.dto.RegisterRequest;
+import com.pbl6.flashcard.dto.RegisterResponse;
 import com.pbl6.flashcard.dto.UserResponse;
 import com.pbl6.flashcard.model.Role;
 import com.pbl6.flashcard.model.User;
@@ -29,8 +31,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
     public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository, PasswordEncoder passwordEncoder,
                        RefreshTokenService refreshTokens, LoginAttemptLimiter loginLimiter, RegisterRateLimiter registerLimiter,
-                       SettingsService settings) {
+                       SettingsService settings, EmailVerificationService verification) {
         this.settings = settings;
+        this.verification = verification;
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -47,8 +50,12 @@ public class AuthService {
     private final LoginAttemptLimiter loginLimiter;
     private final RegisterRateLimiter registerLimiter;
     private final SettingsService settings;
+    private final EmailVerificationService verification;
 
     public static final String EMAIL_TAKEN = "Email đã được sử dụng!";
+    static final String REGISTERED = "Đăng ký tài khoản thành công!";
+    static final String REGISTERED_CHECK_MAIL = "Đăng ký tài khoản thành công! Hãy mở liên kết trong email chúng tôi vừa gửi "
+            + "(hiệu lực " + EmailVerificationService.TTL.toHours() + " giờ) để xác thực rồi đăng nhập.";
 
     /** ip: địa chỉ người gọi, dùng để giới hạn số lần đăng nhập sai theo (IP, email). */
     public AuthResponse login(AuthRequest request, String ip) {
@@ -62,8 +69,16 @@ public class AuthService {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(User.normalizeEmail(request.getEmail()), request.getPassword())
             );
+            User user = ((CustomUserDetails) authentication.getPrincipal()).getUser();
+            if (verification.mustVerify(user)) {
+                // Kiểm SAU mật khẩu: sai mật khẩu vẫn là 401 chung, không lộ email nào đã đăng ký mà chưa xác thực.
+                // Mật khẩu đúng -> không tính là lần dò sai.
+                loginLimiter.reset(key);
+                throw new CodedStatusException(HttpStatus.FORBIDDEN, EmailVerificationService.NOT_VERIFIED_CODE,
+                        EmailVerificationService.NOT_VERIFIED_MESSAGE);
+            }
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            AuthResponse ok = refreshTokens.issueTokens(((CustomUserDetails) authentication.getPrincipal()).getUser());
+            AuthResponse ok = refreshTokens.issueTokens(user);
             loginLimiter.reset(key);
             return ok;
         } catch (LockedException e) {
@@ -82,7 +97,11 @@ public class AuthService {
     // ponytail: register vẫn báo "Email đã được sử dụng" (lộ tồn tại email) vì UX cần biết.
     // Nâng cấp khi cần chống dò email: trả 202 chung + gửi mail xác thực.
     // Không gắn @Transactional: lỗi unique từ save() phải được bắt ngay tại đây, không đợi lúc commit.
-    public void register(RegisterRequest request, String ip) {
+    /**
+     * Xác thực email bật (app_settings email_verification_required, trừ khi app.auth.email-verification-forced-off) -> tài khoản
+     * chưa xác thực + gửi link, needsVerification=true; tắt -> đã xác thực sẵn, đăng nhập được ngay.
+     */
+    public RegisterResponse register(RegisterRequest request, String ip) {
         if (!settings.getBool(SettingsService.KEY_REGISTRATION_OPEN)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Hệ thống tạm ngừng đăng ký tài khoản mới.");
         }
@@ -103,6 +122,9 @@ public class AuthService {
         user.setRole(Role.USER);
         user.setJlptLevel("N5");
         user.setIsPremium(false);
+        // Người đăng ký luôn là USER nên chỉ cần hỏi tính năng có bật không
+        boolean needsVerification = verification.required();
+        if (!needsVerification) user.setEmailVerifiedAt(java.time.Instant.now());
 
         try {
             userRepository.save(user);
@@ -115,6 +137,9 @@ public class AuthService {
             throw e;
         }
         registerLimiter.record(ip);
+        if (!needsVerification) return new RegisterResponse(REGISTERED, false);
+        verification.issue(user);
+        return new RegisterResponse(REGISTERED_CHECK_MAIL, true);
     }
 
     /** Hai ràng buộc unique trên email: cột (V1__baseline) và lower(email) (V2). */

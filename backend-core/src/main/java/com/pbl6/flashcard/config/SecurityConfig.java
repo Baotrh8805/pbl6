@@ -58,6 +58,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login", "/api/auth/register",
                                 "/api/auth/forgot-password", "/api/auth/reset-password",
                                 "/api/auth/refresh", "/api/auth/logout").permitAll()
+                        // Người chưa xác thực email / bị khoá không có token: xác thực, xin gửi lại link, gửi khiếu nại
+                        .requestMatchers("/api/auth/verify-email", "/api/auth/resend-verification",
+                                "/api/auth/appeals").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll() // Mở khóa
                                                                                                               // Swagger
                         .requestMatchers("/error").permitAll()

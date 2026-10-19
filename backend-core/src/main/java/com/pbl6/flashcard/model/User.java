@@ -62,6 +62,14 @@ public class User {
     @Column(name = "locked_reason")
     private String lockedReason;
 
+    /**
+     * Mốc xác thực email (V24); null = chưa xác thực -> USER bị chặn đăng nhập khi app_settings email_verification_required
+     * bật (EmailVerificationService.mustVerify). Staff không bao giờ bị chặn bởi cột này.
+     */
+    @JsonIgnore
+    @Column(name = "email_verified_at")
+    private java.time.Instant emailVerifiedAt;
+
     public User() {}
 
     /** Email so khớp không phân biệt hoa thường: lưu và tra cứu luôn ở dạng này. */
@@ -108,6 +116,8 @@ public class User {
     public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
     public String getLockedReason() { return lockedReason; }
     public void setLockedReason(String lockedReason) { this.lockedReason = lockedReason; }
+    public java.time.Instant getEmailVerifiedAt() { return emailVerifiedAt; }
+    public void setEmailVerifiedAt(java.time.Instant emailVerifiedAt) { this.emailVerifiedAt = emailVerifiedAt; }
 
     /** Staff còn phải đổi mật khẩu seed: chỉ được dùng /api/auth/** để hoàn tất. */
     @JsonIgnore

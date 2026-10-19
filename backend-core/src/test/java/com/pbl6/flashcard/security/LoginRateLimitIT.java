@@ -28,6 +28,7 @@ class LoginRateLimitIT extends IntegrationTest {
     void a_successful_login_resets_the_counter() throws Exception {
         String email = "rl-" + UUID.randomUUID() + "@test.com";
         call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "R"));
+        markEmailVerified(email); // chưa xác thực thì mật khẩu đúng vẫn 403 EMAIL_NOT_VERIFIED (EmailVerificationIT)
         for (int round = 0; round < 3; round++) {
             for (int i = 0; i < LoginAttemptLimiter.MAX_FAILURES - 1; i++) {
                 call(post("/api/auth/login"), null, Map.of("email", email, "password", "wrong"));

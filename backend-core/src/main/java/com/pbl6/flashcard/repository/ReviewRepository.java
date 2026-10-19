@@ -140,4 +140,77 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             WHERE r.user_id = :uid AND f.deck_id IN (:deckIds)
             """, nativeQuery = true)
     List<String> findStudiedDeckIds(@Param("uid") Long uid, @Param("deckIds") Collection<String> deckIds);
+
+    // ---------- Dashboard cá nhân (A5, hợp đồng đợt 2 §7): gộp theo ngày ở DB theo múi giờ của người dùng ----------
+    // :zone là tên múi giờ Postgres hiểu (ReviewActivityService#sqlZone đã đổi offset cố định sang quy ước POSIX). GROUP BY theo
+    // vị trí cột: mỗi lần :zone xuất hiện là một tham số riêng nên Postgres không nhận ra biểu thức SELECT và GROUP BY là một.
+
+    /** Số lượt ôn và số bài quiz của một ngày (theo tz). */
+    interface ActivityDay {
+        java.sql.Date getDay();
+        long getReviews();
+        long getQuizzes();
+    }
+
+    /**
+     * Lượt ôn (review_logs, mọi nguồn) và bài quiz đã nộp (quiz_results) theo ngày kể từ :since; chỉ ngày có hoạt động. Cả hai
+     * nhánh đi theo index (user_id, thời điểm): idx_review_logs_user_time (V11) và idx_quiz_results_user_time (V23).
+     */
+    @Query(value = """
+            SELECT x.day AS "day", CAST(sum(x.reviews) AS bigint) AS "reviews", CAST(sum(x.quizzes) AS bigint) AS "quizzes"
+            FROM (
+                SELECT CAST(l.reviewed_at AT TIME ZONE :zone AS date) AS day, count(*) AS reviews, 0 AS quizzes
+                FROM review_logs l
+                WHERE l.user_id = :uid AND l.reviewed_at >= :since
+                GROUP BY 1
+                UNION ALL
+                SELECT CAST(q.created_at AT TIME ZONE :zone AS date) AS day, 0 AS reviews, count(*) AS quizzes
+                FROM quiz_results q
+                WHERE q.user_id = :uid AND q.created_at >= :since
+                GROUP BY 1
+            ) x
+            GROUP BY x.day
+            ORDER BY x.day
+            """, nativeQuery = true)
+    List<ActivityDay> activityByDay(@Param("uid") Long uid, @Param("since") Instant since, @Param("zone") String zone);
+
+    /** Một ngày có hoạt động (theo tz). */
+    interface ActiveDay {
+        java.sql.Date getDay();
+    }
+
+    /**
+     * Mọi ngày (theo tz) có ít nhất một lượt ôn hoặc một bài quiz, trên TOÀN bộ lịch sử — chuỗi dài nhất không được cắt theo cửa
+     * sổ heatmap. Mỗi ngày một dòng (UNION bỏ trùng) nên vài năm học cũng chỉ vài trăm dòng.
+     */
+    @Query(value = """
+            SELECT CAST(l.reviewed_at AT TIME ZONE :zone AS date) AS "day" FROM review_logs l WHERE l.user_id = :uid
+            UNION
+            SELECT CAST(q.created_at AT TIME ZONE :zone AS date) AS "day" FROM quiz_results q WHERE q.user_id = :uid
+            """, nativeQuery = true)
+    List<ActiveDay> activeDays(@Param("uid") Long uid, @Param("zone") String zone);
+
+    /** Các con số tổng của dashboard. */
+    interface ActivityTotals {
+        long getDueToday();
+        long getNewCards();
+        long getLearnedTotal();
+        long getMasteredTotal();
+    }
+
+    /**
+     * Một câu, bốn đếm: đến hạn trước :until (hết hôm nay theo tz), thẻ mới (trong bộ mình sở hữu, chưa có dòng reviews — học
+     * nhanh chỉ ghi nhật ký nên thẻ chỉ "cram" vẫn là mới), đã học (có dòng reviews), thuộc lâu (interval_days ≥ :masteredDays).
+     * reviews.card_id có FK CASCADE (V2) nên không có dòng mồ côi để JOIN lọc.
+     */
+    @Query(value = """
+            SELECT (SELECT count(*) FROM reviews r WHERE r.user_id = :uid AND r.due_at < :until) AS "dueToday",
+                   (SELECT count(*) FROM flashcards f JOIN decks d ON d.id = f.deck_id
+                    WHERE d.owner_id = :uid
+                      AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.user_id = :uid AND r.card_id = f.id)) AS "newCards",
+                   (SELECT count(*) FROM reviews r WHERE r.user_id = :uid) AS "learnedTotal",
+                   (SELECT count(*) FROM reviews r WHERE r.user_id = :uid AND r.interval_days >= :masteredDays) AS "masteredTotal"
+            """, nativeQuery = true)
+    ActivityTotals activityTotals(@Param("uid") Long uid, @Param("until") Instant until,
+                                  @Param("masteredDays") int masteredDays);
 }

@@ -63,4 +63,10 @@ public class AdminUserController {
         service.revokeSessions(me.getUser(), id);
         return ResponseEntity.noContent().build();
     }
+
+    /** Hợp đồng API đợt 2 §3: trả chi tiết người dùng; audit USER_VERIFY_EMAIL. */
+    @PostMapping("/{id}/verify-email")
+    public Detail verifyEmail(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id) {
+        return service.verifyEmail(me.getUser(), id);
+    }
 }

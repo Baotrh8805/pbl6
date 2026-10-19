@@ -6,8 +6,11 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -68,6 +71,22 @@ class PasswordResetIT extends IntegrationTest {
         call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
         call(post("/api/auth/reset-password"), null, Map.of("token", tokenFromLastMail(), "newPassword", "123"))
                 .andExpect(status().isBadRequest());
+    }
+
+    /** Mail gửi sau khi token đã commit, ngoài transaction: SMTP chậm không giữ kết nối DB của endpoint công khai. */
+    @Test
+    void mail_is_sent_outside_any_transaction() throws Exception {
+        String email = newEmail();
+        newUser(email);
+        List<Boolean> inTransaction = new CopyOnWriteArrayList<>();
+        doAnswer(inv -> {
+            inTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
+            return null;
+        }).when(mailSender).send(any(SimpleMailMessage.class));
+        call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
+        assertEquals(List.of(false), inTransaction);
+        call(post("/api/auth/reset-password"), null, Map.of("token", tokenFromLastMail(), "newPassword", "abcdef1"))
+                .andExpect(status().isOk());
     }
 
     @Test

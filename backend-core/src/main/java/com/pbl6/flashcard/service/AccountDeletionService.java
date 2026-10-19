@@ -25,6 +25,19 @@ import java.util.UUID;
 public class AccountDeletionService {
     public static final String DELETED_NAME = "Người dùng đã xoá";
 
+    /** Email ẩn danh hoá của tài khoản đã tự xoá: duy nhất theo id, không phải hộp thư thật. */
+    public static String anonymizedEmail(Long uid) {
+        return "deleted+" + uid + "@deleted.local";
+    }
+
+    /**
+     * Tài khoản đã tự xoá (khoá vĩnh viễn: không khiếu nại, không mở khoá được)? So khớp đúng email ẩn danh của CHÍNH id đó
+     * thay vì chỉ đuôi @deleted.local: ai đó đăng ký một địa chỉ @deleted.local cũng không biến thành "tài khoản đã xoá".
+     */
+    public static boolean isDeleted(User u) {
+        return u.getId() != null && anonymizedEmail(u.getId()).equals(u.getEmail());
+    }
+
     private final UserRepository users;
     private final DeckRepository decks;
     private final DeckService deckService;
@@ -63,14 +76,15 @@ public class AccountDeletionService {
         for (Deck d : decks.findByOwnerIdAndVisibility(uid, Deck.PRIVATE)) deckService.deleteDeck(d);
         // 2) Dữ liệu học & cá nhân (FK không cascade vì hàng users còn giữ lại)
         for (String table : new String[] {"reviews", "review_logs", "quiz_results", "quiz_attempts", "learning_paths",
-                "extraction_jobs", "notifications", "deck_shares", "folder_shares", "password_reset_tokens"}) {
+                "extraction_jobs", "notifications", "deck_shares", "folder_shares", "password_reset_tokens", "practice_logs",
+                "email_verification_tokens", "account_appeals"}) {
             jdbc.update("DELETE FROM " + table + " WHERE user_id = ?", uid);
         }
         jdbc.update("DELETE FROM folders WHERE user_id = ?", uid); // decks.folder_id -> NULL (bộ thẻ public còn lại)
         refreshTokens.revokeAll(uid);
 
         // 3) Ẩn danh hoá: email duy nhất, mật khẩu ngẫu nhiên, khoá vĩnh viễn, token cũ vô hiệu (pcv)
-        u.setEmail("deleted+" + uid + "@deleted.local");
+        u.setEmail(anonymizedEmail(uid));
         u.setFullName(DELETED_NAME);
         u.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
         u.setPasswordChangedAt(Instant.now());

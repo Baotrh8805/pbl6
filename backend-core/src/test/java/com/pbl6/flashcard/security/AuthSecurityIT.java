@@ -34,6 +34,7 @@ class AuthSecurityIT extends IntegrationTest {
     private String registerEmail(String email) throws Exception {
         call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "X"))
                 .andExpect(status().isOk());
+        markEmailVerified(email); // xác thực email bật mặc định (V21): test này kiểm JWT / email, không kiểm bước bấm link
         return email;
     }
 
