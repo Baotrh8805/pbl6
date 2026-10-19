@@ -22,8 +22,14 @@ _RE_JA = re.compile(
 _RE_LATIN = re.compile(
     r"^(Lesson|Unit|Chapter|Part|Section|Bài|Chương|Phần|Mục|レッスン|ユニット)\s*[0-9０-９]{1,3}\s*[:：.．\-－)]?\s*(.*)$",
     re.IGNORECASE)
-# Trợ từ dính ngay sau số (第3章では, 第2回目) → câu văn, không phải tiêu đề
+# Trợ từ ngay sau số (第3章では, 第2回目, Lesson 1 の練習) → câu văn / cụm danh từ, không phải tiêu đề.
 _PARTICLE_START = tuple("でにのはがを目")
+# を / 目 không bao giờ mở đầu tên bài -> luôn bỏ, kể cả khi có khoảng trắng ("第1課 を復習しましょう", "第2回 目の授業で")
+_NEVER_TITLE_START = tuple("を目")
+# Tên bài hay mở đầu bằng は / に / が (はじめまして, にほんの くらし, がっこう). の / で hiếm khi mở đầu tên bài
+# nhưng "Lesson 1 の練習", "Unit 3 で学んだこと" lại rất hay gặp -> không nhận thẳng, chỉ nhận khi lấp chỗ trống số bài.
+_TITLE_INITIAL = tuple("はにが")
+_HEAD_SEP = ":：.．-－~〜)"  # dấu ngăn giữa từ khoá+số và tên bài mà _RE_JA / _RE_LATIN chấp nhận
 
 # Phần đầu / cuối sách: dòng ngắn đứng riêng khớp các từ khoá này (không phân biệt hoa thường) đánh dấu phần bị bỏ.
 _FRONT_MATTER = ("はじめに", "まえがき", "序文", "本書の使い方", "この本の使い方", "教科書の使い方", "目次", "凡例",
@@ -99,8 +105,9 @@ def _basic_ok(line: str) -> bool:
     return bool(line) and len(line) <= MAX_HEADING_LEN and line[-1] not in "。！!"  # tiêu đề dạng câu hỏi (…ますか?) vẫn hợp lệ
 
 
-def _heading_rank(line: str) -> Optional[int]:
-    """1 hoặc 2 nếu dòng là tiêu đề theo mẫu (hạng của họ từ khoá), ngược lại None."""
+def _classify(line: str) -> Optional[tuple[int, str, bool]]:
+    """(hạng, từ khoá, chắc chắn) nếu dòng khớp mẫu tiêu đề, ngược lại None. chắc chắn=False: phần đuôi mở đầu bằng
+    chữ trùng trợ từ mà không đủ dấu hiệu tên bài -> chỉ nhận khi lấp đúng chỗ trống số bài (_fill_particle_gaps)."""
     line = line.strip()
     if not _basic_ok(line) or "、" in line or "。" in line:
         return None
@@ -108,16 +115,70 @@ def _heading_rank(line: str) -> Optional[int]:
         m = rx.match(line)
         if m:
             kw, trailing = _kw_trailing(m)
-            if len(trailing) > MAX_TRAILING_LEN or trailing.startswith(_PARTICLE_START):
+            if len(trailing) > MAX_TRAILING_LEN or trailing.startswith(_NEVER_TITLE_START):
                 return None
-            return 1 if kw.lower() in rank1 else 2
+            sure = not trailing.startswith(_PARTICLE_START) or _particle_title(m, trailing, rx is _RE_LATIN)
+            return 1 if kw.lower() in rank1 else 2, kw.lower(), sure
     return None
+
+
+def _heading_rank(line: str) -> Optional[int]:
+    """1 hoặc 2 nếu dòng chắc chắn là tiêu đề theo mẫu (hạng của họ từ khoá), ngược lại None."""
+    c = _classify(line)
+    return c[0] if c and c[2] else None
 
 
 def _kw_trailing(m: "re.Match[str]") -> tuple[str, str]:
     """(từ khoá, phần đuôi) của một match tiêu đề; _RE_JA có hai nhánh nên từ khoá ở group 1 hoặc 2."""
     groups = [g for g in m.groups() if g is not None]
     return groups[0], groups[-1].strip()
+
+
+def _particle_title(m: "re.Match[str]", trailing: str, latin: bool) -> bool:
+    """Phần đuôi mở đầu bằng chữ trùng trợ từ nhưng đủ dấu hiệu là tên bài: là は/に/が, tách khỏi từ khoá+số, chữ kế
+    là hiragana (cùng một từ: はじめまして; "は休みです", "は あいさつです" là trợ từ) và không phải câu hỏi
+    ("Lesson 3 はどうでしたか?")."""
+    nxt = trailing[1:2]
+    return (trailing.startswith(_TITLE_INITIAL) and _separated(m, latin) and "ぁ" <= nxt <= "ゖ"
+            and trailing[-1] not in "?？")
+
+
+def _separated(m: "re.Match[str]", latin: bool) -> bool:
+    """Phần đuôi có tách khỏi từ khoá+số không. Regex đã nuốt khoảng trắng / dấu ngăn nên xét đoạn ngay trước nhóm đuôi.
+    Mẫu Latin: chữ/số Latin cạnh chữ Nhật vốn được chèn khoảng trắng nửa cỡ theo lối trình bày thông thường
+    ("Lesson 1 の練習") -> khoảng trắng nửa cỡ không tính, cần dấu ngăn hoặc khoảng trắng 全角."""
+    start = m.start(m.lastindex)
+    gap = ""
+    while start > 0 and (m.string[start - 1].isspace() or m.string[start - 1] in _HEAD_SEP):
+        start -= 1
+        gap = m.string[start] + gap
+    if any(ch in _HEAD_SEP for ch in gap) or "　" in gap:
+        return True
+    return bool(gap) and not latin
+
+
+def _fill_particle_gaps(lines: list[str], cls: list, rank: int) -> list[int]:
+    """Tiêu đề chắc chắn của hạng `rank`, cộng ứng viên dính trợ từ khớp đúng dãy số bài cùng từ khoá: ngay trước bài
+    n+1 (hoặc sau bài n-1 khi là tiêu đề cuối) và kề bên chưa có bài n. OCR (Tesseract) nối chữ Nhật không khoảng
+    trắng nên "第1課 はじめまして" trên trang tới đây thành "第1課はじめまして" — một dòng riêng không phân biệt được
+    với câu "第1課は…", chỉ vị trí trong dãy 第1課 → 第2課 → 第3課 mới cho biết đó là tiêu đề."""
+    heads = [i for i, c in enumerate(cls) if c and c[0] == rank and c[2]]
+    cands = [i for i, c in enumerate(cls) if c and c[0] == rank and not c[2]]
+    changed = bool(heads)
+    while changed and cands:  # lặp tới khi ổn định: ứng viên vừa nhận làm mốc cho ứng viên liền trước / sau
+        changed = False
+        for i in list(cands):
+            kw, n = cls[i][1], _head_number(lines[i])
+            same = [h for h in heads if cls[h][1] == kw]
+            prv = next((_head_number(lines[h]) for h in reversed(same) if h < i), None)
+            nxt = next((_head_number(lines[h]) for h in same if h > i), None)
+            if n is None or prv == n or nxt == n:
+                continue
+            if nxt == n + 1 or (nxt is None and prv == n - 1):
+                heads = sorted(heads + [i])
+                cands.remove(i)
+                changed = True
+    return heads
 
 
 def heading_title(line: str) -> Optional[str]:
@@ -217,9 +278,9 @@ def _find_heads(lines: list[str], blocks: Optional[list[dict]]) -> tuple[list[in
         heads, had_toc, dup = _drop_toc_and_duplicates(lines, heads)
         if len(heads) >= 2:
             return heads, had_toc, dup
-    ranked = [(i, _heading_rank(ln)) for i, ln in enumerate(lines)]
+    cls = [_classify(ln) for ln in lines]
     for rank in (1, 2):
-        heads = [i for i, r in ranked if r == rank]
+        heads = _fill_particle_gaps(lines, cls, rank)
         heads, had_toc, dup = _drop_toc_and_duplicates(lines, heads)
         if len(heads) >= 2:
             return heads, had_toc, dup

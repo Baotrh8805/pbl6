@@ -250,3 +250,99 @@ def test_heads_before_first_number_one_are_front_matter():
     # tài liệu bắt đầu giữa sách (không có bài 1) -> giữ nguyên
     r2 = split_chapters_ex(chr(10).join(["第5課 あ", "x", "第6課 い", "y", "第7課 う", "z"]), None)
     assert [c.title for c in r2.chapters] == ["第5課 あ", "第6課 い", "第7課 う"]
+
+
+# --- Tên bài bắt đầu bằng chữ trùng trợ từ (は, に, が...) ------------------------------------------------------------
+def test_particle_start_title_after_separator_is_heading():
+    # Có khoảng trắng (cả 全角) / dấu ngăn giữa số bài và tên bài -> tên bài, không phải câu văn
+    for line in ["第1課 はじめまして", "第1課　はじめまして", "第2課 にほんの　くらし", "第3課：がっこう",
+                 "Lesson 1: はじめまして", "Lesson 1　はじめまして", "第4課 はじめてのデート"]:
+        assert heading_title(line) == line
+    # Dính liền sau số: không phân biệt được với câu "第1課は…" -> một dòng riêng lẻ vẫn bỏ như trước
+    assert heading_title("第1課はじめまして") is None
+    assert heading_title("第3課では…") is None
+    assert heading_title("第2回目の授業で") is None
+    # Các chốt khác vẫn áp dụng dù có khoảng trắng
+    assert heading_title("第1課 はじめまして。") is None
+    assert heading_title("第1課 は、あいさつです") is None
+    assert heading_title("第1課 は" + "あ" * 50) is None
+
+
+def test_three_lessons_with_particle_titles_no_intro():
+    # Trước đây "第1課 はじめまして" bị loại -> bài 1 thành "Mở đầu" và mất tên bài
+    text = ("第1課 はじめまして\nわたしは マイクです。\n第2課 にほんの　くらし\nにほんは たのしいです。\n"
+            "第3課　がっこう\nがっこうへ いきます。")
+    r = split_chapters_ex(text, None)
+    assert r.detected is True
+    assert [c.title for c in r.chapters] == ["第1課 はじめまして", "第2課 にほんの　くらし", "第3課　がっこう"]
+    assert r.chapters[0].text == "わたしは マイクです。"
+    assert (r.chapters[0].start_line, r.chapters[0].end_line) == (0, 2)
+    # Chỉ bài 1 bắt đầu bằng chữ trùng trợ từ: trước đây bài 2, 3 vẫn tách được nhưng bài 1 thành "Mở đầu"
+    r1 = split_chapters_ex("第1課 はじめまして\nこんにちは。\n第2課 かいもの\nいくらですか。\n第3課 しゅうまつ\nえいがを みます。", None)
+    assert [c.title for c in r1.chapters] == ["第1課 はじめまして", "第2課 かいもの", "第3課 しゅうまつ"]
+    # Mục lục cùng các tên bài đó giờ cũng khớp mẫu tiêu đề -> vẫn bị bỏ theo cụm, không sinh chương rỗng
+    toc = "目次\n第1課 はじめまして ...... 1\n第2課 にほんの　くらし ...... 5\n第3課　がっこう ...... 9\n\n"
+    r2 = split_chapters_ex(toc + text, None)
+    assert [c.title for c in r2.chapters] == ["第1課 はじめまして", "第2課 にほんの　くらし", "第3課　がっこう"]
+    assert r2.chapters[0].text == "わたしは マイクです。"
+    assert "目次" in r2.skipped
+
+
+def test_particle_phrases_stay_rejected_even_when_separated():
+    # Latin + chữ Nhật vốn có khoảng trắng nửa cỡ -> khoảng trắng đó không chứng minh được gì
+    for line in ["Lesson 1 の練習", "Unit 3 の目標", "Chapter 2 のまとめ", "Lesson 5 の宿題", "Unit 3 で学んだこと",
+                 "Lesson 3 はどうでしたか?", "Lesson 1 はじめまして"]:
+        assert heading_title(line) is None, line
+    # を / 目 không mở đầu tên bài; の / で chỉ là cụm "của bài N" / "ở bài N"; は+kanji, は+khoảng trắng là trợ từ
+    for line in ["第1課 を復習しましょう", "第2回 目の授業で", "第1課 の復習", "第3課 で習った表現を使って",
+                 "第1課 が終わったら", "1日目 は休みです", "第1課 は あいさつです"]:
+        assert heading_title(line) is None, line
+
+
+def test_particle_phrase_does_not_split_or_drop_lessons():
+    # "Lesson N の練習" sau tiêu đề bài N: không thành chương riêng
+    text = ("Lesson 1 あいさつ\nおはようございます。\nLesson 1 の練習\nれいのように いいましょう。\n"
+            "Lesson 2 かいもの\nいくらですか。\nLesson 2 の練習\nこれを ください。\n"
+            "Lesson 3 しゅうまつ\nえいがを みます。\nLesson 3 の練習\nなにを しますか。")
+    r = split_chapters_ex(text, None)
+    assert [c.title for c in r.chapters] == ["Lesson 1 あいさつ", "Lesson 2 かいもの", "Lesson 3 しゅうまつ"]
+    assert "Lesson 1 の練習" in r.chapters[0].text
+    # Trích giữa sách có hộp ôn bài 1 trong bài 6: "bài 1" giả không được làm mất bài 5, 6 như phần đầu sách
+    for h in ("Lesson {} ".format, "第{}課 ".format):
+        text = (h(5) + "なつやすみ\nうみへ いきました。\n" + h(6) + "わたしのすきなもの\nおんがくが すきです。\n"
+                + h(1) + "の復習\nはじめまして。\n" + h(7) + "かぞく\nあねが います。\n" + h(8) + "しごと\nかいしゃいんです。")
+        r = split_chapters_ex(text, None)
+        assert [c.title for c in r.chapters] == [h(5) + "なつやすみ", h(6) + "わたしのすきなもの", h(7) + "かぞく",
+                                                 h(8) + "しごと"]
+        assert r.skipped == []
+    # Câu hướng dẫn "第1課 を復習しましょう" không tách bài 2
+    r = split_chapters_ex("第1課 あいさつ\nおはようございます。\n第2課 かいもの\nいくらですか。\n第1課 を復習しましょう\n"
+                          "こんにちは。\n第3課 しゅうまつ\nえいがを みます。", None)
+    assert [c.title for c in r.chapters] == ["第1課 あいさつ", "第2課 かいもの", "第3課 しゅうまつ"]
+
+
+def test_glued_particle_title_accepted_when_it_fills_lesson_sequence():
+    # OCR Tesseract nối chữ Nhật không khoảng trắng: "第1課 はじめまして" trên trang -> "第1課はじめまして"
+    ocr = "第1課はじめまして\nわたしはマイクです。\n第2課かいもの\nいくらですか。\n第3課しゅうまつ\nえいがをみます。"
+    r = split_chapters_ex(ocr, None)
+    assert [c.title for c in r.chapters] == ["第1課はじめまして", "第2課かいもの", "第3課しゅうまつ"]
+    assert r.chapters[0].text == "わたしはマイクです。"
+    # Latin: "Lesson 1はじめまして" (OCR) và "Lesson 1 はじめまして" (khoảng trắng thường) cũng nhận nhờ dãy số bài
+    for sep in ("", " "):
+        r = split_chapters_ex(ocr.replace("第", "Lesson ").replace("課", sep), None)
+        assert [c.title for c in r.chapters] == ["Lesson 1" + sep + "はじめまして", "Lesson 2" + sep + "かいもの",
+                                                 "Lesson 3" + sep + "しゅうまつ"]
+    # Hai tiêu đề dính trợ từ liền nhau: bài 2 nhận trước (đứng trước bài 3) rồi làm mốc cho bài 1
+    r = split_chapters_ex("第1課はじめまして\nx。\n第2課にほんのくらし\ny。\n第3課しゅうまつ\nz。", None)
+    assert [c.title for c in r.chapters] == ["第1課はじめまして", "第2課にほんのくらし", "第3課しゅうまつ"]
+    # Tiêu đề cuối (sau bài n-1); "第3課のまとめ" sau đó đã có bài 3 -> ở lại trong thân
+    r = split_chapters_ex("第1課あいさつ\nx。\n第2課かいもの\ny。\n第3課はるやすみ\nz。\n第3課のまとめ\nw", None)
+    assert [c.title for c in r.chapters] == ["第1課あいさつ", "第2課かいもの", "第3課はるやすみ"]
+    assert "第3課のまとめ" in r.chapters[2].text
+    # Mục lục OCR có cùng tiêu đề -> mục lục vẫn bị bỏ theo cụm, bài 1 thật vẫn nhận
+    r = split_chapters_ex("目次\n第1課はじめまして……1\n第2課かいもの……5\n第3課しゅうまつ……9\n\n" + ocr, None)
+    assert [c.title for c in r.chapters] == ["第1課はじめまして", "第2課かいもの", "第3課しゅうまつ"]
+    assert "目次" in r.skipped
+    # Câu "第1課は…" trong phần cách dùng sách (trước bài 1 thật) không khớp dãy -> không thành tiêu đề
+    r = split_chapters_ex("この本の使い方\n第1課はあいさつ\n第2課はかいもの\n" + ocr.replace("課", "課 "), None)
+    assert [c.title for c in r.chapters] == ["第1課 はじめまして", "第2課 かいもの", "第3課 しゅうまつ"]
