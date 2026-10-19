@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import csv
 import math
+import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-from app.extract.jachars import kata_to_hira
+from app.extract.jachars import is_kanji, kata_to_hira
 
 LEVELS = ["N5", "N4", "N3", "N2", "N1"]  # dễ → khó
 DATA_DIR = Path(__file__).parent.parent / "data" / "jlpt"
@@ -23,6 +24,13 @@ _by_pair: dict[tuple[str, str], set[str]] | None = None
 _by_expr: dict[str, set[str]] = {}
 _by_reading: dict[str, set[str]] = {}
 _meaning: dict[str, str] = {}
+# Chỉ mục từng dòng cho distractors (C2/C3): mỗi (expression, reading) một mục ở cấp dễ nhất gặp đầu tiên
+# (LEVELS đi từ N5 → N1 nên dòng đầu là cấp dễ nhất, khớp cách classify() chọn cấp).
+_entries: list[tuple[str, str, str, str]] = []   # (expression, reading, meaning, level)
+_idx_expr: dict[str, list[int]] = {}             # expression → vị trí trong _entries
+_idx_reading: dict[str, list[int]] = {}          # cách đọc hiragana → vị trí (đồng âm)
+_idx_char: dict[str, list[int]] = {}             # chữ Hán → vị trí các từ chứa nó (giống hình)
+_lock = threading.Lock()   # nạp lười chạy đúng một lần dù nhiều request đầu tiên đến cùng lúc (threadpool), như kanjidata
 
 
 def level_index(level: Optional[str]) -> int:
@@ -35,35 +43,93 @@ def _clean(s: str) -> str:
 
 
 def _load() -> None:
-    global _by_pair
+    global _by_pair, _by_expr, _by_reading, _meaning, _entries, _idx_expr, _idx_reading, _idx_char
     if _by_pair is not None:
         return
-    by_pair: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for level in LEVELS:
-        path = DATA_DIR / f"{level.lower()}.csv"
-        if not path.exists():
-            continue
-        with open(path, encoding="utf-8", newline="") as fh:
-            for row in csv.DictReader(fh):
-                expr = _clean(row.get("expression", ""))
-                reading = kata_to_hira(_clean(row.get("reading", "")))
-                if not expr:
-                    continue
-                by_pair[(expr, reading)].add(level)
-                _by_expr.setdefault(expr, set()).add(level)
-                if reading:
-                    _by_reading.setdefault(reading, set()).add(level)
-                meaning = (row.get("meaning") or "").strip()
-                if meaning:
-                    _meaning.setdefault(expr, meaning)
+    with _lock:
+        if _by_pair is not None:   # thread khác vừa nạp xong trong lúc chờ khoá
+            return
+        # Dựng vào biến cục bộ rồi gán module một lượt ở cuối: chỉ mục _entries / _idx_* là list append, không
+        # idempotent như các set → hai lần nạp chồng nhau (health + extract đến cùng lúc) là mỗi mục bị nhân đôi
+        by_pair: dict[tuple[str, str], set[str]] = defaultdict(set)
+        by_expr: dict[str, set[str]] = {}
+        by_reading: dict[str, set[str]] = {}
+        meaning_of: dict[str, str] = {}
+        entries: list[tuple[str, str, str, str]] = []
+        idx_expr: dict[str, list[int]] = {}
+        idx_reading: dict[str, list[int]] = {}
+        idx_char: dict[str, list[int]] = {}
+        for level in LEVELS:
+            path = DATA_DIR / f"{level.lower()}.csv"
+            if not path.exists():
+                continue
+            with open(path, encoding="utf-8", newline="") as fh:
+                for row in csv.DictReader(fh):
+                    expr = _clean(row.get("expression", ""))
+                    reading = kata_to_hira(_clean(row.get("reading", "")))
+                    if not expr:
+                        continue
+                    meaning = (row.get("meaning") or "").strip()
+                    if (expr, reading) not in by_pair:
+                        i = len(entries)
+                        entries.append((expr, reading, meaning, level))
+                        idx_expr.setdefault(expr, []).append(i)
+                        if reading:
+                            idx_reading.setdefault(reading, []).append(i)
+                        for ch in dict.fromkeys(expr):  # mỗi chữ một lần dù lặp trong từ (人々, 日々)
+                            if is_kanji(ch):
+                                idx_char.setdefault(ch, []).append(i)
+                    by_pair[(expr, reading)].add(level)
+                    by_expr.setdefault(expr, set()).add(level)
                     if reading:
-                        _meaning.setdefault(reading, meaning)
-    _by_pair = dict(by_pair)
+                        by_reading.setdefault(reading, set()).add(level)
+                    if meaning:
+                        meaning_of.setdefault(expr, meaning)
+                        if reading:
+                            meaning_of.setdefault(reading, meaning)
+        _by_expr, _by_reading, _meaning = by_expr, by_reading, meaning_of
+        _entries, _idx_expr, _idx_reading, _idx_char = entries, idx_expr, idx_reading, idx_char
+        _by_pair = dict(by_pair)   # gán cuối cùng: cờ "đã nạp" chỉ bật khi mọi bảng đã sẵn sàng
 
 
 def available() -> bool:
     _load()
     return bool(_by_expr)
+
+
+# ----------------------------------------------------------------------------- tra cứu cho distractors (C2/C3)
+
+def entries_of(expression: str) -> list[tuple[str, str, str]]:
+    """Các mục JLPT có đúng ``expression`` → [(reading, meaning, level)] theo cấp dễ → khó; không có → []."""
+    _load()
+    return [_entries[i][1:] for i in _idx_expr.get(_clean(expression), [])]
+
+
+def homophones_jlpt(reading: Optional[str]) -> list[tuple[str, str, str]]:
+    """Mọi từ JLPT đọc là ``reading`` (kể cả chính từ đang xét; caller tự loại) → [(expression, meaning, level)],
+    cấp dễ → khó, mỗi expression một lần. Không có cách đọc / không có dữ liệu → []."""
+    _load()
+    out: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for i in _idx_reading.get(kata_to_hira(_clean(reading or "")), []):
+        expr, _, meaning, level = _entries[i]
+        if expr not in seen:
+            seen.add(expr)
+            out.append((expr, meaning, level))
+    return out
+
+
+def entries_containing(ch: str) -> list[tuple[str, str, str, str]]:
+    """Mọi từ JLPT chứa chữ Hán ``ch`` → [(expression, reading, meaning, level)], cấp dễ → khó.
+    Dùng để ước lượng "độ dễ" của một chữ (cấp dễ nhất của từ chứa nó) và cho mẹo nhớ về sau."""
+    _load()
+    return [_entries[i] for i in _idx_char.get(ch, [])]
+
+
+def jlpt_kanji_set() -> frozenset[str]:
+    """Tập chữ Hán xuất hiện trong 5 danh sách JLPT (~2 000 chữ): kho ứng viên cho kanji giống hình."""
+    _load()
+    return frozenset(_idx_char)
 
 
 def _resolve(levels: set[str]) -> tuple[str, float, list[str]]:

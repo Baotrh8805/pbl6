@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 from typing import Any, Optional
 
 from app.core.config import settings
@@ -232,3 +233,120 @@ def translate_items(items: list[dict], target_lang: str = "vi") -> list[dict]:
                 "exampleVi": (d.get("exampleVi") or "").strip() or None,
             })
     return out
+
+
+# --- Mẹo nhớ bộ thủ (C4) ------------------------------------------------------
+
+MNEMONIC_MAX_CHARS = 300   # Gemini được yêu cầu ≤ 200; quá 300 là model lan man → bỏ, router dùng template
+MNEMONIC_EXAMPLES = 3
+
+_MNEMONIC_PROMPT = (
+    "Bạn là giáo viên tiếng Nhật dạy người Việt nhớ chữ Hán qua bộ thủ và âm Hán-Việt.\n"
+    "Với mỗi chữ trong danh sách, viết MỘT câu mẹo nhớ bằng tiếng Việt (\"mnemonicVi\"):\n"
+    "- Sinh động, dễ hình dung, tối đa 200 ký tự.\n"
+    "- Bắt buộc nhắc tên bộ thủ (\"radicalName\") và âm Hán-Việt (\"hanViet\") của chữ, gắn chúng với nghĩa "
+    "(\"meaningEn\"); có thể lấy ý từ \"examples\" (từ chứa chữ) nhưng diễn đạt bằng tiếng Việt.\n"
+    "- Không dùng romaji. Không viết chữ Nhật nào khác (kana hay kanji) ngoài chính chữ kanji đó và bộ thủ của nó "
+    "(\"radicalChar\", hoặc dạng viết khác của bộ trong \"radicalVariants\").\n"
+    "- Không nội dung phản cảm, thô tục, bạo lực, chính trị, tôn giáo, phân biệt đối xử.\n"
+    "Giữ \"kanji\" đúng như đầu vào. Chỉ trả về một mảng JSON các object {{\"kanji\", \"mnemonicVi\"}}, mỗi chữ một "
+    "object, cùng thứ tự.\n\nDanh sách:\n{items}"
+)
+
+_MNEMONIC_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {"kanji": {"type": "string"}, "mnemonicVi": {"type": "string"}},
+        "required": ["kanji", "mnemonicVi"],
+    },
+}
+
+
+def _fold_vi(s: str) -> str:
+    """Bỏ dấu tiếng Việt + viết hoa để so "thuỷ" / "THỦY" / "Thủy" như nhau (như han_viet_graph.fold; chép lại 3 dòng
+    thay vì import để gemini.py không kéo theo JMdict / Unihan)."""
+    nfd = unicodedata.normalize("NFD", s or "")
+    return "".join(c for c in nfd if not unicodedata.combining(c)).replace("Đ", "D").replace("đ", "d").upper()
+
+
+def _mentions(text: str, needle: Optional[str]) -> bool:
+    """``needle`` (âm Hán-Việt / tên bộ) xuất hiện trong ``text`` như một từ trọn vẹn sau khi bỏ dấu, nên "HẢI" khớp
+    "hải" / "Hải sản" nhưng âm một chữ như "Y" (衣) không khớp bừa bất kỳ chữ y nào trong câu."""
+    needle = _fold_vi((needle or "").strip())
+    if not needle:
+        return False
+    return re.search(r"(?<!\w)" + re.escape(needle) + r"(?!\w)", _fold_vi(text)) is not None
+
+
+def mnemonic_ok(text: str, item: dict) -> bool:
+    """Bộ lọc mẹo nhớ: không rỗng, ≤ MNEMONIC_MAX_CHARS, không chứa chữ Nhật nào ngoài chính chữ đang học và bộ thủ
+    của nó — kể cả dạng viết trong chữ (氵 艹 辶…, ``radicalVariants`` từ radicals.variants) vì giáo viên Việt viết
+    "bộ Thủy 氵" (model hay chèn từ ví dụ 日本海 — người học N5 không đọc được, và vi phạm yêu cầu "chỉ tiếng Việt"), và
+    phải nhắc âm Hán-Việt hoặc tên bộ (nếu không thì mẹo không gắn với cách người Việt nhớ chữ → thà dùng template)."""
+    from app.extract.jachars import JA_RE
+    text = (text or "").strip()
+    if not text or len(text) > MNEMONIC_MAX_CHARS:
+        return False
+    allowed = {item.get("kanji") or ""}
+    rad = item.get("radicalChar") or ""
+    variants = item.get("radicalVariants")
+    if variants is None and rad:
+        from app.extract import radicals   # nạp lười: chỉ bảng 214 bộ, caller không gửi sẵn (test / gọi tay)
+        row = radicals.radical_of(rad)
+        # cả dạng bảng ghi (青 cho 靑, 戸 cho 戶): caller gửi dạng cũ thì mẹo viết dạng JIS vẫn hợp lệ
+        variants = (row["unified"], *radicals.variants(row["no"])) if row else ()
+    for glyph in [rad] + list(variants or ()):
+        allowed.update({glyph, unicodedata.normalize("NFKC", glyph)})
+    if any(JA_RE.fullmatch(c) and c not in allowed for c in text):
+        return False
+    return _mentions(text, item.get("hanViet")) or _mentions(text, item.get("radicalName"))
+
+
+def _mnemonic_input(item: dict) -> dict:
+    """Mục gửi vào prompt: bỏ giá trị rỗng, ví dụ chỉ giữ ``term`` (≤ MNEMONIC_EXAMPLES) để prompt gọn."""
+    out: dict = {}
+    for key in ("kanji", "hanViet", "radicalName", "radicalChar", "radicalVariants", "meaningEn"):
+        if item.get(key):
+            out[key] = list(item[key]) if key == "radicalVariants" else item[key]
+    examples = [(ex.get("term") if isinstance(ex, dict) else ex) for ex in (item.get("examples") or [])]
+    examples = [e for e in examples if e][:MNEMONIC_EXAMPLES]
+    if examples:
+        out["examples"] = examples
+    return out
+
+
+def generate_mnemonics(items: list[dict]) -> dict:
+    """Mẹo nhớ tiếng Việt cho thẻ bộ thủ (C4): ``items`` = [{kanji, hanViet, radicalName, radicalChar?, meaningEn,
+    examples}] → {"items": [{kanji, mnemonicVi}], "reason": None | "no_key" | "quota" | "error"}.
+
+    Khác translate_items, hàm này không raise: mẹo chỉ là bước làm giàu nên lỗi Gemini trả về ``reason`` kèm các mẹo
+    đã sinh được ở batch trước để router điền template cho phần còn lại thay vì làm hỏng cả bộ thẻ. Mẹo không qua
+    mnemonic_ok bị bỏ (router dùng template cho chữ đó); mỗi chữ lấy mẹo đầu tiên. ``reason`` dùng "no_key" (không
+    phải "no_api_key" của /extract/enrich) theo hợp đồng /radicals/cards; thử lại / model dự phòng / tạm ngưng khi hết
+    quota theo _generate như mọi lượt gọi khác."""
+    if not available():
+        return {"items": [], "reason": "no_key"}
+    by_kanji = {it["kanji"]: it for it in items if it.get("kanji")}
+    out: list[dict] = []
+    seen: set[str] = set()
+    try:
+        for i in range(0, len(items), BATCH_SIZE):
+            batch = [_mnemonic_input(it) for it in items[i:i + BATCH_SIZE]]
+            prompt = _MNEMONIC_PROMPT.format(items=json.dumps(batch, ensure_ascii=False))
+            raw = _generate(prompt, {
+                "temperature": 0.7,   # mẹo nhớ cần chút sáng tạo; 0.2 của dịch nghĩa cho câu khô và giống nhau
+                "response_mime_type": "application/json",
+                "response_schema": _MNEMONIC_SCHEMA,
+            })
+            for d in _parse_json_list(raw):
+                kanji = str(d.get("kanji") or "").strip()
+                text = (d.get("mnemonicVi") or "").strip()
+                item = by_kanji.get(kanji)
+                if item is None or kanji in seen or not mnemonic_ok(text, item):
+                    continue
+                seen.add(kanji)
+                out.append({"kanji": kanji, "mnemonicVi": text})
+    except GeminiError as exc:
+        return {"items": out, "reason": "no_key" if exc.reason == "no_api_key" else exc.reason}
+    return {"items": out, "reason": None}

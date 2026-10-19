@@ -83,6 +83,9 @@ neo4jdata/
 # ai-service: dữ liệu từ điển dựng bằng scripts/build_dicts.py (không commit)
 # ==============================================================================
 ai-service/app/extract/data/jmdict.sqlite
+ai-service/app/extract/data/kanji_strokes.json
+ai-service/app/extract/data/kradfile.csv
+ai-service/app/extract/data/pitch_accent.csv
 ai-service/scripts/.download_cache/
 # thử nghiệm dịch offline (đã hoàn tác): model NLLB 600 MB + bộ nhớ dịch còn lại trên máy dev, không commit
 ai-service/app/extract/data/models/

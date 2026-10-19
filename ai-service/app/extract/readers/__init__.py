@@ -48,6 +48,7 @@ class TextResult:
     is_vertical: Optional[bool] = None
     low_confidence: bool = False
     truncated: bool = False
+    truncated_pages: int = 0             # số trang PDF bị bỏ vì vượt giới hạn 20 trang (truncated chỉ nói có/không)
     needs_ocr: bool = False              # PDF scan: page_images chờ OCR
     gemini_error: Optional[str] = None   # quota | error | ...: OCR kém nhưng Gemini không chép lại được
     page_images: list[bytes] = field(default_factory=list)  # PNG từng trang (khi needs_ocr)
@@ -63,6 +64,7 @@ class TextResult:
                 "pages": self.pages,
                 "lowConfidence": self.low_confidence,
                 "truncated": self.truncated,
+                "truncatedPages": self.truncated_pages,
                 # chỉ có khi Gemini lỗi, để meta của các lượt bình thường không đổi
                 **({"geminiError": self.gemini_error} if self.gemini_error else {}),
             },
@@ -100,7 +102,9 @@ def _sniff(filename: Optional[str], data: bytes) -> str:
 
 
 def read_source(filename: Optional[str], data: Optional[bytes], text: Optional[str],
-                ocr_mode: str = "auto") -> TextResult:
+                ocr_mode: str = "auto", ocr_fallback_confidence: Optional[float] = None) -> TextResult:
+    """``ocr_fallback_confidence``: ngưỡng conf Tesseract (0..1) dưới đó nhờ Gemini chép lại, cho ảnh và PDF scan;
+    None → settings.OCR_FALLBACK_CONFIDENCE."""
     from app.extract.readers import docx_reader, image_reader, pdf_reader, text_reader
 
     if data is not None and len(data) > MAX_FILE_BYTES:
@@ -115,9 +119,9 @@ def read_source(filename: Optional[str], data: Optional[bytes], text: Optional[s
             result = pdf_reader.read_pdf(data, ocr_mode)
             if result.needs_ocr:
                 # Điểm cắm OCR giai đoạn 2: image_reader.ocr_pages(result.page_images, ocr_mode)
-                result = image_reader.ocr_pages(result, ocr_mode)
+                result = image_reader.ocr_pages(result, ocr_mode, fallback_confidence=ocr_fallback_confidence)
         elif kind == "image":
-            result = image_reader.read_image(data, ocr_mode)
+            result = image_reader.read_image(data, ocr_mode, fallback_confidence=ocr_fallback_confidence)
         else:  # pragma: no cover
             raise ReaderError("Định dạng không hỗ trợ")
     elif text is not None and text.strip():

@@ -129,7 +129,7 @@ def test_gemini_failure_keeps_tesseract_result(fake_tesseract, monkeypatch):
 
 
 def test_ocr_pages_reports_first_gemini_error(monkeypatch):
-    def fake_read(data, mode, page=1):
+    def fake_read(data, mode, page=1, fallback_confidence=None):
         return TextResult(text="ページ", source_type="image", engine="tesseract", pages=1,
                           gemini_error="quota" if page == 2 else None)
     monkeypatch.setattr(image_reader, "read_image", fake_read)
@@ -170,7 +170,10 @@ def test_corrupt_image_is_reader_error(monkeypatch):
 
 
 def test_ocr_pages_merges(monkeypatch):
-    def fake_read(data, ocr_mode="auto", page=1):
+    seen_thresholds = []
+
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None):
+        seen_thresholds.append(fallback_confidence)
         if page == 1:
             return TextResult(text="一ページ", source_type="image", engine="tesseract", pages=1,
                               blocks=[image_reader.Block(text="一ページ")], mean_confidence=0.9, is_vertical=True)
@@ -179,8 +182,10 @@ def test_ocr_pages_merges(monkeypatch):
                           low_confidence=False)
     monkeypatch.setattr(image_reader, "read_image", fake_read)
     src = TextResult(text="", source_type="pdf", engine="pdf-text", pages=2, needs_ocr=True,
-                     page_images=[_png(), _png()])
-    r = image_reader.ocr_pages(src, "auto")
+                     page_images=[_png(), _png()], truncated=True, truncated_pages=3)
+    r = image_reader.ocr_pages(src, "auto", fallback_confidence=0.5)
+    assert seen_thresholds == [0.5, 0.5]           # ngưỡng của request tới được từng trang
+    assert r.truncated is True and r.truncated_pages == 3
     assert r.source_type == "pdf" and r.pages == 2
     assert r.text == "一ページ\n\n二ページ"
     assert [b.page for b in r.blocks] == [1, 2]
@@ -374,3 +379,102 @@ def test_gemini_output_absurdly_long_is_rejected(fake_tesseract, monkeypatch):
     r = image_reader.read_image(_png(), "horizontal")
     assert r.engine == "tesseract" and r.gemini_error == "implausible"
     assert len(r.text) < 100
+
+
+# --- B3: furigana Tesseract gộp vào giữa dòng ----------------------------------
+
+def test_inline_furigana_word_is_removed_and_becomes_ruby():
+    # Tesseract gộp hàng furigana sát trên vào chính dòng: "がっこう" (cao 14, đáy y=26) nằm trên "学校" (cao 30, đỉnh y=30)
+    d = _data([
+        (1, 1, 1, 0, 30, 60, 30, 90, "私は"),
+        (1, 1, 1, 62, 12, 56, 14, 40, "がっこう"),
+        (1, 1, 1, 60, 30, 60, 30, 90, "学校"),
+        (1, 1, 1, 120, 30, 150, 30, 90, "に行きます"),
+    ])
+    lines, rubies = image_reader._filter_lines(image_reader._lines_from_data(d, False), False)
+    [line] = lines
+    assert line.text == "私は学校に行きます"
+    assert line.confs == [90, 90, 90]          # conf thấp của furigana không kéo mean_conf xuống
+    assert line.y == 30                        # đỉnh dòng tính lại không còn furigana
+    assert rubies == [{"base": "学校", "reading": "がっこう"}]
+    blocks, mean_conf, _ = image_reader._assemble(image_reader._lines_from_data(d, False), False, 1)
+    assert blocks[0].text == "私は学校に行きます"
+    assert blocks[0].rubies == [{"base": "学校", "reading": "がっこう"}]   # gốc là một từ trong dòng
+    assert mean_conf == pytest.approx(0.9)
+
+
+def test_inline_furigana_over_okurigana_word_and_split_mono_ruby():
+    # "い" trên 行 của "行き" → gốc có okurigana, reading nối okurigana; がっ|こう Tesseract tách 2 từ trên 学|校 → nối
+    d = _data([
+        (1, 1, 1, 0, 30, 60, 30, 90, "学校"),
+        (1, 1, 1, 2, 12, 26, 14, 50, "がっ"),
+        (1, 1, 1, 32, 12, 26, 14, 50, "こう"),
+        (1, 1, 1, 60, 30, 30, 30, 90, "に"),
+        (1, 1, 1, 90, 30, 60, 30, 90, "行き"),
+        (1, 1, 1, 98, 12, 14, 14, 50, "い"),
+        (1, 1, 1, 150, 30, 60, 30, 90, "ます"),
+    ])
+    [line], rubies = image_reader._filter_lines(image_reader._lines_from_data(d, False))
+    assert line.text == "学校に行きます"
+    assert rubies == [{"base": "学校", "reading": "がっこう"}, {"base": "行き", "reading": "いき"}]
+
+
+def test_inline_furigana_covering_part_of_word_is_dropped_without_ruby():
+    # "にほん" chỉ phủ 日本 trong từ Tesseract "日本語" → cách đọc thiếu ご, không gợi ý ruby sai nhưng vẫn bỏ khỏi văn bản
+    d = _data([
+        (1, 1, 1, 0, 30, 90, 30, 90, "日本語"),
+        (1, 1, 1, 8, 12, 44, 14, 50, "にほん"),
+        (1, 1, 1, 90, 30, 60, 30, 90, "です"),
+    ])
+    [line], rubies = image_reader._filter_lines(image_reader._lines_from_data(d, False))
+    assert line.text == "日本語です"
+    assert rubies == []
+
+
+def test_inline_filter_leaves_normal_lines_alone():
+    # Kana nhỏ nằm ở đáy dòng (ゃ / っ tách thành từ riêng) không phải furigana; kana cao bình thường cũng giữ nguyên
+    d = _data([
+        (1, 1, 1, 0, 30, 60, 30, 90, "東京"),
+        (1, 1, 1, 60, 44, 16, 16, 80, "っ"),
+        (1, 1, 1, 76, 30, 90, 26, 90, "てきます"),
+        (1, 1, 2, 0, 80, 60, 30, 90, "勉強"),
+        (1, 1, 2, 60, 84, 60, 24, 90, "します"),
+    ])
+    lines, rubies = image_reader._filter_lines(image_reader._lines_from_data(d, False))
+    assert [ln.text for ln in lines] == ["東京ってきます", "勉強します"]
+    assert [ln.confs for ln in lines] == [[90, 80, 90], [90, 90]]
+    assert rubies == []
+
+
+def test_inline_furigana_in_vertical_column():
+    # Chữ dọc: cỡ chữ = bề rộng; "がっこう" (rộng 12) nằm ngay phải cột "学校" (x 300..330)
+    d = _data([
+        (1, 1, 1, 300, 10, 30, 60, 90, "学校"),
+        (1, 1, 1, 332, 12, 12, 56, 40, "がっこう"),
+        (1, 1, 1, 300, 70, 30, 90, 90, "に行く"),
+    ])
+    [line], rubies = image_reader._filter_lines(image_reader._lines_from_data(d, True), True)
+    assert line.text == "学校に行く"
+    assert line.x == 330                       # mép phải cột tính lại không còn furigana
+    assert rubies == [{"base": "学校", "reading": "がっこう"}]
+
+
+def test_furigana_line_over_okurigana_word_gives_ruby_hint():
+    # Dòng furigana riêng (cơ chế cũ) giờ cũng nhận gốc có okurigana: た trên 食 của "食べる" → 食べる/たべる
+    d = _data([
+        (1, 1, 1, 6, 10, 14, 14, 85, "た"),
+        (1, 1, 2, 0, 30, 90, 30, 92, "食べる"),
+    ])
+    lines, rubies = image_reader._filter_lines(image_reader._lines_from_data(d, False))
+    assert [ln.text for ln in lines] == ["食べる"]
+    assert rubies == [{"base": "食べる", "reading": "たべる"}]
+
+
+def test_read_image_uses_request_fallback_confidence(fake_tesseract, monkeypatch):
+    # HORIZONTAL có conf 0.7: ngưỡng mặc định 0.85 → low; ngưỡng request 0.6 → không low, không gọi Gemini
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a: pytest.fail("không được nhờ Gemini"))
+    r = image_reader.read_image(_png(), "horizontal", fallback_confidence=0.6)
+    assert r.engine == "tesseract" and r.low_confidence is False
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    assert image_reader.read_image(_png(), "horizontal").low_confidence is True

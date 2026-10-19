@@ -1,14 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 
+from app.core.security import require_internal_key
 from app.extract.han_viet import han_viet
 from app.extract.jachars import has_japanese, is_kana_only
 from app.extract.jlpt import classify
 from app.extract.romaji import to_romaji
 from app.extract.tokenizer import tokenize
 
-router = APIRouter(prefix="/nlp", tags=["NLP & Hán-Việt"])
+router = APIRouter(prefix="/nlp", tags=["NLP & Hán-Việt"], dependencies=[Depends(require_internal_key)])
 
 
 class AnalyzeTextRequest(BaseModel):

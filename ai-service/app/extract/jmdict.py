@@ -64,3 +64,41 @@ def lookup(lemma: str, reading: Optional[str] = None) -> Optional[dict]:
     if not row:
         return None
     return {"kanji": row[0], "kana": row[1], "gloss": row[2], "common": bool(row[3]), "jlpt": row[4]}
+
+
+# ----------------------------------------------------------------------------- distractors (C3 đồng âm)
+
+def homophones(reading: str, exclude_kanji: Optional[str] = None, limit: int = 10) -> list[tuple[str, str, bool]]:
+    """Từ viết bằng kanji đọc đúng là ``reading`` (trừ ``exclude_kanji``) → [(kanji, gloss, common)],
+    phổ biến trước rồi theo mã kanji; mỗi kanji một lần. Thiếu sqlite / không có cách đọc → [].
+
+    Thử cả hiragana lẫn katakana vì Sudachi trả katakana còn JMdict ghi từ ngoại lai bằng katakana."""
+    conn = _connect()
+    if conn is None or not reading:
+        return []
+    forms = tuple(dict.fromkeys((kata_to_hira(reading), hira_to_kata(reading))))
+    sql = ("SELECT kanji, gloss, common FROM entries WHERE kana IN (%s) AND kanji IS NOT NULL AND kanji<>? "
+           "ORDER BY common DESC, kanji" % ",".join("?" * len(forms)))
+    with _lock:
+        rows = conn.execute(sql, (*forms, exclude_kanji or "")).fetchall()
+    out: list[tuple[str, str, bool]] = []
+    seen: set[str] = set()
+    for kanji, gloss, common in rows:
+        if kanji in seen:
+            continue
+        seen.add(kanji)
+        out.append((kanji, gloss or "", bool(common)))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def readings_of(kanji: str) -> list[str]:
+    """Mọi cách đọc kana của ``kanji`` trong JMdict, cách đọc của entry phổ biến trước; thiếu sqlite → []."""
+    conn = _connect()
+    if conn is None or not kanji:
+        return []
+    with _lock:
+        rows = conn.execute("SELECT kana, MAX(common) AS c FROM entries WHERE kanji=? GROUP BY kana ORDER BY c DESC, kana",
+                            (kanji,)).fetchall()
+    return [r[0] for r in rows]

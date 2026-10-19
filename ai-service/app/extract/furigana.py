@@ -54,10 +54,14 @@ def _assign(runs: list[tuple[str, str]], reading: str) -> Optional[list[str]]:
             result[i] = ""
             return rec(i + 1, pos)
         # run kanji: thử từ dài đến ngắn, mỗi kanji ít nhất 1 kana
+        nxt_kana = runs[i + 1][1][0] if i + 1 < n and runs[i + 1][0] == "k" else None
         for ln in range(len(reading) - pos, len(text) - 1, -1):
             nxt = pos + ln
-            # Không cắt ngay trước kana nhỏ / ー vì chúng thuộc mora trước
-            if nxt < len(reading) and (reading[nxt] in SMALL_KANA or reading[nxt] == "ー"):
+            # Không cắt ngay trước kana nhỏ / ー vì chúng thuộc mora trước (学校 がっこう: っ thuộc 学) — trừ khi chính
+            # kana đó được VIẾT ra ở run kana kế tiếp (待っ まっ, 引っ越し ひっこし: っ là okurigana, không phải của kanji);
+            # thiếu ngoại lệ này mọi dạng て/た 促音便 rơi về một ruby cho cả token, furigana đè lên okurigana
+            if nxt < len(reading) and (reading[nxt] in SMALL_KANA or reading[nxt] == "ー") and not (
+                    nxt_kana is not None and kata_to_hira(nxt_kana) == kata_to_hira(reading[nxt])):
                 continue
             result[i] = reading[pos:nxt]
             if rec(i + 1, nxt):
@@ -162,6 +166,53 @@ def align(surface: str, reading: Optional[str]) -> Optional[list[Segment]]:
         else:
             segs.append({"kanji": text, "kana": ""})
     return segs
+
+
+def swap_okurigana(surface: str, reading: Optional[str], target: str) -> Optional[str]:
+    """Cách đọc của ``target`` suy từ cách đọc ``reading`` của ``surface`` khi hai dạng chung gốc (B5): bỏ đuôi kana
+    của surface khỏi reading rồi nối đuôi kana của target. Dùng hai chiều: dạng chia → dạng từ điển (開い ひらい → 開く
+    ひらく, 辛かっ つらかっ → 辛い つらい) và ngược lại (辛い からい → 辛かっ からかっ) — giữ đúng cách đọc gốc Sudachi
+    chọn TRONG CÂU thay vì đọc lại lemma đứng một mình.
+
+    None khi không suy được: gốc chung rỗng, phần khác nhau chứa kanji (gốc khác chữ), reading không kết thúc bằng
+    đuôi kana của surface, hoặc kết quả không căn được với target (run kana của target không khớp — _assign). Hàm
+    thuần; KHÔNG biết động từ bất quy tắc đổi âm gốc (来 き → 来る くる): người gọi tự loại."""
+    if not surface or not reading or not target:
+        return None
+    k = 0
+    while k < min(len(surface), len(target)) and surface[k] == target[k]:
+        k += 1
+    if k == 0:
+        return None
+    s_tail, t_tail = surface[k:], target[k:]
+    if any(kind != "k" for kind, _ in _runs(s_tail + t_tail)):
+        return None
+    reading, s_tail, t_tail = kata_to_hira(reading), kata_to_hira(s_tail), kata_to_hira(t_tail)
+    if s_tail and not reading.endswith(s_tail):
+        return None
+    stem = reading[:len(reading) - len(s_tail)]
+    out = stem + t_tail
+    if not stem or _assign(_runs(target), out) is None:
+        return None
+    return out
+
+
+def ruby_segments(surface: str, reading: Optional[str]) -> list[dict]:
+    """Đoạn ruby mức run cho câu ví dụ (B5): [{"text", "reading"}] — run kanji mang cách đọc của CẢ run (学校 →
+    がっこう, hiển thị một <rt> như sách in, không chia 学/がっ + 校/こう như readingSegments của thẻ), okurigana / kana /
+    ký hiệu là chữ thường (reading None). Không có kanji / thiếu reading / reading còn kanji (Sudachi OOV trả chính
+    surface) → một đoạn chữ thường; không căn được → một đoạn ruby cho cả surface. "".join(text) luôn bằng surface."""
+    if not surface:
+        return []
+    if not reading or not has_kanji(surface) or has_kanji(reading):
+        return [{"text": surface, "reading": None}]
+    reading = kata_to_hira(reading)
+    runs = _runs(surface)
+    assigned = _assign(runs, reading)
+    if assigned is None:
+        return [{"text": surface, "reading": reading}]
+    return [{"text": text, "reading": kana if kind == "K" and kana else None}
+            for (kind, text), kana in zip(runs, assigned)]
 
 
 def reading_from_rubies(surface: str, rubies: list[dict] | None) -> Optional[str]:

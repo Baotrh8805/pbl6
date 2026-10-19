@@ -49,6 +49,26 @@ def test_phrase_level_picks_hardest_word():
     assert sources[0] == "phrase:下ろす" and sources[1].startswith(("jlpt_list:", "wordfreq:"))
 
 
+def test_load_is_idempotent_under_concurrent_first_call(monkeypatch):
+    """Endpoint sync chạy trên threadpool → nhiều request đầu tiên gọi _load() cùng lúc; chỉ mục _entries / _idx_*
+    là list append nên hai lần nạp chồng nhau sẽ nhân đôi mục (31 780 thay vì 7 945). Khoá + gán sau khi dựng xong."""
+    import threading
+    classifier._load()
+    n_entries, n_expr = len(classifier._entries), len(classifier._by_expr)
+    assert n_entries > 0
+    for name, empty in (("_by_pair", None), ("_by_expr", {}), ("_by_reading", {}), ("_meaning", {}),
+                        ("_entries", []), ("_idx_expr", {}), ("_idx_reading", {}), ("_idx_char", {})):
+        monkeypatch.setattr(classifier, name, empty)   # module như lúc mới import; monkeypatch trả lại bảng cũ sau test
+    threads = [threading.Thread(target=classifier._load) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(classifier._entries) == n_entries and len(classifier._by_expr) == n_expr
+    assert classifier.entries_of("待つ") == [("まつ", "to wait", "N5")]
+    assert all(len(ix) == len(set(ix)) for ix in classifier._idx_expr.values())
+
+
 def test_phrase_level_none_when_no_word_has_level():
     from app.extract.jlpt import phrase_level
     assert phrase_level([("逝得", None), ("償友", None)]) == (None, 0.0, [])

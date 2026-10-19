@@ -1,8 +1,9 @@
 """OCR ảnh bằng Tesseract (jpn / jpn_vert), fallback Gemini Vision khi confidence thấp.
 
 Luồng: Pillow tiền xử lý → pytesseract.image_to_data → gom dòng/khối theo bbox (chữ dọc sắp
-cột phải → trái) → loại dòng kana nhỏ (furigana) → mean(conf) < OCR_FALLBACK_CONFIDENCE và có
-GEMINI_API_KEY → Gemini chép lại. Không có Tesseract → OcrUnavailable (router trả 503).
+cột phải → trái) → loại furigana (từ kana nhỏ chen trong dòng, dòng kana nhỏ) thành ruby hint → mean(conf) <
+ngưỡng (theo request, mặc định OCR_FALLBACK_CONFIDENCE) và có GEMINI_API_KEY → Gemini chép lại.
+Không có Tesseract → OcrUnavailable (router trả 503).
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from typing import Optional
 
 from app.core.config import settings
 from app.extract import gemini
-from app.extract.jachars import has_japanese, has_kanji, is_kana_only, is_kanji
+from app.extract.jachars import has_japanese, has_kanji, is_kana_only
 from app.extract.readers import Block, OcrUnavailable, ReaderError, TextResult
 from app.extract.readers.text_reader import normalize
 
@@ -36,10 +37,15 @@ GEMINI_REJECT_CHARS = 3000  # dài hơn Tesseract > GEMINI_LEN_RATIO lần VÀ v
 PAGE_WORKERS = 3           # số trang PDF OCR song song (mỗi trang lại chạy 2 lượt jpn/jpn_vert song song → ≤ 6 tesseract);
                             # đo 20 trang trên máy 4 nhân: 1 worker 44 s, 2 → 35 s, 3 → 22 s, 4 không nhanh hơn
 FURIGANA_RATIO = 0.60       # kana nhỏ hơn 60% dòng lân cận → furigana
+INLINE_RUBY_RATIO = 0.60    # từ kana thấp hơn 60% trung vị các từ có kanji trong cùng dòng → furigana chen dòng
+INLINE_RUBY_DIP = 0.35      # đáy furigana ≤ đỉnh chữ gốc + 35% chiều cao gốc (dọc: mép trái ≥ 65% bề rộng gốc)
+INLINE_RUBY_EDGE = 0.75     # dải furigana phải tới gần hai đầu phần kanji của từ gốc (≤ 0.75 bề một chữ) mới gợi ý ruby
+MAX_READING_PER_KANJI = 4   # gốc n kanji đọc n..4n kana; ngoài khoảng đó là ghép nhầm
 NOISE_CONF = 60             # dòng không có chữ Nhật và conf < 60 → nhiễu
 TESS_TIMEOUT = 120
 
 _JA_LETTERS_RE = re.compile(r"[^ぁ-ゖァ-ヺー一-鿿㐀-䶿々〆ヶ]")   # mọi thứ KHÔNG phải kana/kanji (dấu câu, số, Latin)
+_RUBY_BASE_RE = re.compile(r"([一-鿿㐀-䶿豈-﫿々〆ヶ]{1,6})([ぁ-ゖ]*)")   # gốc ruby: 1–6 kanji + okurigana
 
 _available: Optional[bool] = None
 _languages: Optional[set[str]] = None
@@ -171,6 +177,25 @@ def _osd_rotation(img) -> int:
 
 
 @dataclass
+class _Word:
+    """Một từ Tesseract (image_to_data level 5): giữ lại hộp để tách furigana bị gộp vào giữa dòng."""
+    text: str
+    conf: float               # -1 = Tesseract không chấm
+    left: int
+    top: int
+    width: int
+    height: int
+
+    def size(self, vertical: bool) -> int:
+        """Cỡ chữ: chiều cao (ngang) hoặc chiều rộng (dọc), cùng quy ước với _Line.sizes."""
+        return self.width if vertical else self.height
+
+    def span(self, vertical: bool) -> tuple[int, int]:
+        """Dải theo trục dòng: chữ ngang theo x, chữ dọc theo y."""
+        return (self.top, self.top + self.height) if vertical else (self.left, self.left + self.width)
+
+
+@dataclass
 class _Line:
     block: int
     text: str
@@ -179,6 +204,7 @@ class _Line:
     x: int
     y: int
     drop: bool = False
+    words: list[_Word] = field(default_factory=list)
 
     @property
     def size(self) -> float:
@@ -201,9 +227,23 @@ def _is_latin_word_char(c: str) -> bool:
     return c.isascii() and c.isalnum()
 
 
+def _line_from_words(block: int, words: list[_Word], vertical: bool) -> _Line:
+    """Ghép từ thành dòng; nối không khoảng trắng vì tiếng Nhật (trừ giữa hai từ Latin/số).
+    x = mép phải xa nhất (dọc, để sắp cột phải → trái) / mép trái gần nhất (ngang); y = đỉnh cao nhất."""
+    text = ""
+    for w in words:
+        if text and _is_latin_word_char(text[-1]) and _is_latin_word_char(w.text[0]):
+            text += " "  # hai từ tiếng Anh liền nhau (bảng song ngữ); chữ Nhật vẫn nối liền
+        text += w.text
+    return _Line(block=block, text=text, confs=[w.conf for w in words if w.conf >= 0],
+                 sizes=[w.size(vertical) for w in words],
+                 x=max(w.left + w.width for w in words) if vertical else min(w.left for w in words),
+                 y=min(w.top for w in words), words=list(words))
+
+
 def _lines_from_data(d: dict, vertical: bool) -> list[_Line]:
-    """Gom từ theo (block, par, line); nối không khoảng trắng vì tiếng Nhật (trừ giữa hai từ Latin/số)."""
-    groups: dict[tuple, _Line] = {}
+    """Gom từ theo (block, par, line) rồi ghép thành dòng (_line_from_words)."""
+    groups: dict[tuple, list[_Word]] = {}
     n = len(d.get("text", []))
     for i in range(n):
         text = normalize((d["text"][i] or "").strip())
@@ -214,25 +254,89 @@ def _lines_from_data(d: dict, vertical: bool) -> list[_Line]:
         except (TypeError, ValueError):
             conf = -1.0
         key = (int(d["block_num"][i]), int(d["par_num"][i]), int(d["line_num"][i]))
-        size = int(d["width"][i]) if vertical else int(d["height"][i])
-        line = groups.get(key)
-        if line is None:
-            line = groups[key] = _Line(block=key[0], text="", confs=[], sizes=[],
-                                       x=int(d["left"][i]), y=int(d["top"][i]))
-        if line.text and _is_latin_word_char(line.text[-1]) and _is_latin_word_char(text[0]):
-            line.text += " "  # hai từ tiếng Anh liền nhau (bảng song ngữ); chữ Nhật vẫn nối liền
-        line.text += text
-        line.sizes.append(size)
-        if conf >= 0:
-            line.confs.append(conf)
-        line.x = max(line.x, int(d["left"][i]) + int(d["width"][i])) if vertical else min(line.x, int(d["left"][i]))
-        line.y = min(line.y, int(d["top"][i]))
-    return list(groups.values())
+        groups.setdefault(key, []).append(_Word(text=text, conf=conf, left=int(d["left"][i]), top=int(d["top"][i]),
+                                                width=int(d["width"][i]), height=int(d["height"][i])))
+    return [_line_from_words(key[0], words, vertical) for key, words in groups.items()]
 
 
-def _filter_lines(lines: list[_Line]) -> tuple[list[_Line], list[dict]]:
-    """Bỏ dòng nhiễu và dòng furigana; trả thêm ruby hint khi furigana đứng cạnh dòng toàn kanji."""
+def _ruby_hint(base: str, reading: str) -> Optional[dict]:
+    """Ruby hint khi ``base`` là một từ 1–6 kanji (+ okurigana hiragana tuỳ chọn) và cách đọc dài 1–4 kana mỗi kanji.
+    Gốc có okurigana (行き + furigana い) → reading nối thêm okurigana (いき): cặp vẫn là mặt chữ ↔ cách đọc của cùng
+    một chuỗi, như ruby cả cụm 読み/よみ mà pipeline đã hiểu. Không khớp → None (bỏ furigana nhưng không đoán gốc)."""
+    m = _RUBY_BASE_RE.fullmatch(base)
+    if not m:
+        return None
+    kanji, okurigana = m.groups()
+    if not len(kanji) <= len(reading) <= MAX_READING_PER_KANJI * len(kanji):
+        return None
+    return {"base": base, "reading": reading + okurigana}
+
+
+def _span_overlap(a: tuple[int, int], b: tuple[int, int]) -> int:
+    return min(a[1], b[1]) - max(a[0], b[0])
+
+
+def _sits_over(ruby: _Word, base: _Word, vertical: bool) -> bool:
+    """Furigana nằm ngay trên (ngang) / ngay phải (dọc) từ gốc và chồng lên nó theo trục dòng.
+    Kana nhỏ trong chữ (ゃ っ ...) nằm ở đáy ô chữ (ngang) / lệch nửa phải ô chữ (dọc) nên không lọt qua."""
+    if _span_overlap(ruby.span(vertical), base.span(vertical)) <= 0:
+        return False
+    if vertical:
+        return base.left + (1 - INLINE_RUBY_DIP) * base.width <= ruby.left <= base.left + 2 * base.width
+    bottom = ruby.top + ruby.height
+    return base.top - base.height <= bottom <= base.top + INLINE_RUBY_DIP * base.height
+
+
+def _split_inline_rubies(line: _Line, vertical: bool) -> list[dict]:
+    """Tesseract hay gộp furigana sát trên chữ gốc vào chính dòng đó (hộp dòng phủ cả hai) → "がっこう学校に行く".
+    Từ kana-only thấp hơn INLINE_RUBY_RATIO × trung vị các từ có kanji của dòng, nằm ngay trên (dọc: ngay phải) một từ
+    có kanji → bỏ khỏi dòng (sửa lại text / conf / cỡ chữ) và thành ruby hint cho từ đó. Trung vị chỉ tính từ có kanji:
+    kana tròn thấp hơn kanji, và khi dòng ít từ chính furigana kéo trung vị cả dòng xuống. Dòng thường giữ nguyên."""
+    words = line.words
+    kanji_words = [w for w in words if has_kanji(w.text)]
+    if len(words) < 2 or not kanji_words:
+        return []
+    ref = statistics.median(w.size(vertical) for w in kanji_words)
+    over: dict[int, tuple[_Word, list[_Word]]] = {}      # id(từ gốc) → (từ gốc, các từ furigana phía trên)
+    for w in words:
+        if (has_kanji(w.text) or not is_kana_only(_JA_LETTERS_RE.sub("", w.text))
+                or w.size(vertical) >= INLINE_RUBY_RATIO * ref):
+            continue
+        cands = [b for b in kanji_words if _sits_over(w, b, vertical)]
+        if cands:
+            base = max(cands, key=lambda b: _span_overlap(w.span(vertical), b.span(vertical)))
+            over.setdefault(id(base), (base, []))[1].append(w)
+    if not over:
+        return []
     rubies: list[dict] = []
+    for base, rubs in over.values():
+        # Ruby từng chữ (がっ trên 学, こう trên 校) Tesseract tách thành nhiều từ → nối theo trục dòng
+        rubs.sort(key=lambda r: r.span(vertical)[0])
+        reading = "".join(_JA_LETTERS_RE.sub("", r.text) for r in rubs)
+        hint = _ruby_hint(base.text, reading)
+        if hint:
+            # Furigana chỉ phủ một phần phần kanji (にほん trên 日本 của từ 日本語) → cách đọc thiếu, không gợi ý.
+            # Ước lượng bề một chữ đều nhau (chữ Nhật toàn khổ) rồi đòi dải furigana chạm gần hai đầu phần kanji
+            n_kanji = len(_RUBY_BASE_RE.fullmatch(base.text).group(1))
+            b0, b1 = base.span(vertical)
+            unit = (b1 - b0) / len(base.text)
+            k0, k1 = b0, b0 + n_kanji * unit
+            r0, r1 = rubs[0].span(vertical)[0], max(r.span(vertical)[1] for r in rubs)
+            if r0 <= k0 + INLINE_RUBY_EDGE * unit and r1 >= k1 - INLINE_RUBY_EDGE * unit:
+                rubies.append(hint)
+    dropped = {id(r) for _, rubs in over.values() for r in rubs}
+    rebuilt = _line_from_words(line.block, [w for w in words if id(w) not in dropped], vertical)
+    line.text, line.confs, line.sizes, line.x, line.y, line.words = (
+        rebuilt.text, rebuilt.confs, rebuilt.sizes, rebuilt.x, rebuilt.y, rebuilt.words)
+    return rubies
+
+
+def _filter_lines(lines: list[_Line], vertical: bool = False) -> tuple[list[_Line], list[dict]]:
+    """Bỏ furigana chen trong dòng, dòng nhiễu và dòng furigana; trả thêm ruby hint khi furigana đứng cạnh một từ
+    kanji (có thể kèm okurigana)."""
+    rubies: list[dict] = []
+    for ln in lines:
+        rubies.extend(_split_inline_rubies(ln, vertical))
     for ln in lines:
         if not has_japanese(ln.text) and ln.conf < NOISE_CONF:
             ln.drop = True
@@ -252,16 +356,15 @@ def _filter_lines(lines: list[_Line]) -> tuple[list[_Line], list[dict]]:
             if not sizes or ln.size >= FURIGANA_RATIO * statistics.median(sizes):
                 continue
             ln.drop = True
-            # chỉ gợi ý ruby khi dòng bên là một từ toàn kanji (độ dài hợp lý), tránh gán sai
-            base = next((nb.text for nb in neighbours if has_kanji(nb.text) and all(is_kanji(c) for c in nb.text)
-                         and len(nb.text) <= 6 and len(nb.text) <= len(reading) <= 4 * len(nb.text)), None)
-            if base:
-                rubies.append({"base": base, "reading": reading})
+            # chỉ gợi ý ruby khi dòng bên là một từ kanji (+ okurigana, độ dài hợp lý), tránh gán sai
+            hint = next((h for h in (_ruby_hint(nb.text, reading) for nb in neighbours) if h), None)
+            if hint:
+                rubies.append(hint)
     return [ln for ln in kept if not ln.drop], rubies
 
 
 def _assemble(lines: list[_Line], vertical: bool, page: int) -> tuple[list[Block], Optional[float], list[dict]]:
-    lines, rubies = _filter_lines(lines)
+    lines, rubies = _filter_lines(lines, vertical)
     blocks_map: dict[int, list[_Line]] = {}
     for ln in lines:
         blocks_map.setdefault(ln.block, []).append(ln)
@@ -279,7 +382,8 @@ def _assemble(lines: list[_Line], vertical: bool, page: int) -> tuple[list[Block
     blocks: list[Block] = []
     for bid, group in ordered:
         text = "\n".join(l.text for l in group)
-        block_rubies = [r for r in rubies if any(r["base"] == l.text for l in group)]
+        # ruby của dòng furigana có gốc = cả dòng bên cạnh; ruby chen trong dòng có gốc = một từ trong dòng
+        block_rubies = [r for r in rubies if any(r["base"] in l.text for l in group)]
         # conf từng dòng để FE tô dòng nghi sai cho người dùng sửa đúng chỗ (-1 = Tesseract không chấm)
         line_confs = [{"text": l.text, "conf": round(l.conf / 100, 2) if l.confs else None} for l in group]
         blocks.append(Block(text=text, page=page, is_vertical=vertical, rubies=block_rubies, lines=line_confs))
@@ -355,7 +459,11 @@ def _gemini_blocks(text: str, vertical: Optional[bool], page: int) -> list[Block
     return [Block(text=p, page=page, is_vertical=vertical) for p in paras]
 
 
-def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1) -> TextResult:
+def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1,
+               fallback_confidence: Optional[float] = None) -> TextResult:
+    """``fallback_confidence``: mean conf Tesseract (0..1) dưới mức này → nhờ Gemini chép lại; None →
+    settings.OCR_FALLBACK_CONFIDENCE. Backend gửi theo từng request để chỉnh ngưỡng mà không phải khởi động lại service."""
+    threshold = settings.OCR_FALLBACK_CONFIDENCE if fallback_confidence is None else fallback_confidence
     mode = ocr_mode if ocr_mode in ("auto", "vertical", "horizontal") else "auto"
     if not available():
         # Chưa cài Tesseract nhưng có Gemini: chép bằng Gemini Vision luôn, không bắt người dùng cài thêm
@@ -386,7 +494,7 @@ def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1) -> TextResult
     vertical, blocks, mean_conf = best
 
     text = "\n".join(b.text for b in blocks)
-    low = mean_conf is None or mean_conf < settings.OCR_FALLBACK_CONFIDENCE
+    low = mean_conf is None or mean_conf < threshold
     result = TextResult(text=text, source_type="image", engine="tesseract", blocks=blocks, pages=1,
                         mean_confidence=mean_conf, is_vertical=vertical, low_confidence=low)
 
@@ -442,13 +550,14 @@ def _gemini_only(data: bytes, mode: str, page: int) -> TextResult:
                       mean_confidence=None, is_vertical=vertical, low_confidence=False)
 
 
-def ocr_pages(result: TextResult, ocr_mode: str = "auto") -> TextResult:
+def ocr_pages(result: TextResult, ocr_mode: str = "auto", fallback_confidence: Optional[float] = None) -> TextResult:
     """OCR từng trang PDF scan (result.page_images) và gộp thành một TextResult source_type=pdf."""
     if not result.page_images:
         raise ReaderError("PDF không có trang nào để OCR")
     with ThreadPoolExecutor(max_workers=PAGE_WORKERS) as pool:
         pages: list[TextResult] = list(pool.map(
-            lambda ip: read_image(ip[1], ocr_mode, page=ip[0] + 1), enumerate(result.page_images)))
+            lambda ip: read_image(ip[1], ocr_mode, page=ip[0] + 1, fallback_confidence=fallback_confidence),
+            enumerate(result.page_images)))
     blocks: list[Block] = []
     for i, pg in enumerate(pages):
         for b in pg.blocks:
@@ -467,5 +576,6 @@ def ocr_pages(result: TextResult, ocr_mode: str = "auto") -> TextResult:
         is_vertical=(sum(verticals) * 2 >= len(verticals)) if verticals else None,
         low_confidence=any(pg.low_confidence for pg in pages),
         truncated=result.truncated,
+        truncated_pages=result.truncated_pages,
         gemini_error=next((pg.gemini_error for pg in pages if pg.gemini_error), None),
     )

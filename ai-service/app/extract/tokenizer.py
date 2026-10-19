@@ -24,6 +24,9 @@ class Token:
     normalized: str       # normalized_form()
     begin: int
     end: int
+    # is_oov(): True khi Sudachi ghép ký tự lạ thành một cụm không có trong SudachiDict (覆公, chuỗi OCR rác).
+    # Mặc định False để Token dựng tay trong test / matcher vẫn hợp lệ.
+    oov: bool = False
 
     @property
     def pos1(self) -> str:
@@ -78,6 +81,7 @@ def tokenize(text: str, mode: Mode = "C") -> list[Token]:
             normalized=m.normalized_form(),
             begin=m.begin(),
             end=m.end(),
+            oov=m.is_oov(),
         )
         for m in tok.tokenize(text, modes[mode])
     ]

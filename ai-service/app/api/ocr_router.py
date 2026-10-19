@@ -1,12 +1,13 @@
 """OCR ảnh tiếng Nhật (route công khai cũ, giữ nguyên response model) — gọi image_reader thật."""
 from typing import List
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from app.core.security import require_internal_key
 from app.extract.readers import FileTooLarge, OcrUnavailable, ReaderError, image_reader
 
-router = APIRouter(prefix="/ocr", tags=["OCR Tiếng Nhật Dọc/Ngang"])
+router = APIRouter(prefix="/ocr", tags=["OCR Tiếng Nhật Dọc/Ngang"], dependencies=[Depends(require_internal_key)])
 
 _MODE = {"vertical": "vertical", "horizontal": "horizontal"}  # còn lại → auto
 
