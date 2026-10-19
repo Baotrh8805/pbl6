@@ -54,6 +54,15 @@ public interface LearningPathRepository extends JpaRepository<LearningPath, UUID
      */
     List<LearningPath> findByStatus(String status);
 
+    /**
+     * Id các bản nháp không nhận ra chương (chương "Ngày N" tự sinh; chaptersDetected null cũng coi là không nhận ra, như
+     * LearningPathService.fitDayChapters) — LearningPathService.relayoutDayChapterDrafts đưa bố cục cũ về đúng hàm bố cục khi
+     * khởi động. Chỉ lấy id: mỗi bản nháp nạp lại và khoá dòng trong giao dịch riêng.
+     */
+    @Query("SELECT p.id FROM LearningPath p WHERE p.status = 'DRAFT' "
+            + "AND (p.chaptersDetected IS NULL OR p.chaptersDetected = false) ORDER BY p.createdAt")
+    List<UUID> findDayChapterDraftIds();
+
     /** ExtractionService.deleteJob: job lộ trình còn lộ trình trỏ tới thì chỉ xoá qua lộ trình; mồ côi (CANCELLED sau khi xoá) thì xoá được. */
     boolean existsByJobId(UUID jobId);
 

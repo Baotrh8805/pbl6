@@ -299,6 +299,17 @@ class LearningPathIT extends IntegrationTest {
         return out;
     }
 
+    /** Như {@link #dayPlan} nhưng chương ghi bằng tên thay cho id: so hai thời điểm khi chương có thể đã được tạo lại với id mới. */
+    private static List<String> dayPlanByTitle(JsonNode path) {
+        List<String> out = dayPlan(path);
+        for (JsonNode c : path.get("chapters")) {
+            String chapterId = c.get("id").asText();
+            String title = c.get("title").asText();
+            out.replaceAll(line -> line.replace(chapterId, title));
+        }
+        return out;
+    }
+
     /**
      * LP-01: bản xem trước người dùng duyệt phải là lịch họ nhận sau "Tạo lộ trình". Trước đây bản nháp dựng bằng allocate 1.0 (rải
      * thẻ khắp số ngày: 3 bài ít thẻ / 120 ngày thành "Ngày 1–35, 36–83, 84–120", ngày giữa trống) còn kích hoạt dùng plan 2.0
@@ -354,15 +365,14 @@ class LearningPathIT extends IntegrationTest {
         String renamed = ch.get(1).get("id").asText();
         call(patch(BASE + id + "/chapters/" + renamed), token, Map.of("title", "Chào hỏi")).andExpect(status().isOk());
 
-        // Có chương người dùng tự đặt tên -> không chia lại (chương ấy là của họ), chỉ gộp chương tự sinh rơi cùng dải: 8 thẻ / 3
-        // ngày = ngày 1 {1, 2, 3}, ngày 2 {4, 5, 6}, ngày 3 {7, 8} -> "Ngày 1" thứ hai (cùng ngày 1 với "Chào hỏi") vào "Chào hỏi",
-        // ba chương ngày 2 thành một, hai chương ngày 3 thành một (trước đây 8 chương: "Ngày 1" ×2, "Ngày 2" ×3, "Ngày 3" ×2)
+        // Chương người dùng tự đặt tên giữ nguyên thẻ của nó; chương tự sinh hai bên chia lại theo xô ngày (chi tiết: kịch bản A ở
+        // renamed_chapter_keeps_its_cards_and_longer_path_restores_day_chapters). Tên chương tự sinh khớp dải, không trùng nhau
         JsonNode three = read(call(patch(BASE + id), token, Map.of("totalDays", 3)).andExpect(status().isOk()));
         JsonNode ch3 = three.get("chapters");
-        assertEquals(List.of("Ngày 1", "Chào hỏi", "Ngày 2", "Ngày 3"), chapterTitles(three));
+        assertEquals(List.of("Ngày 1", "Chào hỏi", "Ngày 1–2", "Ngày 3"), chapterTitles(three));
         assertEquals(8, assertDayChapters(ch3, false, renamed, "Chào hỏi"));
         assertEquals(renamed, ch3.get(1).get("id").asText());
-        assertEquals(2, ch3.get(1).get("cardCount").asInt());
+        assertEquals(1, ch3.get(1).get("cardCount").asInt());
         assertEquals("Ngày 3", ch3.get(3).get("title").asText()); // trước đây "Ngày 10"
         assertEquals("Ngày 3", jdbc.queryForObject("SELECT title FROM learning_path_chapters WHERE id = ?", String.class,
                 UUID.fromString(ch3.get(3).get("id").asText())));
@@ -370,13 +380,12 @@ class LearningPathIT extends IntegrationTest {
 
         // Kích hoạt với số ngày khác: tên chốt theo đúng lịch nhận được, không hai chương cùng dải, bộ thẻ mang đúng tên chương
         JsonNode active = activate(token, id, Map.of("totalDays", 2));
+        assertEquals(List.of("Ngày 1", "Chào hỏi", "Ngày 1–2"), chapterTitles(active));
         assertEquals(8, assertDayChapters(active.get("chapters"), false, renamed, "Chào hỏi"));
         for (JsonNode c : active.get("chapters")) {
             JsonNode deck = read(call(get("/api/decks/" + c.get("deckId").asText()), token, null).andExpect(status().isOk()));
             assertEquals(c.get("title").asText(), deck.get("title").asText());
         }
-        JsonNode last = active.get("chapters").get(active.get("chapters").size() - 1);
-        assertEquals("Ngày 2", last.get("title").asText());
 
         // Tiêu đề lấy từ tài liệu ("Ngày 5" của giáo trình) giữ nguyên dù chương nằm ở ngày 1
         stubAnalyze(List.of(vocab(1, "語1", 1, false), vocab(2, "語2", 1, false)), Map.of("vocab", 2, "grammar", 0,
@@ -483,12 +492,48 @@ class LearningPathIT extends IntegrationTest {
     }
 
     /**
-     * LP-01 + LP-08: bỏ tick vài thẻ làm hai chương tự sinh rơi cùng ngày. Trước đây chỉ PATCH số ngày / trần và kích hoạt mới gộp:
-     * GET hiện "Ngày 1", "Ngày 1", "Ngày 2", "Ngày 2"... rồi "Tạo lộ trình" âm thầm gộp — ít bộ thẻ hơn bản xem trước, thẻ cuối
-     * sang ngày 7 thay vì ngày 6. Giờ PATCH /items gộp ngay: bản xem trước tên duy nhất và = đúng lộ trình kích hoạt tạo ra.
+     * Bố cục bản nháp KHÔNG kèm id, đọc mục qua API như client: mỗi chương "tên [dải ngày] số thẻ: mục…" (mục bỏ chọn có dấu "-")
+     * — để so hai thời điểm khi chương có thể đã bị xoá rồi tạo lại với id mới.
+     */
+    private List<String> layout(String token, JsonNode path) throws Exception {
+        List<String> out = new ArrayList<>();
+        String id = path.get("id").asText();
+        for (JsonNode c : path.get("chapters")) {
+            StringBuilder sb = new StringBuilder(c.get("title").asText() + " [" + rangeText(c) + "] "
+                    + c.get("cardCount").asInt() + ":");
+            for (JsonNode i : read(call(get(BASE + id + "/chapters/" + c.get("id").asText() + "/items"), token, null)
+                    .andExpect(status().isOk()))) {
+                sb.append(' ').append(i.get("selected").asBoolean() ? "" : "-").append(i.get("term").asText());
+            }
+            out.add(sb.toString());
+        }
+        return out;
+    }
+
+    /** id item theo term, gom qua mọi chương của bản nháp. */
+    private Map<String, String> itemIdsByTerm(String token, JsonNode path) throws Exception {
+        Map<String, String> out = new HashMap<>();
+        String id = path.get("id").asText();
+        for (JsonNode c : path.get("chapters")) {
+            read(call(get(BASE + id + "/chapters/" + c.get("id").asText() + "/items"), token, null).andExpect(status().isOk()))
+                    .forEach(i -> out.put(i.get("term").asText(), i.get("id").asText()));
+        }
+        return out;
+    }
+
+    /** Không item nào của job trỏ tới chương đã xoá (chương thừa phải xoá thật và item của nó phải sang chương còn sống). */
+    private void assertNoOrphanItems(String jobId) {
+        assertEquals(Integer.valueOf(0), jdbc.queryForObject("SELECT count(*) FROM extraction_items i WHERE i.job_id = ? AND NOT "
+                + "EXISTS (SELECT 1 FROM learning_path_chapters c WHERE c.id = i.chapter_id)", Integer.class, UUID.fromString(jobId)));
+    }
+
+    /**
+     * LP-01 + LP-08, kịch bản B: chương "Ngày N" là xô ngày của các thẻ ĐANG chọn (hàm thuần của thẻ chọn, số ngày, trần), nên bỏ
+     * tick rồi tick lại trả đúng bố cục cũ. Trước đây PATCH /items chỉ gộp chứ không chia lại: bỏ tick 語4, 語6 gộp hai chương, tick
+     * lại vẫn còn ít hơn 8 chương và một chương "Ngày a–b". Bản xem trước luôn = lộ trình kích hoạt tạo ra.
      */
     @Test
-    void unticking_cards_merges_same_day_chapters_before_activation() throws Exception { // LP-01, LP-08
+    void untick_then_retick_round_trips_day_chapters() throws Exception { // LP-01, LP-08
         // 16 từ xen kẽ N5 / N3 (trọng số 1.0 / 1.5 với người học chưa đặt trình độ = N5), 8 ngày: 8 chương 2 thẻ
         List<AiDtos.Item> list = new ArrayList<>();
         for (int i = 1; i <= 16; i++) {
@@ -499,30 +544,260 @@ class LearningPathIT extends IntegrationTest {
         String token = newUser();
         JsonNode draft = draftPath(token, "8", null);
         String id = draft.get("id").asText();
-        assertEquals(8, draft.get("chapters").size(), draft.get("chapters").toString());
-        Map<String, String> itemIds = new HashMap<>();
-        for (JsonNode c : draft.get("chapters")) {
-            read(call(get(BASE + id + "/chapters/" + c.get("id").asText() + "/items"), token, null).andExpect(status().isOk()))
-                    .forEach(i -> itemIds.put(i.get("term").asText(), i.get("id").asText()));
-        }
+        String jobId = draft.get("jobId").asText();
+        List<String> original = layout(token, draft);
+        assertEquals(List.of("Ngày 1 [1] 2: 語1 語2", "Ngày 2 [2] 2: 語3 語4", "Ngày 3 [3] 2: 語5 語6", "Ngày 4 [4] 2: 語7 語8",
+                "Ngày 5 [5] 2: 語9 語10", "Ngày 6 [6] 2: 語11 語12", "Ngày 7 [7] 2: 語13 語14", "Ngày 8 [8] 2: 語15 語16"), original);
+        Map<String, String> itemIds = itemIdsByTerm(token, draft);
+        List<Map<String, Object>> untick = List.of(Map.of("id", itemIds.get("語4"), "selected", false),
+                Map.of("id", itemIds.get("語6"), "selected", false));
+        List<Map<String, Object>> retick = List.of(Map.of("id", itemIds.get("語4"), "selected", true),
+                Map.of("id", itemIds.get("語6"), "selected", true));
 
-        JsonNode all = read(call(patch(BASE + id + "/items"), token, List.of(
-                Map.of("id", itemIds.get("語4"), "selected", false), Map.of("id", itemIds.get("語6"), "selected", false)))
-                .andExpect(status().isOk()));
-        assertEquals(16, all.size());
+        // 14 thẻ chọn vẫn 8 xô ngày: {1, 2}, {3, 5}, {7, 8}, …, {15}, {16} — 語4 / 語6 bỏ chọn đi theo thẻ chọn đứng trước (語3 / 語5).
+        // Hai xô cuối một thẻ rơi cùng ngày 7 -> gộp (như kích hoạt sẽ làm), chương 8 bị xoá thật
+        assertEquals(16, read(call(patch(BASE + id + "/items"), token, untick).andExpect(status().isOk())).size());
+        JsonNode p1 = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        List<String> unticked = layout(token, p1);
+        assertEquals(List.of("Ngày 1 [1] 2: 語1 語2", "Ngày 2 [2] 2: 語3 -語4 語5 -語6", "Ngày 3 [3] 2: 語7 語8",
+                "Ngày 4 [4] 2: 語9 語10", "Ngày 5 [5] 2: 語11 語12", "Ngày 6 [6] 2: 語13 語14", "Ngày 7 [7] 2: 語15 語16"), unticked);
+        assertEquals(14, assertDayChapters(p1.get("chapters"), false, null, null));
+        assertEquals(7, chapterRows(id));
+        assertNoOrphanItems(jobId);
+
+        // Tick lại: đúng 8 chương lúc dựng (trước đây vẫn còn chương gộp "Ngày a–b"); 7 chương đầu giữ nguyên id, chương 8 tạo lại
+        call(patch(BASE + id + "/items"), token, retick).andExpect(status().isOk());
+        JsonNode p2 = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(original, layout(token, p2));
+        assertEquals(chapterPlan(draft).subList(0, 7), chapterPlan(p2).subList(0, 7));
+        assertEquals(dayPlanByTitle(draft), dayPlanByTitle(p2));
+        assertEquals(8, chapterRows(id));
+
+        // Hàm thuần: bỏ tick lần nữa ra đúng bố cục lần trước; kích hoạt tạo đúng bản xem trước (chương, dải ngày, việc từng ngày)
+        call(patch(BASE + id + "/items"), token, untick).andExpect(status().isOk());
         JsonNode preview = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
-        JsonNode ch = preview.get("chapters");
-        assertTrue(ch.size() < 8, "phải có cặp chương cùng ngày được gộp: " + ch);
-        assertEquals(14, assertDayChapters(ch, false, null, null));
-        // chương bị gộp xoá thật, item của nó (cả 語4 / 語6 bỏ chọn) theo chương nhận, không item nào mất chương
-        assertEquals(ch.size(), chapterRows(id));
-        assertEquals(Integer.valueOf(0), jdbc.queryForObject("SELECT count(*) FROM extraction_items i WHERE i.job_id = ? AND NOT "
-                + "EXISTS (SELECT 1 FROM learning_path_chapters c WHERE c.id = i.chapter_id)", Integer.class,
-                UUID.fromString(draft.get("jobId").asText())));
-
+        assertEquals(unticked, layout(token, preview));
+        assertEquals(chapterPlan(p1), chapterPlan(preview));
         JsonNode active = activate(token, id, Map.of());
         assertEquals(chapterPlan(preview), chapterPlan(active));
         assertEquals(dayPlan(preview), dayPlan(active));
+    }
+
+    /**
+     * LP-08, kịch bản A: chương người dùng đặt tên riêng giữ đúng thẻ của nó — không bao giờ tự nhận thêm thẻ hay bị gộp đi — và
+     * kéo dài lại số ngày trả lại một chương tự sinh mỗi ngày. Trước đây rút 10 → 3 ngày nhồi 語3 vào "Chào hỏi", còn PATCH 10 ngày
+     * bỏ qua bước chia lại vì có chương đặt tên riêng: vẫn 4 chương, kích hoạt tạo 4 bộ thẻ và "Chào hỏi" chứa từ của chương khác.
+     */
+    @Test
+    void renamed_chapter_keeps_its_cards_and_longer_path_restores_day_chapters() throws Exception { // LP-08
+        List<AiDtos.Item> eight = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) eight.add(vocab(i, "語" + i, null, false));
+        stubAnalyze(eight, Map.of("vocab", 8, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+        JsonNode draft = draftPath(token, "10", null);
+        String id = draft.get("id").asText();
+        String renamed = draft.get("chapters").get(1).get("id").asText();
+        JsonNode named = read(call(patch(BASE + id + "/chapters/" + renamed), token, Map.of("title", "Chào hỏi"))
+                .andExpect(status().isOk()));
+        List<String> tenDays = List.of("Ngày 1 [1] 1: 語1", "Chào hỏi [2] 1: 語2", "Ngày 3 [3] 1: 語3", "Ngày 4 [4] 1: 語4",
+                "Ngày 5 [5] 1: 語5", "Ngày 6 [6] 1: 語6", "Ngày 7 [7] 1: 語7", "Ngày 8 [8] 1: 語8");
+        assertEquals(tenDays, layout(token, named)); // đặt tên riêng không xê dịch gì
+
+        // 3 ngày: xô chuẩn {1, 2, 3}, {4, 5, 6}, {7, 8}; "Chào hỏi" giữ đúng 語2 nên xô đầu bị cắt đôi, 語1 / 語2 / 語3 cùng ở ngày 1.
+        // 語3 không được nhồi vào "Chào hỏi" (lấn chương người dùng), ghép thẳng với "Ngày 1" thì đảo thứ tự tài liệu -> nhập với
+        // chương tự sinh kế nó thành "Ngày 1–2"; tên chương tự sinh vẫn không trùng nhau
+        JsonNode three = read(call(patch(BASE + id), token, Map.of("totalDays", 3)).andExpect(status().isOk()));
+        assertEquals(List.of("Ngày 1 [1] 1: 語1", "Chào hỏi [1] 1: 語2", "Ngày 1–2 [1–2] 4: 語3 語4 語5 語6",
+                "Ngày 3 [3] 2: 語7 語8"), layout(token, three));
+        assertEquals(renamed, three.get("chapters").get(1).get("id").asText());
+        assertEquals(8, assertDayChapters(three.get("chapters"), false, renamed, "Chào hỏi"));
+        assertEquals(4, chapterRows(id));
+        assertNoOrphanItems(draft.get("jobId").asText());
+
+        // Kéo dài lại: đủ một chương mỗi ngày như trước khi rút (trước đây kẹt ở 4 chương)
+        JsonNode ten = read(call(patch(BASE + id), token, Map.of("totalDays", 10)).andExpect(status().isOk()));
+        assertEquals(tenDays, layout(token, ten));
+        assertEquals(8, chapterRows(id));
+
+        // Bỏ tick 語8: 7 thẻ chọn còn 7 xô — chương cuối biến mất, 語8 (bỏ chọn) theo 語7; tick lại thì chương ấy trở về
+        String w8 = itemIdsByTerm(token, ten).get("語8");
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", w8, "selected", false))).andExpect(status().isOk());
+        JsonNode seven = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(List.of("Ngày 1 [1] 1: 語1", "Chào hỏi [2] 1: 語2", "Ngày 3 [3] 1: 語3", "Ngày 4 [4] 1: 語4",
+                "Ngày 5 [5] 1: 語5", "Ngày 6 [6] 1: 語6", "Ngày 7 [7] 1: 語7 -語8"), layout(token, seven));
+        assertEquals(7, chapterRows(id));
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", w8, "selected", true))).andExpect(status().isOk());
+        JsonNode preview = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(tenDays, layout(token, preview));
+
+        // Kích hoạt: đúng bản xem trước, cả id (không chia lại gì nữa); 8 bộ thẻ, "Chào hỏi" chỉ có 語2
+        JsonNode active = activate(token, id, Map.of());
+        assertEquals(chapterPlan(preview), chapterPlan(active));
+        assertEquals(dayPlan(preview), dayPlan(active));
+        assertEquals(8, active.get("chapters").size());
+        JsonNode greet = active.get("chapters").get(1);
+        assertEquals("Chào hỏi", greet.get("title").asText());
+        JsonNode cards = read(call(get("/api/decks/" + greet.get("deckId").asText()), token, null).andExpect(status().isOk()))
+                .get("cards");
+        assertEquals(1, cards.size(), cards.toString());
+        assertEquals("語2", cards.get(0).get("term").asText());
+    }
+
+    /** id chương theo thứ tự hiển thị. */
+    private static List<String> chapterIds(JsonNode path) {
+        List<String> out = new ArrayList<>();
+        path.get("chapters").forEach(c -> out.add(c.get("id").asText()));
+        return out;
+    }
+
+    /**
+     * LP-01 + LP-08: bố cục là hàm thuần nên ghi lại với cùng đầu vào không đổi gì, kể cả id chương. Trước đây chương của mỗi run
+     * nhận xô theo chỉ số TRƯỚC khi gộp: sau một lần gộp bỏ chương giữa run (kịch bản A rút còn 3 ngày, "Ngày 1–2" nuốt chương kế
+     * nó), mọi lần ghi sau đó (đổi tên chương khác, sửa nghĩa một từ, kích hoạt) lại xoá chương cuối run và tạo chương mới id mới:
+     * kích hoạt khác bản xem trước, thẻ chương ở client (key = id) đóng lại sau mỗi cú click, đổi tên chương ấy giữa chừng thành 404.
+     */
+    @Test
+    void day_chapter_ids_stay_stable_when_layout_inputs_do_not_change() throws Exception { // LP-01, LP-08
+        List<AiDtos.Item> eight = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) eight.add(vocab(i, "語" + i, null, false));
+        stubAnalyze(eight, Map.of("vocab", 8, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+        JsonNode draft = draftPath(token, "10", null);
+        String id = draft.get("id").asText();
+        String renamed = draft.get("chapters").get(1).get("id").asText();
+        call(patch(BASE + id + "/chapters/" + renamed), token, Map.of("title", "Chào hỏi")).andExpect(status().isOk());
+        JsonNode three = read(call(patch(BASE + id), token, Map.of("totalDays", 3)).andExpect(status().isOk()));
+        List<String> layout3 = List.of("Ngày 1 [1] 1: 語1", "Chào hỏi [1] 1: 語2", "Ngày 1–2 [1–2] 4: 語3 語4 語5 語6",
+                "Ngày 3 [3] 2: 語7 語8");
+        assertEquals(layout3, layout(token, three));
+        List<String> ids = chapterIds(three);
+
+        // Đổi tên chương người dùng (vẫn là chương tên riêng), sửa nghĩa một từ, đặt lại đúng số ngày: bố cục và id giữ nguyên
+        JsonNode renamedAgain = read(call(patch(BASE + id + "/chapters/" + renamed), token, Map.of("title", "Lời chào"))
+                .andExpect(status().isOk()));
+        assertEquals(ids, chapterIds(renamedAgain));
+        String w5 = itemIdsByTerm(token, three).get("語5");
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", w5, "meaningVi", "nghĩa mới")))
+                .andExpect(status().isOk());
+        JsonNode afterItems = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(ids, chapterIds(afterItems));
+        assertEquals(layout3.stream().map(l -> l.replace("Chào hỏi", "Lời chào")).toList(), layout(token, afterItems));
+        assertEquals(4, chapterRows(id));
+
+        // Bỏ tick 語8 khi chương cuối đang mở: chương cuối vẫn là chương ấy (cùng id), không bị xoá rồi tạo lại
+        String w8 = itemIdsByTerm(token, afterItems).get("語8");
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", w8, "selected", false))).andExpect(status().isOk());
+        JsonNode unticked = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        List<String> untickedIds = chapterIds(unticked);
+        assertEquals(ids.subList(0, untickedIds.size()), untickedIds, unticked.get("chapters").toString());
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", w8, "selected", true))).andExpect(status().isOk());
+        JsonNode preview = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(ids, chapterIds(preview));
+
+        // Kích hoạt không đổi body: đúng bản xem trước, cả id chương và việc từng ngày
+        JsonNode active = activate(token, id, Map.of());
+        assertEquals(chapterPlan(preview), chapterPlan(active));
+        assertEquals(dayPlan(preview), dayPlan(active));
+    }
+
+    /** Dựng tay bố cục cũ (trước khi bố cục thành hàm thuần, gộp tay vào "Ngày N" được phép): chương from gộp vào chương into. */
+    private void legacyMerge(String pathId, String into, String from, String title) {
+        UUID target = UUID.fromString(into);
+        UUID gone = UUID.fromString(from);
+        int pos = jdbc.queryForObject("SELECT position FROM learning_path_chapters WHERE id = ?", Integer.class, gone);
+        jdbc.update("UPDATE extraction_items SET chapter_id = ? WHERE chapter_id = ?", target, gone);
+        jdbc.update("DELETE FROM learning_path_chapters WHERE id = ?", gone);
+        jdbc.update("UPDATE learning_path_chapters SET position = position - 1 WHERE path_id = ? AND position > ?",
+                UUID.fromString(pathId), pos);
+        jdbc.update("UPDATE learning_path_chapters SET title = ? WHERE id = ?", title, target);
+    }
+
+    /**
+     * LP-01 + LP-08: bản nháp lưu từ trước khi bố cục "Ngày N" thành hàm thuần (vd. "Ngày 3" đã gộp tay vào "Ngày 2") — GET chỉ
+     * đồng bộ tên nên vẫn hiện cấu trúc cũ, còn kích hoạt chia lại: bản xem trước khác lộ trình nhận được. Khởi động đưa bản nháp
+     * ấy về đúng bố cục (giữ id các chương còn lại), chạy lại không đổi gì, kích hoạt = bản xem trước; job đang chạy thì bỏ qua.
+     */
+    @Test
+    void legacy_day_chapter_drafts_are_relaid_out_on_startup() throws Exception { // LP-01, LP-08
+        List<AiDtos.Item> six = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) six.add(vocab(i, "語" + i, null, false));
+        stubAnalyze(six, Map.of("vocab", 6, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+        JsonNode draft = draftPath(token, "6", null);
+        String id = draft.get("id").asText();
+        List<String> original = layout(token, draft);
+        List<String> ids = chapterIds(draft);
+        legacyMerge(id, ids.get(1), ids.get(2), "Ngày 2–3");
+        JsonNode legacy = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(5, legacy.get("chapters").size(), legacy.get("chapters").toString());
+
+        // Bản nháp thứ hai cũng mang bố cục cũ nhưng job đang dịch lại nghĩa: worker ghi item -> để nguyên
+        JsonNode busy = draftPath(token, "6", null);
+        String busyId = busy.get("id").asText();
+        List<String> busyIds = chapterIds(busy);
+        legacyMerge(busyId, busyIds.get(0), busyIds.get(1), "Ngày 1–2");
+        UUID busyJob = UUID.fromString(busy.get("jobId").asText());
+        jdbc.update("UPDATE extraction_jobs SET status = 'RUNNING' WHERE id = ?", busyJob);
+
+        assertTrue(pathService.relayoutDayChapterDrafts() >= 1);
+        JsonNode fixed = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(original, layout(token, fixed));
+        List<String> kept = new ArrayList<>(ids);
+        kept.remove(2); // chương đã bị gộp đi không còn; các chương còn lại giữ id, chương thiếu tạo mới ở cuối
+        assertEquals(kept, chapterIds(fixed).subList(0, 5));
+        assertEquals(6, chapterRows(id));
+        assertNoOrphanItems(draft.get("jobId").asText());
+        assertEquals(5, chapterRows(busyId));
+
+        // Lần khởi động sau: bản nháp đã đúng bố cục không bị ghi gì
+        assertEquals(0, pathService.relayoutDayChapterDrafts());
+        JsonNode again = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(chapterPlan(fixed), chapterPlan(again));
+
+        // Kích hoạt không đổi body: đúng bản xem trước người dùng thấy
+        JsonNode active = activate(token, id, Map.of());
+        assertEquals(chapterPlan(again), chapterPlan(active));
+        assertEquals(dayPlan(again), dayPlan(active));
+        jdbc.update("UPDATE extraction_jobs SET status = 'DONE' WHERE id = ?", busyJob);
+    }
+
+    /**
+     * Bản nháp không nhận ra chương: chương "Ngày N" là xô ngày tính lại từ thẻ đang chọn / số ngày / trần, gộp vào nó sẽ bị chia
+     * lại ngay (nút gộp vô tác dụng) → 400 kèm cách làm. Gộp vào chương đã đặt tên riêng thì giữ được, chương "Ngày N" phía sau chia
+     * lại; đặt lại tên dạng "Ngày N" thì chương ấy thành tự sinh và cả bản nháp về đúng bố cục lúc dựng.
+     */
+    @Test
+    void merge_up_on_day_chapters_needs_a_named_chapter() throws Exception { // LP-08
+        List<AiDtos.Item> six = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) six.add(vocab(i, "語" + i, null, false));
+        stubAnalyze(six, Map.of("vocab", 6, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+        JsonNode draft = draftPath(token, "6", null);
+        String id = draft.get("id").asText();
+        String c1 = draft.get("chapters").get(0).get("id").asText();
+        String c2 = draft.get("chapters").get(1).get("id").asText();
+        List<String> original = layout(token, draft);
+        assertEquals(List.of("Ngày 1 [1] 1: 語1", "Ngày 2 [2] 1: 語2", "Ngày 3 [3] 1: 語3", "Ngày 4 [4] 1: 語4",
+                "Ngày 5 [5] 1: 語5", "Ngày 6 [6] 1: 語6"), original);
+
+        JsonNode refused = read(call(post(BASE + id + "/chapters/" + c2 + "/merge-up"), token, null)
+                .andExpect(status().isBadRequest()));
+        assertEquals("Chương trước được chia tự động theo ngày nên không gộp vào được. Hãy đặt tên riêng cho chương trước rồi gộp, "
+                + "hoặc giảm số ngày học.", refused.get("message").asText(), refused.toString());
+        assertEquals(6, chapterRows(id));
+
+        call(patch(BASE + id + "/chapters/" + c1), token, Map.of("title", "Chào hỏi")).andExpect(status().isOk());
+        JsonNode merged = read(call(post(BASE + id + "/chapters/" + c2 + "/merge-up"), token, null).andExpect(status().isOk()));
+        // "Chào hỏi" học trọn trong ngày 1 (đuôi một thẻ của chương đang học không để sang ngày sau) nên các chương sau lùi một ngày
+        assertEquals(List.of("Chào hỏi [1] 2: 語1 語2", "Ngày 2 [2] 1: 語3", "Ngày 3 [3] 1: 語4", "Ngày 4 [4] 1: 語5",
+                "Ngày 5 [5] 1: 語6"), layout(token, merged));
+        assertEquals(5, chapterRows(id));
+
+        // Tên dạng tự sinh: chương lại theo lịch, bản nháp về đúng 6 chương lúc dựng
+        JsonNode back = read(call(patch(BASE + id + "/chapters/" + c1), token, Map.of("title", "Ngày 1")).andExpect(status().isOk()));
+        assertEquals(original, layout(token, back));
+        assertEquals(6, chapterRows(id));
+        assertNoOrphanItems(draft.get("jobId").asText());
     }
 
     /**
@@ -2135,6 +2410,63 @@ class LearningPathIT extends IntegrationTest {
         assertEquals("FAILED", awaitDraft(other, failed).get("status").asText());
         JsonNode conflict = read(call(post(BASE + failed + "/enrich"), other, null).andExpect(status().isConflict()));
         assertEquals("Chỉ dịch lại được khi lộ trình ở bản nháp hoặc đang học.", conflict.get("message").asText());
+    }
+
+    /**
+     * Đang "Dịch lại nghĩa" (job RUNNING, bản nháp vẫn DRAFT): mọi thao tác đổi cấu trúc chương chờ job xong theo MỘT quy tắc cho cả
+     * bản nháp nhận ra chương lẫn không — đổi số ngày / trần, đổi tên chương, gộp, chọn thẻ, kích hoạt → 409 và không lưu gì; tên
+     * lộ trình / ngày bắt đầu / ngày học trong tuần vẫn sửa được. Trước đây bản không nhận ra chương 409 còn bản nhận ra chương nhận
+     * cùng PATCH số ngày, trong khi ô nhập ở client vẫn giữ số vừa gõ.
+     */
+    @Test
+    void draft_structure_edits_wait_for_enrich_on_both_draft_kinds() throws Exception { // LP-6, LP-08
+        String token = newUser();
+        String busy = "Đang dịch lại nghĩa, hãy chờ xong.";
+        for (boolean detected : new boolean[]{true, false}) {
+            if (!detected) {
+                List<AiDtos.Item> six = new ArrayList<>();
+                for (int i = 1; i <= 6; i++) six.add(vocab(i, "語" + i, null, false));
+                stubAnalyze(six, Map.of("vocab", 6, "grammar", 0, "chaptersDetected", false));
+            }
+            JsonNode draft = draftPath(token, "6", null);
+            assertEquals(detected, draft.get("chaptersDetected").asBoolean());
+            String id = draft.get("id").asText();
+            UUID jid = UUID.fromString(draft.get("jobId").asText());
+            String c1 = draft.get("chapters").get(0).get("id").asText();
+            String c2 = draft.get("chapters").get(1).get("id").asText();
+            String item = read(call(get(BASE + id + "/chapters/" + c1 + "/items"), token, null).andExpect(status().isOk()))
+                    .get(0).get("id").asText();
+            List<String> before = layout(token, draft);
+
+            jdbc.update("UPDATE extraction_jobs SET status = 'RUNNING' WHERE id = ?", jid);
+            try {
+                for (Map<String, Object> body : List.of(Map.<String, Object>of("totalDays", 3), Map.<String, Object>of("dailyCap", 20),
+                        Map.<String, Object>of("title", "Không lưu", "totalDays", 3))) {
+                    JsonNode res = read(call(patch(BASE + id), token, body).andExpect(status().isConflict()));
+                    assertEquals(busy, res.get("message").asText(), detected + " " + body);
+                }
+                JsonNode rename = read(call(patch(BASE + id + "/chapters/" + c1), token, Map.of("title", "Chào hỏi"))
+                        .andExpect(status().isConflict()));
+                assertEquals(busy, rename.get("message").asText(), rename.toString());
+                call(post(BASE + id + "/chapters/" + c2 + "/merge-up"), token, null).andExpect(status().isConflict());
+                call(patch(BASE + id + "/items"), token, List.of(Map.of("id", item, "selected", false)))
+                        .andExpect(status().isConflict());
+                call(post(BASE + id + "/activate"), token, Map.of()).andExpect(status().isConflict());
+                // ngoài cấu trúc chương: vẫn lưu, bố cục không đổi
+                JsonNode ok = read(call(patch(BASE + id), token, Map.of("title", "Đổi tên", "startDate", "2026-12-01",
+                        "studyDays", "1111100")).andExpect(status().isOk()));
+                assertEquals("Đổi tên", ok.get("title").asText());
+                assertEquals(6, ok.get("totalDays").asInt());
+                assertEquals(before, layout(token, ok), "detected=" + detected);
+            } finally {
+                jdbc.update("UPDATE extraction_jobs SET status = 'DONE' WHERE id = ?", jid);
+            }
+
+            // job xong -> sửa như thường
+            assertEquals(3, read(call(patch(BASE + id), token, Map.of("totalDays", 3)).andExpect(status().isOk()))
+                    .get("totalDays").asInt());
+            call(patch(BASE + id + "/chapters/" + c1), token, Map.of("title", "Chào hỏi")).andExpect(status().isOk());
+        }
     }
 
     /** Đáp án đúng của mỗi thẻ trong bộ = dòng đầu nội dung (QuizService.headline), đọc qua API bộ thẻ như người dùng. */
