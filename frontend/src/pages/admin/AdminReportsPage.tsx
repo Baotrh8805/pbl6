@@ -12,6 +12,7 @@ import { Pager } from "@/features/admin/components/Pager";
 import { ResolveReportModal } from "@/features/admin/components/ResolveReportModal";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
+import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
 import { reportActionLabel } from "@/features/admin/moderationUtils";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
 
@@ -32,6 +33,10 @@ export const AdminReportsPage: React.FC = () => {
   const [retry, setRetry] = useState(0);
   const [selected, setSelected] = useState<ContentReport | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [flash, setFlash] = useState<AdminFlashMessage | null>(null);
+  // Cột Thao tác chỉ có khi có nút để bấm (tab Đang mở + quyền ADMIN): tab Đã xử lý / Đã bỏ qua không còn gì để làm,
+  // để cột trống (lại dính mép phải) chỉ chiếm chỗ của cột Kết quả xử lý.
+  const showActions = status === "OPEN" && canAct;
 
   const { data, loading, error } = useAsync(
     () => fetchReports({ status, deckId: q.get("deckId"), page: q.page, size: PAGE_SIZE }),
@@ -136,9 +141,11 @@ export const AdminReportsPage: React.FC = () => {
         )}
       </div>
 
+      <AdminFlash message={flash} onClose={() => setFlash(null)} />
+
       <AdminTableShell
         caption={`Báo cáo ${REPORT_STATUS_LABELS[status]}`}
-        stickyActions={status === "OPEN"}
+        stickyActions={showActions}
         loading={loading}
         error={error}
         empty={rows.length === 0}
@@ -153,9 +160,11 @@ export const AdminReportsPage: React.FC = () => {
             <th scope="col">Người báo cáo</th>
             <th scope="col">Lý do & Mô tả</th>
             {status === "OPEN" ? <th scope="col" className="w-24">Cùng bộ</th> : <th scope="col">Kết quả xử lý</th>}
-            <th scope="col" className="w-24">
-              <span className="sr-only">Thao tác</span>
-            </th>
+            {showActions && (
+              <th scope="col" className="w-24">
+                <span className="sr-only">Thao tác</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -219,8 +228,8 @@ export const AdminReportsPage: React.FC = () => {
                   </div>
                 </td>
               )}
-              <td>
-                {status === "OPEN" && canAct && (
+              {showActions && (
+                <td>
                   <Button
                     type="button"
                     variant="primary"
@@ -229,14 +238,24 @@ export const AdminReportsPage: React.FC = () => {
                   >
                     Xử lý
                   </Button>
-                )}
-              </td>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </AdminTableShell>
       {data && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
-      <ResolveReportModal report={selected} onClose={() => setSelected(null)} onDone={() => setRetry((n) => n + 1)} />
+      {/* key: mỗi báo cáo một modal mới — hành động / bình luận / ghi chú của báo cáo trước không sót sang (vd. "Gỡ khỏi
+          Thư viện" còn chọn sẵn khi bộ thẻ sau đã riêng tư). */}
+      <ResolveReportModal
+        key={selected?.id ?? "none"}
+        report={selected}
+        onClose={() => setSelected(null)}
+        onDone={(text) => {
+          setFlash({ ok: true, text });
+          setRetry((n) => n + 1);
+        }}
+      />
     </section>
   );
 };

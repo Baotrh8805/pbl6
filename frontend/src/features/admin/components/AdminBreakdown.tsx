@@ -91,27 +91,29 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
           </div>
         </div>
 
-        {/* Chú giải phân bổ chi tiết */}
-        <div className="mt-4 pt-3 border-t border-surface-container-high grid grid-cols-2 gap-2 text-label-sm">
+        {/* Chú giải phân bổ chi tiết. Từ lg thẻ chỉ ~1/3 khung (≈270 px ở 1280 px): 2 cột thì mỗi ô ~130 px, nhãn bị cắt
+            "Hoàn thà…" và số rớt dòng -> 1 cột khi 3 thẻ xếp ngang (lg–xl), 2 cột khi thẻ đủ rộng (sm–md, 2xl).
+            Nhãn được xuống dòng, số luôn một dòng ở mép phải. */}
+        <div className="mt-4 pt-3 border-t border-surface-container-high grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2 gap-x-4 gap-y-2 text-label-sm">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-secondary shrink-0" />
-            <span className="truncate text-on-surface-variant">Hoàn thành:</span>
-            <span className="font-bold text-on-surface ml-auto">{extDone} ({donePct}%)</span>
+            <span className="min-w-0 text-on-surface-variant">Hoàn thành:</span>
+            <span className="font-bold text-on-surface ml-auto whitespace-nowrap">{extDone} ({donePct}%)</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-primary-container shrink-0" />
-            <span className="truncate text-on-surface-variant">Đang chạy:</span>
-            <span className="font-bold text-on-surface ml-auto">{extRunning} ({runningPct}%)</span>
+            <span className="min-w-0 text-on-surface-variant">Đang chạy:</span>
+            <span className="font-bold text-on-surface ml-auto whitespace-nowrap">{extRunning} ({runningPct}%)</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-error shrink-0" />
-            <span className="truncate text-on-surface-variant">Thất bại:</span>
-            <span className="font-bold text-on-surface ml-auto">{extFailed} ({failedPct}%)</span>
+            <span className="min-w-0 text-on-surface-variant">Thất bại:</span>
+            <span className="font-bold text-on-surface ml-auto whitespace-nowrap">{extFailed} ({failedPct}%)</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-surface-container-highest shrink-0" />
-            <span className="truncate text-on-surface-variant">Khác:</span>
-            <span className="font-bold text-on-surface ml-auto">{extOther} ({otherPct}%)</span>
+            <span className="min-w-0 text-on-surface-variant">Khác:</span>
+            <span className="font-bold text-on-surface ml-auto whitespace-nowrap">{extOther} ({otherPct}%)</span>
           </div>
         </div>
       </div>
@@ -134,9 +136,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
           <div className="mt-4 flex flex-col gap-3">
             {/* Thanh 1: Hoạt động 7 ngày */}
             <div>
-              <div className="flex justify-between text-label-sm mb-1">
+              <div className="flex justify-between gap-2 text-label-sm mb-1">
                 <span className="text-on-surface-variant font-medium">Hoạt động 7 ngày</span>
-                <span className="font-bold text-on-surface">
+                <span className="font-bold text-on-surface whitespace-nowrap">
                   {users.active7d} / {userTotal} · {userActive7dPct}%
                 </span>
               </div>
@@ -150,9 +152,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
 
             {/* Thanh 2: Pro (Premium) */}
             <div>
-              <div className="flex justify-between text-label-sm mb-1">
+              <div className="flex justify-between gap-2 text-label-sm mb-1">
                 <span className="text-on-surface-variant font-medium">Tài khoản Pro</span>
-                <span className="font-bold text-on-surface">
+                <span className="font-bold text-on-surface whitespace-nowrap">
                   {users.premium} / {userTotal} · {userPremiumPct}%
                 </span>
               </div>
@@ -166,9 +168,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
 
             {/* Thanh 3: Đang bị khoá */}
             <div>
-              <div className="flex justify-between text-label-sm mb-1">
+              <div className="flex justify-between gap-2 text-label-sm mb-1">
                 <span className="text-on-surface-variant font-medium">Bị khoá</span>
-                <span className={`font-bold ${users.locked > 0 ? "text-error" : "text-outline"}`}>
+                <span className={`font-bold whitespace-nowrap ${users.locked > 0 ? "text-error" : "text-outline"}`}>
                   {users.locked} / {userTotal} · {userLockedPct}%
                 </span>
               </div>
@@ -207,9 +209,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
           <div className="mt-4 flex flex-col gap-3">
             {/* Thanh 1: Public */}
             <div>
-              <div className="flex justify-between text-label-sm mb-1">
+              <div className="flex justify-between gap-2 text-label-sm mb-1">
                 <span className="text-on-surface-variant font-medium">Bộ thẻ Công khai (Public)</span>
-                <span className="font-bold text-on-surface">
+                <span className="font-bold text-on-surface whitespace-nowrap">
                   {decks.public} / {deckTotal} · {deckPublicPct}%
                 </span>
               </div>
@@ -223,9 +225,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
 
             {/* Thanh 2: Official */}
             <div>
-              <div className="flex justify-between text-label-sm mb-1">
+              <div className="flex justify-between gap-2 text-label-sm mb-1">
                 <span className="text-on-surface-variant font-medium">Bộ thẻ Chính quy (Official)</span>
-                <span className="font-bold text-on-surface">
+                <span className="font-bold text-on-surface whitespace-nowrap">
                   {decks.official} / {deckTotal} · {deckOfficialPct}%
                 </span>
               </div>

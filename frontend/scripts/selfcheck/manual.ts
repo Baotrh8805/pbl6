@@ -32,17 +32,24 @@ import {
 import { passwordChangeError } from "../../src/lib/passwordRules.ts";
 import { STAFF_ACCOUNT_PATH, staffRedirectFor } from "../../src/lib/roles.ts";
 import {
+  INCOMPLETE_DATE_ERROR,
+  PREMIUM_UNTIL_MAX,
   STAFF_ROLE_FILTER,
   auditFilterError,
   chartWidthFor,
   extractionBreakdown,
+  incompleteDateError,
+  lastDaysRange,
   mergeStaffPage,
+  premiumUntilDateError,
   xLabelStep,
 } from "../../src/features/admin/adminUtils.ts";
+import { userExtractionLimitError } from "../../src/features/admin/settingsUtils.ts";
 import {
   appealLockReason,
   appealLockReasonPlaceholder,
   reportActionLabel,
+  reportDoneMessage,
 } from "../../src/features/admin/moderationUtils.ts";
 import { ratingFormKey } from "../../src/lib/ratingUtils.ts";
 
@@ -260,4 +267,56 @@ export function runManualChecks(assert: (cond: boolean, msg: string) => void): v
   assert(auditFilterError({ actorId: "0", from: "", to: "" }) !== null && auditFilterError({ actorId: " 12 ", from: "", to: "" }) === null, "STAFF-12: ID 0 sai, ' 12 ' đúng");
   assert(auditFilterError({ actorId: "", from: "2026-10-20", to: "2026-10-01" })?.includes("Ngày bắt đầu") === true, "STAFF-12: từ ngày > đến ngày bị báo");
   assert(auditFilterError({ actorId: "", from: "2026-10-01", to: "2026-10-01" }) === null, "STAFF-12: cùng ngày hợp lệ");
+
+  // ---------- NEW-08: form admin noValidate -> tự kiểm, báo tiếng Việt ----------
+  assert(incompleteDateError({ validity: { badInput: true } }) === INCOMPLETE_DATE_ERROR, "NEW-08: ô ngày gõ dở (value \"\") bị chặn");
+  assert(
+    incompleteDateError({ validity: { badInput: false } }) === null && incompleteDateError(null) === null && incompleteDateError(undefined) === null,
+    "NEW-08: ô ngày trống / đủ / chưa hiện (ref null) -> không báo"
+  );
+  assert(INCOMPLETE_DATE_ERROR.includes("dd/mm/yyyy"), "NEW-08: lời báo nêu định dạng cần nhập");
+  assert(
+    ["0", "1000", " 12 ", "1e3"].every((t) => userExtractionLimitError(t) === null),
+    "NEW-08: hạn mức riêng 0..1000 (kể cả cách hai đầu) hợp lệ"
+  );
+  assert(
+    ["5000", "1001", "-1", "1.5", "abc", "1,5"].every((t) => userExtractionLimitError(t)?.includes("số nguyên từ 0 đến 1000") === true),
+    "NEW-08: hạn mức riêng ngoài khoảng / số lẻ / chữ -> lời báo tiếng Việt"
+  );
+  assert(
+    userExtractionLimitError("")?.includes("Theo cấu hình chung") === true && userExtractionLimitError("  ") !== null,
+    "NEW-08: ô trống không thành Number(\"\") = 0 (khoá bóc tách) mà nhắc nhập hoặc chọn cấu hình chung"
+  );
+  // Hạn Pro đủ ngày nhưng năm 5 chữ số / ngày đã qua: trước đây toISOString ném "Invalid time value" tiếng Anh, hoặc lưu gói Pro
+  // hết hạn sẵn
+  assert(premiumUntilDateError("", "2026-10-20") === null, "NEW-08: hạn Pro trống = vĩnh viễn");
+  assert(
+    ["2026-10-20", "2027-01-01", PREMIUM_UNTIL_MAX].every((v) => premiumUntilDateError(v, "2026-10-20") === null),
+    "NEW-08: hạn Pro từ hôm nay (trọn ngày) tới 9999-12-31 hợp lệ"
+  );
+  assert(
+    ["20266-12-31", "275760-01-01"].every((v) => premiumUntilDateError(v, "2026-10-20")?.includes("4 chữ số") === true),
+    "NEW-08: năm quá 4 chữ số -> lời báo tiếng Việt, không để new Date(...).toISOString() ném lỗi tiếng Anh"
+  );
+  assert(
+    ["2026-10-19", "0002-01-01"].every((v) => premiumUntilDateError(v, "2026-10-20")?.includes("từ hôm nay") === true),
+    "NEW-08: hạn Pro đã qua bị chặn"
+  );
+  // "7 ngày gần nhất" theo ngày lịch máy admin: 03:00 sáng 20/10 (giờ máy) -> to = 20/10, không phải ngày UTC 19/10
+  const early = lastDaysRange(7, new Date(2026, 9, 20, 3, 0));
+  assert(early.to === "2026-10-20" && early.from === "2026-10-13", `NEW-08: 7 ngày gần nhất theo ngày lịch (${JSON.stringify(early)})`);
+  const lateNight = lastDaysRange(7, new Date(2026, 0, 3, 23, 30));
+  assert(lateNight.to === "2026-01-03" && lateNight.from === "2025-12-27", "NEW-08: 7 ngày gần nhất qua năm, 23:30 vẫn là ngày đó");
+
+  // ---------- NEW-12: lời báo sau khi xử lý báo cáo ----------
+  const rep = { id: 7, deckId: "d-1", deckTitle: "N5 cơ bản" };
+  assert(reportDoneMessage(rep, "UNPUBLISH_DECK") === "Đã gỡ “N5 cơ bản” khỏi Thư viện và đóng báo cáo #7.", "NEW-12: gỡ bộ thẻ nêu hệ quả");
+  assert(reportDoneMessage(rep, "CLEAR_COMMENT").startsWith("Đã xoá bình luận trên “N5 cơ bản”"), "NEW-12: xoá bình luận nêu bộ thẻ");
+  assert(reportDoneMessage(rep, "DISMISS") === "Đã bỏ qua báo cáo #7 về “N5 cơ bản”.", "NEW-12: bỏ qua ≠ xử lý");
+  assert(/không thao tác thêm/.test(reportDoneMessage(rep, "NONE")), "NEW-12: NONE = đã xử lý, không làm gì thêm");
+  assert(
+    reportDoneMessage({ id: 8, deckId: "d-2", deckTitle: null }, "DISMISS").includes("“d-2”") &&
+      reportDoneMessage({ id: 8, deckId: "d-2", deckTitle: "  " }, "NONE").includes("“d-2”"),
+    "NEW-12: bộ thẻ mất tiêu đề -> dùng id"
+  );
 }

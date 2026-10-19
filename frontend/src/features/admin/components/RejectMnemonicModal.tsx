@@ -54,7 +54,10 @@ export const RejectMnemonicModal: React.FC<RejectMnemonicModalProps> = ({ mnemon
         </>
       }
     >
+      {/* noValidate: lỗi ghi chú do rejectNoteError báo tiếng Việt dưới ô; `required` chỉ để trình đọc màn hình báo bắt buộc,
+          không để trình duyệt chặn bằng bong bóng tiếng Anh nếu form được gửi (requestSubmit / nút submit sau này). */}
       <form
+        noValidate
         className="flex flex-col gap-3 text-body-sm"
         onSubmit={(e) => {
           e.preventDefault();

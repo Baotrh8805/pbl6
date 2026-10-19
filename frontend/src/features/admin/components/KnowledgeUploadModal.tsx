@@ -92,7 +92,10 @@ export const KnowledgeUploadModal: React.FC<KnowledgeUploadModalProps> = ({ isOp
         </>
       }
     >
+      {/* noValidate: Enter ở ô Tiêu đề (ô văn bản duy nhất -> gửi ngầm form) phải chạy knowledgeUploadError (tiếng Việt),
+          không phải "Please fill out this field." của `required`; required giữ lại chỉ để trình đọc màn hình báo bắt buộc. */}
       <form
+        noValidate
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();

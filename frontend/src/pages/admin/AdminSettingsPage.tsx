@@ -134,7 +134,9 @@ export const AdminSettingsPage: React.FC = () => {
         </div>
       )}
 
-      <form id="settings-form" onSubmit={handleSubmit} className="flex flex-col gap-space-lg">
+      {/* noValidate: kiểm bằng limitError / settingNumberError (tiếng Việt, khoá nút Lưu). Để trình duyệt kiểm thì step 0.01
+          của ô ngưỡng chặn 0.855 — giá trị app và backend nhận — bằng bong bóng tiếng Anh; step chỉ còn là bước của nút mũi tên. */}
+      <form id="settings-form" noValidate onSubmit={handleSubmit} className="flex flex-col gap-space-lg">
         {/* Card 1: Hạn mức bóc tách AI */}
         <AdminDetailCard
           title="Hạn mức bóc tách AI"

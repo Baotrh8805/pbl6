@@ -7,11 +7,13 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { dismissReport, fetchAdminRatings, resolveReport } from "@/services/adminService";
 import type { ContentReport, ReportAction } from "@/types/api.types";
 import { REPORT_REASON_LABELS } from "../adminUtils";
+import { reportDoneMessage, type ReportOutcome } from "../moderationUtils";
 
 interface ResolveReportModalProps {
   report: ContentReport | null;
   onClose: () => void;
-  onDone: () => void;
+  /** message: lời báo thành công để trang hiện AdminFlash (modal đóng, dòng rời tab "Đang mở"). */
+  onDone: (message: string) => void;
 }
 
 /** Xử lý một báo cáo: chọn hành động (NONE / gỡ bộ thẻ / xoá một bình luận) hoặc bỏ qua. */
@@ -28,12 +30,13 @@ export const ResolveReportModal: React.FC<ResolveReportModalProps> = ({ report, 
   const comments = ratings.data?.items ?? [];
   const deckPrivate = report?.deckVisibility === "private";
 
-  const submit = async (fn: () => Promise<unknown>) => {
+  const submit = async (outcome: ReportOutcome, fn: () => Promise<unknown>) => {
+    if (!report) return;
     setBusy(true);
     setError(null);
     try {
       await fn();
-      onDone();
+      onDone(reportDoneMessage(report, outcome));
       onClose();
     } catch (e) {
       setError(extractErrorMessage(e));
@@ -59,7 +62,7 @@ export const ResolveReportModal: React.FC<ResolveReportModalProps> = ({ report, 
             variant="ghost"
             size="sm"
             disabled={busy}
-            onClick={() => submit(() => dismissReport(report.id, { note: note.trim() || undefined }))}
+            onClick={() => submit("DISMISS", () => dismissReport(report.id, { note: note.trim() || undefined }))}
           >
             Bỏ qua báo cáo
           </Button>
@@ -72,7 +75,7 @@ export const ResolveReportModal: React.FC<ResolveReportModalProps> = ({ report, 
             isLoading={busy}
             disabled={!canConfirm}
             onClick={() =>
-              submit(() =>
+              submit(action, () =>
                 resolveReport(report.id, {
                   action,
                   note: note.trim() || undefined,

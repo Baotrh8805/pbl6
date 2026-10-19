@@ -67,6 +67,12 @@ export const AdminDeckDetailPage: React.FC = () => {
   }
   const f = flags ?? { official: deck.official, featured: deck.featured };
   const dirty = f.official !== deck.official || f.featured !== deck.featured;
+  // Nổi bật chỉ dành cho bộ public (backend chặn 400, gỡ / chuyển riêng tư tự bỏ cờ): bộ riêng tư không bật được,
+  // nhưng vẫn cho bỏ nếu dữ liệu cũ còn sót cờ (DB không có CHECK). Khoá theo cờ đã lưu chứ không theo bản nháp:
+  // lỡ bỏ tích thì tích lại được (backend coi "giữ nguyên cờ" là hợp lệ), không bị khoá cứng tới khi tải lại trang.
+  const isPublic = deck.visibility === "public";
+  const featureLocked = !isPublic && !deck.featured;
+  const legacyFeatured = !isPublic && deck.featured;
 
   const currentCard = cards[cardIndex] ?? null;
 
@@ -167,12 +173,19 @@ export const AdminDeckDetailPage: React.FC = () => {
                 <span className="font-semibold">Bộ thẻ Official (Chính thức)</span>
               </label>
               <label
-                className="flex items-center gap-2 text-body-sm cursor-pointer select-none"
-                title="Chỉ một bộ thẻ nổi bật; gắn mới sẽ thay thế bộ cũ"
+                className={`flex items-center gap-2 text-body-sm select-none ${featureLocked ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                title={
+                  featureLocked
+                    ? "Chỉ bộ thẻ công khai mới gắn được Nổi bật"
+                    : legacyFeatured
+                      ? "Bộ riêng tư còn sót cờ Nổi bật từ dữ liệu cũ: chỉ bỏ được, bỏ rồi không gắn lại được"
+                      : "Chỉ một bộ thẻ nổi bật; gắn mới sẽ thay thế bộ cũ"
+                }
               >
                 <input
                   type="checkbox"
                   checked={f.featured}
+                  disabled={featureLocked}
                   onChange={(e) => setFlags({ ...f, featured: e.target.checked })}
                   className="w-4 h-4 text-primary rounded"
                 />
@@ -187,18 +200,27 @@ export const AdminDeckDetailPage: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={deck.visibility !== "public"}
-                title={deck.visibility !== "public" ? "Bộ thẻ đã ở chế độ riêng tư" : undefined}
+                disabled={!isPublic}
+                title={!isPublic ? "Bộ thẻ đã ở chế độ riêng tư" : undefined}
                 onClick={async () => {
                   const ok = await dialog.confirm({
                     title: "Gỡ khỏi Thư viện công khai?",
-                    message: `"${deck.title}" sẽ chuyển về chế độ riêng tư: chỉ tác giả (${deck.ownerEmail}) còn quyền truy cập.`,
+                    message: `"${deck.title}" sẽ chuyển về chế độ riêng tư: chỉ tác giả (${deck.ownerEmail}) còn quyền truy cập.${
+                      deck.featured ? " Cờ Nổi bật cũng được gỡ (bộ riêng tư không lên Thư viện)." : ""
+                    }`,
                     confirmLabel: "Gỡ về riêng tư",
                     tone: "warning",
                     action: () => unpublishDeck(deck.id),
                   });
                   if (ok) {
-                    setStatus({ ok: true, text: "Đã gỡ bộ thẻ khỏi Thư viện, chuyển về chế độ riêng tư." });
+                    setStatus({
+                      ok: true,
+                      text: deck.featured
+                        ? "Đã gỡ bộ thẻ khỏi Thư viện, chuyển về chế độ riêng tư và bỏ cờ Nổi bật."
+                        : "Đã gỡ bộ thẻ khỏi Thư viện, chuyển về chế độ riêng tư.",
+                    });
+                    // Bản nháp cờ (nếu đang sửa dở) dựa trên bộ public cũ: bỏ để ô Nổi bật theo đúng trạng thái mới.
+                    setFlags(null);
                     setReload((n) => n + 1);
                   }
                 }}

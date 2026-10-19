@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
@@ -22,10 +22,15 @@ import { adminFieldClass } from "@/features/admin/components/AdminFilterBar";
 import {
   ASSIGNABLE_ROLES,
   adminAccountStatus,
+  PREMIUM_UNTIL_MAX,
   formatShort,
+  incompleteDateError,
+  premiumUntilDateError,
   stringToHslColor,
   stringToTextColor,
 } from "@/features/admin/adminUtils";
+import { dayKey } from "@/lib/learningStats";
+import { EXTRACTION_LIMIT_MAX, userExtractionLimitError } from "@/features/admin/settingsUtils";
 import { getInitials } from "@/lib/textUtils";
 import type { AdminUserDetail } from "@/types/api.types";
 
@@ -41,8 +46,13 @@ export const AdminUserDetailPage: React.FC = () => {
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [premium, setPremium] = useState<boolean | null>(null);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
+  // Ô "Hạn dùng" gõ dở có value "" như ô trống (= Pro vĩnh viễn): chỉ validity.badInput của chính ô phân biệt được.
+  const premiumUntilRef = useRef<HTMLInputElement>(null);
+  const [premiumUntilError, setPremiumUntilError] = useState<string | null>(null);
   const [limitMode, setLimitMode] = useState<"global" | "own" | null>(null);
   const [limitValue, setLimitValue] = useState("");
+  // Ô trống chỉ báo lỗi sau lần bấm Lưu đầu tiên (vừa chọn "Riêng" chưa kịp gõ mà đã đỏ thì khó chịu); gõ sai thì báo ngay.
+  const [limitSubmitted, setLimitSubmitted] = useState(false);
   const [roleDraft, setRoleDraft] = useState<Role | "">("");
   const [lockReason, setLockReason] = useState("");
   const [copiedEmail, setCopiedEmail] = useState(false);
@@ -70,8 +80,13 @@ export const AdminUserDetailPage: React.FC = () => {
   const currentUntil = user.premiumUntil ? user.premiumUntil.slice(0, 10) : "";
   const untilValue = premiumUntil ?? currentUntil;
   const premiumDirty = premiumValue !== !!user.isPremium || (premiumValue && untilValue !== currentUntil);
+  // Lời báo của ô "Hạn dùng": gõ dở trước (value "" như ô trống), rồi năm quá 4 chữ số / ngày đã qua (theo ngày máy admin).
+  const untilProblem = (el: HTMLInputElement | null): string | null =>
+    incompleteDateError(el) ?? premiumUntilDateError(el?.value ?? "", dayKey(new Date()));
   const mode = limitMode ?? (user.extractionDailyLimit === null ? "global" : "own");
   const limitInput = limitMode === null ? (user.extractionDailyLimit?.toString() ?? "") : limitValue;
+  const limitError = mode === "own" ? userExtractionLimitError(limitInput) : null;
+  const showLimitError = !!limitError && (limitSubmitted || limitInput.trim() !== "");
   const related = (logs.data?.items ?? []).filter((l) => l.targetId === String(user.id)).slice(0, 6);
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
@@ -447,11 +462,17 @@ export const AdminUserDetailPage: React.FC = () => {
           {/* Card: Gói cước Pro & Hạn mức AI */}
           {canAct && !targetIsStaff && !isDeleted && (
             <AdminDetailCard title="Gói cước & Hạn mức AI" icon="bolt">
-              {/* Form Gói cước */}
+              {/* Form Gói cước. noValidate: ngày gõ dở báo bằng lời tiếng Việt bên dưới, không phải bong bóng tiếng Anh. */}
               <form
+                noValidate
                 className="flex flex-col gap-3 pb-3 border-b border-surface-container-high/60"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  // Ngày gõ dở mà vẫn gửi thì premiumUntil = null: người dùng thành Pro vĩnh viễn ngoài ý admin; năm 5 chữ số
+                  // làm toISOString ném lỗi tiếng Anh, ngày đã qua thành gói Pro hết hạn sẵn (premiumUntilDateError).
+                  const untilError = premiumValue ? untilProblem(premiumUntilRef.current) : null;
+                  setPremiumUntilError(untilError);
+                  if (untilError) return;
                   void run("Cập nhật gói Premium", () =>
                     patchAdminUser(user.id, {
                       premium: premiumValue,
@@ -478,25 +499,47 @@ export const AdminUserDetailPage: React.FC = () => {
                   <label className="flex flex-col sm:flex-row sm:items-center gap-2 text-body-sm">
                     <span className="text-on-surface-variant shrink-0">Hạn dùng đến hết ngày:</span>
                     <input
+                      ref={premiumUntilRef}
                       type="date"
                       value={untilValue}
-                      onChange={(e) => setPremiumUntil(e.target.value)}
+                      // min / max chỉ giới hạn bộ chọn ngày và số chữ số năm (form noValidate): chặn thật ở untilProblem
+                      min={dayKey(new Date())}
+                      max={PREMIUM_UNTIL_MAX}
+                      onChange={(e) => {
+                        if (premiumUntilError) setPremiumUntilError(untilProblem(e.target));
+                        setPremiumUntil(e.target.value);
+                      }}
+                      // Xoá hết phần gõ dở không phát change (value vẫn ""): rời ô thì kiểm lại để lời báo không treo.
+                      onBlur={(e) => {
+                        if (premiumUntilError) setPremiumUntilError(untilProblem(e.target));
+                      }}
+                      aria-invalid={!!premiumUntilError}
+                      aria-describedby={premiumUntilError ? "premium-until-error" : undefined}
                       className={adminFieldClass}
                     />
                     <span className="text-label-sm text-outline">(để trống = vĩnh viễn)</span>
                   </label>
                 )}
+                {premiumValue && premiumUntilError && (
+                  <p id="premium-until-error" role="alert" className="text-label-sm text-error">
+                    {premiumUntilError}
+                  </p>
+                )}
               </form>
 
-              {/* Form Hạn mức AI */}
+              {/* Form Hạn mức AI. noValidate: userExtractionLimitError báo tiếng Việt ngay dưới ô (5000, ô trống, 1.5),
+                  không để min / max / required của trình duyệt chặn bằng bong bóng tiếng Anh. */}
               <form
+                noValidate
                 className="flex flex-col gap-3 pt-1"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  setLimitSubmitted(true);
+                  if (limitError) return;
                   void run("Cập nhật hạn mức", () =>
                     patchAdminUser(
                       user.id,
-                      mode === "global" ? { clearLimit: true } : { extractionDailyLimit: Number(limitInput) }
+                      mode === "global" ? { clearLimit: true } : { extractionDailyLimit: Number(limitInput.trim()) }
                     )
                   );
                 }}
@@ -529,8 +572,9 @@ export const AdminUserDetailPage: React.FC = () => {
                     <span>Riêng:</span>
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={0}
-                      max={1000}
+                      max={EXTRACTION_LIMIT_MAX}
                       required={mode === "own"}
                       disabled={mode !== "own"}
                       value={limitInput}
@@ -538,12 +582,19 @@ export const AdminUserDetailPage: React.FC = () => {
                         setLimitMode("own");
                         setLimitValue(e.target.value);
                       }}
+                      aria-invalid={showLimitError}
+                      aria-describedby={showLimitError ? "user-limit-error" : undefined}
                       className={`${adminFieldClass} w-24 font-mono`}
-                      aria-label="Hạn mức riêng (0–1000)"
+                      aria-label={`Hạn mức riêng (0–${EXTRACTION_LIMIT_MAX})`}
                     />
                     <span className="text-outline text-label-sm">lượt/ngày</span>
                   </label>
                 </fieldset>
+                {showLimitError && (
+                  <p id="user-limit-error" role="alert" className="text-label-sm text-error">
+                    {limitError}
+                  </p>
+                )}
               </form>
             </AdminDetailCard>
           )}

@@ -1,5 +1,6 @@
 // Hàm thuần cho Admin Panel (không gọi API); import tương đối để selfCheck chạy bằng node.
 import type { Role } from "../../lib/roles.ts";
+import { dayKey } from "../../lib/learningStats.ts";
 
 /**
  * Tính các mốc vạch Y làm tròn đẹp (0, step, 2*step, ...).
@@ -228,6 +229,41 @@ export function auditFilterError(f: { actorId: string; from: string; to: string 
   const actor = f.actorId.trim();
   if (actor && !/^[1-9]\d{0,17}$/.test(actor)) return "ID người thao tác phải là số nguyên dương (vd. 1).";
   if (f.from && f.to && f.from > f.to) return "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.";
+  return null;
+}
+
+export const INCOMPLETE_DATE_ERROR = "Ngày chưa nhập đủ (dd/mm/yyyy).";
+
+/**
+ * Ô type=date gõ dở (vd. 12/__/2026) có value "" y như ô trống, chỉ validity.badInput phân biệt được. Form admin đặt
+ * noValidate (lời báo tiếng Việt thay bong bóng tiếng Anh) nên trình duyệt không chặn nữa: không tự kiểm thì bộ lọc
+ * Nhật ký lặng lẽ bỏ điều kiện ngày, hạn Pro lặng lẽ thành "vĩnh viễn". Không có ô / ô hợp lệ -> null.
+ */
+export const incompleteDateError = (input: { validity: { badInput: boolean } } | null | undefined): string | null =>
+  input?.validity.badInput ? INCOMPLETE_DATE_ERROR : null;
+
+/**
+ * "7 ngày gần nhất" của Nhật ký: from / to theo ngày LỊCH ở máy admin (dayKey) — server đọc hai mốc này là ngày theo giờ
+ * Việt Nam (to tính trọn tới nửa đêm). Trước đây cắt từ toISOString() (giờ UTC): 00:00–06:59 sáng ở Việt Nam ngày UTC vẫn là
+ * hôm qua nên "đến ngày" thành hôm qua, mọi thao tác sáng nay biến mất khỏi bộ lọc mà không có dấu hiệu gì.
+ */
+export function lastDaysRange(days: number, now: Date = new Date()): { from: string; to: string } {
+  return { from: dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days)), to: dayKey(now) };
+}
+
+/** max của ô "Hạn dùng" Pro: không có max thì ô type=date nhận năm tới 275760. */
+export const PREMIUM_UNTIL_MAX = "9999-12-31";
+
+/**
+ * Hạn Pro đã nhập đủ (ô gõ dở báo riêng bằng incompleteDateError); "" = vĩnh viễn -> null. Năm 5–6 chữ số ("20266-12-31",
+ * gõ thừa một phím) là giá trị hợp lệ với trình duyệt nhưng new Date(...) thành Invalid Date -> toISOString ném "Invalid time
+ * value" tiếng Anh lên banner; ngày đã qua thì lưu "thành công" một gói Pro hết hạn sẵn (kèm thông báo cho người dùng).
+ * today: ngày lịch ở máy admin (dayKey), hạn tính trọn tới hết ngày nên hôm nay vẫn hợp lệ.
+ */
+export function premiumUntilDateError(value: string, today: string): string | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "Năm của hạn dùng phải có 4 chữ số (dd/mm/yyyy).";
+  if (value < today) return "Hạn dùng phải từ hôm nay trở đi (để trống = vĩnh viễn).";
   return null;
 }
 

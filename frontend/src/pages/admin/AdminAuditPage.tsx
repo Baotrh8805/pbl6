@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { fetchAuditLogs } from "@/services/adminService";
@@ -9,7 +9,13 @@ import { AdminFilterBar, adminFieldClass, adminLabelClass } from "@/features/adm
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { AdminJsonViewer } from "@/features/admin/components/AdminJsonViewer";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
-import { AUDIT_TARGET_LABELS, auditFilterError, formatShort } from "@/features/admin/adminUtils";
+import {
+  AUDIT_TARGET_LABELS,
+  auditFilterError,
+  formatShort,
+  incompleteDateError,
+  lastDaysRange,
+} from "@/features/admin/adminUtils";
 import { BreakableEmail } from "@/features/admin/components/BreakableEmail";
 
 const PAGE_SIZE = 50;
@@ -18,6 +24,10 @@ export const AdminAuditPage: React.FC = () => {
   const q = useAdminQuery();
   const [actor, setActor] = useState(q.get("actorId"));
   const [actorError, setActorError] = useState<string | null>(null);
+  // Ô ngày gõ dở: value "" nên chỉ đọc được qua validity của chính ô (ref), kiểm khi bấm Lọc.
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+  const [dateErrors, setDateErrors] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
   const [retry, setRetry] = useState(0);
   // Bộ lọc trên URL sai (ID không phải số, từ ngày > đến ngày — kể cả link gõ tay): không gửi lên server (400 / 0 dòng
   // không rõ lý do), báo ngay câu sửa thế nào.
@@ -38,13 +48,14 @@ export const AdminAuditPage: React.FC = () => {
   );
   const rows = data?.items ?? [];
 
-  const handleLast7Days = () => {
-    const today = new Date();
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(today.getDate() - 7);
-    const to = today.toISOString().slice(0, 10);
-    const from = sevenDaysAgo.toISOString().slice(0, 10);
-    q.set({ from, to });
+  // Ngày lịch theo giờ máy (lastDaysRange), không cắt từ toISOString: sáng sớm ở Việt Nam ngày UTC vẫn là hôm qua.
+  const handleLast7Days = () => q.set(lastDaysRange(7));
+
+  // Nút đặt ngày (7 ngày / Đặt lại): ô gõ dở có value "" — nếu giá trị mới cũng là "" React không ghi lại DOM và phần gõ
+  // dở còn nguyên, nên xoá tay trước; lời báo ngày chưa đủ cũng hết đúng.
+  const clearPartialDates = () => {
+    for (const el of [fromRef.current, toRef.current]) if (el?.validity.badInput) el.value = "";
+    setDateErrors({ from: null, to: null });
   };
 
   const hasFilters = Boolean(q.get("actorId") || q.get("targetType") || q.get("from") || q.get("to"));
@@ -60,8 +71,11 @@ export const AdminAuditPage: React.FC = () => {
         onSubmit={(e) => {
           e.preventDefault();
           const invalid = auditFilterError({ actorId: actor, from: "", to: "" });
+          // Ô ngày gõ dở: không chặn thì lọc "thành công" mà bỏ điều kiện ngày, người xem tưởng đã lọc theo ngày.
+          const dates = { from: incompleteDateError(fromRef.current), to: incompleteDateError(toRef.current) };
           setActorError(invalid);
-          if (!invalid) q.set({ actorId: actor.trim() });
+          setDateErrors(dates);
+          if (!invalid && !dates.from && !dates.to) q.set({ actorId: actor.trim() });
         }}
       >
         <label className={adminLabelClass}>
@@ -72,8 +86,8 @@ export const AdminAuditPage: React.FC = () => {
               setActor(e.target.value);
               if (actorError) setActorError(auditFilterError({ actorId: e.target.value, from: "", to: "" }));
             }}
+            // inputMode đủ để điện thoại mở bàn phím số; không đặt pattern — kiểm bằng auditFilterError (lời báo tiếng Việt)
             inputMode="numeric"
-            pattern="[0-9]*"
             placeholder="Ví dụ: 1"
             aria-invalid={!!actorError}
             aria-describedby={actorError ? "audit-actor-error" : undefined}
@@ -103,28 +117,65 @@ export const AdminAuditPage: React.FC = () => {
         <label className={adminLabelClass}>
           Từ ngày
           <input
+            ref={fromRef}
             type="date"
             value={q.get("from")}
             max={q.get("to") || undefined}
-            onChange={(e) => q.set({ from: e.target.value })}
+            onChange={(e) => {
+              if (dateErrors.from) setDateErrors((d) => ({ ...d, from: incompleteDateError(e.target) }));
+              q.set({ from: e.target.value });
+            }}
+            // Xoá hết các phần đang gõ không phát sự kiện change (value vẫn ""): rời ô thì kiểm lại để lời báo không treo.
+            onBlur={(e) => {
+              if (dateErrors.from) setDateErrors((d) => ({ ...d, from: incompleteDateError(e.target) }));
+            }}
+            aria-invalid={!!dateErrors.from}
+            aria-describedby={dateErrors.from ? "audit-from-error" : undefined}
             className={adminFieldClass}
           />
+          {dateErrors.from && (
+            <span id="audit-from-error" role="alert" className="text-label-sm text-error font-normal normal-case max-w-[12rem]">
+              {dateErrors.from}
+            </span>
+          )}
         </label>
         <label className={adminLabelClass}>
           Đến ngày
           <input
+            ref={toRef}
             type="date"
             value={q.get("to")}
             min={q.get("from") || undefined}
-            onChange={(e) => q.set({ to: e.target.value })}
+            onChange={(e) => {
+              if (dateErrors.to) setDateErrors((d) => ({ ...d, to: incompleteDateError(e.target) }));
+              q.set({ to: e.target.value });
+            }}
+            onBlur={(e) => {
+              if (dateErrors.to) setDateErrors((d) => ({ ...d, to: incompleteDateError(e.target) }));
+            }}
+            aria-invalid={!!dateErrors.to}
+            aria-describedby={dateErrors.to ? "audit-to-error" : undefined}
             className={adminFieldClass}
           />
+          {dateErrors.to && (
+            <span id="audit-to-error" role="alert" className="text-label-sm text-error font-normal normal-case max-w-[12rem]">
+              {dateErrors.to}
+            </span>
+          )}
         </label>
         <div className="flex items-center gap-2">
           <Button type="submit" variant="primary" size="sm">
             Lọc
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={handleLast7Days}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              clearPartialDates();
+              handleLast7Days();
+            }}
+          >
             7 ngày gần nhất
           </Button>
           {hasFilters && (
@@ -135,6 +186,7 @@ export const AdminAuditPage: React.FC = () => {
               onClick={() => {
                 setActor("");
                 setActorError(null);
+                clearPartialDates();
                 q.set({ actorId: undefined, targetType: undefined, from: undefined, to: undefined });
               }}
             >

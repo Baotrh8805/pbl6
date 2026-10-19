@@ -180,6 +180,17 @@ export const settingNumberError = (field: SettingsNumberField, text: string): st
 export const isValidExtractionLimit = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= EXTRACTION_LIMIT_MAX;
 
 /**
+ * Ô "Hạn mức riêng" của một người dùng (Admin > Người dùng > chi tiết): chuỗi đang gõ -> câu lỗi, hợp lệ -> null.
+ * Form đặt noValidate nên đây là chốt duy nhất trước khi gửi: để trình duyệt kiểm (min / max / required) thì 5000, ô trống
+ * hay 1.5 chỉ ra bong bóng tiếng Anh; bỏ kiểm thì ô trống thành Number("") = 0 — lặng lẽ khoá bóc tách của người đó.
+ */
+export const userExtractionLimitError = (text: string): string | null => {
+    const t = text.trim();
+    if (t === "") return `Nhập hạn mức riêng (số nguyên 0–${EXTRACTION_LIMIT_MAX}) hoặc chọn “Theo cấu hình chung”.`;
+    return isValidExtractionLimit(Number(t)) ? null : `Hạn mức riêng phải là số nguyên từ 0 đến ${EXTRACTION_LIMIT_MAX}.`;
+};
+
+/**
  * Body PUT: luôn đủ 4 khoá cũ; khoá mới chỉ gửi khi CÓ ĐỦ (backend cũ chỉ biết 4 khoá; backend mới đòi đủ mọi khoá), đặt
  * tên theo kiểu server đã trả (camelExtras). Không gửi updatedAt (server tự đặt).
  */

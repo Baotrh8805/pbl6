@@ -453,3 +453,29 @@ export const reportActionLabel = (action: string | null | undefined): string =>
       : action === "NONE"
         ? "Không làm gì"
         : (action ?? "—");
+
+// ---------- Sửa sau kiểm tay trên trình duyệt (NEW-12) ----------
+
+/** Kết quả của modal xử lý báo cáo: một hành động (ReportAction) hoặc "Bỏ qua báo cáo". */
+export type ReportOutcome = "NONE" | "UNPUBLISH_DECK" | "CLEAR_COMMENT" | "DISMISS";
+
+/**
+ * Lời báo sau khi xử lý / bỏ qua một báo cáo: modal đóng và dòng biến khỏi tab "Đang mở" — không báo thì admin không
+ * biết đã ghi hay chưa. Nêu luôn hệ quả (gỡ bộ thẻ / xoá bình luận) để khỏi phải mở tab "Đã xử lý" kiểm lại.
+ */
+export const reportDoneMessage = (
+  report: { id: number; deckId: string; deckTitle?: string | null },
+  outcome: ReportOutcome
+): string => {
+  const deck = `“${report.deckTitle?.trim() || report.deckId}”`;
+  switch (outcome) {
+    case "UNPUBLISH_DECK":
+      return `Đã gỡ ${deck} khỏi Thư viện và đóng báo cáo #${report.id}.`;
+    case "CLEAR_COMMENT":
+      return `Đã xoá bình luận trên ${deck} và đóng báo cáo #${report.id}.`;
+    case "DISMISS":
+      return `Đã bỏ qua báo cáo #${report.id} về ${deck}.`;
+    default:
+      return `Đã đánh dấu xử lý báo cáo #${report.id} về ${deck} (không thao tác thêm).`;
+  }
+};

@@ -78,13 +78,16 @@ const DEFAULT_SERIES: readonly TrendSeriesMeta<TrendSeriesKey>[] = Object.values
 const DAY_OPTIONS = [7, 14, 30, 60, 90];
 
 // Lớp lưới cho hàng thẻ chọn chuỗi theo số chuỗi (chuỗi lớp viết sẵn để Tailwind quét được).
+// Mỗi thẻ cần ~13rem (chấm + nhãn + số + sparkline 60 px): ở 768–1023 px khung chính chỉ ~460–700 px (sidebar 16rem)
+// nên 3 thẻ một hàng chỉ đặt từ lg; 5 thẻ (biểu đồ OCR) một hàng chỉ từ 2xl — ở xl (1280 px) mỗi thẻ ~170 px, nhãn
+// còn ~70 px ("Tỉ lệ lỗ…").
 const CARD_GRID: Record<number, string> = {
   1: "grid-cols-1",
   2: "grid-cols-1 sm:grid-cols-2",
-  3: "grid-cols-1 md:grid-cols-3",
-  4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+  3: "grid-cols-1 lg:grid-cols-3",
+  4: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4",
 };
-const CARD_GRID_MANY = "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
+const CARD_GRID_MANY = "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5";
 
 const formatValue = (v: number, unit?: string): string =>
   unit ? `${v.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}${unit}` : v.toLocaleString("vi-VN");
@@ -340,6 +343,7 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
               key={key}
               type="button"
               aria-pressed={isSelected}
+              title={cfg.label}
               onClick={() => handleSelectSeries(key)}
               className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden flex items-center justify-between gap-3 ${
                 isSelected
@@ -348,12 +352,13 @@ export function AdminTrendChart<K extends string = TrendSeriesKey>({
               }`}
             >
               <div className="flex flex-col min-w-0">
-                <div className="flex items-center gap-2">
+                {/* Nhãn xuống dòng thay vì cắt "…" (thẻ hẹp khi sidebar mở); chấm canh theo dòng đầu. */}
+                <div className="flex items-start gap-2">
                   <span
                     aria-hidden="true"
-                    className={`w-2.5 h-2.5 rounded-full ${cfg.dotClass}`}
+                    className={`w-2.5 h-2.5 mt-[5px] shrink-0 rounded-full ${cfg.dotClass}`}
                   />
-                  <span className="text-body-sm font-semibold text-on-surface truncate">
+                  <span className="text-body-sm font-semibold text-on-surface break-words min-w-0">
                     {cfg.label}
                   </span>
                 </div>
