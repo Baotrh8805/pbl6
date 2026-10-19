@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -83,6 +84,21 @@ public class ExtractionItem {
     @Column(name = "chapter_id")
     private UUID chapterId;
 
+    /**
+     * Cảnh báo mâu thuẫn tài liệu ↔ tham chiếu (V26, F2): [{field, document, reference, source, confidence, noteVi}]; [] = chưa có
+     * cảnh báo (hoặc job cũ chưa kiểm tra). Ghi lúc phân tích và khi người dùng bấm kiểm tra lại (ConflictService).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private List<Map<String, Object>> conflicts = new ArrayList<>();
+
+    /** Cách đọc / nghĩa EN mà TÀI LIỆU khai báo (không phải Sudachi / từ điển điền vào), để kiểm tra lại mâu thuẫn sau (V26). */
+    @Column(name = "doc_reading", length = 200)
+    private String docReading;
+
+    @Column(name = "doc_meaning_en", length = 1000)
+    private String docMeaningEn;
+
     public ExtractionItem() {}
 
     public UUID getId() { return id; }
@@ -125,6 +141,12 @@ public class ExtractionItem {
     public void setChapterNo(Integer chapterNo) { this.chapterNo = chapterNo; }
     public UUID getChapterId() { return chapterId; }
     public void setChapterId(UUID chapterId) { this.chapterId = chapterId; }
+    public List<Map<String, Object>> getConflicts() { return conflicts; }
+    public void setConflicts(List<Map<String, Object>> conflicts) { this.conflicts = conflicts; }
+    public String getDocReading() { return docReading; }
+    public void setDocReading(String docReading) { this.docReading = docReading; }
+    public String getDocMeaningEn() { return docMeaningEn; }
+    public void setDocMeaningEn(String docMeaningEn) { this.docMeaningEn = docMeaningEn; }
     public boolean isSelected() { return selected; }
     public void setSelected(boolean selected) { this.selected = selected; }
 }

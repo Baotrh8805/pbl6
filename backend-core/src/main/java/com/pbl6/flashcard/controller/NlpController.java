@@ -61,7 +61,10 @@ public class NlpController {
         return service.radicalKanji(no, levels);
     }
 
-    /** {kanji: [≤ 200 chữ], withMnemonic}: withMnemonic luôn coi là false ở giai đoạn này (xem NlpService#radicalCards). */
+    /**
+     * {kanji: [≤ 200 chữ], withMnemonic}: withMnemonic bị bỏ qua; mnemonicVi = mẹo đã duyệt (mnemonicSource "approved") hoặc
+     * câu mẫu ("template"), xem NlpService#radicalCards.
+     */
     @PostMapping("/radicals/cards")
     public JsonNode radicalCards(@Valid @RequestBody NlpRequests.RadicalCards body) {
         return service.radicalCards(body.kanji());

@@ -42,10 +42,16 @@ public class ExtractionWorker {
     private final AiServiceClient ai;
     private final TransactionTemplate tx;
     private final ApplicationEventPublisher events;
+    // F2: mục tham chiếu của nguồn tri thức chuẩn ACTIVE + ngưỡng cảnh báo gửi kèm mỗi lượt phân tích (analyzeOptions)
+    private final KnowledgeSourceService knowledge;
+    private final SettingsService settings;
 
     public ExtractionWorker(ExtractionJobRepository jobs, ExtractionItemRepository items, AiServiceClient ai,
-                            PlatformTransactionManager txManager, ApplicationEventPublisher events) {
+                            PlatformTransactionManager txManager, ApplicationEventPublisher events,
+                            KnowledgeSourceService knowledge, SettingsService settings) {
         this.events = events;
+        this.knowledge = knowledge;
+        this.settings = settings;
         this.jobs = jobs;
         this.items = items;
         this.ai = ai;
@@ -107,7 +113,8 @@ public class ExtractionWorker {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> blocks = snapshot.getTextMeta() != null
                 ? (List<Map<String, Object>>) snapshot.getTextMeta().get("blocks") : null;
-        AnalyzeResult ar = ai.analyze(snapshot.getExtractedText(), blocks, snapshot.getOptions());
+        Map<String, Object> sent = analyzeOptions(jobId, snapshot.getOptions());
+        AnalyzeResult ar = ai.analyze(snapshot.getExtractedText(), blocks, sent);
 
         List<ExtractionItem> created = new ArrayList<>();
         int position = 0;
@@ -117,10 +124,20 @@ public class ExtractionWorker {
         }
         Map<String, Object> stats = new LinkedHashMap<>(ar.stats() != null ? ar.stats() : Map.of());
         if (Boolean.TRUE.equals(ar.truncated())) stats.put("truncated", true);
+        Object threshold = sent.get(ConflictSupport.OPTION_MIN_CONFIDENCE);
         tx.executeWithoutResult(s -> {
             items.deleteByJobId(jobId);
             items.saveAll(created);
-            jobs.findById(jobId).ifPresent(j -> j.setStats(stats));
+            jobs.findById(jobId).ifPresent(j -> {
+                j.setStats(stats);
+                // Job tạo trước F2 vừa được phân tích lại: ghi ngưỡng đã dùng, đồng thời đánh dấu item mới là kết quả của pipeline
+                // có F2 (ConflictService.analysedWithF2) — kiểm tra lại sau đó không được coi cách đọc Sudachi là của tài liệu
+                if (j.getOptions() == null || j.getOptions().get(ConflictSupport.OPTION_MIN_CONFIDENCE) == null) {
+                    Map<String, Object> options = new LinkedHashMap<>(j.getOptions() != null ? j.getOptions() : Map.of());
+                    options.put(ConflictSupport.OPTION_MIN_CONFIDENCE, threshold);
+                    j.setOptions(options);
+                }
+            });
         });
 
         boolean wantVi = "vi".equals(snapshot.getOptions().get("meaningLang"));
@@ -138,6 +155,27 @@ public class ExtractionWorker {
             j.setFinishedAt(Instant.now());
         });
         publishFinished(jobId, ExtractionJob.DONE);
+    }
+
+    /**
+     * Tuỳ chọn gửi /extract/analyze = options đã lưu của job + references (F2): mục của nguồn tri thức chuẩn ACTIVE, đọc lúc chạy
+     * nên "Chạy lại" dùng nguồn mới nhất. references KHÔNG lưu vào extraction_jobs.options: có thể hàng nghìn mục mỗi job, và
+     * options được trả nguyên cho client mỗi lần poll. conflictMinConfidence nằm trong options từ lúc tạo job
+     * (ExtractionService.prepareJob); job tạo trước F2 không có thì lấy cấu hình hiện tại — thiếu nó ai-service dùng mặc định 0.6 của
+     * nó thay vì contradiction_alert_threshold, và chỉ job đó hiện các cảnh báo 0.6 mà ngưỡng quản trị đã ẩn. Đọc nguồn chuẩn lỗi
+     * không được làm hỏng lượt bóc tách: phân tích tiếp, chỉ so với từ điển.
+     */
+    private Map<String, Object> analyzeOptions(UUID jobId, Map<String, Object> stored) {
+        Map<String, Object> options = new LinkedHashMap<>(stored != null ? stored : Map.of());
+        if (options.get(ConflictSupport.OPTION_MIN_CONFIDENCE) == null) {
+            options.put(ConflictSupport.OPTION_MIN_CONFIDENCE, ConflictSupport.minConfidence(settings));
+        }
+        try {
+            options.put("references", knowledge.activeReferences());
+        } catch (RuntimeException e) {
+            log.warn("Không đọc được nguồn tri thức chuẩn cho job {}, phân tích không kèm tham chiếu", jobId, e);
+        }
+        return options;
     }
 
     /** Listener lỗi không được làm đổi trạng thái job. */
@@ -247,6 +285,10 @@ public class ExtractionWorker {
         // OCR đọc kém (chữ đơn trên dòng tin cậy thấp, không có trong từ điển) -> bỏ chọn sẵn để người dùng xem lại
         e.setChapterNo(it.chapter());
         e.setSelected(!Boolean.TRUE.equals(it.suspect()));
+        // F2: cảnh báo mâu thuẫn ai-service gắn sẵn (chuẩn hoá note_vi -> noteVi); cách đọc / nghĩa tài liệu khai để kiểm tra lại sau
+        e.setConflicts(ConflictSupport.normalize(it.conflicts()));
+        e.setDocReading(cut(it.docReading(), 200));
+        e.setDocMeaningEn(cut(it.docMeaningEn(), 1000));
         return e;
     }
 

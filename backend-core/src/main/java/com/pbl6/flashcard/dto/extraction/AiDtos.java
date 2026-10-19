@@ -14,11 +14,28 @@ public final class AiDtos {
     /** POST /api/extract/analyze */
     public record AnalyzeResult(List<Item> items, Map<String, Object> stats, Boolean truncated) {}
 
+    /**
+     * conflicts (F2, hợp đồng đợt 2 §5): cảnh báo mâu thuẫn ai-service gắn cho item (khoá note_vi như Python, ConflictSupport chuẩn
+     * hoá thành noteVi khi lưu); ai-service cũ không trả = null. docReading / docMeaningEn: cách đọc / nghĩa EN TÀI LIỆU khai báo
+     * (tuỳ chọn — ai-service hiện chỉ dùng nội bộ rồi bỏ khỏi item, nên thường null).
+     */
     public record Item(String kind, Integer position, String term, String surface, String reading,
                        List<Map<String, String>> readingSegments, String hanViet, String pos,
                        String meaningEn, String meaningVi, String level, Double levelConfidence,
                        List<String> levelSources, Integer frequency, String example, String exampleVi,
-                       Boolean suspect, Integer chapter) {}
+                       Boolean suspect, Integer chapter, List<Map<String, Object>> conflicts,
+                       String docReading, String docMeaningEn) {
+
+        /** Dạng trước F2 (không có conflicts / doc*): giữ cho mã và test đang dựng item theo 18 tham số. */
+        public Item(String kind, Integer position, String term, String surface, String reading,
+                    List<Map<String, String>> readingSegments, String hanViet, String pos,
+                    String meaningEn, String meaningVi, String level, Double levelConfidence,
+                    List<String> levelSources, Integer frequency, String example, String exampleVi,
+                    Boolean suspect, Integer chapter) {
+            this(kind, position, term, surface, reading, readingSegments, hanViet, pos, meaningEn, meaningVi, level,
+                    levelConfidence, levelSources, frequency, example, exampleVi, suspect, chapter, null, null, null);
+        }
+    }
 
     /** POST /api/extract/enrich */
     public record EnrichRequest(String targetLang, List<EnrichInput> items) {}

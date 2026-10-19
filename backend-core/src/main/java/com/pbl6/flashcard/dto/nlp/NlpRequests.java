@@ -20,7 +20,10 @@ public final class NlpRequests {
     public record KanjiCards(@NotNull @Size(max = MAX_KANJI) List<@NotNull @Size(min = 1, max = 4) String> kanji,
                              String userLevel) {}
 
-    /** withMnemonic bị bỏ qua (luôn false): mẹo nhớ Gemini cần kiểm duyệt nên làm ở gói C4/G2 sau. */
+    /**
+     * withMnemonic bị bỏ qua: thẻ công khai không bao giờ gọi Gemini, mẹo trên thẻ là mẹo đã duyệt hoặc câu mẫu (NlpService);
+     * sinh mẹo Gemini để chờ duyệt là POST /api/kanji/mnemonics/generate.
+     */
     public record RadicalCards(@NotNull @Size(max = MAX_KANJI) List<@NotNull @Size(min = 1, max = 4) String> kanji,
                                Boolean withMnemonic) {}
 }
