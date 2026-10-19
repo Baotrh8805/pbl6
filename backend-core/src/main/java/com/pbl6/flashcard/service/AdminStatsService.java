@@ -135,7 +135,8 @@ public class AdminStatsService {
 
     /**
      * db / aiService / version / backup + engines (hợp đồng đợt 2 §8 "health.engines"): cờ từng thành phần ai-service lấy từ body
-     * GET /api/extract/health trong cùng một lời gọi 2 giây; ai-service tắt -> aiService "down" và engines rỗng.
+     * GET /api/extract/health trong cùng một lời gọi (timeout 2 giây, hạn chót cả lời gọi kể cả phân giải DNS 3 giây —
+     * AiServiceClient.HEALTH_DEADLINE); ai-service tắt -> aiService "down" và engines rỗng.
      */
     public Map<String, Object> health() {
         Map<String, Object> m = new LinkedHashMap<>();

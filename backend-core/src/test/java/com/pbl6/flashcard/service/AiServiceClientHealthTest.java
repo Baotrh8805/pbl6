@@ -51,6 +51,32 @@ class AiServiceClientHealthTest {
         assertTrue(c.healthBody().isEmpty(), "không kết nối được -> rỗng");
     }
 
+    /**
+     * SS-07: hạn chót bao CẢ lời gọi, không chỉ timeout kết nối / đọc của client — resolver chậm trả "không có tên này" (~11 giây
+     * trên Windows) từng làm /api/admin/health treo dù ai-service tắt. Ở đây máy chủ trả chậm hơn hạn chót (vẫn trong timeout đọc
+     * 2 giây) để kiểm cơ chế hạn chót mà không phụ thuộc DNS của máy chạy test.
+     */
+    @Test
+    void health_gives_up_at_the_deadline_even_when_client_timeouts_have_not_fired() {
+        server.removeContext("/api/extract/health");
+        server.createContext("/api/extract/health", ex -> {
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            ex.sendResponseHeaders(200, -1);
+            ex.close();
+        });
+        AiServiceClient c = new AiServiceClient(RestClient.builder(), baseUrl, "secret", Duration.ofSeconds(5));
+        c.healthDeadline = Duration.ofMillis(200);
+        long t0 = System.nanoTime();
+        assertTrue(c.healthBody().isEmpty(), "quá hạn chót -> down");
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(ms < 1000, "trả ngay khi tới hạn chót, không chờ máy chủ trả lời (1,5 giây): " + ms + " ms");
+        // trong hạn chót mặc định thì vẫn "ok": health_sends_internal_key / health_body_returns_engine_flags_with_internal_key
+    }
+
     @Test
     void health_body_returns_engine_flags_with_internal_key() {
         server.removeContext("/api/extract/health");

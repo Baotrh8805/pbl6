@@ -5,6 +5,7 @@ import com.pbl6.flashcard.dto.extraction.AiDtos.AnalyzeResult;
 import com.pbl6.flashcard.dto.extraction.AiDtos.EnrichRequest;
 import com.pbl6.flashcard.dto.extraction.AiDtos.EnrichResult;
 import com.pbl6.flashcard.dto.extraction.AiDtos.TextResult;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,14 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Gọi ai-service (FastAPI) cho luồng bóc tách và tra cứu NLP (/api/nlp). RestClient có sẵn trong starter-web, không cần WebFlux.
@@ -78,7 +87,26 @@ public class AiServiceClient {
         this.nlpHttp = b.clone().requestFactory(interactive).build();
     }
 
-    /** true khi GET /api/extract/health trả 2xx trong 2 giây; mọi lỗi = false. */
+    /**
+     * Hạn chót của CẢ lời gọi health. Timeout kết nối / đọc 2 giây của healthHttp không tính bước phân giải tên máy: resolver
+     * chậm trả "không có tên này" (Windows thử lại các máy chủ DNS ~11 giây) làm trang admin treo dù ai-service tắt hẳn (SS-07).
+     */
+    static final Duration HEALTH_DEADLINE = Duration.ofSeconds(3);
+    /** Test hạ xuống để kiểm hạn chót mà không phải chờ DNS thật. */
+    Duration healthDeadline = HEALTH_DEADLINE;
+    /** Luồng chạy lời gọi health: quá hạn thì trả "down" ngay, lời gọi chậm tự kết thúc sau ở luồng daemon này. */
+    private final ExecutorService healthExec = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "ai-health");
+        t.setDaemon(true);
+        return t;
+    });
+
+    @PreDestroy
+    void stopHealthExec() {
+        healthExec.shutdownNow();
+    }
+
+    /** true khi GET /api/extract/health trả 2xx trong hạn chót (3 giây, kể cả phân giải DNS); mọi lỗi = false. */
     public boolean health() {
         return healthBody().isPresent();
     }
@@ -86,16 +114,34 @@ public class AiServiceClient {
     /**
      * GET /api/extract/health (cùng client 2 giây như {@link #health()}) và trả body JSON — cờ từng thành phần
      * {sudachi, jmdict, tesseract, gemini, kanjivg…: boolean} cho dashboard admin (hợp đồng đợt 2 §8). Rỗng khi không gọi được /
-     * không 2xx / body không đọc được; 2xx không body = object rỗng (dịch vụ vẫn "ok", chỉ là không có cờ).
+     * không 2xx / body không đọc được / quá {@link #HEALTH_DEADLINE}; 2xx không body = object rỗng (dịch vụ vẫn "ok", chỉ là không
+     * có cờ).
      */
-    public java.util.Optional<JsonNode> healthBody() {
+    public Optional<JsonNode> healthBody() {
+        CompletableFuture<Optional<JsonNode>> call;
+        try {
+            call = CompletableFuture.supplyAsync(this::fetchHealthBody, healthExec);
+        } catch (RejectedExecutionException e) { // đã đóng (context tắt)
+            return Optional.empty();
+        }
+        try {
+            return call.get(healthDeadline.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException | ExecutionException e) {
+            return Optional.empty();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        }
+    }
+
+    private Optional<JsonNode> fetchHealthBody() {
         try {
             var res = healthHttp.get().uri("/api/extract/health").retrieve().toEntity(JsonNode.class);
-            if (!res.getStatusCode().is2xxSuccessful()) return java.util.Optional.empty();
+            if (!res.getStatusCode().is2xxSuccessful()) return Optional.empty();
             JsonNode body = res.getBody();
-            return java.util.Optional.of(body != null ? body : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
+            return Optional.of(body != null ? body : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
         } catch (RuntimeException e) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
     }
 
