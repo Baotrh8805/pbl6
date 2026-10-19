@@ -809,19 +809,43 @@ public class LearningPathService {
         for (List<WeakCard> group : groups.values()) {
             LearningPathChapter c = rows.get(i++);
             List<DeckRequest.Card> cardReqs = new ArrayList<>(group.size());
+            List<Flashcard> copied = new ArrayList<>(group.size());
             for (WeakCard w : group) {
                 Flashcard f = source.get(w.cardId());
                 if (f == null) continue; // thẻ vừa bị xoá giữa hai truy vấn: bỏ qua, không 500
+                copied.add(f);
+                // pos (V22) đi theo bản sao như DeckService.cloneDeck: thiếu nó bộ bổ khuyết mất loại quiz chia động từ
                 cardReqs.add(new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning(), f.getLevel(), f.getKind(),
-                        f.getReadingSegments(), f.getHanViet()));
+                        f.getReadingSegments(), f.getHanViet(), f.getPos()));
             }
             DeckRequest deckReq = new DeckRequest(c.getTitle(), dominantLevel(group, user),
                     ExtractionWorker.cut("Chương " + c.getPosition() + " của lộ trình " + title, 1000), path.getFolderId(),
                     null, remedialCategory(group, groupBy), cardReqs);
-            createChapterDeck(uid, c, deckReq, user.getJlptLevel(), plan);
+            copyDistractors(createChapterDeck(uid, c, deckReq, user.getJlptLevel(), plan), copied);
         }
         PlanResult r = writeSchedule(path, rows, plan);
         return toResponse(path, date, true, r.overflow() ? Boolean.TRUE : null);
+    }
+
+    /**
+     * Phương án nhiễu của quiz (flashcards.distractors, V22) chỉ suy ra từ term / reading — giống hệt thẻ gốc — nên chép sang bản
+     * sao như DeckService.cloneDeck, khỏi gọi lại ai-service; thiếu nó bộ bổ khuyết báo 0 câu chọn đúng chữ / đồng âm dù thẻ gốc
+     * có. Thẻ mới khớp thẻ nguồn theo position (= thứ tự trong DeckRequest, 1-based); kiểm thêm term cho chắc.
+     */
+    private void copyDistractors(DeckResponse deck, List<Flashcard> sources) {
+        Map<String, Map<String, Object>> byNewId = new HashMap<>();
+        for (CardResponse card : deck.cards()) {
+            Integer p = card.position();
+            if (p == null || p < 1 || p > sources.size()) continue;
+            Flashcard f = sources.get(p - 1);
+            if (f.getDistractors() != null && Objects.equals(f.getTerm().trim(), card.term())) {
+                byNewId.put(card.id(), f.getDistractors());
+            }
+        }
+        if (byNewId.isEmpty()) return;
+        for (Flashcard copy : flashcards.findAllById(byNewId.keySet())) {
+            copy.setDistractors(new LinkedHashMap<>(byNewId.get(copy.getId())));
+        }
     }
 
     /**

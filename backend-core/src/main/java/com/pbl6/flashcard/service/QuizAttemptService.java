@@ -10,20 +10,29 @@ import com.pbl6.flashcard.dto.deck.QuizAttemptDtos.QuestionState;
 import com.pbl6.flashcard.dto.deck.QuizOutcomeResponse;
 import com.pbl6.flashcard.dto.deck.QuizResultResponse;
 import com.pbl6.flashcard.model.Deck;
+import com.pbl6.flashcard.model.Flashcard;
 import com.pbl6.flashcard.model.QuizAttempt;
 import com.pbl6.flashcard.model.QuizResult;
 import com.pbl6.flashcard.repository.QuizAttemptRepository;
 import com.pbl6.flashcard.repository.QuizResultRepository;
 import com.pbl6.flashcard.security.QuizRateLimiter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +44,8 @@ import java.util.stream.Collectors;
 
 /**
  * Lượt làm quiz do server giữ: phát đề (bản chụp có đáp án nằm ở DB), nhận đáp án từng câu, giữ hạn giờ, chấm điểm
- * và ghi kết quả. Việc sinh đề và chấm từng câu nằm ở {@link QuizService} (hàm thuần, có unit test riêng).
+ * và ghi kết quả. Việc sinh đề và chấm từng câu nằm ở {@link QuizService} (hàm thuần, có unit test riêng); ngân hàng câu hỏi
+ * (đọc / ghi quiz_questions khi phát đề) ở {@link QuestionBankService}.
  * <p>
  * Hai chế độ: practice (làm từng câu: trả lời xong thấy đáp án + lời giải, câu đã trả lời bị khoá) và exam (làm hết
  * bài: đáp án sửa được tới khi nộp, đáp án đúng chỉ lộ sau khi nộp). Mọi thao tác ghi đều chạy dưới khoá hàng của lượt
@@ -44,8 +54,15 @@ import java.util.stream.Collectors;
 @Service
 public class QuizAttemptService {
 
+    private static final Logger log = LoggerFactory.getLogger(QuizAttemptService.class);
+
     /** Lượt practice không giới hạn giờ nhưng tự đóng sau chừng này để không tồn đọng. */
     static final int PRACTICE_TTL_SECONDS = 24 * 3600;
+    /**
+     * Số động từ tối đa gửi ai-service cho một lượt: đề ≤ 50 câu nên 100 ứng viên là dư (một số bị ai-service loại vì không
+     * phải động từ), và vừa một lô của ai-service (QuizAiClient.MAX_CONJUGATION_VERBS = 200) -> đúng một lần gọi.
+     */
+    static final int MAX_CONJUGATION_VERBS = 100;
 
     private static final TypeReference<List<QuizService.Item>> ITEMS = new TypeReference<>() {};
     private static final TypeReference<Map<String, String>> ANSWERS = new TypeReference<>() {};
@@ -57,11 +74,17 @@ public class QuizAttemptService {
     private final ReviewService reviewService;
     private final ObjectMapper json;
     private final ApplicationEventPublisher events;
+    private final QuizAiClient quizAi;
+    private final QuestionBankService bank;
+    /** Phát đề: transaction ngắn tự quản (xem {@link #create(Long, String, int, String, List)}). */
+    private final TransactionTemplate tx;
+    private final TransactionTemplate readTx;
     private final Random random = new Random();
 
     public QuizAttemptService(DeckService deckService, QuizAttemptRepository attemptRepository,
                               QuizResultRepository quizResultRepository, QuizRateLimiter rateLimiter,
-                              ReviewService reviewService, ObjectMapper json, ApplicationEventPublisher events) {
+                              ReviewService reviewService, ObjectMapper json, ApplicationEventPublisher events,
+                              QuizAiClient quizAi, QuestionBankService bank, PlatformTransactionManager txManager) {
         this.events = events;
         this.reviewService = reviewService;
         this.deckService = deckService;
@@ -69,16 +92,50 @@ public class QuizAttemptService {
         this.quizResultRepository = quizResultRepository;
         this.rateLimiter = rateLimiter;
         this.json = json;
+        this.quizAi = quizAi;
+        this.bank = bank;
+        this.tx = new TransactionTemplate(txManager);
+        this.readTx = new TransactionTemplate(txManager);
+        this.readTx.setReadOnly(true);
     }
 
     // ---------- tạo / khôi phục ----------
 
-    /**
-     * Phát đề và mở lượt làm. Đã có lượt đang mở cho bộ thẻ này thì trả lại lượt đó (resumed = true), không tạo
-     * lượt mới để không chọn được lượt có lợi. Bộ thẻ trống: attemptId = null.
-     */
-    @Transactional
+    /** Như {@link #create(Long, String, int, String, List)} với loại mặc định ["meaning"] (vd. bài kiểm tra chương của lộ trình). */
     public AttemptState create(Long uid, String deckId, int size, String mode) {
+        return create(uid, deckId, size, mode, null);
+    }
+
+    /**
+     * Phát đề và mở lượt làm. Đã có lượt đang mở cho bộ thẻ này thì trả lại lượt đó (resumed = true, giữ nguyên chế độ và loại
+     * câu), không tạo lượt mới để không chọn được lượt có lợi. Bộ thẻ trống: attemptId = null.
+     * <p>
+     * questionTypes (hợp đồng đợt 2 §1.2): null / rỗng = ["meaning"]. Có "conjugation" thì câu chia động từ do ai-service sinh
+     * TRƯỚC, ngoài transaction (như DeckService.generateDistractors): (1) transaction đọc kiểm quyền + lấy động từ, (2) gọi
+     * ai-service — không giữ kết nối DB / khoá phát đề trong lúc chờ tới 30 giây, ai-service lỗi / tắt thì lặng lẽ bỏ loại này
+     * (thẻ ra loại khác, cuối cùng là meaning), (3) transaction phát đề như cũ. Không @Transactional: gọi từ trong một
+     * transaction khác (bài kiểm tra chương) thì các bước nhập chung transaction đó.
+     */
+    public AttemptState create(Long uid, String deckId, int size, String mode, List<String> questionTypes) {
+        List<String> types = QuizService.normalizeTypes(questionTypes);
+        Map<String, List<QuizAiClient.ConjugationItem>> conjugations = Map.of();
+        boolean rateCounted = false;
+        if (types.contains(QuizService.CONJUGATION)) {
+            List<VerbCard> verbs = readTx.execute(status -> verbCandidates(uid, deckId));
+            if (verbs != null) { // null = đã có lượt mở, bước 3 trả lại lượt đó
+                // Đếm lượt tạo trước khi tốn một lần gọi ai-service, bước 3 khỏi đếm lại
+                rateLimiter.checkCreate(uid);
+                rateCounted = true;
+                conjugations = conjugations(verbs);
+            }
+        }
+        Map<String, List<QuizAiClient.ConjugationItem>> conj = conjugations;
+        boolean counted = rateCounted;
+        return tx.execute(status -> openOrCreate(uid, deckId, size, mode, types, conj, counted));
+    }
+
+    private AttemptState openOrCreate(Long uid, String deckId, int size, String mode, List<String> types,
+                                      Map<String, List<QuizAiClient.ConjugationItem>> conjugations, boolean rateCounted) {
         Deck deck = deckService.readable(uid, deckId);
         attemptRepository.lockCreate(Objects.hash(uid, deckId));
         Instant now = Instant.now();
@@ -87,8 +144,9 @@ public class QuizAttemptService {
         Optional<QuizAttempt> open = attemptRepository.findOpen(uid, deckId, now);
         if (open.isPresent()) return state(open.get(), now, true);
 
-        rateLimiter.checkCreate(uid);
-        List<QuizService.Item> items = QuizService.buildItems(deck.getCards(), size, random);
+        if (!rateCounted) rateLimiter.checkCreate(uid);
+        QuizService.Sources sources = new QuizService.Sources(conjugations, bank.load(deckId, types));
+        List<QuizService.Item> items = bank.persist(deckId, QuizService.build(deck.getCards(), size, random, types, sources));
         if (items.isEmpty()) {
             return new AttemptState(null, deckId, mode, false, false, false, null, null, 0, null, now, List.of());
         }
@@ -105,6 +163,55 @@ public class QuizAttemptService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Đã có bài đang làm, vui lòng thử lại.");
         }
         return state(attempt, now, false);
+    }
+
+    /** Thẻ gửi ai-service để sinh câu chia động từ. */
+    private record VerbCard(String cardId, String term, String reading) {}
+
+    /**
+     * Ứng viên động từ của bộ thẻ ({@link QuizCapabilities#isVerbCandidate}, cùng điều kiện với số đếm quiz-capabilities): pos là
+     * động từ, hoặc thẻ từ vựng thiếu pos (thẻ tay) mà kết thúc bằng kana hàng う — hợp đồng cho phép "ai-service xác định được
+     * nhóm"; ai-service loại thẻ không phải động từ (not_a_verb). null = đã có lượt mở.
+     */
+    private List<VerbCard> verbCandidates(Long uid, String deckId) {
+        Deck deck = deckService.readable(uid, deckId);
+        if (attemptRepository.findOpen(uid, deckId, Instant.now()).isPresent()) return null;
+        List<VerbCard> out = new ArrayList<>();
+        for (Flashcard c : deck.getCards()) {
+            if (QuizCapabilities.isVerbCandidate(c)) out.add(new VerbCard(c.getId(), c.getTerm(), c.getReading()));
+        }
+        Collections.shuffle(out, random);
+        return out.size() > MAX_CONJUGATION_VERBS ? new ArrayList<>(out.subList(0, MAX_CONJUGATION_VERBS)) : out;
+    }
+
+    /**
+     * Gọi ai-service (một câu mỗi động từ, thể ngẫu nhiên) và gắn câu về thẻ theo thuật ngữ đã gửi. Lỗi bất kỳ -> không có câu
+     * chia động từ nào (log cảnh báo), lượt làm vẫn mở được với các loại còn lại.
+     */
+    private Map<String, List<QuizAiClient.ConjugationItem>> conjugations(List<VerbCard> verbs) {
+        if (verbs.isEmpty()) return Map.of();
+        QuizAiClient.ConjugationQuiz quiz;
+        try {
+            quiz = quizAi.conjugationQuiz(verbs.stream().map(v -> new QuizAiClient.Verb(v.term(), v.reading())).toList(),
+                    null, 1, random.nextLong());
+        } catch (AiServiceClient.AiServiceException e) {
+            log.warn("Bỏ câu chia động từ của lượt quiz: {}", e.getMessage());
+            return Map.of();
+        } catch (RuntimeException e) {
+            log.warn("Bỏ câu chia động từ của lượt quiz (lỗi không mong đợi)", e);
+            return Map.of();
+        }
+        if (quiz == null || quiz.items() == null) return Map.of();
+        // ai-service trả term đúng như đã gửi (đã strip); hai thẻ cùng thuật ngữ thì ai-service bỏ bản trùng -> thẻ đầu nhận câu
+        Map<String, Deque<String>> idsByTerm = new HashMap<>();
+        for (VerbCard v : verbs) idsByTerm.computeIfAbsent(v.term().strip(), k -> new ArrayDeque<>()).add(v.cardId());
+        Map<String, List<QuizAiClient.ConjugationItem>> out = new HashMap<>();
+        for (QuizAiClient.ConjugationItem item : quiz.items()) {
+            if (item == null || item.term() == null) continue;
+            Deque<String> ids = idsByTerm.get(item.term().strip());
+            if (ids != null && !ids.isEmpty()) out.computeIfAbsent(ids.peekFirst(), k -> new ArrayList<>()).add(item);
+        }
+        return out;
     }
 
     /** Lượt đang mở của bộ thẻ (để trang quiz đề nghị "Tiếp tục"); empty nếu không có. */
@@ -126,7 +233,7 @@ public class QuizAttemptService {
         return state(attempt, now, false);
     }
 
-    /** Vài câu mẫu để xem trước bộ đề: không mở lượt làm, không tính điểm. */
+    /** Vài câu mẫu để xem trước bộ đề: không mở lượt làm, không tính điểm, không ghi ngân hàng câu hỏi. */
     @Transactional(readOnly = true)
     public List<QuizService.Question> quizPreview(Long uid, String deckId, int size) {
         return QuizService.buildQuiz(deckService.readable(uid, deckId).getCards(), size, random);
@@ -136,7 +243,8 @@ public class QuizAttemptService {
 
     /**
      * Lưu đáp án một câu (idempotent theo câu). practice: lưu lần đầu rồi khoá, trả phản hồi; gọi lại trả đúng phản
-     * hồi đã có. exam: ghi đè được tới khi nộp, không trả phản hồi.
+     * hồi đã có. exam: ghi đè được tới khi nộp, không trả phản hồi. Câu gõ (reading): lưu chuỗi người học gõ (≤ 100 ký tự,
+     * bỏ khoảng trắng hai đầu) để xem lại đúng như đã gõ; chấm luôn sau chuẩn hoá kana ({@link QuizService.Item#accepts}).
      */
     @Transactional
     public AnswerResponse answer(Long uid, UUID attemptId, String cardId, String option) {
@@ -151,26 +259,38 @@ public class QuizAttemptService {
         QuizService.Item item = items(attempt).stream().filter(i -> i.cardId().equals(cardId)).findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Câu hỏi không thuộc bài làm này."));
         Map<String, String> answers = answers(attempt);
+        if (attempt.isPractice() && answers.containsKey(cardId)) {
+            return new AnswerResponse(feedback(item, answers.get(cardId)), answers.size());
+        }
         boolean blank = option == null || option.isBlank();
+        String value = blank ? "" : item.typingInput() ? typed(option) : option;
 
         if (attempt.isPractice()) {
-            if (answers.containsKey(cardId)) return new AnswerResponse(feedback(item, answers.get(cardId)), answers.size());
-            if (!blank && !item.options().contains(option)) throw badOption();
-            String chosen = blank ? "" : option;
-            answers.put(cardId, chosen);
+            if (!blank && !item.allows(value)) throw badOption();
+            answers.put(cardId, value);
             attempt.setAnswers(write(answers));
-            reviewService.fromQuiz(uid, cardId, item.correct().equals(chosen)); // chỉ practice; exam không đụng lịch ôn
-            return new AnswerResponse(feedback(item, chosen), answers.size());
+            reviewService.fromQuiz(uid, cardId, item.accepts(value)); // chỉ practice; exam không đụng lịch ôn
+            return new AnswerResponse(feedback(item, value), answers.size());
         }
 
         if (blank) {
             answers.remove(cardId);
         } else {
-            if (!item.options().contains(option)) throw badOption();
-            answers.put(cardId, option);
+            if (!item.allows(value)) throw badOption();
+            answers.put(cardId, value);
         }
         attempt.setAnswers(write(answers));
         return new AnswerResponse(null, answers.size());
+    }
+
+    /** Câu trả lời tự gõ: bỏ khoảng trắng hai đầu, quá {@link QuizService#TYPED_ANSWER_MAX} ký tự = 400. */
+    private static String typed(String option) {
+        String value = option.strip();
+        if (value.length() > QuizService.TYPED_ANSWER_MAX) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Câu trả lời tự gõ tối đa " + QuizService.TYPED_ANSWER_MAX + " ký tự.");
+        }
+        return value;
     }
 
     // ---------- nộp ----------
@@ -192,13 +312,19 @@ public class QuizAttemptService {
         return outcome(attempt);
     }
 
-    /** Đáp án client gửi kèm khi nộp ghi đè bản đã lưu; câu lạ / lựa chọn không có trong đề bị bỏ (tính là bỏ trống). */
+    /**
+     * Đáp án client gửi kèm khi nộp ghi đè bản đã lưu; câu lạ / lựa chọn không có trong đề / câu gõ rỗng hoặc quá dài bị bỏ
+     * (tính là bỏ trống).
+     */
     private void mergeClientAnswers(QuizAttempt attempt, Map<String, String> clientAnswers) {
         Map<String, String> answers = answers(attempt);
         for (QuizService.Item item : items(attempt)) {
             if (!clientAnswers.containsKey(item.cardId())) continue;
             String option = clientAnswers.get(item.cardId());
-            if (option != null && item.options().contains(option)) answers.put(item.cardId(), option);
+            String value = option == null || !item.typingInput() ? option : option.strip();
+            boolean valid = value != null && !value.isEmpty() && item.allows(value)
+                    && (!item.typingInput() || value.length() <= QuizService.TYPED_ANSWER_MAX);
+            if (valid) answers.put(item.cardId(), value);
             else answers.remove(item.cardId());
         }
         attempt.setAnswers(write(answers));
@@ -236,9 +362,7 @@ public class QuizAttemptService {
     }
 
     private QuizService.Graded grade(QuizAttempt attempt, Map<String, String> answers) {
-        Map<String, String> correct = items(attempt).stream()
-                .collect(Collectors.toMap(QuizService.Item::cardId, QuizService.Item::correct));
-        return QuizService.grade(correct, attempt.getCardIds(), answers);
+        return QuizService.grade(items(attempt), attempt.getCardIds(), answers);
     }
 
     private static boolean isExpired(QuizAttempt attempt) {
@@ -257,7 +381,7 @@ public class QuizAttemptService {
             String chosen = answers.get(item.cardId());
             // Đáp án đúng chỉ lộ khi: practice và câu này đã trả lời, hoặc cả lượt đã nộp
             Feedback fb = finished || (practice && chosen != null) ? feedback(item, chosen) : null;
-            return new QuestionState(item.cardId(), item.term(), item.reading(), item.options(), chosen, fb);
+            return questionState(item, chosen, fb);
         }).toList();
 
         Integer score = null;
@@ -272,8 +396,22 @@ public class QuizAttemptService {
                 isExpired(attempt), score, total, limit, attempt.getExpiresAt(), now, questions);
     }
 
+    /**
+     * Câu chưa lộ đáp án (feedback null) mà thuật ngữ / cách đọc chính là đáp án (chọn đúng chữ giống hình / đồng âm, gõ cách
+     * đọc): không gửi hai trường đó — client hiện prompt thay cho thuật ngữ, nên chỉ ai mở DevTools mới thấy, và đó đúng là chỗ
+     * không được lộ. Bản chụp cũ (trước đợt 2) không có type / inputMode -> câu nghĩa, chọn đáp án.
+     */
+    private static QuestionState questionState(QuizService.Item item, String chosen, Feedback fb) {
+        String type = item.typeOrMeaning();
+        boolean hidden = fb == null;
+        String term = hidden && QuizService.termIsAnswer(type) ? "" : item.term();
+        String reading = hidden && QuizService.readingIsAnswer(type) ? null : item.reading();
+        return new QuestionState(item.cardId(), term, reading, item.options(), chosen, fb, type, item.prompt(),
+                item.typingInput() ? QuizService.TYPING : QuizService.CHOICE, item.questionId());
+    }
+
     private static Feedback feedback(QuizService.Item item, String chosen) {
-        return new Feedback(item.correct().equals(chosen), item.correct(), item.explanation());
+        return new Feedback(item.accepts(chosen), item.correct(), item.explanation(), item.example());
     }
 
     @Transactional
@@ -310,7 +448,7 @@ public class QuizAttemptService {
             }
             for (QuizService.Item item : items) {
                 String chosen = answers.get(item.cardId());
-                boolean wrong = chosen != null ? !item.correct().equals(chosen) : !attempt.isPractice();
+                boolean wrong = chosen != null ? !item.accepts(chosen) : !attempt.isPractice();
                 if (wrong) out.merge(item.cardId(), 1, Integer::sum);
             }
         }

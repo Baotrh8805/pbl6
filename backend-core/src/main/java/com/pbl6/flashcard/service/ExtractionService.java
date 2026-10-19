@@ -523,7 +523,8 @@ public class ExtractionService {
         if (i.getExample() != null) lines.add(i.getExample());
         if (i.getExampleVi() != null) lines.add(i.getExampleVi());
         String meaning = ExtractionWorker.cut(String.join("\n", lines), 2000);
+        // pos (Sudachi pos1, ví dụ 動詞): quiz chia động từ (V22) chỉ hỏi thẻ là động từ
         return new DeckRequest.Card(null, i.getTerm(), i.getReading(), meaning, i.getLevel(), i.getKind(),
-                i.getReadingSegments(), i.getHanViet());
+                i.getReadingSegments(), i.getHanViet(), i.getPos());
     }
 }

@@ -46,6 +46,18 @@ public class Flashcard {
     @Column(name = "han_viet", length = 100)
     private String hanViet;
 
+    /** Từ loại Sudachi (pos1, ví dụ 動詞) từ bóc tách (V22); null với thẻ tay. Quiz chia động từ dựa vào đây. */
+    @Column(length = 40)
+    private String pos;
+
+    /**
+     * Phương án gây nhiễu do ai-service sinh (V22): {kanjiLookalike: [{term, reading, meaning, level, confidence}], homophones: [...]}.
+     * null = chưa sinh; hai danh sách rỗng = đã sinh nhưng không có ứng viên. Phụ thuộc term / reading nên đổi một trong hai là xoá.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> distractors;
+
     public static final String KIND_VOCAB = "vocab";
     public static final String KIND_GRAMMAR = "grammar";
 
@@ -80,4 +92,10 @@ public class Flashcard {
 
     public String getHanViet() { return hanViet; }
     public void setHanViet(String hanViet) { this.hanViet = hanViet; }
+
+    public String getPos() { return pos; }
+    public void setPos(String pos) { this.pos = pos; }
+
+    public Map<String, Object> getDistractors() { return distractors; }
+    public void setDistractors(Map<String, Object> distractors) { this.distractors = distractors; }
 }

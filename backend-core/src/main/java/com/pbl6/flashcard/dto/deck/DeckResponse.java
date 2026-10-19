@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.dto.deck;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.pbl6.flashcard.model.Deck;
 import com.pbl6.flashcard.model.Flashcard;
 
@@ -16,12 +17,17 @@ public record DeckResponse(String id, String title, String level, String descrip
                            UUID folderId, String access, String visibility, String category,
                            List<CardResponse> cards) {
 
+    /**
+     * pos (V22) bỏ hẳn khỏi JSON khi null: thẻ tay không có từ loại, và các trường cũ vẫn giữ "null" như trước để client hiện tại
+     * không đổi hành vi. distractors không trả ở đây (chỉ server dùng để sinh câu hỏi, client xem số liệu qua quiz-capabilities).
+     */
     public record CardResponse(String id, String term, String reading, String meaning,
                                Integer position, String level, String kind,
-                               List<Map<String, String>> readingSegments, String hanViet) {
+                               List<Map<String, String>> readingSegments, String hanViet,
+                               @JsonInclude(JsonInclude.Include.NON_NULL) String pos) {
         public static CardResponse of(Flashcard c) {
             return new CardResponse(c.getId(), c.getTerm(), c.getReading(), c.getMeaning(),
-                    c.getPosition(), c.getLevel(), c.getKind(), c.getReadingSegments(), c.getHanViet());
+                    c.getPosition(), c.getLevel(), c.getKind(), c.getReadingSegments(), c.getHanViet(), c.getPos());
         }
     }
 

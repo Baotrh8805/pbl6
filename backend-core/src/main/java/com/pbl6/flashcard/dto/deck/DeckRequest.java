@@ -32,11 +32,19 @@ public record DeckRequest(
             @Pattern(regexp = "N[1-5]") String level,
             @Pattern(regexp = "vocab|grammar") String kind,
             @Size(max = 50) List<Map<String, String>> readingSegments,
-            @Size(max = 100) String hanViet
+            @Size(max = 100) String hanViet,
+            // Từ loại Sudachi (V22, ví dụ 動詞): quiz chia động từ chỉ hỏi thẻ là động từ
+            @Size(max = 40) String pos
     ) {
         /** Thẻ chỉ có nội dung cơ bản (import, nhân bản). */
         public Card(String id, String term, String reading, String meaning) {
-            this(id, term, reading, meaning, null, null, null, null);
+            this(id, term, reading, meaning, null, null, null, null, null);
+        }
+
+        /** Thẻ có metadata bóc tách nhưng không có từ loại (giữ chữ ký cũ cho các nơi tạo thẻ trước V22). */
+        public Card(String id, String term, String reading, String meaning, String level, String kind,
+                    List<Map<String, String>> readingSegments, String hanViet) {
+            this(id, term, reading, meaning, level, kind, readingSegments, hanViet, null);
         }
     }
 }

@@ -5,6 +5,8 @@ import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.deck.DeckRequest.Card;
 import com.pbl6.flashcard.dto.deck.DeckResponse;
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
+import com.pbl6.flashcard.dto.deck.DistractorsResponse;
+import com.pbl6.flashcard.dto.deck.QuizCapabilitiesResponse;
 import com.pbl6.flashcard.dto.deck.ShareMemberResponse;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
 import com.pbl6.flashcard.security.CustomUserDetails;
@@ -120,5 +122,22 @@ public class DeckController {
                                            @PathVariable String cardId) {
         deckService.deleteCard(uid(me), deckId, cardId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Số thẻ ra được câu hỏi từng loại (meaning, kanjiLookalike, homophone, reading, conjugation); ai xem được bộ thẻ đều gọi được. */
+    @GetMapping("/{deckId}/quiz-capabilities")
+    public QuizCapabilitiesResponse quizCapabilities(@AuthenticationPrincipal CustomUserDetails me,
+                                                     @PathVariable String deckId) {
+        return deckService.quizCapabilities(uid(me), deckId);
+    }
+
+    /**
+     * Sinh (lại) phương án nhiễu chữ giống hình / từ đồng âm cho thẻ từ vựng của bộ (EDITOR+). Không body. Chỉ cập nhật dữ liệu
+     * thẻ có sẵn, không tạo tài nguyên mới nên trả 200; ai-service tắt -> 503.
+     */
+    @PostMapping("/{deckId}/distractors")
+    public DistractorsResponse generateDistractors(@AuthenticationPrincipal CustomUserDetails me,
+                                                   @PathVariable String deckId) {
+        return deckService.generateDistractors(uid(me), deckId);
     }
 }
