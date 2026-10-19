@@ -87,7 +87,7 @@ class LearningPathReminderJobTest {
         when(paths.claimReminder(any(), eq(day))).thenReturn(1);
         when(learningPaths.todaySummary(1L, day)).thenThrow(new IllegalStateException("dữ liệu lộ trình hỏng"));
         when(learningPaths.todaySummary(2L, day)).thenReturn(List.of(
-                new TodaySummaryResponse(fine.getId(), "Tên mới", 1, 5, "during", 3, 0, 0, "1111111", 50)));
+                new TodaySummaryResponse(fine.getId(), "Tên mới", 1, 5, "during", 3, 0, 0, "1111111", 50, null, false)));
         when(txm.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
 
         assertEquals(1, job.run(at(day, 7), day));

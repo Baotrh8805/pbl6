@@ -2262,6 +2262,66 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(0, notificationsOf(other, "LEARNING_PATH_COMPLETED").size());
     }
 
+    /**
+     * LP-10: lộ trình đã xong vẫn ACTIVE nên vẫn có dòng /today-summary (người dùng còn thấy nó), nhưng mang done (học hết thẻ
+     * hoặc đã chốt) + completedAt (chỉ khi đã chốt) và xếp sau lộ trình còn học — kể cả khi nó mới tạo hơn (thứ tự gốc là mới
+     * tạo trước), để widget không trình bày nó như lộ trình đang học.
+     */
+    @Test
+    void today_summary_flags_completed_paths_and_sorts_them_last() throws Exception {
+        String token = newUser();
+        String learning = draftPath(token, "3", "Đang học").get("id").asText();
+        activate(token, learning, Map.of("startDate", "2026-11-01"));
+        String finished = draftPath(token, "3", "Đã xong").get("id").asText();
+        activate(token, finished, Map.of("startDate", "2026-11-01"));
+
+        JsonNode start = read(call(get(BASE + "today-summary").param("date", "2026-11-03"), token, null).andExpect(status().isOk()));
+        assertEquals(2, start.size());
+        assertEquals(finished, start.get(0).get("pathId").asText(), "chưa xong: giữ thứ tự mới tạo trước");
+        for (JsonNode s : start) {
+            assertFalse(s.get("done").asBoolean(), s.toString());
+            assertFalse(s.has("completedAt"), "chưa chốt: completedAt bị bỏ (NON_NULL) " + s);
+        }
+
+        // học hết thẻ nhưng chưa chốt: done = true (cùng quy tắc completion.done), chưa có completedAt, đã xuống cuối danh sách
+        for (String cid : jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ?", String.class,
+                UUID.fromString(finished))) {
+            review(token, cid, "good");
+        }
+        JsonNode learned = read(call(get(BASE + "today-summary").param("date", "2026-11-03"), token, null).andExpect(status().isOk()));
+        assertEquals(2, learned.size());
+        assertEquals(learning, learned.get(0).get("pathId").asText(), learned.toString());
+        assertFalse(learned.get(0).get("done").asBoolean());
+        assertEquals(finished, learned.get(1).get("pathId").asText());
+        assertTrue(learned.get(1).get("done").asBoolean(), learned.toString());
+        assertFalse(learned.get(1).has("completedAt"), learned.toString());
+        assertEquals(0, learned.get(1).get("newCount").asInt());
+        assertEquals(0, learned.get(1).get("behindCount").asInt());
+
+        // chốt hoàn thành: vẫn trong danh sách (status vẫn ACTIVE), completedAt khớp GET /{id}, vẫn xếp cuối
+        call(post(BASE + finished + "/complete").param("date", "2026-11-03"), token, null).andExpect(status().isOk());
+        JsonNode after = read(call(get(BASE + "today-summary").param("date", "2026-11-03"), token, null).andExpect(status().isOk()));
+        assertEquals(2, after.size());
+        assertEquals(learning, after.get(0).get("pathId").asText(), after.toString());
+        assertFalse(after.get(0).get("done").asBoolean());
+        assertFalse(after.get(0).has("completedAt"));
+        JsonNode done = after.get(1);
+        assertEquals(finished, done.get("pathId").asText());
+        assertEquals("Đã xong", done.get("title").asText());
+        assertTrue(done.get("done").asBoolean(), done.toString());
+        assertTrue(done.has("completedAt"), done.toString());
+        assertEquals(pathOn(token, finished, "2026-11-03").get("completedAt").asText(), done.get("completedAt").asText());
+
+        // đã chốt rồi thì xoá hết bộ thẻ (không còn dòng lịch nào) vẫn là done nhờ completedAt
+        for (JsonNode c : pathOn(token, finished, "2026-11-03").get("chapters")) {
+            call(delete("/api/decks/" + c.get("deckId").asText()), token, null).andExpect(status().isNoContent());
+        }
+        JsonNode emptied = read(call(get(BASE + "today-summary").param("date", "2026-11-03"), token, null)).get(1);
+        assertEquals(finished, emptied.get("pathId").asText());
+        assertTrue(emptied.get("done").asBoolean(), emptied.toString());
+        assertTrue(emptied.has("completedAt"));
+    }
+
     @Autowired
     LearningPathService pathService;
 

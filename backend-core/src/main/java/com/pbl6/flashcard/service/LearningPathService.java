@@ -478,7 +478,11 @@ public class LearningPathService {
         return toResponse(owned(uid, id), date, true, null);
     }
 
-    /** Tổng quan / sidebar (LP-16): "hôm nay" của mọi lộ trình ACTIVE, cùng cách tính với today của GET /{id}, batch. */
+    /**
+     * Tổng quan / sidebar (LP-16): "hôm nay" của mọi lộ trình ACTIVE, cùng cách tính với today của GET /{id}, batch. LP-10: lộ
+     * trình đã xong (done = đã chốt hoặc học hết thẻ, như completion.done) vẫn trả về để widget hiện "Đã hoàn thành" thay vì làm
+     * nó biến mất, nhưng xếp sau mọi lộ trình còn học (sắp xếp ổn định: trong mỗi nhóm giữ thứ tự mới tạo trước).
+     */
     @Transactional(readOnly = true)
     public List<TodaySummaryResponse> todaySummary(Long uid, LocalDate date) {
         List<LearningPath> active = paths.findByUserIdAndStatusOrderByCreatedAtDesc(uid, LearningPath.ACTIVE);
@@ -487,9 +491,13 @@ public class LearningPathService {
         for (LearningPath p : active) {
             ActiveData d = data.get(p.getId());
             TodayStats ts = todayStats(p, date, d.cards(), d.dueCount());
+            boolean done = p.getCompletedAt() != null
+                    || (!d.cards().isEmpty() && d.cards().stream().allMatch(PathCard::learned));
             out.add(new TodaySummaryResponse(p.getId(), p.getTitle(), ts.dayIndex(), p.getTotalDays(), ts.state(),
-                    ts.newCount(), ts.dueCount(), ts.behindCount(), p.getStudyDays(), p.getDailyCap()));
+                    ts.newCount(), ts.dueCount(), ts.behindCount(), p.getStudyDays(), p.getDailyCap(),
+                    p.getCompletedAt(), done));
         }
+        out.sort(Comparator.comparing(TodaySummaryResponse::done));
         return out;
     }
 
