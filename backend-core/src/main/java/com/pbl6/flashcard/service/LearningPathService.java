@@ -62,6 +62,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -339,10 +340,10 @@ public class LearningPathService {
      * Không nhận ra chương: ≤ 14 ngày -> mỗi ngày một chương, dài hơn -> mỗi tuần một chương.
      * Chia theo item được chọn để tên chương khớp dải ngày tính sống; item bỏ chọn theo item được chọn đứng trước. Tên chương
      * ("Ngày 3" / "Tuần 2 (ngày 8–14)") lấy từ chính lịch xem trước ({@link #draftSchedule}) và đi theo nó về sau
-     * ({@link #syncDayTitles}).
+     * ({@link #syncDayTitles}); hai chương rơi đúng cùng dải ngày được gộp ngay ({@link #mergeSameDayChapters}) để bản nháp đầu
+     * tiên đã không có tên trùng.
      */
     private List<LearningPathChapter> draftByDays(LearningPath path, List<ExtractionItem> all) {
-        int days = path.getTotalDays();
         int selected = (int) all.stream().filter(ExtractionItem::isSelected).count();
         if (selected == 0) {
             // không còn thẻ chọn: một chương chứa tất cả, người dùng tự chọn lại trong bản nháp
@@ -353,11 +354,30 @@ public class LearningPathService {
         }
         // Đọc trình độ trước khi gắn item vào chương chưa lưu: không để một truy vấn nào chen giữa hai bước đó
         String userLevel = userLevel(path);
-        int k = days <= 14 ? days : (int) Math.ceil(days / 7.0);
-        k = Math.min(k, selected);
-        List<Integer> sizes = LearningPathScheduler.evenSplit(selected, k);
         List<LearningPathChapter> rows = new ArrayList<>();
+        int k = dayChapterCount(path.getTotalDays(), selected);
         for (int i = 0; i < k; i++) rows.add(newChapter(path, i + 1, null));
+        splitByDays(path, rows, all, userLevel);
+        mergeSameDayChapters(path, rows, all, userLevel); // chương bị gộp chưa lưu nên chỉ cần bỏ khỏi danh sách
+        chapters.saveAll(rows);
+        return rows;
+    }
+
+    /** Số chương tự sinh: ≤ 14 ngày -> mỗi ngày một chương, dài hơn -> mỗi tuần một chương; không quá số thẻ được chọn. */
+    private static int dayChapterCount(int days, int selected) {
+        return Math.min(days <= 14 ? days : (int) Math.ceil(days / 7.0), selected);
+    }
+
+    /**
+     * Chia MỌI item vào rows (position 1..k, k ≥ 1, có ít nhất một item chọn): item được chọn chia đều theo thứ tự tài liệu, item
+     * bỏ chọn theo item được chọn đứng trước (mặc định chương đầu); rồi đặt tên mới theo dải ngày của lịch xem trước — kiểu "Ngày"
+     * hay "Tuần" theo số ngày HIỆN TẠI. Không truy vấn gì: rows có thể chưa lưu, một lần auto-flush chen giữa sẽ ghi item trỏ tới
+     * chương chưa có.
+     */
+    private static void splitByDays(LearningPath path, List<LearningPathChapter> rows, List<ExtractionItem> all,
+                                    String userLevel) {
+        int selected = (int) all.stream().filter(ExtractionItem::isSelected).count();
+        List<Integer> sizes = LearningPathScheduler.evenSplit(selected, rows.size());
         int chunk = 0;
         int filled = 0;   // số item chọn đã vào chương chunk
         int current = 0;  // chương của item chọn gần nhất phía trước (mặc định chương đầu)
@@ -375,10 +395,90 @@ public class LearningPathService {
         Map<UUID, DayRange> ranges = draftSchedule(path, rows, all, userLevel).ranges();
         for (LearningPathChapter c : rows) {
             DayRange r = ranges.get(c.getId());
-            c.setTitle(days <= 14 ? dayTitle(r) : weekTitle(c.getPosition(), r));
+            c.setTitle(path.getTotalDays() <= 14 ? dayTitle(r) : weekTitle(c.getPosition(), r));
         }
-        chapters.saveAll(rows);
-        return rows;
+    }
+
+    /**
+     * LP-08: gộp chương tự sinh (tên còn là "Ngày N" / "Tuần N (…)") vào chương có thẻ liền trước khi hai chương rơi đúng cùng
+     * dải ngày — hai "xô ngày" trùng nhau chỉ sinh hai tên "Ngày 2" và hai bộ thẻ trùng tên khi kích hoạt. Item của chương bị gộp
+     * nối sau item của chương nhận (thứ tự tài liệu giữ nguyên vì chương là các khúc liền nhau). Chỉ gộp khi dải ấy đã thuộc một
+     * chương tự sinh trước đó: chương người dùng đặt tên riêng chỉ nhận thêm thẻ khi không gộp thì vẫn trùng tên ("Ngày 1",
+     * "Chào hỏi", "Ngày 1" cùng ở ngày 1 → chương thứ ba vào "Chào hỏi"), còn chính nó không bao giờ bị gộp đi. Chương 0 thẻ
+     * chọn không gộp (kích hoạt tự bỏ, người dùng có thể đang chọn lại). Lịch đổi sau mỗi lượt gộp nên lặp tới khi hết cặp trùng,
+     * rồi tên tự sinh đi theo dải cuối ({@link #syncDayTitles}). Sửa rows tại chỗ (chương bị gộp chỉ rời khỏi danh sách — caller
+     * xoá nếu nó đã được lưu — rồi đánh lại position); không truy vấn gì.
+     */
+    private static void mergeSameDayChapters(LearningPath path, List<LearningPathChapter> rows, List<ExtractionItem> all,
+                                             String userLevel) {
+        DraftSchedule s = draftSchedule(path, rows, all, userLevel);
+        // chưa chọn thẻ nào: mọi chương đều đứng ở ngày 1, gộp là mất cách chia của người dùng
+        boolean merged = s.result() != null;
+        while (merged) {
+            merged = false;
+            Set<DayRange> seen = new HashSet<>();   // dải của các chương tự sinh đã gặp
+            LearningPathChapter host = null;        // chương có thẻ gần nhất phía trước
+            for (int idx = 0; idx < rows.size(); idx++) {
+                LearningPathChapter c = rows.get(idx);
+                if (!s.counts().containsKey(c.getId())) continue;
+                DayRange r = s.ranges().get(c.getId());
+                if (isDayTitle(c.getTitle()) && host != null && seen.contains(r) && r.equals(s.ranges().get(host.getId()))) {
+                    UUID from = c.getId();
+                    UUID to = host.getId();
+                    all.forEach(i -> {
+                        if (from.equals(i.getChapterId())) i.setChapterId(to);
+                    });
+                    rows.remove(idx--);
+                    merged = true;
+                    continue;
+                }
+                if (isDayTitle(c.getTitle())) seen.add(r);
+                host = c;
+            }
+            renumber(rows);
+            s = draftSchedule(path, rows, all, userLevel);
+        }
+        syncDayTitles(path, rows, s.ranges());
+    }
+
+    /**
+     * LP-08: chương tự sinh của bản nháp không nhận ra chương là "xô ngày" ({@link #draftByDays}) nên số xô phải đi theo số ngày —
+     * trước đây đổi số ngày chỉ đổi tên ({@link #syncDayTitles}): rút 10 → 3 ngày giữ 10 chương thành "Ngày 1" ×3, "Ngày 2" ×4,
+     * "Ngày 3" ×3 và kích hoạt tạo 10 bộ thẻ trùng tên. Gọi ở MỌI lối ghi đổi lịch xem trước (PATCH số ngày / trần, kích hoạt;
+     * chọn / sửa item, gộp tay, đặt tên qua {@link #mergeAfterEdit}) để bản xem trước luôn là cấu trúc kích hoạt sẽ tạo:
+     * <ul>
+     *   <li>regroup (số ngày / trần vừa đổi) và mọi chương còn mang tên tự sinh: chia lại TỪ ĐẦU trên toàn bộ item như lúc dựng,
+     *       nên rút rồi kéo dài lại (hạ rồi nâng trần) vẫn ra đúng một chương mỗi ngày / tuần (gộp trước đó — tay hay do lịch cũ —
+     *       bỏ theo). Giữ id các chương đầu, thêm / xoá chương ở cuối;</li>
+     *   <li>có chương người dùng đã đặt tên riêng: chương ấy là của họ, không chia lại — chỉ gộp các chương tự sinh trùng dải.</li>
+     * </ul>
+     * Sau đó luôn qua {@link #mergeSameDayChapters} (tên duy nhất, khớp dải). Lộ trình nhận ra chương: tiêu đề từ tài liệu, không
+     * đụng. Ghi item lên DB nên caller kiểm job rảnh trước ({@link #jobIfIdle}). Trả các chương còn lại (bản managed, theo
+     * position) và flush để truy vấn sau thấy ngay.
+     */
+    private List<LearningPathChapter> fitDayChapters(LearningPath path, List<LearningPathChapter> rows,
+                                                     List<ExtractionItem> all, String userLevel, boolean regroup) {
+        if (Boolean.TRUE.equals(path.getChaptersDetected()) || rows.isEmpty()) return rows;
+        List<LearningPathChapter> next = new ArrayList<>(rows);
+        int selected = (int) all.stream().filter(ExtractionItem::isSelected).count();
+        if (regroup && selected > 0 && rows.stream().allMatch(c -> isDayTitle(c.getTitle()))) {
+            int k = dayChapterCount(path.getTotalDays(), selected);
+            if (next.size() > k) next.subList(k, next.size()).clear();
+            while (next.size() < k) next.add(newChapter(path, next.size() + 1, null));
+            renumber(next);
+            splitByDays(path, next, all, userLevel);
+        }
+        mergeSameDayChapters(path, next, all, userLevel);
+        // id gán tay → save() là merge: chương mới nhận bản managed TRẢ VỀ (sửa tiếp — deckId khi kích hoạt — phải trên bản đó)
+        List<LearningPathChapter> saved = chapters.saveAll(next);
+        chapters.deleteAll(rows.stream().filter(c -> !next.contains(c)).toList());
+        chapters.flush();
+        return saved;
+    }
+
+    /** Tên chương còn đúng dạng tự sinh của {@link #draftByDays} (người dùng chưa đổi): "Ngày 3", "Ngày 3–4", "Tuần 2 (ngày 8–14)". */
+    private static boolean isDayTitle(String t) {
+        return t != null && (DAY_TITLE.matcher(t).matches() || WEEK_TITLE.matcher(t).matches());
     }
 
     /** Tên chương tự sinh khi không nhận ra chương: "Ngày 3", "Ngày 3–4" (≤ 14 ngày) hoặc "Tuần 2 (ngày 8–14)". */
@@ -542,7 +642,9 @@ public class LearningPathService {
     }
 
     /**
-     * Tên / số ngày / ngày bắt đầu / trần / ngày học trong tuần / nhắc. DRAFT: dải ngày tính sống. ACTIVE đổi khung lịch
+     * Tên / số ngày / ngày bắt đầu / trần / ngày học trong tuần / nhắc. DRAFT: dải ngày tính sống; bản nháp không nhận ra chương
+     * đổi số ngày / trần thì chương "Ngày N" chia lại / gộp theo lịch mới ({@link #fitDayChapters}, 409 khi đang dịch lại nghĩa
+     * như mọi thao tác ghi lên item). ACTIVE đổi khung lịch
      * (totalDays, startDate, studyDays, dailyCap) → {@link LearningPathScheduler#replan} thẻ CHƯA học từ hôm nay (spec §7: thẻ đã
      * học giữ scheduled_day, lịch sử không bị viết lại); chương mất bộ thẻ không còn thẻ nên tự nhiên không có dải ngày.
      */
@@ -557,6 +659,7 @@ public class LearningPathService {
         }
         if (req.title() != null) path.setTitle(requireTitle(req.title(), "Tên lộ trình không được để trống."));
         boolean reschedule = false;
+        boolean previewChanged = false; // số ngày / trần: hai đầu vào duy nhất của lịch xem trước (draftSchedule)
         if (req.startDate() != null && !req.startDate().equals(path.getStartDate())) {
             path.setStartDate(req.startDate());
             reschedule = true;
@@ -565,6 +668,7 @@ public class LearningPathService {
             requireCap(req.dailyCap());
             path.setDailyCap(req.dailyCap());
             reschedule = true;
+            previewChanged = true;
         }
         if (req.studyDays() != null && !req.studyDays().equals(path.getStudyDays())) {
             path.setStudyDays(requireMask(req.studyDays()));
@@ -583,8 +687,19 @@ public class LearningPathService {
             }
             path.setTotalDays(req.totalDays());
             reschedule = true;
+            previewChanged = true;
         }
         if (req.reminder() != null) path.setReminder(req.reminder());
+        // Bản nháp không nhận ra chương: số ngày / trần làm lịch xem trước đổi -> chia lại / gộp chương "Ngày N" (LP-08). Lịch
+        // xem trước chỉ phụ thuộc số ngày và trần (ngày bắt đầu / ngày học trong tuần không đổi chỉ số ngày học). Trần cũng chia
+        // lại như số ngày: hạ trần làm tràn lịch thì hai chương kề dồn vào một ngày và bị gộp, nâng trần lại phải tách ra được.
+        if (LearningPath.DRAFT.equals(path.getStatus()) && !Boolean.TRUE.equals(path.getChaptersDetected()) && previewChanged) {
+            ExtractionJob job = jobIfIdle(path, ENRICHING); // chia lại chương là ghi lên item
+            if (job != null) {
+                fitDayChapters(path, chapters.findByPathIdOrderByPositionAsc(id),
+                        items.findByJobIdOrderByPositionAsc(job.getId()), userLevel(path), true);
+            }
+        }
         Boolean overflow = null;
         if (reschedule && LearningPath.ACTIVE.equals(path.getStatus())) {
             PlanResult r = LearningPathScheduler.replan(cardIns(path), placeFrom(path, date), path.getTotalDays(),
@@ -601,8 +716,24 @@ public class LearningPathService {
                                              LocalDate date) {
         LearningPath path = lockedOwned(uid, id);
         requireDraft(path);
-        ownedChapter(path, cid).setTitle(requireTitle(req.title(), "Tên chương không được để trống."));
+        String title = requireTitle(req.title(), "Tên chương không được để trống.");
+        ownedChapter(path, cid).setTitle(title);
+        // Tên gõ tay đúng dạng tự sinh ("Ngày 2") biến chương thành chương tự sinh -> gộp ngay nếu trùng dải, như kích hoạt sẽ làm
+        if (isDayTitle(title) && !Boolean.TRUE.equals(path.getChaptersDetected())) mergeAfterEdit(path, jobIfIdle(path, ENRICHING));
         return toResponse(path, date, true, null);
+    }
+
+    /**
+     * LP-01 + LP-08: sau thao tác sửa bản nháp làm đổi lịch xem trước mà không đổi số ngày / trần (chọn / sửa item, gộp chương tay,
+     * đặt tên dạng "Ngày N"), gộp ngay các chương tự sinh rơi cùng dải ({@link #fitDayChapters} không chia lại). Trước đây chỉ PATCH
+     * số ngày / trần và kích hoạt gộp: bỏ tick vài thẻ thì GET hiện hai "Ngày 1", rồi kích hoạt âm thầm gộp — ít bộ thẻ hơn và thẻ
+     * lệch ngày so với bản xem trước người dùng vừa duyệt. Không chia lại ở đây: bỏ tick một thẻ không được đẩy các thẻ còn lại
+     * sang chương khác ngay dưới tay người đang duyệt; chia lại chỉ khi đổi số ngày / trần.
+     */
+    private void mergeAfterEdit(LearningPath path, ExtractionJob job) {
+        if (job == null || Boolean.TRUE.equals(path.getChaptersDetected())) return;
+        fitDayChapters(path, chapters.findByPathIdOrderByPositionAsc(path.getId()),
+                items.findByJobIdOrderByPositionAsc(job.getId()), userLevel(path), false);
     }
 
     /** Gộp chương vào chương đứng trước: chuyển item, xoá chương, đánh lại position 1..n. */
@@ -611,7 +742,7 @@ public class LearningPathService {
         LearningPath path = lockedOwned(uid, id);
         requireDraft(path);
         LearningPathChapter chapter = ownedChapter(path, cid);
-        jobIfIdle(path, ENRICHING); // chuyển item sang chương khác là ghi lên item
+        ExtractionJob job = jobIfIdle(path, ENRICHING); // chuyển item sang chương khác là ghi lên item
         List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
         int idx = rows.indexOf(chapter);
         if (idx <= 0) {
@@ -622,6 +753,7 @@ public class LearningPathService {
         rows.remove(idx);
         chapters.delete(chapter);
         renumber(rows);
+        mergeAfterEdit(path, job); // chương nhận dài ra đẩy lịch các chương sau: có thể thành cặp trùng dải
         return toResponse(path, date, true, null);
     }
 
@@ -629,13 +761,19 @@ public class LearningPathService {
         for (int i = 0; i < rows.size(); i++) rows.get(i).setPosition(i + 1);
     }
 
-    /** Chọn / bỏ chọn / sửa item: chuyển cho ExtractionService (cùng kiểm tra). Trả mọi item của job. 409 khi job đang dịch lại. */
+    /**
+     * Chọn / bỏ chọn / sửa item: chuyển cho ExtractionService (cùng kiểm tra), rồi gộp chương tự sinh trùng dải ({@link #mergeAfterEdit}:
+     * số thẻ / cấp đổi làm lịch xem trước đổi). Trả mọi item của job (response không mang chương nên gộp không đổi nó). 409 khi
+     * job đang dịch lại.
+     */
     @Transactional
     public List<ExtractionItemResponse> patchItems(Long uid, UUID id, List<ItemPatch> patches) {
         LearningPath path = lockedOwned(uid, id);
         requireDraft(path);
-        jobIfIdle(path, ENRICHING);
-        return extraction.patchPathItems(uid, requireJobId(path), patches);
+        ExtractionJob job = jobIfIdle(path, ENRICHING);
+        List<ExtractionItemResponse> out = extraction.patchPathItems(uid, requireJobId(path), patches);
+        mergeAfterEdit(path, job);
+        return out;
     }
 
     private static UUID requireJobId(LearningPath path) {
@@ -666,6 +804,8 @@ public class LearningPathService {
     public LearningPathResponse activate(Long uid, UUID id, LearningPathRequests.Activate req, LocalDate date) {
         LearningPath path = lockedOwned(uid, id);
         requireDraft(path);
+        int daysBefore = path.getTotalDays();
+        int capBefore = path.getDailyCap();
         if (req != null && req.startDate() != null) path.setStartDate(req.startDate());
         if (req != null && req.totalDays() != null) path.setTotalDays(req.totalDays());
         if (req != null && req.dailyCap() != null) {
@@ -680,13 +820,15 @@ public class LearningPathService {
         List<ExtractionItem> all = items.findByJobIdOrderByPositionAsc(job.getId());
         User user = users.findById(uid).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
 
+        // Chương tự sinh theo ngày chốt theo đúng bản xem trước (số ngày / trần vừa nhận ở body) trước khi thành bộ thẻ: chia lại
+        // khi body đổi số ngày / trần như PATCH, và không bao giờ hai chương cùng dải -> hai bộ thẻ trùng tên (LP-08). Body không
+        // đổi gì thì đây chỉ là chốt an toàn: mọi lối sửa bản nháp đã gộp sẵn nên bản xem trước = kết quả (LP-01)
+        List<LearningPathChapter> rows = fitDayChapters(path, chapters.findByPathIdOrderByPositionAsc(id), all,
+                user.getJlptLevel(), path.getTotalDays() != daysBefore || path.getDailyCap() != capBefore);
         Map<UUID, List<ExtractionItem>> byChapter = new HashMap<>();
         for (ExtractionItem i : all) {
             if (i.getChapterId() != null) byChapter.computeIfAbsent(i.getChapterId(), k -> new ArrayList<>()).add(i);
         }
-        List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
-        // Tên chương tự sinh theo ngày chốt theo đúng bản xem trước (số ngày / trần vừa nhận ở body) trước khi thành tên bộ thẻ
-        syncDayTitles(path, rows, draftSchedule(path, rows, all, user.getJlptLevel()).ranges());
         List<LearningPathChapter> kept = new ArrayList<>();
         List<LearningPathChapter> dropped = new ArrayList<>();
         for (LearningPathChapter c : rows) {
@@ -1261,10 +1403,14 @@ public class LearningPathService {
         return activeResponse(path, jobSummaryOf(path), d, date, true, null);
     }
 
-    /** completedAt + thông báo LEARNING_PATH_COMPLETED, đúng một lần. */
+    /**
+     * completedAt + thông báo LEARNING_PATH_COMPLETED, đúng một lần. Làm tròn xuống micro giây = độ chính xác của timestamptz:
+     * response của chính lần chốt trả mốc trong RAM, mọi lần đọc sau trả mốc từ DB — để nguyên nano giây thì hai chuỗi lệch nhau
+     * (…05.5059365Z rồi …05.505937Z) và client so khớp / khoá cache theo completedAt thấy như hai mốc khác nhau.
+     */
     private void markCompleted(LearningPath p) {
         if (p.getCompletedAt() != null) return;
-        p.setCompletedAt(Instant.now());
+        p.setCompletedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         notifications.notify(p.getUserId(), Notification.LEARNING_PATH_COMPLETED,
                 Map.of("pathId", p.getId().toString(), "title", p.getTitle()));
     }
