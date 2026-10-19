@@ -22,6 +22,8 @@ file="$OUT_DIR/pbl6-$(date +%Y%m%d-%H%M).dump"
 
 PGPASSWORD="$DB_PASSWORD" pg_dump --format=custom --no-owner --no-privileges --file "$file" "$url"
 echo "Đã sao lưu: $file ($(du -h "$file" | cut -f1))"
+# Mốc cho Admin Panel > health (app.backup.marker trỏ vào file này): quá 48 giờ không cập nhật -> cảnh báo
+date -u +%Y-%m-%dT%H:%M:%SZ > "$OUT_DIR/LAST_OK"
 
 # Giữ KEEP bản mới nhất
 ls -1t "$OUT_DIR"/pbl6-*.dump 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do

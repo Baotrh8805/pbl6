@@ -10,6 +10,8 @@ export interface AuthResponse {
   tokenType: string;
   /** Staff vào thẳng /admin sau đăng nhập. */
   role: "USER" | "ADMIN" | "SUPER_ADMIN";
+  /** Staff còn phải đổi mật khẩu seed -> /setup. */
+  mustChangePassword?: boolean;
 }
 
 export interface RegisterRequest {
@@ -26,4 +28,6 @@ export interface UserProfile {
   jlptLevel?: string;
   isPremium?: boolean;
   role?: string;
+  mustChangePassword?: boolean;
+  premiumUntil?: string | null;
 }

@@ -62,7 +62,7 @@ public class SecurityConfig {
                                                                                                               // Swagger
                         .requestMatchers("/error").permitAll()
                         // Mọi vai trò đã đăng nhập: hồ sơ, đổi mật khẩu, thông báo hệ thống
-                        .requestMatchers("/api/auth/**", "/api/announcement").authenticated()
+                        .requestMatchers("/api/auth/**", "/api/announcement", "/api/notifications/**").authenticated()
                         // Admin Panel: staff (ADMIN; SUPER_ADMIN qua RoleHierarchy); đổi vai trò / sửa cấu hình nâng bậc bằng @PreAuthorize
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // API học tập chỉ cho người học: staff bị 403 (một tài khoản một vai trò)

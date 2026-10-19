@@ -40,13 +40,28 @@ public class ReportService {
     private final AuditService audit;
 
     public ReportService(ContentReportRepository reports, DeckRepository decks, DeckRatingRepository ratings,
-                         ReportRateLimiter rateLimiter, AdminContentService content, AuditService audit) {
+                         ReportRateLimiter rateLimiter, AdminContentService content, AuditService audit,
+                         NotificationService notifications) {
+        this.notifications = notifications;
         this.reports = reports;
         this.decks = decks;
         this.ratings = ratings;
         this.rateLimiter = rateLimiter;
         this.content = content;
         this.audit = audit;
+    }
+
+    private final NotificationService notifications;
+
+    /** Báo cho người báo cáo biết kết quả (G3); deckTitle null nếu bộ thẻ đã bị xoá. */
+    private void notifyReporter(ContentReport r, String status, String action, String note) {
+        Map<String, Object> p = new HashMap<>();
+        p.put("deckId", r.getDeckId());
+        p.put("deckTitle", decks.findById(r.getDeckId()).map(Deck::getTitle).orElse(null));
+        p.put("status", status);
+        p.put("action", action);
+        p.put("note", note);
+        notifications.notify(r.getReporterId(), com.pbl6.flashcard.model.Notification.REPORT_RESOLVED, p);
     }
 
     // ---------- người học ----------
@@ -109,6 +124,7 @@ public class ReportService {
         detail.put("action", req.action().name());
         detail.put("note", req.note());
         audit.log(actor.getId(), "REPORT_RESOLVE", "REPORT", String.valueOf(id), detail);
+        notifyReporter(r, ContentReport.RESOLVED, req.action().name(), req.note());
         return toResponses(List.of(reports.findById(id).orElseThrow())).get(0);
     }
 
@@ -119,6 +135,7 @@ public class ReportService {
         Map<String, Object> detail = new HashMap<>();
         detail.put("note", req.note());
         audit.log(actor.getId(), "REPORT_DISMISS", "REPORT", String.valueOf(id), detail);
+        notifyReporter(r, ContentReport.DISMISSED, null, req.note());
         return toResponses(List.of(reports.findById(id).orElseThrow())).get(0);
     }
 

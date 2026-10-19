@@ -18,4 +18,9 @@ public interface PasswordResetTokenRepository extends JpaRepository<PasswordRese
     @Modifying
     @Query("DELETE FROM PasswordResetToken t WHERE t.userId = :uid")
     void deleteByUserId(@Param("uid") Long uid);
+
+    /** Dọn dẹp định kỳ (HousekeepingJob). */
+    @Modifying
+    @Query("DELETE FROM PasswordResetToken t WHERE t.expiresAt <= :now")
+    int deleteExpired(@Param("now") java.time.Instant now);
 }

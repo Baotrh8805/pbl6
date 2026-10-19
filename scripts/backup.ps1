@@ -37,6 +37,8 @@ try {
 
 $size = [math]::Round((Get-Item $file).Length / 1MB, 2)
 Write-Host "Đã sao lưu: $file ($size MB)"
+# Mốc cho Admin Panel > health (app.backup.marker trỏ vào file này): quá 48 giờ không cập nhật -> cảnh báo
+(Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") | Set-Content -Encoding ascii (Join-Path $OutDir "LAST_OK")
 
 # Giữ $Keep bản mới nhất
 Get-ChildItem $OutDir -Filter "pbl6-*.dump" | Sort-Object LastWriteTime -Descending | Select-Object -Skip $Keep |

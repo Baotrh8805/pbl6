@@ -53,7 +53,7 @@ public class RefreshTokenService {
         random.nextBytes(raw);
         String refreshToken = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
         tokenRepository.save(new RefreshToken(user.getId(), PasswordResetService.sha256(refreshToken), now.plus(ttl)));
-        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole());
+        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole(), user.isMustChangePassword());
     }
 
     /** Cấp access token mới và lùi hạn refresh token; token sai / hết hạn / đã thu hồi -> 401. */
@@ -69,7 +69,7 @@ public class RefreshTokenService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tài khoản đã bị khoá.");
         }
         saved.setExpiresAt(now.plus(ttl));
-        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole());
+        return new AuthResponse(jwtTokenProvider.generateToken(new CustomUserDetails(user)), refreshToken, user.getRole(), user.isMustChangePassword());
     }
 
     /** Đăng xuất phiên hiện tại. Token không tồn tại cũng coi như đã đăng xuất. */

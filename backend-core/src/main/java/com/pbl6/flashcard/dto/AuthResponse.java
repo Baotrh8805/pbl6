@@ -9,11 +9,21 @@ public class AuthResponse {
     /** Frontend điều hướng staff vào /admin ngay sau đăng nhập, không chờ /auth/me. */
     private Role role;
 
+    /** Staff: còn phải đổi mật khẩu seed trước khi vào Admin Panel (frontend đưa tới /setup). */
+    private boolean mustChangePassword;
+
     public AuthResponse(String accessToken, String refreshToken, Role role) {
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
         this.role = role;
     }
+
+    public AuthResponse(String accessToken, String refreshToken, Role role, boolean mustChangePassword) {
+        this(accessToken, refreshToken, role);
+        this.mustChangePassword = mustChangePassword;
+    }
+
+    public boolean isMustChangePassword() { return mustChangePassword; }
 
     public Role getRole() { return role; }
     public void setRole(Role role) { this.role = role; }

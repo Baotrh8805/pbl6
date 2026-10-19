@@ -5,12 +5,15 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { SectionCard, StatusMessage, type Status } from "./ProfileUi";
+import { useDialog } from "@/components/ui/dialogContext";
 
 const PW_MIN = 6; // PasswordChangeRequest (backend)
 const PW_MAX = 72; // BCrypt chỉ dùng 72 byte đầu
 
 export const ProfileSecurityTab: React.FC = () => {
     const { login, logout, userEmail } = useAuth();
+    const dialog = useDialog();
+    const [deletePw, setDeletePw] = useState("");
     const [showPw, setShowPw] = useState(false);
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState<Status>(null);
@@ -53,6 +56,21 @@ export const ProfileSecurityTab: React.FC = () => {
         } finally {
             setSaving(false);
         }
+    };
+
+    // Nghị định 13/2023: người dùng tự xoá dữ liệu cá nhân. Backend ẩn danh hoá tài khoản, xoá dữ liệu học và bộ thẻ riêng tư.
+    const deleteAccount = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const ok = await dialog.confirm({
+            title: "Xoá tài khoản vĩnh viễn?",
+            message:
+                "Bộ thẻ riêng tư, thư mục, lịch sử ôn tập và quiz của bạn bị xoá ngay và không khôi phục được. " +
+                'Bộ thẻ đã chia sẻ công khai vẫn còn trong Thư viện dưới tên "Người dùng đã xoá". Người được bạn chia sẻ bộ thẻ riêng tư sẽ mất quyền xem.',
+            confirmLabel: "Xoá tài khoản",
+            tone: "danger",
+            action: () => authService.deleteAccount(deletePw),
+        });
+        if (ok) logout();
     };
 
     const type = showPw ? "text" : "password";
@@ -130,6 +148,36 @@ export const ProfileSecurityTab: React.FC = () => {
                 >
                     Đăng xuất khỏi tài khoản
                 </Button>
+            </section>
+
+            <section className="rounded-xl border border-error/40 bg-error-container/40 p-space-lg flex flex-col gap-space-md lg:col-span-2">
+                <div>
+                    <h2 className="font-headline-sm text-headline-sm text-error flex items-center gap-1.5">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                            delete_forever
+                        </span>
+                        Xoá tài khoản
+                    </h2>
+                    <p className="text-body-sm text-on-surface-variant mt-0.5">
+                        Xoá vĩnh viễn dữ liệu cá nhân, bộ thẻ riêng tư, thư mục và lịch sử học. Bộ thẻ đã công khai được giữ lại ẩn danh.
+                        Không thể hoàn tác.
+                    </p>
+                </div>
+                <form onSubmit={deleteAccount} className="flex flex-col sm:flex-row sm:items-end gap-space-md" noValidate>
+                    <Input
+                        name="deletePassword"
+                        label="Nhập mật khẩu để xác nhận"
+                        type="password"
+                        required
+                        autoComplete="current-password"
+                        value={deletePw}
+                        onChange={(ev) => setDeletePw(ev.target.value)}
+                        className="sm:w-72"
+                    />
+                    <Button type="submit" variant="danger" disabled={!deletePw} className="self-start">
+                        Xoá tài khoản của tôi
+                    </Button>
+                </form>
             </section>
         </div>
     );

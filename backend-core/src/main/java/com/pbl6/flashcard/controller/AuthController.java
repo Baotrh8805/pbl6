@@ -2,6 +2,7 @@ package com.pbl6.flashcard.controller;
 
 import com.pbl6.flashcard.dto.AuthRequest;
 import com.pbl6.flashcard.dto.AuthResponse;
+import com.pbl6.flashcard.dto.DeleteAccountRequest;
 import com.pbl6.flashcard.dto.ForgotPasswordRequest;
 import com.pbl6.flashcard.dto.ResetPasswordRequest;
 import com.pbl6.flashcard.dto.JlptLevelRequest;
@@ -10,6 +11,7 @@ import com.pbl6.flashcard.dto.ProfileRequest;
 import com.pbl6.flashcard.dto.RefreshRequest;
 import com.pbl6.flashcard.dto.RegisterRequest;
 import com.pbl6.flashcard.dto.UserResponse;
+import com.pbl6.flashcard.service.AccountDeletionService;
 import com.pbl6.flashcard.service.AuthService;
 import com.pbl6.flashcard.service.PasswordResetService;
 import com.pbl6.flashcard.service.RefreshTokenService;
@@ -29,13 +31,16 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
-    public AuthController(AuthService authService, PasswordResetService passwordReset, RefreshTokenService refreshTokens) {
+    public AuthController(AuthService authService, PasswordResetService passwordReset, RefreshTokenService refreshTokens,
+                          AccountDeletionService accountDeletion) {
+        this.accountDeletion = accountDeletion;
         this.authService = authService;
         this.passwordReset = passwordReset;
         this.refreshTokens = refreshTokens;
     }
 
     private final AuthService authService;
+    private final AccountDeletionService accountDeletion;
     private final PasswordResetService passwordReset;
     private final RefreshTokenService refreshTokens;
 
@@ -84,6 +89,13 @@ public class AuthController {
     @GetMapping("/me")
     public UserResponse getCurrentUser(Authentication authentication) {
         return authService.getProfile(authentication.getName());
+    }
+
+    /** Tự xoá tài khoản (ẩn danh hoá + xoá dữ liệu cá nhân). 204; sau đó mọi token của người này vô hiệu. */
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteOwnAccount(Authentication authentication, @Valid @RequestBody DeleteAccountRequest body) {
+        accountDeletion.deleteOwnAccount(authentication.getName(), body.password());
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/profile")

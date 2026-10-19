@@ -1,7 +1,7 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
-import { atLeast, homeFor, isStaff, type Role } from "@/lib/roles";
+import { atLeast, homeFor, isStaff, setupPending, type Role } from "@/lib/roles";
 import { Loader2 } from "lucide-react";
 
 interface ProtectedRouteProps {
@@ -35,6 +35,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, minRol
   // Hồ sơ chưa về (ngay sau đăng nhập): render tạm, hồ sơ về sẽ điều hướng lại nếu sai nơi.
   const role = userProfile?.role;
   if (role) {
+    // Staff chưa đổi mật khẩu seed: backend chỉ cấp ROLE_SETUP -> chỉ còn trang /setup
+    const pending = setupPending(userProfile);
+    if (pending && location.pathname !== "/setup") return <Navigate to="/setup" replace />;
+    if (!pending && location.pathname === "/setup") return <Navigate to={homeFor(role)} replace />;
+    if (pending) return <>{children}</>;
     if (minRole && !atLeast(role, minRole)) return <Navigate to={homeFor(role)} replace />;
     if (!minRole && isStaff(role)) return <Navigate to="/admin" replace />;
   }

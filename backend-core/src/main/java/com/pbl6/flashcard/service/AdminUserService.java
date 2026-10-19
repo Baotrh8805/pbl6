@@ -38,7 +38,8 @@ public class AdminUserService {
 
     public AdminUserService(UserRepository users, DeckRepository decks, FlashcardRepository cards,
                             ExtractionJobRepository jobs, QuizResultRepository quizzes, RefreshTokenRepository sessions,
-                            RefreshTokenService refreshTokens, AuditService audit) {
+                            RefreshTokenService refreshTokens, AuditService audit, NotificationService notifications) {
+        this.notifications = notifications;
         this.users = users;
         this.decks = decks;
         this.cards = cards;
@@ -73,13 +74,15 @@ public class AdminUserService {
 
     private Detail detail(User u) {
         Instant now = Instant.now();
-        return new Detail(u.getId(), u.getEmail(), u.getFullName(), u.getJlptLevel(), u.getRole(), u.getIsPremium(),
-                u.getLockedAt(), u.getCreatedAt(), u.getExtractionDailyLimit(),
+        return new Detail(u.getId(), u.getEmail(), u.getFullName(), u.getJlptLevel(), u.getRole(), u.getIsPremium(), u.getPremiumUntil(),
+                u.getLockedAt(), u.getLockedReason(), u.getCreatedAt(), u.getExtractionDailyLimit(),
                 decks.countByOwnerId(u.getId()), cards.countByDeck_OwnerId(u.getId()),
                 jobs.countByUserId(u.getId()), jobs.countByUserIdAndCreatedAtAfter(u.getId(), now.minus(Duration.ofHours(24))),
                 quizzes.countByUserId(u.getId()), users.lastReviewAt(u.getId()),
-                sessions.countByUserIdAndExpiresAtAfter(u.getId(), now));
+                sessions.countByUserIdAndExpiresAtAfter(u.getId(), now), u.isMustChangePassword());
     }
+
+    private final NotificationService notifications;
 
     @Transactional
     public Detail patch(User actor, Long id, AdminUserPatch req) {
@@ -90,11 +93,27 @@ public class AdminUserService {
         if (req.locked() != null && req.locked() != (target.getLockedAt() != null)) {
             changes.putAll(AuditService.diff("locked", !req.locked(), req.locked()));
             target.setLockedAt(req.locked() ? Instant.now() : null);
+            String reason = req.locked() && req.lockedReason() != null && !req.lockedReason().isBlank() ? req.lockedReason().trim() : null;
+            target.setLockedReason(reason);
+            if (reason != null) changes.put("reason", reason);
             if (req.locked()) refreshTokens.revokeAll(target.getId());
         }
-        if (req.premium() != null && !req.premium().equals(Boolean.TRUE.equals(target.getIsPremium()))) {
-            changes.putAll(AuditService.diff("premium", target.getIsPremium(), req.premium()));
-            target.setIsPremium(req.premium());
+        if (req.premium() != null) {
+            // premiumUntil chỉ có nghĩa khi premium = true; null = vĩnh viễn. Gửi premium=true lần nữa với hạn khác = đổi hạn.
+            Instant until = req.premium() ? req.premiumUntil() : null;
+            boolean was = Boolean.TRUE.equals(target.getIsPremium());
+            if (was != req.premium() || !Objects.equals(until, target.getPremiumUntil())) {
+                changes.putAll(AuditService.diff("premium", target.getIsPremium(), req.premium()));
+                if (!Objects.equals(until, target.getPremiumUntil())) {
+                    changes.putAll(AuditService.diff("premiumUntil", target.getPremiumUntil(), until));
+                }
+                target.setIsPremium(req.premium());
+                target.setPremiumUntil(until);
+                Map<String, Object> p = new HashMap<>();
+                p.put("premium", req.premium());
+                p.put("until", until == null ? null : until.toString());
+                notifications.notify(target.getId(), com.pbl6.flashcard.model.Notification.PREMIUM_CHANGED, p);
+            }
         }
         Integer newLimit = Boolean.TRUE.equals(req.clearLimit()) ? null : req.extractionDailyLimit();
         boolean limitGiven = Boolean.TRUE.equals(req.clearLimit()) || req.extractionDailyLimit() != null;
@@ -122,6 +141,7 @@ public class AdminUserService {
             target.setRole(role);
             users.save(target);
             refreshTokens.revokeAll(target.getId());
+            notifications.notify(target.getId(), com.pbl6.flashcard.model.Notification.ROLE_CHANGED, Map.of("role", role.name()));
         }
         return detail(target);
     }

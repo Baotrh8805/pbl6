@@ -37,6 +37,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     long countByIsPremiumTrue();
 
+    /** Premium có hạn đã quá hạn (HousekeepingJob hạ về free). */
+    java.util.List<User> findByIsPremiumTrueAndPremiumUntilBefore(Instant now);
+
+    /** Staff chưa hoàn tất bảo mật (User.isSetupPending). */
+    @Query("SELECT count(u) FROM User u WHERE u.role <> com.pbl6.flashcard.model.Role.USER AND u.mustChangePassword = true")
+    long countStaffPendingSetup();
+
     /** Người có ít nhất một lượt ôn từ mốc `since` (đếm distinct). */
     @Query(value = "SELECT count(DISTINCT user_id) FROM review_logs WHERE reviewed_at >= :since", nativeQuery = true)
     long countActiveSince(@Param("since") Instant since);

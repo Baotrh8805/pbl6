@@ -29,12 +29,15 @@ public class AdminStatsService {
     private final AiServiceClient ai;
     private final ZoneId zone;
     private final String version;
+    private final String backupMarker;
+    static final Duration BACKUP_STALE_AFTER = Duration.ofHours(48);
 
     public AdminStatsService(UserRepository users, DeckRepository decks, FlashcardRepository cards,
                              ExtractionJobRepository jobs, QuizAttemptRepository quizzes, LearningPathRepository paths,
                              ReportService reports, AiServiceClient ai,
                              @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone,
-                             @Value("${app.version:dev}") String version) {
+                             @Value("${app.version:dev}") String version,
+                             @Value("${app.backup.marker:}") String backupMarker) {
         this.users = users;
         this.decks = decks;
         this.cards = cards;
@@ -45,6 +48,7 @@ public class AdminStatsService {
         this.ai = ai;
         this.zone = ZoneId.of(zone);
         this.version = version;
+        this.backupMarker = backupMarker;
     }
 
     @Transactional(readOnly = true)
@@ -68,7 +72,7 @@ public class AdminStatsService {
                         users.countByCreatedAtAfter(LocalDateTime.now().minusDays(7)),
                         users.countByCreatedAtAfter(LocalDateTime.now().minusDays(30)),
                         users.countByLockedAtIsNotNull(), users.countByIsPremiumTrue(),
-                        users.countActiveSince(now.minus(Duration.ofDays(7)))),
+                        users.countActiveSince(now.minus(Duration.ofDays(7))), users.countStaffPendingSetup()),
                 new AdminStatsResponse.Decks(decks.count(), decks.countByVisibility(Deck.PUBLIC), decks.countByOfficialTrue()),
                 cards.count(),
                 new AdminStatsResponse.Extractions(jobs.count(), jobs.countByStatus(ExtractionJob.DONE),
@@ -78,7 +82,29 @@ public class AdminStatsService {
     }
 
     public Map<String, String> health() {
-        return Map.of("db", "ok", "aiService", ai.health() ? "ok" : "down", "version", version);
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("db", "ok");
+        m.put("aiService", ai.health() ? "ok" : "down");
+        m.put("version", version);
+        java.nio.file.Path marker = backupMarker.isBlank() ? null : java.nio.file.Path.of(backupMarker);
+        m.put("backup", backupStatus(marker, Instant.now()));
+        m.put("lastBackupAt", marker != null && java.nio.file.Files.exists(marker) ? lastModified(marker).toString() : null);
+        return m;
+    }
+
+    /** unmonitored (không cấu hình) | missing (chưa có file) | stale (quá 48 giờ) | ok. Dựa vào mtime, không đọc nội dung. */
+    static String backupStatus(java.nio.file.Path marker, Instant now) {
+        if (marker == null) return "unmonitored";
+        if (!java.nio.file.Files.exists(marker)) return "missing";
+        return lastModified(marker).isBefore(now.minus(BACKUP_STALE_AFTER)) ? "stale" : "ok";
+    }
+
+    private static Instant lastModified(java.nio.file.Path p) {
+        try {
+            return java.nio.file.Files.getLastModifiedTime(p).toInstant();
+        } catch (java.io.IOException e) {
+            return Instant.EPOCH;
+        }
     }
 
     private static Map<LocalDate, Long> byDay(List<DayCount> rows) {

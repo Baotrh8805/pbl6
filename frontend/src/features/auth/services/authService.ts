@@ -2,6 +2,10 @@ import { apiClient } from "@/services/apiClient";
 import type { AuthRequest, AuthResponse, RegisterRequest, UserProfile } from "../types/auth.types";
 
 export const authService = {
+  /** Tự xoá tài khoản (ẩn danh hoá; bộ thẻ public giữ lại dưới tên ẩn danh). Sau đó mọi token vô hiệu. */
+  async deleteAccount(password: string): Promise<void> {
+    await apiClient.delete("/auth/me", { data: { password } });
+  },
   /**
    * Đăng nhập người dùng qua email và password
    * Trả về accessToken (15 phút), refreshToken (hạn trượt 3 ngày) và tokenType: "Bearer"

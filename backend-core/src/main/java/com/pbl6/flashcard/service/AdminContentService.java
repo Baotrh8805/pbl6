@@ -37,7 +37,9 @@ public class AdminContentService {
 
     public AdminContentService(DeckRepository decks, DeckRatingRepository ratings, ExtractionJobRepository jobs,
                                ContentReportRepository reports, DeckService deckService,
-                               ExtractionService extractionService, AuditService audit) {
+                               ExtractionService extractionService, AuditService audit,
+                               NotificationService notifications) {
+        this.notifications = notifications;
         this.decks = decks;
         this.ratings = ratings;
         this.jobs = jobs;
@@ -46,6 +48,8 @@ public class AdminContentService {
         this.extractionService = extractionService;
         this.audit = audit;
     }
+
+    private final NotificationService notifications;
 
     // ---------- bộ thẻ ----------
 
@@ -76,6 +80,8 @@ public class AdminContentService {
         deck.setVisibility(Deck.PRIVATE);
         decks.save(deck);
         audit.log(actor.getId(), "DECK_UNPUBLISH", "DECK", deckId, AuditService.diff("visibility", Deck.PUBLIC, Deck.PRIVATE));
+        notifications.notify(deck.getOwnerId(), com.pbl6.flashcard.model.Notification.DECK_UNPUBLISHED,
+                Map.of("deckId", deckId, "deckTitle", deck.getTitle()));
         return true;
     }
 
@@ -105,6 +111,7 @@ public class AdminContentService {
         Deck deck = lockedDeck(deckId);
         audit.log(actor.getId(), "DECK_DELETE", "DECK", deckId,
                 Map.of("title", deck.getTitle(), "ownerId", deck.getOwnerId(), "visibility", deck.getVisibility()));
+        notifications.notify(deck.getOwnerId(), com.pbl6.flashcard.model.Notification.DECK_DELETED, Map.of("deckTitle", deck.getTitle()));
         deckService.deleteDeck(deck);
     }
 
@@ -129,6 +136,8 @@ public class AdminContentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy đánh giá."));
         if (r.getComment() == null) return false;
         audit.log(actor.getId(), "RATING_CLEAR_COMMENT", "RATING", String.valueOf(ratingId),
+                Map.of("deckId", r.getDeckId(), "comment", r.getComment()));
+        notifications.notify(r.getUserId(), com.pbl6.flashcard.model.Notification.COMMENT_CLEARED,
                 Map.of("deckId", r.getDeckId(), "comment", r.getComment()));
         r.setComment(null);
         ratings.save(r);

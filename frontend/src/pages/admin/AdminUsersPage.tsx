@@ -3,20 +3,25 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { fetchAdminUsers } from "@/services/adminService";
+import { downloadCsv, fetchAllPages, formatShort, stringToHslColor, stringToTextColor } from "@/features/admin/adminUtils";
+import { getInitials } from "@/lib/textUtils";
 import { AdminTableShell } from "@/features/admin/components/AdminTableShell";
 import { Pager } from "@/features/admin/components/Pager";
-import { RoleBadge } from "@/features/admin/components/RoleBadge";
+import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
+import { AdminFilterBar, adminFieldClass, adminLabelClass } from "@/features/admin/components/AdminFilterBar";
+import { AdminStatusBadge, RoleStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
-import { formatShort } from "@/features/admin/adminUtils";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
 
 const PAGE_SIZE = 20;
-const SELECT = "rounded-lg border border-outline-variant bg-surface-container-lowest px-2 py-1.5 text-body-sm";
 
 export const AdminUsersPage: React.FC = () => {
   const q = useAdminQuery();
   const [draft, setDraft] = useState(q.get("q"));
   const [retry, setRetry] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
   const { data, loading, error } = useAsync(
     () =>
       fetchAdminUsers({
@@ -31,34 +36,147 @@ export const AdminUsersPage: React.FC = () => {
   );
   const users = data?.items ?? [];
 
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const rows = await fetchAllPages((page, size) =>
+        fetchAdminUsers({
+          q: q.get("q"),
+          role: q.get("role"),
+          premium: q.get("premium"),
+          locked: q.get("locked"),
+          page,
+          size,
+        })
+      );
+      downloadCsv(
+        `nguoi-dung-${new Date().toISOString().slice(0, 10)}.csv`,
+        rows.map((u) => ({
+          id: u.id,
+          email: u.email,
+          ten: u.fullName ?? "",
+          vai_tro: u.role,
+          premium: u.isPremium ? 1 : 0,
+          khoa_tu: u.lockedAt ?? "",
+          tao_luc: u.createdAt ?? "",
+          so_bo_the: u.deckCount,
+        }))
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const copyEmail = (id: number, email: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(email).then(() => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+      });
+    }
+  };
+
+  const currentRole = q.get("role");
+  const currentPremium = q.get("premium");
+  const currentLocked = q.get("locked");
+  const hasFilters = Boolean(q.get("q") || currentRole || currentPremium || currentLocked);
+
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
-      <div>
-        <h1 className="font-headline-sm text-headline-sm font-bold text-on-surface">Người dùng</h1>
-        <p className="text-body-sm text-on-surface-variant mt-0.5">Tìm, lọc và mở chi tiết để khoá, cấp Premium, đặt hạn mức AI.</p>
+      <AdminPageHeader
+        title="Quản lý Người dùng"
+        description="Tra cứu, quản trị tài khoản học viên, cấp gói Pro và kiểm soát quyền hạn Staff."
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            isLoading={exporting}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">download</span>
+            Xuất CSV
+          </Button>
+        }
+      />
+
+      {/* Dải nút lọc nhanh (Quick Preset Filters) */}
+      <div className="flex items-center gap-1.5 p-1 bg-surface-container-low rounded-xl border border-surface-container-high w-fit flex-wrap">
+        <button
+          type="button"
+          onClick={() => q.set({ role: undefined, premium: undefined, locked: undefined })}
+          className={`px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
+            !currentRole && !currentPremium && !currentLocked
+              ? "bg-surface-container-lowest text-primary shadow-xs"
+              : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          Tất cả người dùng
+        </button>
+        <button
+          type="button"
+          onClick={() => q.set({ premium: "true", role: undefined, locked: undefined })}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
+            currentPremium === "true"
+              ? "bg-surface-container-lowest text-primary shadow-xs"
+              : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-amber-500">star</span>
+          <span>Học viên Pro</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => q.set({ locked: "true", premium: undefined, role: undefined })}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
+            currentLocked === "true"
+              ? "bg-surface-container-lowest text-error shadow-xs"
+              : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">lock</span>
+          <span>Đang bị khoá</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => q.set({ role: "ADMIN", premium: undefined, locked: undefined })}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
+            currentRole === "ADMIN"
+              ? "bg-surface-container-lowest text-primary shadow-xs"
+              : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">shield</span>
+          <span>Đội ngũ Staff</span>
+        </button>
       </div>
 
-      <form
-        className="flex flex-wrap items-end gap-2"
+      <AdminFilterBar
         onSubmit={(e) => {
           e.preventDefault();
           q.set({ q: draft.trim() });
         }}
       >
-        <label className="flex flex-col text-label-sm text-outline font-semibold">
-          Email / tên
+        <label className={adminLabelClass}>
+          Tìm email / họ tên
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={100}
-            className={`${SELECT} w-56`}
-            placeholder="a@x.vn"
+            className={`${adminFieldClass} w-60`}
+            placeholder="nhap-email@..."
           />
         </label>
-        <label className="flex flex-col text-label-sm text-outline font-semibold">
+        <label className={adminLabelClass}>
           Vai trò
-          <select value={q.get("role")} onChange={(e) => q.set({ role: e.target.value })} className={SELECT}>
-            <option value="">Tất cả</option>
+          <select
+            value={q.get("role")}
+            onChange={(e) => q.set({ role: e.target.value })}
+            className={adminFieldClass}
+          >
+            <option value="">Tất cả vai trò</option>
             {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r]}
@@ -66,71 +184,164 @@ export const AdminUsersPage: React.FC = () => {
             ))}
           </select>
         </label>
-        <label className="flex flex-col text-label-sm text-outline font-semibold">
-          Premium
-          <select value={q.get("premium")} onChange={(e) => q.set({ premium: e.target.value })} className={SELECT}>
-            <option value="">Tất cả</option>
-            <option value="true">Có</option>
-            <option value="false">Không</option>
+        <label className={adminLabelClass}>
+          Gói cước
+          <select
+            value={q.get("premium")}
+            onChange={(e) => q.set({ premium: e.target.value })}
+            className={adminFieldClass}
+          >
+            <option value="">Tất cả gói</option>
+            <option value="true">Premium (Pro)</option>
+            <option value="false">Miễn phí (Free)</option>
           </select>
         </label>
-        <label className="flex flex-col text-label-sm text-outline font-semibold">
-          Khoá
-          <select value={q.get("locked")} onChange={(e) => q.set({ locked: e.target.value })} className={SELECT}>
-            <option value="">Tất cả</option>
+        <label className={adminLabelClass}>
+          Trạng thái
+          <select
+            value={q.get("locked")}
+            onChange={(e) => q.set({ locked: e.target.value })}
+            className={adminFieldClass}
+          >
+            <option value="">Tất cả trạng thái</option>
             <option value="true">Đang khoá</option>
             <option value="false">Bình thường</option>
           </select>
         </label>
-        <Button type="submit" variant="primary" size="sm">
-          Lọc
-        </Button>
-      </form>
+        <div className="flex items-center gap-2">
+          <Button type="submit" variant="primary" size="sm">
+            Lọc kết quả
+          </Button>
+          {hasFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDraft("");
+                q.set({ q: undefined, role: undefined, premium: undefined, locked: undefined });
+              }}
+            >
+              Đặt lại
+            </Button>
+          )}
+        </div>
+      </AdminFilterBar>
 
       <AdminTableShell
         caption="Danh sách người dùng"
         loading={loading}
         error={error}
         empty={users.length === 0}
-        emptyText="Không có tài khoản nào khớp bộ lọc."
+        emptyText="Không tìm thấy tài khoản nào khớp với điều kiện lọc."
         onRetry={() => setRetry((n) => n + 1)}
-        statusText={data ? `${data.total.toLocaleString("vi-VN")} tài khoản` : undefined}
+        statusText={data ? `${data.total.toLocaleString("vi-VN")} tài khoản học viên & staff` : undefined}
       >
         <thead>
           <tr>
-            <th scope="col">ID</th>
-            <th scope="col">Email · Tên</th>
+            <th scope="col" className="w-16">ID</th>
+            <th scope="col">Học viên</th>
             <th scope="col">Vai trò</th>
-            <th scope="col">Premium</th>
+            <th scope="col">Gói dịch vụ</th>
             <th scope="col">Bộ thẻ</th>
-            <th scope="col">Tạo</th>
-            <th scope="col">
+            <th scope="col">Ngày gia nhập</th>
+            <th scope="col" className="w-24 text-right">
               <span className="sr-only">Thao tác</span>
             </th>
           </tr>
         </thead>
         <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
-              <td className="text-outline">{u.id}</td>
-              <td>
-                <div className="font-semibold text-on-surface">{u.email}</div>
-                <div className="text-on-surface-variant">{u.fullName || "(chưa đặt)"}</div>
-              </td>
-              <td>
-                <RoleBadge role={u.role} />
-                {u.lockedAt && <span className="ml-1 text-label-sm font-bold text-error">🔒 Khoá</span>}
-              </td>
-              <td>{u.role === "USER" ? (u.isPremium ? "Có" : "Không") : "—"}</td>
-              <td>{u.role === "USER" ? u.deckCount : "—"}</td>
-              <td className="text-on-surface-variant whitespace-nowrap">{formatShort(u.createdAt)}</td>
-              <td>
-                <Link to={`/admin/users/${u.id}`} className="font-semibold text-primary underline">
-                  Xem
-                </Link>
-              </td>
-            </tr>
-          ))}
+          {users.map((u) => {
+            const isCopied = copiedId === u.id;
+            const initials = getInitials(u.fullName || u.email);
+            const avatarBg = stringToHslColor(u.email);
+            const avatarColor = stringToTextColor(u.email);
+
+            return (
+              <tr key={u.id} className="hover:bg-surface-container-low/50 transition-colors">
+                <td className="text-outline font-mono text-label-sm">{u.id}</td>
+                <td>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-label-sm shrink-0 select-none shadow-2xs"
+                      style={{ backgroundColor: avatarBg, color: avatarColor }}
+                      aria-hidden="true"
+                    >
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-semibold text-on-surface">
+                        <Link to={`/admin/users/${u.id}`} className="hover:underline truncate hover:text-primary">
+                          {u.email}
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={(e) => copyEmail(u.id, u.email, e)}
+                          title={isCopied ? "Đã sao chép email!" : "Sao chép email"}
+                          aria-label={`Sao chép email ${u.email}`}
+                          className="text-outline hover:text-on-surface p-0.5 rounded hover:bg-surface-container cursor-pointer transition-colors"
+                        >
+                          <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+                            {isCopied ? "check" : "content_copy"}
+                          </span>
+                        </button>
+                      </div>
+                      <div className="text-on-surface-variant text-label-sm truncate">
+                        {u.fullName || <span className="italic text-outline">Chưa đặt họ tên</span>}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <RoleStatusBadge role={u.role} />
+                    {u.lockedAt && (
+                      <AdminStatusBadge label="Khoá" tone="error" icon="lock" />
+                    )}
+                  </div>
+                </td>
+                <td>
+                  {u.role === "USER" ? (
+                    u.isPremium ? (
+                      <AdminStatusBadge label="Pro" tone="info" icon="star" />
+                    ) : (
+                      <span className="text-on-surface-variant text-label-sm">Free</span>
+                    )
+                  ) : (
+                    <span className="text-outline">—</span>
+                  )}
+                </td>
+                <td>
+                  {u.role === "USER" ? (
+                    <Link
+                      to={`/admin/decks?ownerId=${u.id}`}
+                      title="Xem các bộ thẻ của người dùng này"
+                      className="inline-flex items-center gap-1 font-mono font-semibold text-primary hover:underline"
+                    >
+                      <span>{u.deckCount}</span>
+                      <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+                        open_in_new
+                      </span>
+                    </Link>
+                  ) : (
+                    <span className="text-outline font-mono">—</span>
+                  )}
+                </td>
+                <td className="text-on-surface-variant text-label-sm whitespace-nowrap">
+                  {formatShort(u.createdAt)}
+                </td>
+                <td className="text-right">
+                  <Link
+                    to={`/admin/users/${u.id}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest hover:bg-surface-container hover:border-primary text-body-sm font-semibold text-primary transition-all"
+                  >
+                    <span>Chi tiết</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">chevron_right</span>
+                  </Link>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </AdminTableShell>
       {data && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}

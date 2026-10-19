@@ -37,9 +37,28 @@ async function section(name, fn) {
     catch (e) { results.push(`FAIL ${name}: ${String(e.message).slice(0, 300)} | actual=${JSON.stringify(e.actual)} expected=${JSON.stringify(e.expected)} | ${String(e.stack).slice(0, 600)}`); }
 }
 
+/** Seed V15/V16: mật khẩu mặc định + phải đổi trước khi vào /api/admin. Idempotent giữa các lần chạy. */
+async function staffLogin(email, seedPassword) {
+    const newPassword = seedPassword + "-Smoke1";
+    let r = await api(null, "POST", "/auth/login", { email, password: seedPassword });
+    let password = seedPassword;
+    if (r.status === 401) { r = await api(null, "POST", "/auth/login", { email, password: newPassword }); password = newPassword; }
+    assert.equal(r.status, 200, `login ${email}: ${r.status} ${r.text}`);
+    let token = r.data.accessToken;
+    if (r.data.mustChangePassword) {
+        assert.equal((await api(token, "GET", "/admin/stats")).status, 403, "staff chưa đổi mật khẩu seed phải bị 403 admin");
+        r = await api(token, "PUT", "/auth/password", { currentPassword: password, newPassword });
+        assert.equal(r.status, 200, `đổi mật khẩu seed: ${r.status} ${r.text}`);
+        assert.equal(r.data.mustChangePassword, false);
+        token = r.data.accessToken;
+    }
+    assert.equal((await api(token, "GET", "/auth/me")).status, 200);
+    return token;
+}
+
 const s = {};
-s.superToken = await login("superadmin@nihongen.local", "superadmin");
-s.adminToken = await login("admin1@nihongen.local", "admin1");
+s.superToken = await staffLogin("superadmin@nihongen.local", "superadmin");
+s.adminToken = await staffLogin("admin1@nihongen.local", "admin1");
 s.alice = await signUp("alice");
 s.bob = await signUp("bob");
 {   // Alice: bộ thẻ public; Bob: đánh giá + báo cáo
@@ -68,6 +87,7 @@ await section("dashboard: stats + health", async () => {
     r = await api(s.adminToken, "GET", "/admin/health");
     assert.equal(r.status, 200, r.text);
     assert.equal(r.data.db, "ok", r.text);
+    assert.ok(["ok", "stale", "missing", "unmonitored"].includes(r.data.backup), `backup: ${r.text}`);
 });
 
 await section("người dùng: list / detail / khoá / premium / hạn mức / thu hồi phiên", async () => {
@@ -80,18 +100,26 @@ await section("người dùng: list / detail / khoá / premium / hạn mức / t
     assert.equal(r.status, 200, r.text);
     assert.equal(r.data.deckCount, 1);
     // khoá -> login 403, token cũ bị từ chối; mở khoá -> login lại được
-    r = await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { locked: true });
+    r = await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { locked: true, lockedReason: "Spam bình luận" });
     assert.equal(r.status, 200, r.text);
     assert.ok(r.data.lockedAt, "lockedAt phải có");
+    assert.equal(r.data.lockedReason, "Spam bình luận");
     assert.equal((await api(s.alice.token, "GET", "/decks")).status, 401, "token cũ sau khi khoá phải 401");
     r = await api(null, "POST", "/auth/login", { email: s.alice.email, password: pw });
     assert.equal(r.status, 403, `login khi bị khoá phải 403, nhận ${r.status}`);
+    assert.ok(r.text.includes("Spam bình luận"), `403 phải kèm lý do: ${r.text}`);
     r = await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { locked: false });
     assert.equal(r.data.lockedAt, null);
+    assert.equal(r.data.lockedReason, null);
     s.alice.token = await login(s.alice.email, pw);
     // premium + hạn mức riêng
     r = await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { premium: true, extractionDailyLimit: 7 });
     assert.equal(r.data.isPremium, true); assert.equal(r.data.extractionDailyLimit, 7);
+    const until = new Date(Date.now() + 86400e3).toISOString().replace(/\.\d{3}Z$/, "Z");
+    r = await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { premium: true, premiumUntil: until });
+    assert.equal(r.data.premiumUntil, until, r.text);
+    r = await api(s.alice.token, "GET", "/auth/me");
+    assert.equal(r.data.premiumUntil, until, "người học thấy hạn Premium");
     r = await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { clearLimit: true });
     assert.equal(r.data.extractionDailyLimit, null);
     assert.equal((await api(s.adminToken, "PATCH", `/admin/users/${s.alice.id}`, { extractionDailyLimit: 5000 })).status, 400);
@@ -201,6 +229,40 @@ await section("xoá bộ thẻ bởi admin", async () => {
     assert.equal((await api(s.adminToken, "DELETE", `/admin/decks/${s.deck.id}`)).status, 204);
     assert.equal((await api(s.alice.token, "GET", `/decks/${s.deck.id}`)).status, 404);
     assert.equal((await api(s.adminToken, "DELETE", `/admin/decks/${s.deck.id}`)).status, 404);
+});
+
+await section("thông báo trong app: Bob (báo cáo) và Alice (chủ bộ, Premium) nhận đúng loại", async () => {
+    let r = await api(s.bob.token, "GET", "/notifications");
+    assert.equal(r.status, 200, r.text);
+    const bobTypes = r.data.items.map((n) => n.type);
+    assert.ok(bobTypes.includes("REPORT_RESOLVED"), `Bob phải có REPORT_RESOLVED: ${bobTypes}`);
+    assert.ok(bobTypes.includes("ROLE_CHANGED"), `Bob phải có ROLE_CHANGED: ${bobTypes}`);
+    r = await api(s.alice.token, "GET", "/notifications");
+    const aliceTypes = r.data.items.map((n) => n.type);
+    for (const t of ["DECK_UNPUBLISHED", "PREMIUM_CHANGED", "DECK_DELETED"]) assert.ok(aliceTypes.includes(t), `Alice thiếu ${t}: ${aliceTypes}`);
+    assert.ok(r.data.unread > 0);
+    const first = r.data.items[0].id;
+    assert.equal((await api(s.bob.token, "POST", `/notifications/${first}/read`)).status, 404, "người khác không đánh dấu được");
+    assert.equal((await api(s.alice.token, "POST", `/notifications/${first}/read`)).status, 204);
+    r = await api(s.alice.token, "POST", "/notifications/read-all");
+    assert.equal(r.status, 200, r.text);
+    assert.equal((await api(s.alice.token, "GET", "/notifications")).data.unread, 0);
+    assert.equal((await api(s.adminToken, "GET", "/notifications")).status, 200, "staff cũng gọi được");
+});
+
+await section("tự xoá tài khoản: Bob xoá -> ẩn danh, token vô hiệu; staff bị 403", async () => {
+    assert.equal((await api(s.adminToken, "DELETE", "/auth/me", { password: "x" })).status, 403);
+    assert.equal((await api(s.bob.token, "DELETE", "/auth/me", { password: "sai" })).status, 400);
+    assert.equal((await api(s.bob.token, "DELETE", "/auth/me", { password: pw })).status, 204);
+    assert.equal((await api(s.bob.token, "GET", "/auth/me")).status, 401);
+    assert.equal((await api(null, "POST", "/auth/login", { email: s.bob.email, password: pw })).status, 401);
+    let r = await api(s.adminToken, "GET", `/admin/users/${s.bob.id}`);
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.fullName, "Người dùng đã xoá");
+    assert.ok(r.data.email.startsWith("deleted+"), r.data.email);
+    assert.ok(r.data.lockedAt, "tài khoản đã xoá bị khoá");
+    r = await api(s.adminToken, "GET", "/admin/audit-logs?targetType=USER&size=100");
+    assert.ok(r.data.items.some((a) => a.action === "USER_SELF_DELETE" && a.targetId === String(s.bob.id)), "audit USER_SELF_DELETE");
 });
 
 console.log(results.join("\n"));

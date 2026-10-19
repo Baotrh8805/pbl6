@@ -42,6 +42,9 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
 
     long countByOwnerId(Long ownerId);
 
+    /** Tự xoá tài khoản: bộ thẻ riêng tư của người đó. */
+    List<Deck> findByOwnerIdAndVisibility(Long ownerId, String visibility);
+
     long countByOfficialTrue();
 
     /** Bỏ cờ nổi bật hiện có (chỉ một bộ thẻ được featured). */

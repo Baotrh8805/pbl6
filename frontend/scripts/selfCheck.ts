@@ -44,8 +44,16 @@ import {
   todayCardCount,
   unreviewedInTasks,
 } from "../src/features/roadmap/roadmapUtils.ts";
-import { atLeast, homeFor, isStaff } from "../src/lib/roles.ts";
-import { toPercentHeights } from "../src/features/admin/adminUtils.ts";
+import { atLeast, homeFor, isStaff, setupPending } from "../src/lib/roles.ts";
+import {
+  niceTicks,
+  buildLinePath,
+  periodDelta,
+  indexAtX,
+  summarizeJson,
+  stringToHslColor,
+  stringToTextColor,
+} from "../src/features/admin/adminUtils.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -394,10 +402,51 @@ async function runSelfCheck() {
   assertStrictEqual(atLeast("SUPER_ADMIN", "SUPER_ADMIN"), true, "SUPER_ADMIN >= SUPER_ADMIN");
   assertStrictEqual(isStaff("USER") || isStaff(undefined) || isStaff("VIEWER"), false, "USER / chưa tải / vai trò đã bỏ không là staff");
   assertStrictEqual(atLeast(undefined, "ADMIN"), false, "role chưa tải -> không có quyền");
+  assertStrictEqual(setupPending({ role: "ADMIN", mustChangePassword: true }), true, "staff còn phải đổi mật khẩu");
+  assertStrictEqual(setupPending({ role: "SUPER_ADMIN", mustChangePassword: false }), false, "staff đã đổi");
+  assertStrictEqual(setupPending({ role: "USER", mustChangePassword: true }) || setupPending(null) || setupPending({ email: "x" } as never), false, "người học / chưa tải không bị đưa về /setup");
   assertStrictEqual(homeFor("ADMIN") + homeFor("USER") + homeFor(null), "/admin//", "Trang chủ theo vai trò");
-  assertStrictEqual(toPercentHeights([0, 5, 10]).join(","), "0,50,100", "Chiều cột theo % của max");
-  assertStrictEqual(toPercentHeights([0, 0]).join(","), "0,0", "Toàn 0 -> không chia cho 0");
-  assertStrictEqual(toPercentHeights([]).length, 0, "Rỗng");
+
+  // Admin Panel: các hàm thuần biểu đồ SVG mới (FE-03)
+  assertStrictEqual(niceTicks(0).join(","), "0", "niceTicks max=0");
+  assertStrictEqual(niceTicks(7).join(","), "0,4,8", "niceTicks max=7 -> [0, 4, 8]");
+  assertStrictEqual(niceTicks(950).join(","), "0,500,1000", "niceTicks max=950 -> [0, 500, 1000]");
+
+  assertStrictEqual(buildLinePath([5], 100, 50, 10), "M 0.0 25.0", "buildLinePath 1 điểm không NaN");
+  assertStrictEqual(buildLinePath([0, 0, 0], 100, 50, 0), "M 0.0 50.0 L 50.0 50.0 L 100.0 50.0", "buildLinePath toàn 0");
+  assertStrictEqual(buildLinePath([0, 10], 100, 50, 10), "M 0.0 50.0 L 100.0 0.0", "buildLinePath 2 điểm");
+
+  const s13 = Array.from({ length: 13 }, (_, i) => ({ users: i + 1 }));
+  assertStrictEqual(periodDelta(s13, "users"), null, "periodDelta < 14 điểm trả về null");
+
+  const s14Zero = Array.from({ length: 14 }, (_, i) => ({ users: i < 7 ? 0 : 5 }));
+  const dZero = periodDelta(s14Zero, "users");
+  assertStrictEqual(dZero?.last7, 35, "last7 tổng 35");
+  assertStrictEqual(dZero?.prev7, 0, "prev7 tổng 0");
+  assertStrictEqual(dZero?.pct, null, "prev7=0 thì pct=null không chia 0");
+
+  const s14Delta = Array.from({ length: 14 }, (_, i) => ({ users: i < 7 ? 10 : 15 }));
+  const dNormal = periodDelta(s14Delta, "users");
+  assertStrictEqual(dNormal?.last7, 105, "last7 105");
+  assertStrictEqual(dNormal?.prev7, 70, "prev7 70");
+  assertStrictEqual(dNormal?.pct, 50, "tăng 50%");
+
+  assertStrictEqual(indexAtX(0, 100, 5), 0, "indexAtX tại 0");
+  assertStrictEqual(indexAtX(100, 100, 5), 4, "indexAtX tại w");
+  assertStrictEqual(indexAtX(50, 100, 5), 2, "indexAtX ở giữa");
+  assertStrictEqual(indexAtX(-10, 100, 5), 0, "indexAtX kẹp cận dưới");
+  assertStrictEqual(indexAtX(200, 100, 5), 4, "indexAtX kẹp cận trên");
+  assertStrictEqual(indexAtX(50, 100, 1), 0, "indexAtX n=1");
+
+  // Admin Panel: hàm summarizeJson (FE-04)
+  assertStrictEqual(summarizeJson(null), "—", "summarizeJson null trả về gạch ngang");
+  assertStrictEqual(summarizeJson(undefined), "—", "summarizeJson undefined trả về gạch ngang");
+  assertStrictEqual(summarizeJson({ reason: "Spam" }), 'reason: "Spam"', "summarizeJson 1 key");
+  assertStrictEqual(summarizeJson([1, 2, 3]), "[3 mục]", "summarizeJson array");
+  // Admin Panel: hàm sinh màu avatar (FE-05)
+  assertStrictEqual(stringToHslColor("").startsWith("hsl("), true, "stringToHslColor rỗng");
+  assertStrictEqual(stringToHslColor("test@example.com") === stringToHslColor("test@example.com"), true, "stringToHslColor deterministic");
+  assertStrictEqual(stringToTextColor("test@example.com").startsWith("hsl("), true, "stringToTextColor");
 
   console.log(" All self-check assertions passed successfully!");
 }

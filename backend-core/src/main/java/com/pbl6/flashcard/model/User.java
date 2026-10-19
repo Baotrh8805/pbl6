@@ -49,6 +49,19 @@ public class User {
     @Column(name = "extraction_daily_limit")
     private Integer extractionDailyLimit;
 
+    /** Hạn Premium; null = vĩnh viễn (khi is_premium = true). HousekeepingJob hạ về free khi quá hạn. */
+    @Column(name = "premium_until")
+    private java.time.Instant premiumUntil;
+
+    /** Staff: phải đổi mật khẩu (seed / do người khác đặt) trước khi dùng Admin Panel. */
+    @JsonIgnore
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword = false;
+
+    /** Lý do admin khoá (hiện cho người bị khoá khi đăng nhập); null khi không khoá. */
+    @Column(name = "locked_reason")
+    private String lockedReason;
+
     public User() {}
 
     /** Email so khớp không phân biệt hoa thường: lưu và tra cứu luôn ở dạng này. */
@@ -88,4 +101,15 @@ public class User {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public java.time.Instant getPremiumUntil() { return premiumUntil; }
+    public void setPremiumUntil(java.time.Instant premiumUntil) { this.premiumUntil = premiumUntil; }
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
+    public String getLockedReason() { return lockedReason; }
+    public void setLockedReason(String lockedReason) { this.lockedReason = lockedReason; }
+
+    /** Staff còn phải đổi mật khẩu seed: chỉ được dùng /api/auth/** để hoàn tất. */
+    @JsonIgnore
+    public boolean isSetupPending() { return role != Role.USER && mustChangePassword; }
 }

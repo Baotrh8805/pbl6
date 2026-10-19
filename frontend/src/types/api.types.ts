@@ -483,7 +483,16 @@ export interface AdminPage<T> {
 }
 
 export interface AdminStats {
-    users: { total: number; new7d: number; new30d: number; locked: number; premium: number; active7d: number };
+    users: {
+        total: number;
+        new7d: number;
+        new30d: number;
+        locked: number;
+        premium: number;
+        active7d: number;
+        /** Staff chưa đổi mật khẩu seed. */
+        staffPendingSetup: number;
+    };
     decks: { total: number; public: number; official: number };
     cards: number;
     extractions: { total: number; done: number; failed: number; running: number };
@@ -497,6 +506,9 @@ export interface AdminHealth {
     db: string;
     aiService: "ok" | "down";
     version: string;
+    /** Sao lưu (file LAST_OK của scripts/backup.*): unmonitored = chưa cấu hình app.backup.marker. */
+    backup: "ok" | "stale" | "missing" | "unmonitored";
+    lastBackupAt: string | null;
 }
 
 export interface AdminUserRow {
@@ -519,12 +531,20 @@ export interface AdminUserDetail extends AdminUserRow {
     quizCount: number;
     lastReviewAt: string | null;
     activeSessions: number;
+    lockedReason: string | null;
+    mustChangePassword: boolean;
+    /** null = Premium vĩnh viễn (khi isPremium). */
+    premiumUntil: string | null;
 }
 
 /** Trường bỏ trống = giữ nguyên; clearLimit = bỏ hạn mức riêng. */
 export interface AdminUserPatch {
     locked?: boolean;
+    /** Chỉ dùng khi locked = true; người bị khoá thấy lý do lúc đăng nhập. */
+    lockedReason?: string;
     premium?: boolean;
+    /** ISO-8601; chỉ dùng cùng premium = true; bỏ trống = vĩnh viễn. */
+    premiumUntil?: string | null;
     extractionDailyLimit?: number;
     clearLimit?: boolean;
 }

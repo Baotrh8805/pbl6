@@ -67,8 +67,11 @@ public class AuthService {
             loginLimiter.reset(key);
             return ok;
         } catch (LockedException e) {
-            // Mật khẩu đúng nhưng admin đã khoá: 403 (không phải 401), không tính là lần dò sai
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản đã bị khoá, vui lòng liên hệ hỗ trợ.");
+            // Mật khẩu đúng nhưng admin đã khoá: 403 (không phải 401), không tính là lần dò sai; kèm lý do nếu admin ghi
+            String reason = userRepository.findByEmail(User.normalizeEmail(request.getEmail()))
+                    .map(User::getLockedReason).filter(r -> !r.isBlank()).orElse(null);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    reason == null ? "Tài khoản đã bị khoá, vui lòng liên hệ hỗ trợ." : "Tài khoản đã bị khoá: " + reason);
         } catch (AuthenticationException e) {
             loginLimiter.record(key);
             // 401 (không phải 403) + thông báo chung: không lộ email tồn tại hay không
@@ -153,8 +156,10 @@ public class AuthService {
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPasswordChangedAt(java.time.Instant.now());
+        user.setMustChangePassword(false);
         userRepository.save(user);
         refreshTokens.revokeAll(user.getId());
         return refreshTokens.issueTokens(user);
     }
+
 }

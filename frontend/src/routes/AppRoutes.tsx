@@ -30,6 +30,7 @@ import { AdminAuditPage } from "@/pages/admin/AdminAuditPage";
 import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicRoute } from "./PublicRoute";
+import { StaffSetupPage } from "@/pages/StaffSetupPage";
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -86,6 +87,16 @@ export const AppRoutes: React.FC = () => {
         <Route path="/quiz" element={<QuizRoomPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
+
+      {/* Staff mới: đổi mật khẩu seed; ProtectedRoute tự đưa về đây khi backend báo còn thiếu */}
+      <Route
+        path="/setup"
+        element={
+          <ProtectedRoute>
+            <StaffSetupPage />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Admin Panel: staff (ADMIN / SUPER_ADMIN); người học bị đưa về "/" */}
       <Route

@@ -42,6 +42,11 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
                                                                    org.springframework.data.domain.Pageable pageable);
 
     /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
+    /** Dọn dẹp định kỳ: job đã kết thúc quá lâu (extracted_text nặng); learning_paths.job_id -> NULL, bộ thẻ đã tạo giữ nguyên. */
+    @Modifying
+    @Query("DELETE FROM ExtractionJob j WHERE j.status IN ('DONE','FAILED','CANCELLED') AND j.createdAt < :before")
+    int deleteFinishedBefore(@Param("before") java.time.Instant before);
+
     @Modifying
     @Query("UPDATE ExtractionJob j SET j.status = 'FAILED', j.errorMessage = :message, j.finishedAt = :now "
             + "WHERE j.status IN ('QUEUED', 'RUNNING')")

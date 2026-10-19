@@ -13,6 +13,10 @@ export const atLeast = (role: string | undefined | null, min: Role): boolean => 
 /** Staff = mọi vai trò trừ USER; staff không dùng tính năng học. */
 export const isStaff = (role: string | undefined | null): boolean => rankOf(role) >= RANK.ADMIN;
 
+/** Staff còn phải đổi mật khẩu seed: backend chỉ cấp ROLE_SETUP, mọi trang đưa về /setup. */
+export const setupPending = (p: { role?: string | null; mustChangePassword?: boolean } | null | undefined): boolean =>
+  !!p && isStaff(p.role) && !!p.mustChangePassword;
+
 export const homeFor = (role: string | undefined | null): "/" | "/admin" => (isStaff(role) ? "/admin" : "/");
 
 export const ROLE_LABELS: Record<Role, string> = {

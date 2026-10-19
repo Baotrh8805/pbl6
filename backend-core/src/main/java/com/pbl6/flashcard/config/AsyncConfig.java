@@ -13,6 +13,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Configuration
 @EnableAsync
+@org.springframework.scheduling.annotation.EnableScheduling // HousekeepingJob (dọn dẹp đêm)
 public class AsyncConfig {
 
     public static final String EXTRACTION_EXECUTOR = "extractionExecutor";

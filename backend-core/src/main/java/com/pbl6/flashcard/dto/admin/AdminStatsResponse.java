@@ -7,7 +7,8 @@ import java.util.List;
 public record AdminStatsResponse(Users users, Decks decks, long cards, Extractions extractions, long quizAttempts,
                                  long learningPaths, long openReports, List<DayPoint> series) {
 
-    public record Users(long total, long new7d, long new30d, long locked, long premium, long active7d) {}
+    /** staffPendingSetup: staff chưa đổi mật khẩu seed (dashboard cảnh báo). */
+    public record Users(long total, long new7d, long new30d, long locked, long premium, long active7d, long staffPendingSetup) {}
 
     public record Decks(long total, long publicCount, long official) {
         /** JSON: "public" (từ khoá Java nên trường đặt tên khác). */

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { NotificationBell } from "./NotificationBell";
 import type { UserMetrics } from "../types/dashboard.types";
 import { getLevelDescription } from "../lib/dashboardUtils";
 import { getInitials } from "@/lib/textUtils";
@@ -72,6 +73,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
         {/* Right: Quick Badges + User Profile */}
         <div className="flex items-center gap-space-sm shrink-0">
+          <NotificationBell />
           {/* Streak: tính từ lịch sử ôn/thi, chỉ hiển thị */}
           <div
             className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm whitespace-nowrap"

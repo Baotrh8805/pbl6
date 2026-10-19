@@ -17,8 +17,8 @@ public final class AdminUserResponse {
         }
     }
 
-    public record Detail(Long id, String email, String fullName, String jlptLevel, Role role, Boolean isPremium,
-                         Instant lockedAt, LocalDateTime createdAt, Integer extractionDailyLimit,
+    public record Detail(Long id, String email, String fullName, String jlptLevel, Role role, Boolean isPremium, Instant premiumUntil,
+                         Instant lockedAt, String lockedReason, LocalDateTime createdAt, Integer extractionDailyLimit,
                          long deckCount, long cardCount, long extractionCount, long extractionsToday, long quizCount,
-                         Instant lastReviewAt, long activeSessions) {}
+                         Instant lastReviewAt, long activeSessions, boolean mustChangePassword) {}
 }
