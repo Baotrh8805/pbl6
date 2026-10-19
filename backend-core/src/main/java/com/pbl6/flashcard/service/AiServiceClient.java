@@ -185,6 +185,40 @@ public class AiServiceClient {
                 .retrieve().body(JsonNode.class));
     }
 
+    // ---------- dùng chung cho các nhóm tính năng gọi ai-service (quiz, luyện tập, nội dung) ----------
+    // Mỗi nhóm viết client riêng mỏng (QuizAiClient, PracticeAiClient...) gọi ba hàm này, để không cùng sửa một tệp.
+
+    /**
+     * GET JSON tương tác (timeout 30 s). path có thể chứa biến "{x}" lấy từ pathVars; query: giá trị null bị bỏ qua.
+     * Mọi giá trị đi qua biến URI nên được mã hoá trọn (dấu &, +, { } trong chuỗi người dùng không vỡ URL).
+     */
+    public JsonNode getJson(String step, String path, Map<String, ?> pathVars, Map<String, ?> query) {
+        Map<String, Object> vars = new LinkedHashMap<>();
+        if (pathVars != null) vars.putAll(pathVars);
+        Map<String, Object> q = new LinkedHashMap<>();
+        if (query != null) query.forEach((k, v) -> { if (v != null) q.put(k, v); });
+        q.forEach((k, v) -> vars.put("q_" + k, v));
+        return call(step, () -> nlpHttp.get().uri(u -> {
+            u.path(path);
+            q.keySet().forEach(k -> u.queryParam(k, "{q_" + k + "}"));
+            return u.build(vars);
+        }).retrieve().body(JsonNode.class));
+    }
+
+    /** POST JSON tương tác (timeout 30 s): tra cứu / chấm điểm có người dùng đang chờ trên trang. */
+    public JsonNode postJson(String step, String path, Object body) {
+        return call(step, () -> nlpHttp.post().uri(path)
+                .contentType(MediaType.APPLICATION_JSON).body(body)
+                .retrieve().body(JsonNode.class));
+    }
+
+    /** POST JSON cho tác vụ dài (timeout như bóc tách, mặc định 3 phút): sinh câu nhiễu cả bộ thẻ, trích nguồn chuẩn... */
+    public JsonNode postJsonLong(String step, String path, Object body) {
+        return call(step, () -> http.post().uri(path)
+                .contentType(MediaType.APPLICATION_JSON).body(body)
+                .retrieve().body(JsonNode.class));
+    }
+
     private <T> T call(String step, java.util.function.Supplier<T> request) {
         try {
             T result = request.get();

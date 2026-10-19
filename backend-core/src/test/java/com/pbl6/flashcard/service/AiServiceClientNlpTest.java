@@ -122,6 +122,31 @@ class AiServiceClientNlpTest {
     }
 
     @Test
+    void generic_helpers_encode_path_and_query_and_send_json() throws Exception {
+        JsonNode r = client.getJson("thử GET", "/api/kanji/{ch}/strokes", Map.of("ch", "日"),
+                new java.util.LinkedHashMap<>(Map.of("word", "a&b {x}")) {{ put("skip", null); }});
+        assertTrue(r.get("ok").asBoolean());
+        assertEquals("GET", seen.get("method"));
+        assertEquals("/api/kanji/%E6%97%A5/strokes", seen.get("path"), "biến đường dẫn được mã hoá");
+        assertEquals("a&b {x}", queryParam("word"));
+        assertFalse(seen.get("rawQuery").contains("skip"), "giá trị null không gửi");
+        assertEquals("secret", seen.get("key"));
+
+        client.postJson("thử POST", "/api/kanji/score", Map.of("kanji", "日"));
+        assertEquals("POST", seen.get("method"));
+        assertEquals("/api/kanji/score", seen.get("path"));
+        assertEquals(json.readTree("{\"kanji\":\"日\"}"), json.readTree(seen.get("body")));
+
+        client.postJsonLong("thử POST dài", "/api/extract/distractors", Map.of("items", List.of()));
+        assertEquals("/api/extract/distractors", seen.get("path"));
+        assertEquals(json.readTree("{\"items\":[]}"), json.readTree(seen.get("body")));
+
+        AiServiceClient.AiServiceException notFound = assertThrows(AiServiceClient.AiServiceException.class,
+                () -> client.getJson("thử 404", "/api/radicals/7/kanji", null, null));
+        assertEquals(404, notFound.status());
+    }
+
+    @Test
     void errors_carry_ai_service_status() {
         AiServiceClient.AiServiceException notFound = assertThrows(AiServiceClient.AiServiceException.class,
                 () -> client.radicalKanji(7, null));
