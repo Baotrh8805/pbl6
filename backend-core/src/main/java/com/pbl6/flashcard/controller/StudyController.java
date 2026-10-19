@@ -61,13 +61,13 @@ public class StudyController {
     }
 
     /**
-     * Mở lượt làm quiz (mode practice | exam) hoặc tiếp tục lượt đang mở của bộ thẻ (resumed = true).
-     * Response không chứa đáp án đúng.
+     * Mở lượt làm quiz (mode practice | exam; questionTypes tuỳ chọn, mặc định ["meaning"]) hoặc tiếp tục lượt đang mở của bộ
+     * thẻ (resumed = true). Response không chứa đáp án đúng.
      */
     @PostMapping("/quiz-attempts")
     public AttemptState createAttempt(@AuthenticationPrincipal CustomUserDetails me,
                                       @Valid @RequestBody CreateRequest body) {
-        return quizService.create(uid(me), body.deckId(), body.size(), body.mode());
+        return quizService.create(uid(me), body.deckId(), body.size(), body.mode(), body.questionTypes());
     }
 
     /** Lượt đang mở của bộ thẻ (để đề nghị "Tiếp tục"); 204 nếu không có. */
@@ -84,7 +84,10 @@ public class StudyController {
         return quizService.get(uid(me), attemptId);
     }
 
-    /** Lưu đáp án một câu (practice: khoá + trả phản hồi; exam: tự lưu, sửa được tới khi nộp). */
+    /**
+     * Lưu đáp án một câu (practice: khoá + trả phản hồi; exam: tự lưu, sửa được tới khi nộp). Câu gõ (inputMode = typing):
+     * option là chuỗi tự gõ ≤ 100 ký tự, chấm sau chuẩn hoá kana.
+     */
     @PutMapping("/quiz-attempts/{attemptId}/answers/{cardId}")
     public AnswerResponse answer(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID attemptId,
                                  @PathVariable String cardId, @Valid @RequestBody AnswerRequest body) {

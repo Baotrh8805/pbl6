@@ -2322,6 +2322,7 @@ class LearningPathIT extends IntegrationTest {
         // Bộ từ vựng 6 thẻ + bộ ngữ pháp 4 thẻ, đều yếu
         List<Map<String, Object>> vocab = new ArrayList<>();
         for (String t : List.of("水", "火", "金", "木", "土", "日")) vocab.add(plainCard(t + "曜", "N5"));
+        vocab.get(0).put("pos", "名詞");
         List<Map<String, Object>> grammar = new ArrayList<>();
         for (String t : List.of("〜ている", "〜てから", "〜たい", "〜ながら")) {
             Map<String, Object> g = plainCard(t, "N5");
@@ -2330,6 +2331,8 @@ class LearningPathIT extends IntegrationTest {
         }
         List<String> originals = new ArrayList<>(ownDeck(token, "Từ vựng gốc", vocab));
         originals.addAll(ownDeck(token, "Mẫu câu gốc", grammar));
+        jdbc.update("UPDATE flashcards SET distractors = CAST(? AS jsonb) WHERE id = ?",
+                "{\"kanjiLookalike\":[{\"term\":\"氷曜\"}],\"homophones\":[]}", originals.get(0));
         makeWeak(token, originals);
         List<Map<String, Object>> before = srsSnapshot(uid);
         assertEquals(10, before.size());
@@ -2344,6 +2347,16 @@ class LearningPathIT extends IntegrationTest {
         JsonNode grammarClone = read(call(get("/api/decks/" + byDeck.get("chapters").get(1).get("deckId").asText()), token, null))
                 .get("cards").get(0);
         assertEquals("grammar", grammarClone.get("kind").asText(), "clone giữ loại thẻ");
+        // Clone giữ từ loại + phương án nhiễu quiz (như nhân bản bộ thẻ): bộ bổ khuyết ra được các loại câu như thẻ gốc
+        String vocabDeck = byDeck.get("chapters").get(0).get("deckId").asText();
+        JsonNode water = null;
+        for (JsonNode c : read(call(get("/api/decks/" + vocabDeck), token, null)).get("cards")) {
+            if ("水曜".equals(c.get("term").asText())) water = c;
+        }
+        assertNotNull(water);
+        assertEquals("名詞", water.get("pos").asText());
+        assertEquals(1, read(call(get("/api/decks/" + vocabDeck + "/quiz-capabilities"), token, null)
+                .andExpect(status().isOk())).get("kanjiLookalike").asInt());
 
         // Theo loại: "Từ vựng" / "Ngữ pháp"
         JsonNode byKind = read(call(post(BASE + "remedial"), token, Map.of("days", 3, "groupBy", "kind"))

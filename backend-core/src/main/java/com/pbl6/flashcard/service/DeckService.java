@@ -3,6 +3,8 @@ package com.pbl6.flashcard.service;
 import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.deck.DeckResponse;
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
+import com.pbl6.flashcard.dto.deck.DistractorsResponse;
+import com.pbl6.flashcard.dto.deck.QuizCapabilitiesResponse;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
 import com.pbl6.flashcard.model.Deck;
 import com.pbl6.flashcard.model.DeckShare;
@@ -17,12 +19,15 @@ import com.pbl6.flashcard.repository.ReviewRepository;
 import com.pbl6.flashcard.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,16 +52,21 @@ public class DeckService {
     private final FolderRepository folderRepository;
     private final DeckShareRepository shareRepository;
     private final UserRepository userRepository;
+    private final QuizAiClient quizAi;
+    /** Sinh phương án nhiễu: tách đọc / ghi thành 2 transaction ngắn, không giữ kết nối DB + khoá deck khi chờ ai-service. */
+    private final TransactionTemplate tx;
 
     public DeckService(DeckRepository deckRepository,
                        ReviewRepository reviewRepository,
                        FolderRepository folderRepository, DeckShareRepository shareRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository, QuizAiClient quizAi, PlatformTransactionManager txManager) {
         this.deckRepository = deckRepository;
         this.reviewRepository = reviewRepository;
         this.folderRepository = folderRepository;
         this.shareRepository = shareRepository;
         this.userRepository = userRepository;
+        this.quizAi = quizAi;
+        this.tx = new TransactionTemplate(txManager);
     }
 
     // ---------- quyền ----------
@@ -120,7 +130,11 @@ public class DeckService {
      * Xem được nhưng thiếu quyền = 403; không xem được = 404.
      */
     private Deck lockedWith(Long uid, String deckId, Access required) {
-        Deck deck = deckRepository.findByIdForUpdate(deckId).orElseThrow(DeckService::deckNotFound);
+        return require(uid, deckRepository.findByIdForUpdate(deckId).orElseThrow(DeckService::deckNotFound), required);
+    }
+
+    /** Phần kiểm quyền của {@link #lockedWith}, dùng riêng khi chưa cần khoá dòng (đọc trước khi gọi ai-service). */
+    private Deck require(Long uid, Deck deck, Access required) {
         Access access = access(uid, deck).orElseThrow(DeckService::deckNotFound);
         if (access.compareTo(required) > 0) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, required == Access.OWNER
@@ -218,8 +232,11 @@ public class DeckService {
                 .toList();
         int pos = 1;
         for (Flashcard f : ordered) {
-            copy.getCards().add(newCard(copy, new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning(),
-                    f.getLevel(), f.getKind(), f.getReadingSegments(), f.getHanViet()), pos++));
+            Flashcard card = newCard(copy, new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning(),
+                    f.getLevel(), f.getKind(), f.getReadingSegments(), f.getHanViet(), f.getPos()), pos++);
+            // Phương án nhiễu chỉ suy ra từ term / reading (giống hệt bản gốc): chép luôn, bản sao khỏi gọi lại ai-service
+            if (f.getDistractors() != null) card.setDistractors(new LinkedHashMap<>(f.getDistractors()));
+            copy.getCards().add(card);
         }
         return DeckResponse.of(deckRepository.save(copy), Access.OWNER.json());
     }
@@ -355,6 +372,82 @@ public class DeckService {
         deck.getCards().remove(card);
     }
 
+    // ---------- quiz đa loại (hợp đồng đợt 2 §1.2) ----------
+
+    /** Ai xem được bộ thẻ (học / làm quiz được) đều xem được số liệu này. Quy tắc đếm: {@link QuizCapabilities}. */
+    @Transactional(readOnly = true)
+    public QuizCapabilitiesResponse quizCapabilities(Long uid, String deckId) {
+        return QuizCapabilities.count(readable(uid, deckId).getCards());
+    }
+
+    /** Thẻ đã gửi ai-service: so lại term / reading lúc ghi để không gắn phương án nhiễu của từ cũ vào thẻ vừa bị sửa. */
+    private record DistractorSnapshot(String term, String reading) {}
+
+    /**
+     * Sinh phương án nhiễu (chữ giống hình C2, từ đồng âm C3) cho mọi thẻ từ vựng của bộ, ghi flashcards.distractors. Quyền
+     * EDITOR+ vì ghi dữ liệu thẻ. Ba bước, không bọc @Transactional: (1) transaction đọc kiểm quyền + chụp thẻ, (2) gọi
+     * ai-service ngoài transaction (bộ lớn có thể mất vài phút — không giữ kết nối DB / khoá dòng deck chừng ấy), (3)
+     * transaction ghi khoá deck, kiểm lại quyền (có thể vừa bị thu hồi) rồi chỉ ghi thẻ còn tồn tại và chưa đổi term /
+     * reading. Thẻ ngữ pháp không gửi: mẫu câu không có chữ giống hình / từ đồng âm. ai-service lỗi / tắt -> 503.
+     */
+    public DistractorsResponse generateDistractors(Long uid, String deckId) {
+        Map<String, DistractorSnapshot> sent = new LinkedHashMap<>();
+        List<QuizAiClient.DistractorInput> inputs = tx.execute(status -> {
+            Deck deck = require(uid, readable(uid, deckId), Access.EDITOR);
+            List<QuizAiClient.DistractorInput> list = new ArrayList<>();
+            for (Flashcard c : deck.getCards()) {
+                if (!Flashcard.KIND_VOCAB.equals(c.getKind()) || c.getTerm() == null || c.getTerm().isBlank()) continue;
+                sent.put(c.getId(), new DistractorSnapshot(c.getTerm(), c.getReading()));
+                list.add(new QuizAiClient.DistractorInput(c.getId(), c.getTerm(), c.getReading(),
+                        QuizService.headline(c.getMeaning()), c.getLevel()));
+            }
+            return list;
+        });
+        if (inputs == null || inputs.isEmpty()) return new DistractorsResponse(0, 0, 0);
+
+        Map<String, QuizAiClient.Distractors> byCard = new LinkedHashMap<>();
+        try {
+            for (QuizAiClient.Distractors d : quizAi.distractors(inputs)) {
+                if (sent.containsKey(d.ref())) byCard.putIfAbsent(d.ref(), d);
+            }
+        } catch (AiServiceClient.AiServiceException e) {
+            throw aiUnavailable(e);
+        }
+
+        return tx.execute(status -> {
+            Deck deck = lockedWith(uid, deckId, Access.EDITOR);
+            int updated = 0;
+            int withLookalike = 0;
+            int withHomophone = 0;
+            for (Flashcard c : deck.getCards()) {
+                QuizAiClient.Distractors d = byCard.get(c.getId());
+                DistractorSnapshot before = sent.get(c.getId());
+                if (d == null || before == null
+                        || !Objects.equals(before.term(), c.getTerm()) || !Objects.equals(before.reading(), c.getReading())) {
+                    continue;
+                }
+                c.setDistractors(d.toColumn());
+                updated++;
+                if (!d.kanjiLookalike().isEmpty()) withLookalike++;
+                if (!d.homophones().isEmpty()) withHomophone++;
+            }
+            return new DistractorsResponse(updated, withLookalike, withHomophone);
+        });
+    }
+
+    /**
+     * Như các lời gọi ai-service khác (NlpService): ai-service tắt / lỗi -> 503. Người dùng không gửi tham số nào sang
+     * ai-service nên 4xx của ai-service là lỗi phía server, cũng 503 với thông điệp chung; 401 / 403 (sai X-Internal-Key) không
+     * bao giờ lộ ra vì frontend coi 401 là hết phiên. Còn lại giữ thông điệp tiếng Việt của AiServiceClient (không kết nối
+     * được, quá giờ...).
+     */
+    private static ResponseStatusException aiUnavailable(AiServiceClient.AiServiceException e) {
+        int status = e.status();
+        String message = status >= 400 && status < 500
+                ? "Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau." : e.getMessage();
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, message);
+    }
+
     // ---------- tiện ích ----------
 
     /** Bỏ thẻ thiếu thuật ngữ/nghĩa (dòng trống trong trình soạn). */
@@ -376,13 +469,20 @@ public class DeckService {
     }
 
     private static void apply(Flashcard card, DeckRequest.Card c) {
-        card.setTerm(c.term().trim());
-        card.setReading(c.reading() != null ? c.reading().trim() : null);
+        String term = c.term().trim();
+        String reading = c.reading() != null ? c.reading().trim() : null;
+        // Phương án nhiễu sinh theo term / reading cũ: đổi một trong hai thì bỏ, để quiz không hỏi chữ giống hình / từ đồng âm
+        // của một từ khác (null = "chưa sinh", người dùng bấm sinh lại).
+        if (!Objects.equals(term, card.getTerm()) || !Objects.equals(reading, card.getReading())) card.setDistractors(null);
+        card.setTerm(term);
+        card.setReading(reading);
         card.setMeaning(c.meaning().trim());
         // Metadata AI: client không gửi (null) = giữ nguyên giá trị đang có, không xoá
         if (c.level() != null) card.setLevel(c.level());
         if (c.kind() != null) card.setKind(c.kind());
         if (c.readingSegments() != null) card.setReadingSegments(c.readingSegments());
         if (c.hanViet() != null) card.setHanViet(c.hanViet().trim());
+        // pos: null = giữ nguyên như metadata khác; chuỗi rỗng = xoá (người dùng sửa thẻ thành từ không còn là động từ)
+        if (c.pos() != null) card.setPos(c.pos().isBlank() ? null : c.pos().trim());
     }
 }
