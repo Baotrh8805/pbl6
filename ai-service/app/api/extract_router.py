@@ -98,7 +98,13 @@ class ConflictItem(BaseModel):
     ``reading`` / ``meaningEn`` của thẻ được coi là của tài liệu (job cũ chưa lưu khai báo); gửi ``null`` → tài liệu không
     khai báo gì → không so (cách đọc Sudachi của thẻ không bị đổ cho tài liệu); gửi giá trị → đó là khai báo của tài liệu.
     ``docLevel`` = cấp tài liệu khai cho thẻ này; ``docLevelScope`` "document" khi đó là cấp chung của cả tài liệu (chỉ
-    từ khó hơn hẳn mới đáng ngờ), "item" khi là tag riêng trên dòng của thẻ."""
+    từ khó hơn hẳn mới đáng ngờ), "item" khi là tag riêng trên dòng của thẻ.
+
+    Item của /analyze luôn mang docReading / docMeaningEn / docLevel (null khi tài liệu không ghi; docLevel là tag trên
+    dòng → scope "item" mặc định) nên backend gửi nguyên item đã lưu (thêm ``ref``) là được kết quả như lúc analyze với
+    cùng references / ngưỡng — khoá thừa (position, conflicts, exampleSegments…) bị bỏ qua. docLevel TUỲ CHỌN của
+    analyze (cấp chung tài liệu) không nằm trong item: thẻ không có tag dòng muốn kiểm lại theo cấp chung thì backend tự
+    gửi docLevel đó kèm docLevelScope "document"."""
     ref: str
     term: str = Field(..., min_length=1)
     kind: str = "vocab"                 # vocab | grammar

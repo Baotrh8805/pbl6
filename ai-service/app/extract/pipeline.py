@@ -20,6 +20,8 @@ Mâu thuẫn tài liệu ↔ tham chiếu (F2, conflicts.py): mỗi item trả v
 confidence ≥ `conflictMinConfidence` (mặc định 0.6) khi `warnConflicts` bật (mặc định); `references` = mục tham chiếu
 quản trị ghi đè từ điển, `docLevel` = cấp JLPT tài liệu tự khai (tag "N5" trên dòng danh sách ghi đè). Chỉ so cái tài liệu
 KHAI BÁO (cột kana / ruby / nghĩa EN in sẵn), không so cách đọc Sudachi đoán hay nghĩa từ điển điền vào — xem _attach_conflicts.
+Các khai báo đó trả công khai trên mọi item: `docReading` / `docMeaningEn` / `docLevel` (None = tài liệu không ghi) để backend
+lưu và gửi nguyên lại POST /extract/conflicts.
 
 Furigana theo ngữ cảnh (B5): cách đọc dạng từ điển của từ đã chia suy từ cách đọc TRONG CÂU (_lemma_reading); từ đồng tự
 dị âm trong data/heteronyms.yaml (辛い からい / つらい, 開く あく / ひらく…) đổi cách đọc khi ngữ cảnh có cue của cách đọc
@@ -370,11 +372,21 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
     return result
 
 
+DOC_KEYS = ("docReading", "docMeaningEn", "docLevel")
+
+
 def _attach_conflicts(result: dict, opts: dict) -> None:
     """F2: gắn item.conflicts (luôn là list) + stats.conflicts / conflictsByField cho các item ĐÃ trả về — chạy sau _finish
     (sau cap) để stats đếm đúng những gì người dùng thấy và không tốn công kiểm tra thẻ bị cắt. Khoá riêng `_doc` do
     _list_items / _prose_items gắn (cách đọc / nghĩa EN / cấp mà TÀI LIỆU khai báo; None = không khai báo) được gỡ khỏi
-    item kể cả khi warnConflicts tắt — khi tắt, conflicts = [] và stats = 0 để client xử lý một kiểu."""
+    item kể cả khi warnConflicts tắt — khi tắt, conflicts = [] và stats = 0 để client xử lý một kiểu.
+
+    Khai báo của tài liệu được trả công khai trên MỌI item (vocab lẫn grammar, cả hai bố cục, bất kể warnConflicts) dưới
+    DOC_KEYS, None khi tài liệu không nói gì: backend phải lưu được chúng (mục nguồn tri thức, POST /extract/conflicts
+    kiểm lại job cũ) — chỉ gỡ `_doc` thì backend không bao giờ biết tài liệu đã ghi gì, và gửi lại thiếu khoá thì
+    ConflictItem coi cách đọc Sudachi / gloss từ điển là của tài liệu. Tên khoá trùng ConflictItem nên item lưu lại gửi
+    nguyên được. `docLevel` chỉ là tag trên dòng của thẻ (scope "item" = mặc định của ConflictItem); docLevel tuỳ chọn là
+    cấp chung backend đã tự gửi nên không chép vào từng item (chép vào thì gửi lại sẽ thành scope "item", báo cả từ dễ)."""
     warn = bool(opts.get("warnConflicts", True))
     min_conf = opts.get("conflictMinConfidence")
     min_conf = DEFAULT_OPTIONS["conflictMinConfidence"] if min_conf is None else float(min_conf)
@@ -384,13 +396,14 @@ def _attach_conflicts(result: dict, opts: dict) -> None:
     lists: list[list[dict]] = []
     for it in result["items"]:
         doc = it.pop("_doc", None) or {}
+        for key in DOC_KEYS:
+            it[key] = doc.get(key)
         found: list[dict] = []
         if warn:
             # tag cấp trên dòng là khai báo cho đúng thẻ đó (scope item); docLevel tuỳ chọn là cấp chung của tài liệu
             # (scope document: chỉ từ khó hơn hẳn mới đáng ngờ — tài liệu N1 có từ N5 là bình thường)
-            line_level = doc.get("docLevel")
-            probe = {**it, "docReading": doc.get("docReading"), "docMeaningEn": doc.get("docMeaningEn"),
-                     "docLevel": line_level or doc_level, "docLevelScope": "item" if line_level else "document"}
+            line_level = it["docLevel"]
+            probe = {**it, "docLevel": line_level or doc_level, "docLevelScope": "item" if line_level else "document"}
             found = [c for c in conflicts.check_item(probe, refs, cache) if c["confidence"] >= min_conf]
         it["conflicts"] = found
         lists.append(found)

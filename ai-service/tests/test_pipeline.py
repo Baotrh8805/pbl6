@@ -553,6 +553,41 @@ def test_list_layout_reading_conflict_from_document_reading():
     assert all("_doc" not in it for it in r["items"])
 
 
+_DOC_KEYS = ("docReading", "docMeaningEn", "docLevel")
+
+
+def _claims(it: dict) -> tuple:
+    return tuple(it[k] for k in _DOC_KEYS)
+
+
+def test_document_claims_are_exposed_on_every_item():
+    # backend lưu khai báo của tài liệu (mục nguồn tri thức, kiểm lại job cũ) → khoá riêng `_doc` vẫn gỡ, nhưng
+    # docReading / docMeaningEn / docLevel luôn có mặt trên mọi item (None = tài liệu không ghi), bất kể warnConflicts
+    text = "学校：がくこう - school\n橋\tはじ\tbridge\n映画\tえいが\tmovie\tN1\n勉強\tべんきょう\thọc\n4時\tよじ\tfour o'clock\n"
+    for warn in (True, False):
+        r = analyze(text, None, {"extractMode": "list", "warnConflicts": warn, "docLevel": "N3"})
+        by = {it["term"]: it for it in r["items"]}
+        assert all("_doc" not in it and all(k in it for k in _DOC_KEYS) for it in r["items"])
+        assert _claims(by["学校"]) == ("がくこう", "school", None)   # kana ghi liền sau cụm + nghĩa EN in sẵn
+        assert by["学校"]["reading"] == "がっこう"                    # thẻ vẫn giữ cách đọc chuẩn
+        assert _claims(by["橋"]) == ("はじ", "bridge", None)          # cột kana
+        # tag "(N1)" trên dòng là khai báo của thẻ; docLevel tuỳ chọn (cấp chung) KHÔNG chép vào item nào
+        assert _claims(by["映画"]) == ("えいが", "movie", "N1")
+        assert _claims(by["勉強"]) == ("べんきょう", None, None)      # nghĩa VI in sẵn không phải docMeaningEn
+        assert _claims(by["時"]) == (None, None, None)              # cụm bị cắt chữ số → cột kana / nghĩa là của 4時
+    # văn xuôi: chỉ ruby là khai báo; cách đọc Sudachi / gloss JMdict không bao giờ thành docReading / docMeaningEn
+    r = analyze("漢字（かんじ）を書く。毎日勉強します。食べなければならない。", None, {"levelFilter": "all"})
+    by = {it["term"]: it for it in r["items"]}
+    assert _claims(by["漢字"]) == ("かんじ", None, None)
+    assert by["勉強"]["reading"] == "べんきょう" and _claims(by["勉強"]) == (None, None, None)
+    assert any(it["kind"] == "grammar" for it in r["items"])
+    assert all(_claims(it) == (None, None, None) for it in r["items"] if it["term"] != "漢字")
+    # tách chương: item gộp giữ khai báo của lần xuất hiện đầu
+    r = analyze("第1課\n学校：がくこう - school\n映画\tえいが\tmovie\n第2課\n学校\tがっこう\tschool\n橋\tはし\tbridge\n", None,
+                {**CH_OPTS, "extractMode": "list"})
+    assert _claims(next(it for it in r["items"] if it["term"] == "学校")) == ("がくこう", "school", None)
+
+
 def test_prose_ruby_is_document_reading_but_sudachi_reading_is_not():
     r = analyze("漢字（かんし）を書く。", None, {})
     kanji = next(it for it in r["items"] if it["term"] == "漢字")

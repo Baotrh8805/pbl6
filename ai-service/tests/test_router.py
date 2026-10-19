@@ -178,7 +178,9 @@ def test_analyze():
     assert set(item) == {"kind", "position", "term", "surface", "reading", "readingSegments", "hanViet", "pos",
                          "meaningEn", "meaningVi", "level", "levelConfidence", "levelSources", "frequency",
                          "example", "exampleVi", "suspect", "chapter", "conflicts",
-                         "readingNote", "exampleSegments"}
+                         "readingNote", "exampleSegments", "docReading", "docMeaningEn", "docLevel"}
+    # văn xuôi không ruby: tài liệu không khai báo gì → ba khoá đều null trên mọi item (kể cả ngữ pháp)
+    assert all((it["docReading"], it["docMeaningEn"], it["docLevel"]) == (None, None, None) for it in body["items"])
 
 
 def test_analyze_split_chapters():
@@ -352,6 +354,9 @@ def test_conflicts_endpoint(monkeypatch):
     r = client.post("/api/extract/analyze", json={"text": "学校：がくこう - school\n映画\tえいが\tmovie\n橋\tはし\tbridge\n",
                                                   "options": {"extractMode": "list", "warnConflicts": False}})
     assert r.json()["stats"]["conflicts"] == 0 and all(it["conflicts"] == [] for it in r.json()["items"])
+    # warnConflicts tắt vẫn trả khai báo của tài liệu để backend lưu (doc_reading / doc_meaning_en)
+    by = {it["term"]: it for it in r.json()["items"]}
+    assert (by["学校"]["docReading"], by["学校"]["docMeaningEn"], by["学校"]["docLevel"]) == ("がくこう", "school", None)
     # 400: quá 1 000 mục; 422: minConfidence ngoài khoảng / thiếu term; 401: khoá nội bộ như mọi route extract
     too_many = {"items": [{"ref": str(i), "term": "学校"} for i in range(1001)]}
     assert client.post("/api/extract/conflicts", json=too_many).status_code == 400
@@ -360,3 +365,29 @@ def test_conflicts_endpoint(monkeypatch):
     monkeypatch.setattr(settings, "AI_SERVICE_KEY", "secret")
     assert client.post("/api/extract/conflicts", json=body).status_code == 401
     assert client.post("/api/extract/conflicts", json=body, headers={"X-Internal-Key": "secret"}).status_code == 200
+
+
+def test_analyze_items_round_trip_through_conflicts():
+    """Item /analyze lưu nguyên (thêm ref) gửi lại POST /extract/conflicts → cùng cảnh báo: docReading / docMeaningEn /
+    docLevel cùng tên với ConflictItem, khoá thừa bị bỏ qua. Thiếu ba khoá đó (lỗi cũ: pipeline gỡ `_doc`) thì cách đọc
+    chuẩn của thẻ bị coi là của tài liệu → mất cảnh báo 学校 がくこう."""
+    opts = {"conflictMinConfidence": 0.5}
+    texts = [("学校：がくこう - school\n橋\tはじ\tbridge\n映画\tえいが\tmovie\tN1\n勉強\tべんきょう\thọc\n4時\tよじ\tfour o'clock\n",
+              {**opts, "extractMode": "list"}),
+             ("漢字（かんし）を書く。毎日勉強します。", opts)]
+    for text, options in texts:
+        r = client.post("/api/extract/analyze", json={"text": text, "options": options})
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        assert any(it["conflicts"] for it in items)
+        stored = [{**it, "ref": str(i)} for i, it in enumerate(items)]
+        back = client.post("/api/extract/conflicts", json={"items": stored, "minConfidence": 0.5})
+        assert back.status_code == 200, back.text
+        assert [it["conflicts"] for it in back.json()["items"]] == [it["conflicts"] for it in items]
+    # job cũ chưa lưu khai báo (không có khoá doc*): reading của thẻ được coi là của tài liệu → 学校 がっこう hết cảnh báo
+    r = client.post("/api/extract/analyze", json={"text": texts[0][0], "options": texts[0][1]}).json()
+    gakkou = next(it for it in r["items"] if it["term"] == "学校")
+    assert gakkou["reading"] == "がっこう" and [c["document"] for c in gakkou["conflicts"]] == ["がくこう"]
+    legacy = {k: v for k, v in gakkou.items() if k not in ("docReading", "docMeaningEn", "docLevel")}
+    back = client.post("/api/extract/conflicts", json={"items": [{**legacy, "ref": "x"}]}).json()
+    assert back["items"][0]["conflicts"] == []
