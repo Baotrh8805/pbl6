@@ -5,12 +5,16 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -75,5 +79,34 @@ class AuthSecurityIT extends IntegrationTest {
                         .header("Access-Control-Request-Method", "PATCH"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
+    }
+
+    /**
+     * STAFF-01: proxy /api của Vite chuyển nguyên header Origin của trình duyệt (changeOrigin chỉ đổi Host), nên mở app bằng
+     * http://127.0.0.1:5173 hay http://[::1]:5173 thay vì localhost thì mọi request ghi (trình duyệt gửi Origin cả khi cùng
+     * origin) bị 403 "Invalid CORS request" — đăng nhập / đăng ký / thao tác admin đều chết. Mặc định cho cả ba tên loopback.
+     */
+    @Test
+    void cors_allows_vite_dev_origin_under_every_loopback_name() throws Exception {
+        String email = registerEmail("cors-" + UUID.randomUUID() + "@test.com");
+        String body = json.writeValueAsString(Map.of("email", email, "password", "secret123"));
+        for (String origin : List.of("http://localhost:5173", "http://127.0.0.1:5173", "http://[::1]:5173")) {
+            mvc.perform(post("/api/auth/login").header("Origin", origin)
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin));
+            mvc.perform(options("/api/auth/register").header("Origin", origin)
+                            .header("Access-Control-Request-Method", "POST"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin));
+        }
+        // Origin lạ vẫn bị chặn, nhưng bằng 403 JSON tiếng Việt như mọi lỗi khác (frontend hiện "message"), không còn chữ thô
+        mvc.perform(post("/api/auth/login").header("Origin", "http://evil.example")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message", containsString("CORS")))
+                .andExpect(jsonPath("$.message", containsString("Máy chủ từ chối")))
+                .andExpect(content().string(not(containsString("Invalid CORS request"))));
     }
 }

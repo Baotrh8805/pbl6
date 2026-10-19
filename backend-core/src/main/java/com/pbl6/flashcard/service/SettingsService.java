@@ -54,6 +54,8 @@ public class SettingsService {
             Map.entry(KEY_EMAIL_VERIFICATION, "true"));
 
     static final int MAX_MODEL_CHARS = 40;
+    static final int MAX_DAILY_LIMIT = 1000;
+    static final int MAX_ANNOUNCEMENT_CHARS = 300;
 
     private final AppSettingRepository settings;
     private final AuditService audit;
@@ -144,9 +146,9 @@ public class SettingsService {
     }
 
     /**
-     * Ghi mọi khoá; chỉ khoá có giá trị khác mới được cập nhật và đưa vào audit SETTINGS_UPDATE. Khoảng giá trị của 4 khoá cũ do
-     * bean validation trên {@link SettingsResponse} chặn; các khoá V20/V21 kiểm ở đây (gom mọi lỗi vào một 400) để thông điệp nêu
-     * đúng tên khoá JSON mà trang Admin gửi.
+     * Ghi mọi khoá; chỉ khoá có giá trị khác mới được cập nhật và đưa vào audit SETTINGS_UPDATE. Mọi khoá — kể cả 4 khoá V14, trước
+     * đây do bean validation chặn với thông điệp tiếng Anh theo tên field Java — kiểm ở đây (gom mọi lỗi vào một 400) để thông điệp
+     * tiếng Việt nêu đúng tên khoá JSON mà trang Admin gửi.
      */
     @Transactional
     public SettingsResponse update(Long actorId, SettingsResponse req) {
@@ -188,6 +190,29 @@ public class SettingsService {
 
     private static void validate(SettingsResponse req) {
         List<String> errors = new ArrayList<>();
+        // PUT đòi đủ mọi khoá: một bản frontend cũ thiếu khoá không được ghi đè cấu hình bằng giá trị rỗng
+        Map<String, Object> all = new LinkedHashMap<>();
+        all.put(KEY_LIMIT_FREE, req.extractionDailyLimitFree());
+        all.put(KEY_LIMIT_PREMIUM, req.extractionDailyLimitPremium());
+        all.put(KEY_ANNOUNCEMENT, req.announcement());
+        all.put(KEY_REGISTRATION_OPEN, req.registrationOpen());
+        all.put(KEY_LP_DAILY_CAP, req.learningPathDailyCapDefault());
+        all.put(KEY_LP_QUIZ_PASS, req.learningPathQuizPassPct());
+        all.put(KEY_LP_REMINDER_HOUR, req.learningPathReminderHour());
+        all.put(KEY_OCR_FALLBACK, req.ocrFallbackConfidence());
+        all.put(KEY_OCR_LOW_LINE, req.ocrLowLineConfidence());
+        all.put(KEY_DISTRACTOR_MIN, req.distractorMinConfidence());
+        all.put(KEY_CONTRADICTION_ALERT, req.contradictionAlertThreshold());
+        all.put(KEY_AI_MODEL_PRIMARY, req.aiModelPrimary());
+        all.put(KEY_EMAIL_VERIFICATION, req.emailVerificationRequired());
+        all.forEach((key, v) -> {
+            if (v == null) errors.add("Thiếu khoá " + key + ".");
+        });
+        intRange(errors, KEY_LIMIT_FREE, req.extractionDailyLimitFree(), 0, MAX_DAILY_LIMIT);
+        intRange(errors, KEY_LIMIT_PREMIUM, req.extractionDailyLimitPremium(), 0, MAX_DAILY_LIMIT);
+        if (req.announcement() != null && req.announcement().length() > MAX_ANNOUNCEMENT_CHARS) {
+            errors.add(KEY_ANNOUNCEMENT + " tối đa " + MAX_ANNOUNCEMENT_CHARS + " ký tự.");
+        }
         intRange(errors, KEY_LP_DAILY_CAP, req.learningPathDailyCapDefault(), 5, 200);
         intRange(errors, KEY_LP_QUIZ_PASS, req.learningPathQuizPassPct(), 50, 100);
         intRange(errors, KEY_LP_REMINDER_HOUR, req.learningPathReminderHour(), 0, 23);

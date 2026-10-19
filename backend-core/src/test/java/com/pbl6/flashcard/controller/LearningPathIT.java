@@ -164,12 +164,13 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(8, c2.get("cardCount").asInt());
         assertEquals(7, c2.get("vocabCount").asInt());
         assertEquals(1, c2.get("grammarCount").asInt());
-        // allocate([12, 8], 10) -> 6 ngày + 4 ngày
+        // LP-01: bản xem trước = lịch sau kích hoạt (plan 2.0, IT-01): 20 thẻ / 10 ngày -> {3, 2, 2, 2, 3, 2, 2, 2, 2},
+        // chương 1 ngày 1–5, chương 2 ngày 6–9 (ngày 10 thành ngày ôn)
         assertEquals(1, c1.get("dayFrom").asInt());
-        assertEquals(6, c1.get("dayTo").asInt());
-        assertEquals(7, c2.get("dayFrom").asInt());
-        assertEquals(10, c2.get("dayTo").asInt());
-        assertEquals(2, c1.get("perDay").asInt());
+        assertEquals(5, c1.get("dayTo").asInt());
+        assertEquals(6, c2.get("dayFrom").asInt());
+        assertEquals(9, c2.get("dayTo").asInt());
+        assertEquals(3, c1.get("perDay").asInt());
         assertEquals(2, c2.get("perDay").asInt());
         assertFalse(c1.get("deckDeleted").asBoolean());
 
@@ -178,8 +179,11 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(1, days.get(0).get("dayIndex").asInt());
         assertEquals(c1.get("id").asText(), days.get(0).get("tasks").get(0).get("chapterId").asText());
         assertEquals(1, days.get(0).get("tasks").get(0).get("fromPos").asInt());
-        assertEquals(2, days.get(0).get("tasks").get(0).get("toPos").asInt());
+        assertEquals(3, days.get(0).get("tasks").get(0).get("toPos").asInt());
+        assertEquals(3, days.get(0).get("tasks").get(0).get("count").asInt());
+        assertFalse(days.get(0).get("tasks").get(0).has("cardIds")); // thẻ chưa tồn tại
         assertEquals(c2.get("id").asText(), days.get(6).get("tasks").get(0).get("chapterId").asText());
+        assertEquals(0, days.get(9).get("tasks").size());
         assertFalse(draft.has("today")); // chỉ ACTIVE mới có "Hôm nay"
 
         // Job của lộ trình không hiện trong lịch sử bóc tách
@@ -212,12 +216,17 @@ class LearningPathIT extends IntegrationTest {
             assertEquals(i + 1, chapters.get(i).get("dayFrom").asInt());
         }
 
+        // > 14 ngày: mỗi tuần một chương, tên theo dải ngày của lịch xem trước (= lịch sau kích hoạt): 6 thẻ / 20 ngày dồn về
+        // đầu (quota kẹp 1), đuôi 1 thẻ của chương đang học được học nốt trong ngày -> 2, 2 rồi 1 + 1
         String id2 = read(postPath(token, TEXT, "20", null).andExpect(status().isAccepted())).get("id").asText();
         JsonNode weeks = awaitDraft(token, id2).get("chapters");
         assertEquals(3, weeks.size());
-        assertEquals("Tuần 1 (ngày 1–7)", weeks.get(0).get("title").asText());
-        assertEquals("Tuần 2 (ngày 8–14)", weeks.get(1).get("title").asText());
-        assertEquals("Tuần 3 (ngày 15–20)", weeks.get(2).get("title").asText());
+        assertEquals("Tuần 1 (ngày 1)", weeks.get(0).get("title").asText());
+        assertEquals("Tuần 2 (ngày 2)", weeks.get(1).get("title").asText());
+        assertEquals("Tuần 3 (ngày 3–4)", weeks.get(2).get("title").asText());
+        // tên đã ghi xuống DB lúc dựng bản nháp, không chỉ ở response
+        assertEquals("Tuần 3 (ngày 3–4)", jdbc.queryForObject("SELECT title FROM learning_path_chapters WHERE path_id = ? "
+                + "AND position = 3", String.class, UUID.fromString(id2)));
     }
 
     @Test
@@ -236,11 +245,14 @@ class LearningPathIT extends IntegrationTest {
         for (int i = 0; i < 3; i++) {
             JsonNode c = chapters.get(i);
             assertEquals(cards[i], c.get("cardCount").asInt());
-            String expected = "Tuần " + (i + 1) + " (ngày " + c.get("dayFrom").asInt() + "–" + c.get("dayTo").asInt() + ")";
+            int from = c.get("dayFrom").asInt();
+            int to = c.get("dayTo").asInt();
+            String expected = "Tuần " + (i + 1) + " (ngày " + (from == to ? from : from + "–" + to) + ")";
             assertEquals(expected, c.get("title").asText()); // tên chương khớp dải ngày tính sống
         }
+        // 4 thẻ / 20 ngày theo plan 2.0: dồn về đầu, mỗi chương một ngày
         assertEquals(1, chapters.get(0).get("dayFrom").asInt());
-        assertEquals(20, chapters.get(2).get("dayTo").asInt());
+        assertEquals(3, chapters.get(2).get("dayTo").asInt());
     }
 
     @Test
@@ -255,6 +267,165 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(1, draft.get("chapters").size());
         assertEquals("Ngày 1", draft.get("chapters").get(0).get("title").asText());
         assertEquals(0, draft.get("chapters").get(0).get("cardCount").asInt());
+    }
+
+    /** Dải ngày của chương dạng "3" / "3–4" (cùng cách viết với tên chương tự sinh). */
+    private static String rangeText(JsonNode chapter) {
+        int from = chapter.get("dayFrom").asInt();
+        int to = chapter.get("dayTo").asInt();
+        return from == to ? String.valueOf(from) : from + "–" + to;
+    }
+
+    /** Chương rút gọn để so bản nháp với lộ trình đã kích hoạt: id, vị trí, tên, dải ngày, số thẻ, thẻ/ngày. */
+    private static List<String> chapterPlan(JsonNode path) {
+        List<String> out = new ArrayList<>();
+        for (JsonNode c : path.get("chapters")) {
+            out.add(c.get("id").asText() + " #" + c.get("position").asInt() + " " + c.get("title").asText() + " ["
+                    + rangeText(c) + "] " + c.get("cardCount").asInt() + " thẻ " + c.get("perDay").asInt() + "/ngày");
+        }
+        return out;
+    }
+
+    /** Việc từng ngày rút gọn: ngày lịch + mỗi task (chương, dải vị trí trong bộ, số thẻ). */
+    private static List<String> dayPlan(JsonNode path) {
+        List<String> out = new ArrayList<>();
+        for (JsonNode d : path.get("days")) {
+            StringBuilder sb = new StringBuilder(d.get("dayIndex").asInt() + " " + d.get("date").asText() + ":");
+            for (JsonNode t : d.get("tasks")) {
+                sb.append(' ').append(t.get("chapterId").asText()).append('[').append(t.get("fromPos").asInt()).append('-')
+                        .append(t.get("toPos").asInt()).append(" #").append(t.get("count").asInt()).append(']');
+            }
+            out.add(sb.toString());
+        }
+        return out;
+    }
+
+    /**
+     * LP-01: bản xem trước người dùng duyệt phải là lịch họ nhận sau "Tạo lộ trình". Trước đây bản nháp dựng bằng allocate 1.0 (rải
+     * thẻ khắp số ngày: 3 bài ít thẻ / 120 ngày thành "Ngày 1–35, 36–83, 84–120", ngày giữa trống) còn kích hoạt dùng plan 2.0
+     * (quota kẹp 1, dồn về đầu: mọi thẻ trong ngày 1–19); lộ trình dày 12 ngày cũng lệch từng ngày.
+     */
+    @Test
+    void draft_preview_is_the_schedule_activation_writes() throws Exception { // LP-01
+        List<AiDtos.Item> list = new ArrayList<>();
+        int pos = 0;
+        int[] sizes = {6, 8, 6};
+        for (int ch = 1; ch <= 3; ch++) {
+            for (int i = 0; i < sizes[ch - 1]; i++) list.add(vocab(++pos, "語" + pos, ch, false));
+        }
+        list.add(grammar(++pos, "〜ます", 3)); // trọng số 1.2: bản nháp và kích hoạt phải cùng trọng số
+        stubAnalyze(list, Map.of("vocab", 20, "grammar", 1, "chaptersDetected", true, "chapters", List.of(
+                Map.of("index", 1, "title", "Bài 1"), Map.of("index", 2, "title", "Bài 2"), Map.of("index", 3, "title", "Bài 3"))));
+        String token = newUser();
+        for (String days : new String[]{"120", "12"}) {
+            JsonNode draft = draftPath(token, days, "Ba bài " + days);
+            String id = draft.get("id").asText();
+            JsonNode active = activate(token, id, Map.of("startDate", draft.get("startDate").asText()));
+            assertEquals(chapterPlan(draft), chapterPlan(active), days + " ngày");
+            assertEquals(dayPlan(draft), dayPlan(active), days + " ngày");
+            assertEquals(draft.get("overCap").asBoolean(), active.has("overflow"), days + " ngày");
+            if ("120".equals(days)) {
+                // 21 thẻ / 120 ngày: 1 thẻ/ngày, đuôi 1 thẻ của chương 1, 2 học nốt trong ngày -> 1–5, 6–12, 13–19
+                JsonNode ch = draft.get("chapters");
+                assertEquals("1–5", rangeText(ch.get(0)), ch.toString());
+                assertEquals("6–12", rangeText(ch.get(1)), ch.toString());
+                assertEquals("13–19", rangeText(ch.get(2)), ch.toString());
+                for (int d = 19; d < 120; d++) assertEquals(0, draft.get("days").get(d).get("tasks").size(), "ngày " + (d + 1));
+            }
+        }
+    }
+
+    /**
+     * LP-08: không nhận ra chương -> chương "Ngày N" tự sinh; tên phải đi theo dải ngày khi đổi số ngày (trước đây chốt lúc tạo:
+     * lộ trình 3 ngày có chương "Ngày 10" nằm ở ngày 3), cả trong DB để bộ thẻ khi kích hoạt mang đúng tên người dùng thấy. Tên
+     * người dùng tự đặt và tiêu đề lấy từ tài liệu không bị đụng.
+     */
+    @Test
+    void day_titles_follow_ranges_when_draft_days_change() throws Exception { // LP-08
+        List<AiDtos.Item> eight = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) eight.add(vocab(i, "語" + i, null, false));
+        stubAnalyze(eight, Map.of("vocab", 8, "grammar", 0, "chaptersDetected", false));
+        String token = newUser();
+        JsonNode draft = draftPath(token, "10", null);
+        String id = draft.get("id").asText();
+        JsonNode ch = draft.get("chapters");
+        assertEquals(8, ch.size());
+        for (JsonNode c : ch) assertEquals("Ngày " + rangeText(c), c.get("title").asText(), ch.toString());
+        assertEquals("Ngày 8", ch.get(7).get("title").asText()); // 8 thẻ / 10 ngày: một thẻ mỗi ngày 1..8
+        String renamed = ch.get(1).get("id").asText();
+        call(patch(BASE + id + "/chapters/" + renamed), token, Map.of("title", "Chào hỏi")).andExpect(status().isOk());
+
+        JsonNode three = read(call(patch(BASE + id), token, Map.of("totalDays", 3)).andExpect(status().isOk()));
+        JsonNode ch3 = three.get("chapters");
+        assertEquals(3, ch3.get(7).get("dayFrom").asInt(), ch3.toString());
+        for (JsonNode c : ch3) {
+            String expected = renamed.equals(c.get("id").asText()) ? "Chào hỏi" : "Ngày " + rangeText(c);
+            assertEquals(expected, c.get("title").asText(), ch3.toString());
+        }
+        assertEquals("Ngày 3", ch3.get(7).get("title").asText()); // trước đây "Ngày 10"
+        assertEquals("Ngày 3", jdbc.queryForObject("SELECT title FROM learning_path_chapters WHERE id = ?", String.class,
+                UUID.fromString(ch3.get(7).get("id").asText())));
+
+        // Kích hoạt với số ngày khác: tên chốt theo đúng lịch nhận được, bộ thẻ mang đúng tên chương
+        JsonNode active = activate(token, id, Map.of("totalDays", 2));
+        for (JsonNode c : active.get("chapters")) {
+            String expected = renamed.equals(c.get("id").asText()) ? "Chào hỏi" : "Ngày " + rangeText(c);
+            assertEquals(expected, c.get("title").asText(), active.get("chapters").toString());
+            JsonNode deck = read(call(get("/api/decks/" + c.get("deckId").asText()), token, null).andExpect(status().isOk()));
+            assertEquals(expected, deck.get("title").asText());
+        }
+        assertEquals("Ngày 2", active.get("chapters").get(7).get("title").asText());
+
+        // Tiêu đề lấy từ tài liệu ("Ngày 5" của giáo trình) giữ nguyên dù chương nằm ở ngày 1
+        stubAnalyze(List.of(vocab(1, "語1", 1, false), vocab(2, "語2", 1, false)), Map.of("vocab", 2, "grammar", 0,
+                "chaptersDetected", true, "chapters", List.of(Map.of("index", 1, "title", "Ngày 5"))));
+        JsonNode detected = draftPath(token, "4", null);
+        assertEquals("Ngày 5", detected.get("chapters").get(0).get("title").asText());
+        JsonNode detected2 = read(call(patch(BASE + detected.get("id").asText()), token, Map.of("totalDays", 2))
+                .andExpect(status().isOk()));
+        assertEquals("Ngày 5", detected2.get("chapters").get(0).get("title").asText());
+    }
+
+    /**
+     * LP-02: thẻ của ngày sau đã học trước ("Học chương" ngay ngày 1) không còn là việc "mới" của ngày đó — tải của nó đã nằm ở
+     * hạn ôn thật. Trước đây forecast[ngày 2] = {newCount 2, ôn 12, load 14} trong khi today(ngày 2).newCount = 0: đếm đúp.
+     */
+    @Test
+    void forecast_does_not_count_cards_learned_ahead_as_new() throws Exception { // LP-02
+        String token = newUser();
+        String id = draftPath(token, "10", null).get("id").asText();
+        LocalDate start = LocalDate.now(ZONE);
+        JsonNode active = activate(token, id, Map.of("startDate", start.toString()));
+        String c1 = active.get("chapters").get(0).get("id").asText();
+        JsonNode day1 = pathOn(token, id, start.toString());
+        assertEquals(2, day1.get("forecast").get(1).get("newCount").asInt()); // ngày 2 xếp 2 thẻ của chương 1 (IT-01)
+
+        // Học hết chương 1 (12 thẻ, gồm thẻ của ngày 1..5) ngay ngày 1, chấm "Tốt" -> đến hạn ngày mai
+        JsonNode chapter = read(call(get(BASE + id + "/session").param("kind", "chapter").param("chapterId", c1)
+                .param("date", start.toString()), token, null).andExpect(status().isOk()));
+        assertEquals(12, chapter.get("cards").size());
+        for (JsonNode c : chapter.get("cards")) review(token, c.get("cardId").asText(), "good");
+
+        JsonNode p2 = pathOn(token, id, start.plusDays(1).toString());
+        assertEquals(0, p2.get("today").get("newCount").asInt());
+        int due = p2.get("today").get("dueCount").asInt();
+        assertEquals(12, due);
+        JsonNode f2 = p2.get("forecast").get(1);
+        assertEquals(2, f2.get("dayIndex").asInt());
+        assertEquals(0, f2.get("newCount").asInt(), f2.toString());
+        assertEquals(0.0, f2.get("newWeight").asDouble(), 1e-9);
+        assertEquals(due, f2.get("predictedReviews").asDouble(), 1e-9); // chỉ hạn ôn thật, không còn thẻ chưa học nào ở ngày 1
+        assertEquals(due, f2.get("load").asDouble(), 1e-9);
+        // ngày đã qua giữ lịch sử; từ hôm nay trở đi cột "mới" = thẻ chưa học = today.newCount của từng ngày
+        assertEquals(3, p2.get("forecast").get(0).get("newCount").asInt());
+        int fresh = 0;
+        for (int d = 2; d <= 10; d++) fresh += p2.get("forecast").get(d - 1).get("newCount").asInt();
+        assertEquals(8, fresh); // chỉ 8 thẻ của chương 2
+        for (int d = 1; d <= 10; d++) {
+            JsonNode p = pathOn(token, id, start.plusDays(d - 1).toString());
+            assertEquals(p.get("today").get("newCount").asInt(), p.get("forecast").get(d - 1).get("newCount").asInt(),
+                    "ngày " + d);
+        }
     }
 
     @Test

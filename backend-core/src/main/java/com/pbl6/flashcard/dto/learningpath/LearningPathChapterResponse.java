@@ -6,7 +6,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Một chương. DRAFT: số thẻ + khoảng ngày tính sống từ item được chọn (allocate 1.0); ACTIVE: tất cả suy từ learning_path_cards
+ * Một chương. DRAFT: số thẻ + khoảng ngày tính sống từ item được chọn, bằng đúng bộ chia ngày của lúc kích hoạt (plan 2.0, xem
+ * LearningPathService.draftSchedule) nên khớp lịch nhận được; ACTIVE: tất cả suy từ learning_path_cards
  * (số thẻ còn trong lịch, dải ngày = min/max scheduled_day, learned / mastered theo reviews của người dùng) nên bộ thẻ bị xoá →
  * cardCount 0, không có dải ngày. Trường 2.0 (learned, mastered, state, quizBestPct, quizPassedAt) chỉ có ở ACTIVE; null bị bỏ
  * để client 1.0 không thấy khác biệt. state: passed | review | current | locked | open (quy tắc ở LearningPathService.chapterState).

@@ -42,8 +42,6 @@ import com.pbl6.flashcard.repository.LearningPathChapterRepository;
 import com.pbl6.flashcard.repository.LearningPathRepository;
 import com.pbl6.flashcard.repository.UserRepository;
 import com.pbl6.flashcard.service.LearningPathScheduler.CardIn;
-import com.pbl6.flashcard.service.LearningPathScheduler.ChapterPlan;
-import com.pbl6.flashcard.service.LearningPathScheduler.DayPlan;
 import com.pbl6.flashcard.service.LearningPathScheduler.DayPos;
 import com.pbl6.flashcard.service.LearningPathScheduler.DayRange;
 import com.pbl6.flashcard.service.LearningPathScheduler.ForecastDay;
@@ -77,6 +75,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Lộ trình học tập: tạo (job bóc tách purpose = learning_path), dựng bản nháp chương khi job xong, kích hoạt thành lịch theo thẻ
@@ -338,7 +337,9 @@ public class LearningPathService {
 
     /**
      * Không nhận ra chương: ≤ 14 ngày -> mỗi ngày một chương, dài hơn -> mỗi tuần một chương.
-     * Chia theo item được chọn để tên chương khớp dải ngày tính sống; item bỏ chọn theo item được chọn đứng trước.
+     * Chia theo item được chọn để tên chương khớp dải ngày tính sống; item bỏ chọn theo item được chọn đứng trước. Tên chương
+     * ("Ngày 3" / "Tuần 2 (ngày 8–14)") lấy từ chính lịch xem trước ({@link #draftSchedule}) và đi theo nó về sau
+     * ({@link #syncDayTitles}).
      */
     private List<LearningPathChapter> draftByDays(LearningPath path, List<ExtractionItem> all) {
         int days = path.getTotalDays();
@@ -350,18 +351,13 @@ public class LearningPathService {
             all.forEach(i -> i.setChapterId(only.getId()));
             return List.of(only);
         }
+        // Đọc trình độ trước khi gắn item vào chương chưa lưu: không để một truy vấn nào chen giữa hai bước đó
+        String userLevel = userLevel(path);
         int k = days <= 14 ? days : (int) Math.ceil(days / 7.0);
         k = Math.min(k, selected);
         List<Integer> sizes = LearningPathScheduler.evenSplit(selected, k);
-        List<DayRange> ranges = LearningPathScheduler.allocate(sizes, days);
         List<LearningPathChapter> rows = new ArrayList<>();
-        for (int i = 0; i < k; i++) {
-            DayRange r = ranges.get(i);
-            String title = days <= 14 ? "Ngày " + r.dayFrom()
-                    : "Tuần " + (i + 1) + " (ngày " + r.dayFrom() + "–" + r.dayTo() + ")";
-            rows.add(newChapter(path, i + 1, title));
-        }
-        chapters.saveAll(rows);
+        for (int i = 0; i < k; i++) rows.add(newChapter(path, i + 1, null));
         int chunk = 0;
         int filled = 0;   // số item chọn đã vào chương chunk
         int current = 0;  // chương của item chọn gần nhất phía trước (mặc định chương đầu)
@@ -376,7 +372,48 @@ public class LearningPathService {
             }
             i.setChapterId(rows.get(current).getId());
         }
+        Map<UUID, DayRange> ranges = draftSchedule(path, rows, all, userLevel).ranges();
+        for (LearningPathChapter c : rows) {
+            DayRange r = ranges.get(c.getId());
+            c.setTitle(days <= 14 ? dayTitle(r) : weekTitle(c.getPosition(), r));
+        }
+        chapters.saveAll(rows);
         return rows;
+    }
+
+    /** Tên chương tự sinh khi không nhận ra chương: "Ngày 3", "Ngày 3–4" (≤ 14 ngày) hoặc "Tuần 2 (ngày 8–14)". */
+    private static final Pattern DAY_TITLE = Pattern.compile("Ngày \\d+(–\\d+)?");
+    private static final Pattern WEEK_TITLE = Pattern.compile("Tuần \\d+ \\(ngày \\d+(–\\d+)?\\)");
+
+    private static String dayRangeText(DayRange r) {
+        return r.dayFrom() == r.dayTo() ? String.valueOf(r.dayFrom()) : r.dayFrom() + "–" + r.dayTo();
+    }
+
+    static String dayTitle(DayRange r) {
+        return "Ngày " + dayRangeText(r);
+    }
+
+    static String weekTitle(int position, DayRange r) {
+        return "Tuần " + position + " (ngày " + dayRangeText(r) + ")";
+    }
+
+    /**
+     * LP-08: tên chương tự sinh theo ngày ({@link #draftByDays}) phải khớp dải ngày tính sống của bản nháp — đổi số ngày / trần,
+     * chọn thẻ hay gộp chương làm dải đổi thì tên đổi theo (trước đây tên chốt lúc tạo: lộ trình 3 ngày có chương "Ngày 10" nằm ở
+     * ngày 3). Chỉ đụng chương còn mang tên tự sinh (người dùng chưa đổi tên) của lộ trình KHÔNG nhận ra chương — tiêu đề lấy từ
+     * tài liệu như "Ngày 1" của giáo trình giữ nguyên. Sửa trên entity: ghi xuống DB khi caller đang trong giao dịch ghi (PATCH,
+     * gộp chương, kích hoạt — bộ thẻ mang đúng tên người dùng vừa thấy), GET chỉ trả tên mới.
+     */
+    private static void syncDayTitles(LearningPath p, List<LearningPathChapter> rows, Map<UUID, DayRange> ranges) {
+        if (Boolean.TRUE.equals(p.getChaptersDetected())) return;
+        for (LearningPathChapter c : rows) {
+            DayRange r = ranges.get(c.getId());
+            String t = c.getTitle();
+            if (r == null || t == null) continue;
+            String next = DAY_TITLE.matcher(t).matches() ? dayTitle(r)
+                    : WEEK_TITLE.matcher(t).matches() ? weekTitle(c.getPosition(), r) : null;
+            if (next != null && !next.equals(t)) c.setTitle(next);
+        }
     }
 
     private static LearningPathChapter newChapter(LearningPath path, int position, String title) {
@@ -633,12 +670,15 @@ public class LearningPathService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dữ liệu bóc tách của lộ trình không còn.");
         }
         List<ExtractionItem> all = items.findByJobIdOrderByPositionAsc(job.getId());
+        User user = users.findById(uid).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
 
         Map<UUID, List<ExtractionItem>> byChapter = new HashMap<>();
         for (ExtractionItem i : all) {
             if (i.getChapterId() != null) byChapter.computeIfAbsent(i.getChapterId(), k -> new ArrayList<>()).add(i);
         }
         List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
+        // Tên chương tự sinh theo ngày chốt theo đúng bản xem trước (số ngày / trần vừa nhận ở body) trước khi thành tên bộ thẻ
+        syncDayTitles(path, rows, draftSchedule(path, rows, all, user.getJlptLevel()).ranges());
         List<LearningPathChapter> kept = new ArrayList<>();
         List<LearningPathChapter> dropped = new ArrayList<>();
         for (LearningPathChapter c : rows) {
@@ -663,7 +703,6 @@ public class LearningPathService {
 
         List<ExtractionItem> allSelected = all.stream()
                 .filter(i -> i.isSelected() && i.getChapterId() != null).toList();
-        User user = users.findById(uid).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND));
         FolderRequest folderReq = new FolderRequest(uniqueRootTitle(uid, path.getTitle()), null, "private",
                 ExtractionService.dominantLevel(allSelected, job), false, "{\"learningPathId\":\"" + id + "\"}");
         UUID folderId = folderService.createFolder(folderReq, user).getId();
@@ -1478,10 +1517,16 @@ public class LearningPathService {
      * §3.3 cho lộ trình đang chạy: thẻ chưa học dự báo theo chuỗi khoảng ôn; thẻ đã học dùng lịch thật — hạn ôn kế tiếp quy về
      * chỉ số ngày học (dayIndexFor theo study_days; rơi vào ngày nghỉ thì tính cho ngày học kế tiếp), thẻ đã quá hạn tính vào ngày
      * đang xét (sẽ ôn ngay hôm nay). Có thẻ đã học là map khác rỗng (kể cả khoá ngoài 1..totalDays) nên forecast không dự báo đúp.
+     * <p>LP-02: từ ngày học đang xét trở đi, cột "mới" chỉ đếm thẻ CHƯA học — cùng cách đếm với today.newCount. Thẻ xếp cho hôm
+     * nay / ngày sau nhưng đã học trước ("Học chương", học vượt) không còn là việc mới của ngày đó, tải của nó đã nằm ở hạn ôn thật;
+     * để lại thì bị đếm hai lần (mới + ôn) và có thể báo vượt trần sai. Ngày đã qua giữ mọi thẻ làm lịch sử.
      */
     private List<Forecast> forecast(LearningPath p, List<PathCard> cards, Map<Integer, List<PathCard>> byDay, LocalDate date) {
+        int from = placeFrom(p, date);
         Map<Integer, List<CardIn>> in = new HashMap<>();
-        byDay.forEach((day, l) -> in.put(day, l.stream().map(PathCard::toCardIn).toList()));
+        byDay.forEach((day, l) -> in.put(day, l.stream()
+                .filter(c -> day < from || !c.learned())
+                .map(PathCard::toCardIn).toList()));
         Map<Integer, Integer> actual = new HashMap<>();
         for (PathCard c : cards) {
             if (!c.learned() || c.dueAt() == null) continue;
@@ -1499,13 +1544,61 @@ public class LearningPathService {
     }
 
     /**
-     * Bản nháp (GET /{id}): như 1.0 — số thẻ / dải ngày tính sống từ item được chọn qua allocate, days[] theo dải — cộng
-     * suggestedDays (§3.6, cùng trọng số và thứ tự thẻ như lúc kích hoạt) và overCap (plan với số ngày hiện tại báo overflow).
+     * Bản nháp (GET /{id}): lịch xem trước = lịch sẽ nhận sau khi kích hoạt (LP-01). {@link #draftSchedule} dựng đúng đầu vào của
+     * {@link #activate} (thẻ tương lai theo chương rồi từ vựng → ngữ pháp, trọng số §3.1) và chạy cùng
+     * {@link LearningPathScheduler#plan} với số ngày / trần hiện tại; số thẻ / dải ngày / perDay của chương và days[] suy từ đó y
+     * như {@link #activeResponse} (trước đây bản nháp dùng allocate 1.0 rải thẻ khắp số ngày, còn kích hoạt dồn về đầu theo 2.0:
+     * xem trước "Ngày 1–27, 28–76, 77–120" mà nhận về "Ngày 1–4, 5–12, 13–20"). Cộng suggestedDays (§3.6) và overCap (lịch đó báo
+     * overflow). Tên chương tự sinh theo ngày đi theo dải mới ({@link #syncDayTitles}).
      */
     private LearningPathResponse draftResponse(LearningPath p, JobSummary job) {
         List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(p.getId());
         List<ExtractionItem> all = p.getJobId() != null ? items.findByJobIdOrderByPositionAsc(p.getJobId()) : List.of();
-        // [số thẻ chọn, từ vựng, ngữ pháp] theo chương + item chọn theo chương (thứ tự tài liệu)
+        DraftSchedule s = draftSchedule(p, rows, all, userLevel(p));
+        syncDayTitles(p, rows, s.ranges());
+
+        List<LearningPathChapterResponse> dtos = new ArrayList<>();
+        for (LearningPathChapter c : rows) {
+            int[] kc = s.counts().getOrDefault(c.getId(), new int[3]);
+            DayRange r = s.ranges().get(c.getId());
+            dtos.add(new LearningPathChapterResponse(c.getId(), c.getPosition(), c.getTitle(), c.getDeckId(), false,
+                    kc[0], kc[1], kc[2], r.dayFrom(), r.dayTo(), LearningPathScheduler.perDay(kc[0], r)));
+        }
+        // việc từng ngày như ACTIVE: thẻ xếp cho ngày gộp theo chương, fromPos/toPos = vị trí trong bộ của chương; cardIds để
+        // trống vì thẻ chưa tồn tại (id ở đây là id item)
+        Map<Integer, List<PathCard>> byDay = new TreeMap<>();
+        if (s.result() != null) {
+            for (CardIn c : s.cards()) {
+                int day = s.result().dayOf().get(c.cardId());
+                byDay.computeIfAbsent(day, k -> new ArrayList<>()).add(new PathCard(c.cardId(), c.chapterId(), c.seq(), day,
+                        c.weight(), false, null, null, s.pos().get(c.cardId()), null));
+            }
+        }
+        List<Day> days = new ArrayList<>(p.getTotalDays());
+        for (int i = 1; i <= p.getTotalDays(); i++) {
+            days.add(new Day(i, LearningPathScheduler.dateForDay(p.getStartDate(), i, p.getStudyDays()),
+                    tasksFor(rows, byDay.get(i)).stream()
+                            .map(t -> new Task(t.chapterId(), t.chapterTitle(), t.deckId(), t.fromPos(), t.toPos(), t.count(), null))
+                            .toList()));
+        }
+        int suggested = LearningPathScheduler.suggestDays(s.cards(), p.getDailyCap());
+        boolean overCap = s.result() != null && s.result().overflow();
+        return response(p, job, dtos, null, days, null, null, suggested, overCap, null);
+    }
+
+    /**
+     * Lịch xem trước của bản nháp. cards: thẻ mà {@link #activate} sẽ tạo, cùng thứ tự (chương theo position; trong chương từ vựng
+     * rồi ngữ pháp theo thứ tự tài liệu), cùng trọng số (cấp item = cấp thẻ, §3.1), id = id item; pos: vị trí của thẻ trong bộ của
+     * chương (1-based, = flashcards.position sau kích hoạt); counts: [số thẻ chọn, từ vựng, ngữ pháp] theo chương; result:
+     * {@link LearningPathScheduler#plan} với số ngày / trần của lộ trình (null khi chưa chọn thẻ nào); ranges: dải ngày của MỌI
+     * chương — chương có thẻ = min/max ngày của thẻ; chương 0 thẻ (kích hoạt sẽ bỏ) đứng một ngày ở cuối chương có thẻ liền trước
+     * (không có thì đầu chương sau, không có nữa thì ngày 1) để client vẫn có "Ngày N".
+     */
+    private record DraftSchedule(List<CardIn> cards, Map<String, Integer> pos, Map<UUID, int[]> counts, PlanResult result,
+                                 Map<UUID, DayRange> ranges) {}
+
+    private static DraftSchedule draftSchedule(LearningPath p, List<LearningPathChapter> rows, List<ExtractionItem> all,
+                                               String userLevel) {
         Map<UUID, int[]> counts = new HashMap<>();
         Map<UUID, List<ExtractionItem>> chosen = new HashMap<>();
         for (ExtractionItem i : all) {
@@ -1515,48 +1608,56 @@ public class LearningPathService {
             if (ExtractionItem.GRAMMAR.equals(i.getKind())) c[2]++; else c[1]++;
             chosen.computeIfAbsent(i.getChapterId(), k -> new ArrayList<>()).add(i);
         }
-        List<Integer> cardCounts = new ArrayList<>();
-        for (LearningPathChapter c : rows) cardCounts.add(counts.getOrDefault(c.getId(), new int[3])[0]);
-        List<DayRange> ranges = LearningPathScheduler.allocate(cardCounts, p.getTotalDays());
-
-        List<ChapterPlan> plans = new ArrayList<>();
-        List<LearningPathChapterResponse> dtos = new ArrayList<>();
-        for (int idx = 0; idx < rows.size(); idx++) {
-            LearningPathChapter c = rows.get(idx);
-            int cardsN = cardCounts.get(idx);
-            DayRange r = ranges.get(idx);
-            int[] kc = counts.getOrDefault(c.getId(), new int[3]);
-            plans.add(new ChapterPlan(c.getId(), c.getTitle(), c.getDeckId(), cardsN, r));
-            dtos.add(new LearningPathChapterResponse(c.getId(), c.getPosition(), c.getTitle(), c.getDeckId(), false,
-                    cardsN, kc[1], kc[2], r.dayFrom(), r.dayTo(), LearningPathScheduler.perDay(cardsN, r)));
-        }
-        List<Day> days = new ArrayList<>();
-        for (DayPlan dp : LearningPathScheduler.schedule(plans, p.getStartDate(), p.getTotalDays())) {
-            // ngày lịch theo study_days như lúc ACTIVE (§3.5): schedule() 1.0 chỉ biết start + (i − 1), bản xem trước mà hiện ngày
-            // nghỉ là ngày học thì sau khi kích hoạt mọi ngày nhảy chỗ
-            days.add(new Day(dp.dayIndex(), LearningPathScheduler.dateForDay(p.getStartDate(), dp.dayIndex(), p.getStudyDays()),
-                    dp.tasks().stream()
-                    .map(t -> new Task(t.chapterId(), t.chapterTitle(), t.deckId(), t.fromPos(), t.toPos(),
-                            t.toPos() - t.fromPos() + 1, null))
-                    .toList()));
-        }
-
-        String userLevel = users.findById(p.getUserId()).map(User::getJlptLevel).orElse(null);
         List<CardIn> ins = new ArrayList<>();
-        int seq = 0;
+        Map<String, Integer> pos = new HashMap<>();
         for (LearningPathChapter c : rows) {
             List<ExtractionItem> l = chosen.getOrDefault(c.getId(), List.of());
+            int n = 0;
             for (boolean grammar : new boolean[]{false, true}) {
                 for (ExtractionItem i : l) {
                     if (ExtractionItem.GRAMMAR.equals(i.getKind()) != grammar) continue;
-                    ins.add(new CardIn(i.getId().toString(), c.getId(), ++seq,
+                    String id = i.getId().toString();
+                    ins.add(new CardIn(id, c.getId(), ins.size() + 1,
                             LearningPathScheduler.weight(i.getLevel(), userLevel, grammar), false, null));
+                    pos.put(id, ++n);
                 }
             }
         }
-        int suggested = LearningPathScheduler.suggestDays(ins, p.getDailyCap());
-        boolean overCap = !ins.isEmpty() && LearningPathScheduler.plan(ins, p.getTotalDays(), p.getDailyCap()).overflow();
-        return response(p, job, dtos, null, days, null, null, suggested, overCap, null);
+        PlanResult r = ins.isEmpty() ? null : LearningPathScheduler.plan(ins, p.getTotalDays(), p.getDailyCap());
+        Map<UUID, int[]> span = new HashMap<>(); // [min, max] ngày theo chương
+        if (r != null) {
+            for (CardIn c : ins) {
+                int d = r.dayOf().get(c.cardId());
+                int[] a = span.computeIfAbsent(c.chapterId(), k -> new int[]{d, d});
+                a[0] = Math.min(a[0], d);
+                a[1] = Math.max(a[1], d);
+            }
+        }
+        Map<UUID, DayRange> ranges = new HashMap<>();
+        for (int idx = 0; idx < rows.size(); idx++) {
+            int[] a = span.get(rows.get(idx).getId());
+            if (a != null) {
+                ranges.put(rows.get(idx).getId(), new DayRange(a[0], a[1]));
+                continue;
+            }
+            Integer day = null;
+            for (int j = idx - 1; j >= 0 && day == null; j--) {
+                int[] b = span.get(rows.get(j).getId());
+                if (b != null) day = b[1];
+            }
+            for (int j = idx + 1; j < rows.size() && day == null; j++) {
+                int[] b = span.get(rows.get(j).getId());
+                if (b != null) day = b[0];
+            }
+            int d = day != null ? day : 1;
+            ranges.put(rows.get(idx).getId(), new DayRange(d, d));
+        }
+        return new DraftSchedule(ins, pos, counts, r, ranges);
+    }
+
+    /** Trình độ JLPT của chủ lộ trình (trọng số §3.1); null khi không rõ — weight() coi như N5. */
+    private String userLevel(LearningPath p) {
+        return users.findById(p.getUserId()).map(User::getJlptLevel).orElse(null);
     }
 
     private static JobSummary jobSummary(ExtractionJob j) {

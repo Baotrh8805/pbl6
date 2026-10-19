@@ -88,18 +88,33 @@ class AdminSettingsIT extends IntegrationTest {
         postText(user).andExpect(status().isTooManyRequests());
     }
 
+    /**
+     * STAFF-14: khoá V14 cũng nhận 400 tiếng Việt nêu tên khoá JSON như khoá V20/V21 — trước đây bean validation trả
+     * "extractionDailyLimitFree: must be greater than or equal to 0" (tiếng Anh, tên field Java).
+     */
     @Test
     void int_values_are_validated() throws Exception { // ST-02
         String root = newStaff(Role.SUPER_ADMIN);
-        call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", -1)).andExpect(status().isBadRequest());
-        call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", 1001)).andExpect(status().isBadRequest());
+        Object[][] bad = {{"extraction_daily_limit_free", -1}, {"extraction_daily_limit_free", 1001},
+                {"extraction_daily_limit_premium", -1}, {"extraction_daily_limit_premium", 1001}};
+        for (Object[] b : bad) {
+            call(put("/api/admin/settings"), root, with((String) b[0], b[1])).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(b[0] + " phải từ 0 đến 1000."));
+        }
         call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", "abc")).andExpect(status().isBadRequest());
+        // biên hợp lệ ghi được
+        Map<String, Object> edge = with("extraction_daily_limit_free", 0);
+        edge.put("extraction_daily_limit_premium", 1000);
+        call(put("/api/admin/settings"), root, edge).andExpect(status().isOk());
     }
 
     @Test
     void announcement_is_limited_to_300_chars() throws Exception { // ST-03
-        call(put("/api/admin/settings"), newStaff(Role.SUPER_ADMIN), with("announcement", "x".repeat(301)))
-                .andExpect(status().isBadRequest());
+        String root = newStaff(Role.SUPER_ADMIN);
+        call(put("/api/admin/settings"), root, with("announcement", "x".repeat(301)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("announcement tối đa 300 ký tự."));
+        call(put("/api/admin/settings"), root, with("announcement", "x".repeat(300))).andExpect(status().isOk());
     }
 
     @Test
@@ -130,7 +145,9 @@ class AdminSettingsIT extends IntegrationTest {
         for (String key : defaults().keySet()) {
             Map<String, Object> m = defaults();
             m.remove(key);
-            call(put("/api/admin/settings"), root, m).andExpect(status().isBadRequest());
+            // STAFF-14: thông điệp tiếng Việt nêu tên khoá JSON (không phải "registrationOpen: must not be null")
+            call(put("/api/admin/settings"), root, m).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Thiếu khoá " + key + "."));
         }
     }
 
