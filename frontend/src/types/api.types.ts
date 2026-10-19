@@ -601,7 +601,11 @@ export interface SessionResponse {
     cards: SessionCard[];
 }
 
-/** GET /learning-paths/today-summary: một dòng cho mỗi lộ trình ACTIVE (badge sidebar, widget Tổng quan). */
+/**
+ * GET /learning-paths/today-summary: một dòng cho mỗi lộ trình ACTIVE (badge sidebar, widget Tổng quan). LP-10: lộ trình đã
+ * xong vẫn ACTIVE nên vẫn có dòng — done = đã chốt hoặc học hết thẻ (server xếp các dòng này cuối), completedAt chỉ có khi
+ * đã chốt hoàn thành.
+ */
 export interface TodaySummaryItem {
     pathId: string;
     title: string;
@@ -613,6 +617,8 @@ export interface TodaySummaryItem {
     behindCount: number;
     studyDays?: string;
     dailyCap?: number;
+    completedAt?: string;
+    done?: boolean;
 }
 
 /**

@@ -103,8 +103,14 @@ export const QuizRoomPage: React.FC = () => {
         <section className="flex flex-col gap-space-lg pb-space-xl">
             {/* Ambient Background Accents */}
             <div className="relative w-full">
-                <div className="absolute -right-8 -top-8 w-72 h-72 bg-secondary-container/20 rounded-full blur-3xl pointer-events-none -z-10" />
-                <div className="absolute left-1/3 bottom-0 w-64 h-64 bg-primary-fixed/20 rounded-full blur-2xl pointer-events-none -z-10" />
+                {/* NEW-01: vệt -right-8 thò ra ngoài khung nội dung làm cả trang cuộn ngang (scrollWidth 389 > 375 ở 375 px).
+                    Gom vệt vào một lớp riêng cắt theo chiều ngang (overflow-x-clip: không tạo vùng cuộn, chiều dọc vẫn tràn
+                    mềm như cũ) thay vì overflow-hidden ở khung ngoài — khung ngoài chứa nút thật, cắt ở đó sẽ mất viền
+                    focus / bóng của nút sát mép. */}
+                <div aria-hidden="true" className="absolute inset-0 overflow-x-clip pointer-events-none -z-10">
+                    <div className="absolute -right-8 -top-8 w-72 h-72 bg-secondary-container/20 rounded-full blur-3xl" />
+                    <div className="absolute left-1/3 bottom-0 w-64 h-64 bg-primary-fixed/20 rounded-full blur-2xl" />
+                </div>
 
                 {/* 1. Top Header & Action Buttons */}
                 <div className="flex flex-col xl:flex-row items-start xl:items-end justify-between gap-space-md mb-space-lg">

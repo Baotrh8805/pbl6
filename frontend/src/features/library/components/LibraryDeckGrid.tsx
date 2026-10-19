@@ -1,6 +1,13 @@
 import React from "react";
 import type { LibraryDeck } from "@/types/api.types";
-import { categoryLabel, categoryShortLabel, formatCompactCount, getLevelBadgeClass, initials } from "./libraryOptions";
+import {
+  categoryLabel,
+  categoryShortLabel,
+  formatCompactCount,
+  getLevelBadgeClass,
+  initials,
+  ratingSummary,
+} from "./libraryOptions";
 
 interface LibraryDeckCardProps {
   deck: LibraryDeck;
@@ -61,27 +68,38 @@ export const LibraryDeckCard: React.FC<LibraryDeckCardProps> = ({ deck, onPrevie
 
     {/* Tác giả & nút thao tác */}
     <div className="pt-4 mt-2 space-y-3 border-t border-surface-container-high/40">
-      <div className="flex items-center justify-between text-xs text-on-surface-variant">
-        <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 text-xs text-on-surface-variant">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span
             aria-hidden="true"
-            className="w-5 h-5 rounded-full bg-primary-container text-on-primary text-[9px] font-bold flex items-center justify-center"
+            className="w-5 h-5 rounded-full bg-primary-container text-on-primary text-[9px] font-bold flex items-center justify-center shrink-0"
           >
             {initials(deck.authorName)}
           </span>
           <span className="font-medium text-on-surface truncate max-w-[110px]">{deck.authorName}</span>
         </div>
-        <div className="flex items-center gap-1 text-amber-500 font-label-sm font-semibold">
-          <span
-            aria-hidden="true"
-            className="material-symbols-outlined text-[14px]"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            star
+        {/* NEW-02: đánh giá và lượt tải là hai mục riêng có chữ đi kèm (như banner nổi bật) — trước đây "★ 4 (0)" với số
+            trong ngoặc là lượt tải nên người dùng đọc thành "0 lượt đánh giá". */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex items-center gap-1">
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[14px] text-amber-500"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              star
+            </span>
+            <span className="font-label-sm font-semibold text-on-surface">
+              {ratingSummary(deck.rating, deck.ratingsCount)}
+            </span>
           </span>
-          <span>{deck.rating ?? "–"}</span>
-          <span className="text-on-surface-variant font-normal" title="Lượt tải">
-            ({formatCompactCount(deck.downloadsCount)})
+          <span className="flex items-center gap-1">
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+              cloud_download
+            </span>
+            <span>
+              <strong className="text-on-surface">{formatCompactCount(deck.downloadsCount)}</strong> lượt tải
+            </span>
           </span>
         </div>
       </div>

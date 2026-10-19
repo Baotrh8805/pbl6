@@ -2,8 +2,10 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useTodaySummary } from "@/features/roadmap/useTodaySummary";
 import { pathDayLabel, sessionUrl, todayCountsLabel, todaySessionSize } from "@/features/roadmap/roadmapUtils";
+import { formatDateTime } from "@/features/extraction/extractionUtils";
 
-// LP-9: "hôm nay của lộ trình" ngay trên Tổng quan — một dòng mỗi lộ trình đang học, nút Bắt đầu mở phiên hợp nhất.
+// LP-9: "hôm nay của lộ trình" ngay trên Tổng quan — một dòng mỗi lộ trình đang học, nút Bắt đầu mở phiên hợp nhất; lộ
+// trình đã xong (LP-10) vẫn có dòng ở cuối nhưng chỉ mang chip "Đã hoàn thành".
 // Không có lộ trình ACTIVE (hoặc chưa tải / lỗi) -> không chiếm chỗ.
 export const TodayPathWidget: React.FC = () => {
   const { data } = useTodaySummary();
@@ -26,11 +28,37 @@ export const TodayPathWidget: React.FC = () => {
       </div>
       <ul className="flex flex-col gap-2">
         {items.map((item) => {
+          const href = `/roadmap/${encodeURIComponent(item.pathId)}`;
+          // LP-10: lộ trình đã xong (đã chốt hoặc học hết thẻ) vẫn ACTIVE nên server vẫn trả dòng (xếp cuối). Giữ dòng để người
+          // dùng thấy nó, nhưng không trình bày như lộ trình đang học: không nút "Bắt đầu" / "Học bù", chỉ chip "Đã hoàn thành";
+          // thẻ đến hạn còn lại ôn ở Bộ thẻ / Học gì tiếp như mọi bộ thẻ khác.
+          if (item.done) {
+            return (
+              <li
+                key={item.pathId}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-surface-container-low"
+              >
+                <div className="min-w-0">
+                  <Link to={href} className="font-semibold text-on-surface hover:text-primary break-words">
+                    {item.title}
+                  </Link>
+                  <p className="text-label-sm text-on-surface-variant">
+                    {item.completedAt
+                      ? `Đã học hết thẻ · hoàn thành lúc ${formatDateTime(item.completedAt)}`
+                      : "Đã học hết thẻ · mở lộ trình để bấm “Hoàn thành”"}
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 self-start sm:self-auto shrink-0 px-2 py-0.5 rounded-full bg-secondary-container/50 text-on-secondary-container text-label-sm font-semibold">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[14px]">verified</span>
+                  Đã hoàn thành
+                </span>
+              </li>
+            );
+          }
           const size = todaySessionSize(item, item.dailyCap ?? 0, item.state);
           // Ngày nghỉ: phiên hôm nay chỉ gồm thẻ đến hạn nên nợ không nằm trong "Bắt đầu" — badge sidebar vẫn đếm nợ,
           // vì vậy đưa lối "Học bù" ra đây để dòng và badge nói cùng một con số (ngày học thì nợ đã gộp vào phiên).
           const catchup = item.state === "rest" ? Math.max(item.behindCount, 0) : 0;
-          const href = `/roadmap/${encodeURIComponent(item.pathId)}`;
           return (
             <li
               key={item.pathId}

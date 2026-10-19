@@ -415,9 +415,15 @@ export function todaySessionSize(c: TodayCounts, cap: number, state: LearningPat
 export const todayCountsLabel = (c: TodayCounts): string =>
     `ôn ${Math.max(c.dueCount, 0)} · nợ ${Math.max(c.behindCount, 0)} · mới ${Math.max(c.newCount, 0)}`;
 
-/** Badge sidebar: tổng thẻ cần làm hôm nay của mọi lộ trình = mới + đến hạn + nợ. */
-export const todaySummaryTotal = (items: readonly TodayCounts[]): number =>
-    items.reduce((s, i) => s + Math.max(i.newCount, 0) + Math.max(i.dueCount, 0) + Math.max(i.behindCount, 0), 0);
+/**
+ * Badge sidebar: tổng thẻ cần làm hôm nay của các lộ trình còn đang học = mới + đến hạn + nợ. LP-10: bỏ dòng done (đã chốt
+ * hoặc học hết thẻ) — lộ trình đã xong không còn là "việc của lộ trình"; thẻ đến hạn của nó vẫn ôn được ở Bộ thẻ / Học gì tiếp.
+ */
+export const todaySummaryTotal = (items: readonly (TodayCounts & { done?: boolean })[]): number =>
+    items.reduce(
+        (s, i) => (i.done ? s : s + Math.max(i.newCount, 0) + Math.max(i.dueCount, 0) + Math.max(i.behindCount, 0)),
+        0
+    );
 
 /** "Ngày 3/30" / "Nghỉ theo lịch" / "Chưa bắt đầu" / "Đã kết thúc" — nhãn ngắn cho thẻ danh sách và widget. */
 export function pathDayLabel(state: LearningPathTodayState, dayIndex: number, totalDays: number): string {

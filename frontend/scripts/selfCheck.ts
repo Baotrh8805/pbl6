@@ -10,7 +10,7 @@ import {
   secondsLeft,
   sortDecksByLevel,
 } from "../src/lib/deckUtils.ts";
-import { categoryLabel, formatCompactCount } from "../src/features/library/components/libraryOptions.ts";
+import { categoryLabel, formatCompactCount, ratingSummary } from "../src/features/library/components/libraryOptions.ts";
 import { parseAttemptState, parseQuestions } from "../src/services/studyService.ts";
 import { parseImportText, unescapeDelimiter } from "../src/features/decks/editor/importParser.ts";
 import { swapCardColumns } from "../src/features/decks/editor/editorCards.ts";
@@ -381,6 +381,7 @@ async function runSelfCheck() {
   assertStrictEqual(formatCompactCount(950), "950", "Dưới 1000 giữ nguyên");
   assertStrictEqual(formatCompactCount(1_250_000), "1.3M", "Triệu");
   assertStrictEqual(formatCompactCount(999_960), "1M", "Làm tròn lên triệu, không ra 1000k");
+  assertStrictEqual(`${ratingSummary(4, 1)}|${ratingSummary(4.5, 1200)}|${ratingSummary(null, 0)}|${ratingSummary(4, 0)}`, "4 · 1 đánh giá|4.5 · 1.2k đánh giá|Chưa có đánh giá|Chưa có đánh giá", "NEW-02: nhãn đánh giá ghi rõ số lượt đánh giá (không lẫn với lượt tải); chưa có thì nói chưa có");
   assertStrictEqual(categoryLabel("kanji"), "🈯 Kanji Hán tự", "Mã chủ đề -> nhãn");
   assertStrictEqual(categoryLabel(null), null, "Không có chủ đề -> null");
   assertStrictEqual(deckSourceLabel({ access: "owner", visibility: "public" }), "Cá nhân", "Chủ bộ thẻ");
@@ -902,6 +903,7 @@ async function runSelfCheck() {
   assertStrictEqual(todayCountsLabel(tc), "ôn 5 · nợ 12 · mới 10", "Nhãn ba nhóm luôn đủ, thứ tự ôn · nợ · mới");
   assertStrictEqual(todayCountsLabel({ newCount: -1, dueCount: 0, behindCount: 0 }), "ôn 0 · nợ 0 · mới 0", "Số âm hỏng coi như 0");
   assertStrictEqual(`${todaySummaryTotal([tc, { newCount: 1, dueCount: 2, behindCount: 3 }])},${todaySummaryTotal([])}`, "33,0", "Badge sidebar = Σ(mới + đến hạn + nợ); không có lộ trình -> 0 (ẩn)");
+  assertStrictEqual(`${todaySummaryTotal([tc, { newCount: 0, dueCount: 4, behindCount: 0, done: true }])},${todaySummaryTotal([{ ...tc, done: true }])},${todaySummaryTotal([{ ...tc, done: false }])}`, "27,0,27", "LP-10: badge bỏ lộ trình đã xong (done), kể cả khi nó còn thẻ đến hạn");
   assertStrictEqual(`${pathDayLabel("during", 3, 30)}|${pathDayLabel("rest", 3, 30)}|${pathDayLabel("before", 0, 30)}|${pathDayLabel("after", 31, 30)}`, "Ngày 3/30|Nghỉ theo lịch|Chưa bắt đầu|Đã kết thúc", "Nhãn vị trí hôm nay (thẻ danh sách, widget)");
   assertStrictEqual(todayHeading("during", 3, 30, "2026-10-21", "2026-10-19"), "Hôm nay · Ngày 3/30 (21/10)", "Tiêu đề khối Hôm nay khi đang học");
   assertStrictEqual(`${todayHeading("rest", 3, 30, "2026-10-24", "2026-10-19")}|${todayHeading("before", 0, 30, "2026-10-18", "2026-10-19")}|${todayHeading("after", 31, 30, "2026-11-20", "2026-10-19")}`, "Hôm nay nghỉ theo lịch (24/10)|Chưa bắt đầu — lộ trình bắt đầu ngày 19/10|Đã kết thúc — ôn nốt thẻ đến hạn và thẻ nợ", "Tiêu đề theo trạng thái ngày");

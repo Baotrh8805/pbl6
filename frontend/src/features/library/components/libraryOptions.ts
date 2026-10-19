@@ -58,6 +58,15 @@ export function formatCompactCount(value: number): string {
   return String(value);
 }
 
+/**
+ * NEW-02: nhãn đánh giá cạnh ngôi sao ở thẻ Thư viện — "4 · 1 đánh giá". Trước đây thẻ in "★ 4 (0)" với số trong ngoặc là
+ * lượt tải, đọc như số lượt đánh giá; nay số lượt đánh giá ghi rõ chữ, lượt tải tách thành mục riêng như banner nổi bật.
+ */
+export function ratingSummary(rating: number | null | undefined, ratingsCount: number): string {
+  if (rating == null || ratingsCount <= 0) return "Chưa có đánh giá";
+  return `${rating} · ${formatCompactCount(ratingsCount)} đánh giá`;
+}
+
 export { getInitials as initials } from "../../../lib/textUtils.ts";
 
 export function getLevelBadgeClass(lvl: string): string {
