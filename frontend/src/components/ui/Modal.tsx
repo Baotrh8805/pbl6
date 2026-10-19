@@ -1,7 +1,11 @@
-import React, { useEffect, useId, useRef } from "react";
+import React, { useId, useLayoutEffect, useRef } from "react";
 
 // <dialog> + showModal(): trình duyệt lo sẵn focus trap, phím Esc, aria-modal, nền inert
 // và trả focus về nút đã mở modal khi đóng -> không cần tự viết.
+// Điều kiện để được trả focus: close() phải chạy khi <dialog> CÒN trong DOM (gỡ thẳng node đang mở thì
+// focus rơi xuống <body>). Vì vậy <dialog> luôn được render, chỉ nội dung bên trong gỡ khi đóng (state
+// của form con vẫn reset như trước), và việc đóng nằm trong cleanup của layout effect: chạy trước khi
+// React gỡ node, cả khi isOpen đổi lẫn khi Modal bị unmount lúc đang mở.
 export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,14 +47,16 @@ export const Modal: React.FC<ModalProps> = ({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = dialogRef.current;
-    if (!el) return;
-    if (isOpen && !el.open) el.showModal();
-    if (!isOpen && el.open) el.close();
+    if (!el || !isOpen) return;
+    if (!el.open) el.showModal();
+    // Cleanup chạy khi isOpen -> false hoặc Modal unmount, lúc <dialog> còn gắn trong DOM -> trình duyệt
+    // trả focus về nút đã mở. Đóng trong effect thường (sau khi node đã bị gỡ) thì không được.
+    return () => {
+      if (el.open) el.close();
+    };
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   return (
     <dialog
@@ -66,41 +72,44 @@ export const Modal: React.FC<ModalProps> = ({
       }}
       className={`backdrop:bg-black/50 backdrop:backdrop-blur-xs p-0 rounded-2xl border border-surface-container-high bg-surface-container-lowest shadow-2xl ${SIZES[size]} w-[92vw] max-h-[90vh] text-on-surface m-auto`}
     >
-      <div className="flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-surface-container-high/60 bg-surface-container-low/50 shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            {icon && (
-              <span aria-hidden="true" className="material-symbols-outlined text-primary text-[22px] shrink-0">
-                {icon}
-              </span>
-            )}
-            <div className="min-w-0">
-              <h2 id={titleId} className="font-headline font-bold text-lg text-on-surface">
-                {title}
-              </h2>
-              {subtitle && <p className="text-xs text-on-surface-variant truncate">{subtitle}</p>}
+      {/* Đóng thì gỡ nội dung (không gỡ <dialog>) để state của form con reset như trước. */}
+      {isOpen && (
+        <div className="flex flex-col max-h-[90vh]">
+          <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-surface-container-high/60 bg-surface-container-low/50 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {icon && (
+                <span aria-hidden="true" className="material-symbols-outlined text-primary text-[22px] shrink-0">
+                  {icon}
+                </span>
+              )}
+              <div className="min-w-0">
+                <h2 id={titleId} className="font-headline font-bold text-lg text-on-surface">
+                  {title}
+                </h2>
+                {subtitle && <p className="text-xs text-on-surface-variant truncate">{subtitle}</p>}
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-outline hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer shrink-0"
+              aria-label="Đóng"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                close
+              </span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-outline hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer shrink-0"
-            aria-label="Đóng"
-          >
-            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
-              close
-            </span>
-          </button>
+
+          <div className={`overflow-y-auto ${bare ? "" : "p-6"}`}>{children}</div>
+
+          {footer && (
+            <div className="px-6 py-3 border-t border-surface-container-high/60 bg-surface-container-low/50 flex items-center justify-end gap-2 shrink-0">
+              {footer}
+            </div>
+          )}
         </div>
-
-        <div className={`overflow-y-auto ${bare ? "" : "p-6"}`}>{children}</div>
-
-        {footer && (
-          <div className="px-6 py-3 border-t border-surface-container-high/60 bg-surface-container-low/50 flex items-center justify-end gap-2 shrink-0">
-            {footer}
-          </div>
-        )}
-      </div>
+      )}
     </dialog>
   );
 };

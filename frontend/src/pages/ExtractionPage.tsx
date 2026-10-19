@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
 import { extractErrorMessage } from "@/services/apiClient";
@@ -9,6 +9,7 @@ import {
   fetchExtractionItems,
   patchExtractionItems,
   reEnrichExtraction,
+  recheckExtractionConflicts,
   rerunExtraction,
   updateExtractionText,
 } from "@/services/extractionService";
@@ -18,9 +19,31 @@ import { ExtractionStatusBadge } from "@/features/extraction/components/Extracti
 import { ExtractedTextPanel } from "@/features/extraction/components/ExtractedTextPanel";
 import { ExtractionItemsPanel } from "@/features/extraction/components/ExtractionItemsPanel";
 import { CreateDecksModal } from "@/features/extraction/components/CreateDecksModal";
-import { SOURCE_TYPE_LABELS, formatDateTime, isActiveStatus } from "@/features/extraction/extractionUtils";
+import { LevelDistributionBar } from "@/features/extraction/components/LevelDistributionBar";
+import { RecheckConflictsButton } from "@/features/extraction/components/RecheckConflictsButton";
+import { IPlusOnePanel } from "@/features/extraction/components/IPlusOnePanel";
+import { conflictsByFieldSummary, statsConflictCount } from "@/features/extraction/conflictUtils";
+import {
+  LEVEL_TONE,
+  OVERALL_RULE_HINT,
+  SOURCE_TYPE_LABELS,
+  UNKNOWN_LEVEL_TONE,
+  formatDateTime,
+  isActiveStatus,
+  levelDistribution,
+  overallLevelLabel,
+} from "@/features/extraction/extractionUtils";
 
 const POLL_MS = 2000;
+
+type ResultView = "items" | "iplus1";
+
+const VIEWS: { key: ResultView; label: string; icon: string }[] = [
+  { key: "items", label: "Kết quả bóc tách", icon: "list_alt" },
+  { key: "iplus1", label: "Câu ví dụ i+1", icon: "auto_stories" },
+];
+const viewTabId = (v: ResultView) => `extraction-view-${v}`;
+const viewPanelId = (v: ResultView) => `extraction-view-panel-${v}`;
 
 /** Chỉ số dùng để tải lại items: đổi khi job hoàn tất một lần chạy mới (finishedAt mới). */
 const doneKey = (job: ExtractionJob | null) => (job?.status === "DONE" ? (job.finishedAt ?? "done") : null);
@@ -29,6 +52,11 @@ export const ExtractionPage: React.FC = () => {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const dialog = useDialog();
+  // Tab kết quả trên URL (?view=iplus1) để F5 / Back giữ đúng tab; tab i+1 chỉ tải khi mở.
+  const [params, setParams] = useSearchParams();
+  const view: ResultView = params.get("view") === "iplus1" ? "iplus1" : "items";
+  const viewRefs = useRef<Partial<Record<ResultView, HTMLButtonElement | null>>>({});
+  const [recheckNote, setRecheckNote] = useState<string | null>(null);
 
   const [job, setJob] = useState<ExtractionJob | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -145,6 +173,59 @@ export const ExtractionPage: React.FC = () => {
     }
   };
 
+  // F2: đối chiếu lại với nguồn tri thức chuẩn. Server làm đồng bộ và trả job có stats.conflicts mới -> tải lại items
+  // (conflicts nằm trên từng item). Nếu server chuyển job sang chạy nền thì poll như "Chạy lại". Lỗi để nút tự hiện.
+  const handleRecheck = async () => {
+    setRecheckNote(null);
+    const next = await recheckExtractionConflicts(id);
+    if (isActiveStatus(next.status)) {
+      restartWith(next);
+      return;
+    }
+    // Response không kèm văn bản (chỉ GET ?includeText=true có): giữ văn bản đang hiện cho khung "Văn bản đã bóc".
+    setJob((prev) => ({ ...next, extractedText: next.extractedText ?? prev?.extractedText }));
+    setItems(await fetchExtractionItems(id));
+    const n = statsConflictCount(next.stats);
+    setRecheckNote(
+      n == null ? "Đã kiểm tra lại." : n > 0 ? `Đã kiểm tra lại: còn ${n} cảnh báo mâu thuẫn.` : "Đã kiểm tra lại: không còn mâu thuẫn."
+    );
+  };
+
+  // i+1 "Dùng làm câu ví dụ": thay item server trả vào danh sách; response hỏng thì tải lại cả danh sách.
+  const handleApplied = (updated: ExtractionItem | null) => {
+    if (updated) {
+      setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
+      return;
+    }
+    fetchExtractionItems(id)
+      .then(setItems)
+      .catch(() => {
+        // giữ danh sách hiện tại; câu ví dụ đã lưu trên server, lần tải sau sẽ thấy
+      });
+  };
+
+  const selectView = (next: ResultView) =>
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === "items") out.delete("view");
+        else out.set("view", next);
+        return out;
+      },
+      { replace: true }
+    );
+
+  const onViewKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    const i = VIEWS.findIndex((v) => v.key === view);
+    const n = VIEWS.length;
+    const next =
+      e.key === "Home" ? VIEWS[0] : e.key === "End" ? VIEWS[n - 1] : VIEWS[(i + (e.key === "ArrowRight" ? 1 : n - 1)) % n];
+    selectView(next.key);
+    viewRefs.current[next.key]?.focus();
+  };
+
   const handleDelete = async () => {
     const ok = await dialog.confirm({
       title: "Xoá kết quả bóc tách?",
@@ -194,6 +275,14 @@ export const ExtractionPage: React.FC = () => {
 
   const active = isActiveStatus(job.status);
 
+  // B6: phân bố cấp + cấp tổng thể chỉ khi DONE – chạy lại vẫn giữ stats cũ tới khi xong nên không hiện số cũ lúc đang chạy.
+  const levelDist = job.status === "DONE" ? levelDistribution(job.stats) : null;
+  const chapterCaps = job.stats?.capPerChapter;
+  const cappedChapters = job.status === "DONE" && Array.isArray(chapterCaps) ? chapterCaps.length : 0;
+  // F2: null = job chưa được đối chiếu (job cũ / backend chưa có bước kiểm mâu thuẫn).
+  const conflictCount = statsConflictCount(job.stats);
+  const conflictFields = conflictsByFieldSummary(job.stats);
+
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
       <nav aria-label="Đường dẫn">
@@ -211,6 +300,17 @@ export const ExtractionPage: React.FC = () => {
               <span className="px-2 py-0.5 rounded-full bg-surface-container text-outline text-label-sm font-medium">
                 {SOURCE_TYPE_LABELS[job.sourceType]}
               </span>
+              {/* Chỉ job mới (có byLevelAll) mới có cấp tổng thể; null = ai-service chưa đủ dữ liệu. */}
+              {levelDist?.source === "all" && (
+                <span
+                  title={OVERALL_RULE_HINT}
+                  className={`px-2 py-0.5 rounded-full text-label-sm font-semibold cursor-help ${
+                    levelDist.overallLevel ? LEVEL_TONE[levelDist.overallLevel] : UNKNOWN_LEVEL_TONE
+                  }`}
+                >
+                  {overallLevelLabel(levelDist.overallLevel)}
+                </span>
+              )}
             </div>
             <h1 className="mt-2 font-headline-sm text-headline-sm font-bold text-on-surface truncate">
               {job.sourceName || "Văn bản dán"}
@@ -240,6 +340,49 @@ export const ExtractionPage: React.FC = () => {
         </div>
 
         <StageStepper status={job.status} stage={job.stage} />
+
+        {(levelDist || cappedChapters >= 2) && (
+          <div className="flex flex-col gap-1.5 pt-space-sm border-t border-surface-container-high">
+            <LevelDistributionBar stats={job.stats} />
+            {cappedChapters >= 2 && (
+              <p className="text-label-sm text-outline inline-flex items-center gap-1">
+                <span aria-hidden="true" className="material-symbols-outlined text-[14px]">menu_book</span>
+                Giới hạn từ vựng chia theo chương: {cappedChapters} chương
+              </p>
+            )}
+          </div>
+        )}
+
+        {job.status === "DONE" && (
+          <div className="flex flex-wrap items-center gap-2 pt-space-sm border-t border-surface-container-high">
+            {conflictCount == null ? (
+              <span className="inline-flex items-center gap-1 text-label-sm text-on-surface-variant">
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">fact_check</span>
+                Chưa đối chiếu với nguồn tri thức chuẩn
+              </span>
+            ) : conflictCount > 0 ? (
+              <>
+                <span
+                  title="Tài liệu ghi khác nguồn tri thức chuẩn (cách đọc, nghĩa, cấp...). Xem từng mục có badge cảnh báo."
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-800 text-label-sm font-semibold"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">warning</span>
+                  {conflictCount} cảnh báo mâu thuẫn
+                </span>
+                {conflictFields && <span className="text-label-sm text-outline">{conflictFields}</span>}
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-label-sm text-secondary font-semibold">
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">verified</span>
+                Không có mâu thuẫn với nguồn chuẩn
+              </span>
+            )}
+            <RecheckConflictsButton onRecheck={handleRecheck} disabled={busy} />
+            <span aria-live="polite" className="text-label-sm text-on-surface-variant">
+              {recheckNote}
+            </span>
+          </div>
+        )}
 
         {loadError && (
           <p role="alert" className="text-label-sm text-error">
@@ -303,7 +446,56 @@ export const ExtractionPage: React.FC = () => {
       )}
 
       {job.status === "DONE" && (
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-space-md items-start">
+        <div
+          role="tablist"
+          aria-label="Xem kết quả"
+          onKeyDown={onViewKeyDown}
+          className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start max-w-full overflow-x-auto"
+        >
+          {VIEWS.map((v) => {
+            const selected = v.key === view;
+            return (
+              <button
+                key={v.key}
+                ref={(el) => {
+                  viewRefs.current[v.key] = el;
+                }}
+                id={viewTabId(v.key)}
+                role="tab"
+                type="button"
+                aria-selected={selected}
+                aria-controls={selected ? viewPanelId(v.key) : undefined}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => selectView(v.key)}
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 min-h-10 rounded-lg text-label-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  selected
+                    ? "bg-surface-container-lowest text-primary font-semibold shadow-sm"
+                    : "text-on-surface-variant hover:bg-surface-container"
+                }`}
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                  {v.icon}
+                </span>
+                {v.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {job.status === "DONE" && view === "iplus1" && (
+        <div role="tabpanel" id={viewPanelId("iplus1")} aria-labelledby={viewTabId("iplus1")}>
+          <IPlusOnePanel jobId={id} items={items} userLevel={job.options.userLevel} onApplied={handleApplied} />
+        </div>
+      )}
+
+      {job.status === "DONE" && view === "items" && (
+        <div
+          role="tabpanel"
+          id={viewPanelId("items")}
+          aria-labelledby={viewTabId("items")}
+          className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-space-md items-start"
+        >
           {/* key theo finishedAt: chạy lại xong thì textarea nhận văn bản mới */}
           <ExtractedTextPanel key={job.finishedAt ?? "text"} job={job} onReanalyze={handleReanalyze} />
           {itemsError ? (

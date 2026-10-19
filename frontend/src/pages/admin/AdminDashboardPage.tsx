@@ -5,7 +5,16 @@ import { useAsync } from "@/lib/useAsync";
 import { fetchAdminHealth, fetchAdminStats } from "@/services/adminService";
 import { StatCard } from "@/features/admin/components/StatCard";
 import { formatShort, periodDelta } from "@/features/admin/adminUtils";
+import {
+  aiEngineRows,
+  engineHealthList,
+  enrichSummary,
+  ocrChartRows,
+  queueCounts,
+} from "@/features/admin/moderationUtils";
 import { AdminTrendChart } from "@/features/admin/components/AdminTrendChart";
+import { AdminOcrChart } from "@/features/admin/components/AdminOcrChart";
+import { AdminAiPerformance } from "@/features/admin/components/AdminAiPerformance";
 import { AdminBreakdown } from "@/features/admin/components/AdminBreakdown";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 
@@ -14,6 +23,27 @@ const Dot: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
     <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-full ${ok ? "bg-secondary" : "bg-error"}`} />
     {label} {ok ? "ok" : "down"}
   </span>
+);
+
+/** Thẻ hàng đợi kiểm duyệt: số > 0 tô cảnh báo, chân thẻ là link tới trang xử lý. */
+const QueueCard: React.FC<{ label: string; value: number; icon: string; to: string; linkText: string }> = ({
+  label,
+  value,
+  icon,
+  to,
+  linkText,
+}) => (
+  <StatCard
+    label={label}
+    value={value}
+    icon={icon}
+    tone={value > 0 ? "warn" : "default"}
+    sub={
+      <Link to={to} className="underline font-semibold">
+        {linkText}
+      </Link>
+    }
+  />
 );
 
 export const AdminDashboardPage: React.FC = () => {
@@ -26,6 +56,17 @@ export const AdminDashboardPage: React.FC = () => {
   const userDelta = s && days >= 14 ? periodDelta(s.series, "newUsers") : null;
   const extDelta = s && days >= 14 ? periodDelta(s.series, "extractions") : null;
 
+  // Hợp đồng đợt 2 (§4, §6, §1.3, §8): mọi trường mới đều tuỳ chọn — backend cũ thiếu thì phần tương ứng tự ẩn.
+  const queues = queueCounts(s);
+  const hasQueues = queues.pendingMnemonics !== null || queues.openAppeals !== null || queues.openQuestionFlags !== null;
+  const engineRows = aiEngineRows(s?.ai?.engines);
+  const enrich = enrichSummary(s?.ai?.enrich);
+  // Cờ thành phần có thể nằm ở /admin/health hoặc trong stats.health (hợp đồng §8 ghi "health.engines").
+  const engineFlags = engineHealthList(health.data?.engines ?? s?.health?.engines);
+  const ocrRows = ocrChartRows(s?.ocrSeries);
+  const showAi = engineRows.length > 0 || enrich !== null || engineFlags.length > 0;
+  const enginesDown = engineFlags.filter((e) => !e.ok).length;
+
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
       <AdminPageHeader
@@ -37,6 +78,15 @@ export const AdminDashboardPage: React.FC = () => {
               <>
                 <Dot ok={health.data.db === "ok"} label="DB" />
                 <Dot ok={health.data.aiService === "ok"} label="AI" />
+                {engineFlags.length > 0 && (
+                  <a
+                    href="#admin-ai-perf-title"
+                    className={`inline-flex items-center gap-1 text-body-sm hover:underline ${enginesDown > 0 ? "text-error font-semibold" : ""}`}
+                  >
+                    <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-full ${enginesDown > 0 ? "bg-error" : "bg-secondary"}`} />
+                    Thành phần AI {engineFlags.length - enginesDown}/{engineFlags.length}
+                  </a>
+                )}
                 {health.data.backup !== "unmonitored" && (
                   <span
                     className={`inline-flex items-center gap-1 text-body-sm ${health.data.backup === "ok" ? "" : "text-error font-semibold"}`}
@@ -123,12 +173,53 @@ export const AdminDashboardPage: React.FC = () => {
             />
           </div>
 
+          {hasQueues && (
+            <section aria-labelledby="admin-queues-title" className="flex flex-col gap-2">
+              <h2 id="admin-queues-title" className="text-label-sm uppercase tracking-wider text-outline font-bold px-1">
+                Hàng đợi kiểm duyệt
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {queues.pendingMnemonics !== null && (
+                  <QueueCard
+                    label="Mẹo nhớ chờ duyệt"
+                    value={queues.pendingMnemonics}
+                    icon="lightbulb"
+                    to="/admin/mnemonics"
+                    linkText="duyệt mẹo nhớ"
+                  />
+                )}
+                {queues.openAppeals !== null && (
+                  <QueueCard
+                    label="Khiếu nại mở"
+                    value={queues.openAppeals}
+                    icon="gavel"
+                    to="/admin/appeals"
+                    linkText="xử lý khiếu nại"
+                  />
+                )}
+                {queues.openQuestionFlags !== null && (
+                  <QueueCard
+                    label="Câu hỏi bị báo lỗi"
+                    value={queues.openQuestionFlags}
+                    icon="quiz"
+                    to="/admin/questions?flagged=true"
+                    linkText="xem ngân hàng câu hỏi"
+                  />
+                )}
+              </div>
+            </section>
+          )}
+
           <AdminTrendChart
             series={s.series}
             days={days}
             onDaysChange={setDays}
             isLoading={stats.loading}
           />
+
+          {ocrRows.length > 0 && <AdminOcrChart rows={ocrRows} days={days} isLoading={stats.loading} />}
+
+          {showAi && <AdminAiPerformance engines={engineRows} enrich={enrich} health={engineFlags} />}
 
           <AdminBreakdown stats={s} />
 

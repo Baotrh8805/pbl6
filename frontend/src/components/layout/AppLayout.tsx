@@ -7,6 +7,7 @@ import { fetchDecks } from "@/services/deckService";
 import { fetchAnnouncement } from "@/services/adminService";
 import { DATA_CHANGED_EVENT } from "@/services/apiClient";
 import { fetchQuizResultCount, fetchQuizResults, fetchReviews } from "@/services/studyService";
+import { fetchReviewActivity } from "@/services/activityService";
 import type { LearningSettings, UserMetrics } from "@/features/dashboard/types/dashboard.types";
 import {
     getTargetWordsByLevel,
@@ -19,13 +20,16 @@ import { LearningSettingsModal } from "@/features/dashboard/components/modals/Le
 import type { ShellContext } from "./shellContext";
 
 const loadStatsSource = async () => {
-    const [decks, reviews, quizResults, quizCount] = await Promise.all([
+    const [decks, reviews, quizResults, quizCount, activity] = await Promise.all([
         fetchDecks(),
         fetchReviews(),
         fetchQuizResults(),
         fetchQuizResultCount(),
+        // A5: nhật ký học theo ngày (streak thật, thẻ đến hạn / thẻ mới). Không bắt buộc: backend chưa có endpoint
+        // (404/405) hay lỗi bất kỳ thì dashboard vẫn chạy với số suy luận từ lịch ôn như trước.
+        fetchReviewActivity().catch(() => null),
     ]);
-    return { decks, reviews, quizResults, quizCount };
+    return { decks, reviews, quizResults, quizCount, activity };
 };
 
 export const AppLayout: React.FC = () => {
@@ -82,7 +86,7 @@ export const AppLayout: React.FC = () => {
 
     const metrics: UserMetrics = useMemo(() => {
         const base = stats.data
-            ? calcLearningStats(stats.data.decks, stats.data.reviews, stats.data.quizResults)
+            ? calcLearningStats(stats.data.decks, stats.data.reviews, stats.data.quizResults, new Date(), stats.data.activity)
             : EMPTY_STATS;
         return {
             ...base,

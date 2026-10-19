@@ -4,7 +4,9 @@ import { fetchDecks } from "@/services/deckService";
 import { fetchQuizPreview, fetchQuizResults } from "@/services/studyService";
 import { JLPT_LEVELS, secondsLeft } from "@/lib/deckUtils";
 import { calcQuizAccuracy, examResultsOnly } from "@/lib/learningStats";
-import type { Deck, Question, QuizResult } from "@/types/api.types";
+import type { Deck, QuizResult } from "@/types/api.types";
+import type { TypedQuestion } from "@/types/quiz.types";
+import { QUESTION_TYPE_LABELS } from "@/features/quiz/quizUtils";
 import { extractErrorMessage } from "@/services/apiClient";
 import { useAsync } from "@/lib/useAsync";
 import { Ruby } from "@/lib/ja";
@@ -34,7 +36,7 @@ export const QuizRoomPage: React.FC = () => {
 
     const [selectedLevel, setSelectedLevel] = useState<string>("");
     const [previewDeckId, setPreviewDeckId] = useState<string | null>(null);
-    const [sampleQuestions, setSampleQuestions] = useState<Question[]>([]);
+    const [sampleQuestions, setSampleQuestions] = useState<TypedQuestion[]>([]);
     const [previewBusy, setPreviewBusy] = useState(false);
     const [previewError, setPreviewError] = useState("");
 
@@ -354,9 +356,20 @@ export const QuizRoomPage: React.FC = () => {
                                                             <div className="font-bold text-on-surface text-title-md">
                                                                 Câu {idx + 1}:{" "}
                                                                 <Ruby term={q.term} reading={q.reading ?? undefined} />
+                                                                {q.type !== "meaning" && (
+                                                                    <span className="ml-2 align-middle px-2 py-0.5 rounded-full bg-surface-container text-label-sm font-semibold text-on-surface-variant">
+                                                                        {QUESTION_TYPE_LABELS[q.type]}
+                                                                    </span>
+                                                                )}
                                                             </div>
+                                                            {q.prompt && (
+                                                                <div className="text-body-sm text-on-surface-variant">{q.prompt}</div>
+                                                            )}
                                                             <div className="text-label-sm text-outline">
-                                                                Phương án: {q.options.join(" · ")}
+                                                                {/* Câu gõ (đợt 2) không có phương án: nói rõ thay vì in dòng trống */}
+                                                                {q.inputMode === "typing"
+                                                                    ? "Tự gõ cách đọc, không có phương án gợi ý"
+                                                                    : `Phương án: ${q.options.join(" · ")}`}
                                                             </div>
                                                         </div>
                                                     ))}

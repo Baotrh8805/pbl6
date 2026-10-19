@@ -5,6 +5,8 @@ export interface LearningSettings {
   dailyGoalWords: number;
   /** null = tự suy từ trình độ JLPT (getTargetWordsByLevel). */
   targetWords: number | null;
+  /** E5 – chế độ chỉ nghe: trang Học / Kiểm tra ẩn chữ, tự đọc từ; ?mode=audio|read trên URL ghi đè. */
+  audioOnly: boolean;
 }
 
 /** Chỉ số hiển thị trên dashboard = số liệu thật + mục tiêu người dùng đặt. */

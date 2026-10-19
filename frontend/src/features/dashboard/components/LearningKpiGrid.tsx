@@ -17,13 +17,15 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
   onOpenEditMetrics,
   loading = false,
 }) => {
-  // Tính % hoàn thành từ vựng
-  const wordsPct =
-    metrics.totalTargetWords > 0
-      ? Math.min(100, Math.round((metrics.wordsLearned / metrics.totalTargetWords) * 100))
-      : 0;
+  // "Đã học" (chấm ít nhất một lần) và "đã thuộc" (khoảng ôn ≥ 21 ngày) là hai thước đo khác nhau: thanh tiến độ vẽ cả
+  // hai lớp, % mục tiêu tính theo thẻ đã học.
+  const pctOf = (n: number) =>
+    metrics.totalTargetWords > 0 ? Math.min(100, Math.round((n / metrics.totalTargetWords) * 100)) : 0;
+  const wordsPct = pctOf(metrics.wordsLearned);
+  const masteredPct = pctOf(metrics.consolidatedWords);
 
   const wordsRemaining = Math.max(0, metrics.totalTargetWords - metrics.wordsLearned);
+  const inferred = metrics.activitySource !== "server";
 
   // Sparkline 7 ngày: trục x chia đều 2..78, trục y 2..24 theo ngày nhiều thẻ nhất.
   const weekTotal = metrics.reviewsLast7Days.reduce((a, b) => a + b, 0);
@@ -88,19 +90,22 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
 
       {/* 4 KPI BENTO CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-md">
-        {/* Card 1: Tu Vung & Kanji */}
+        {/* Card 1: Thẻ đã học (đã chấm ≥ 1 lần) / đã thuộc (khoảng ôn ≥ 21 ngày) so với mục tiêu theo cấp */}
         <div className="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow border border-surface-container-high/40">
           <div className="flex items-start justify-between">
             <div className="space-y-1">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-                Từ Vựng &amp; Kanji Đã Thuộc
+              <span
+                className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold"
+                title="Thẻ đã được chấm ít nhất một lần khi ôn"
+              >
+                Thẻ Đã Học
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">
-                  {loading ? "…" : metrics.wordsLearned.toLocaleString()}
+                  {loading ? "…" : metrics.wordsLearned.toLocaleString("vi-VN")}
                 </span>
                 <span className="font-label-md text-label-md text-outline">
-                  / {metrics.totalTargetWords.toLocaleString()} từ
+                  / {metrics.totalTargetWords.toLocaleString("vi-VN")} thẻ
                 </span>
               </div>
             </div>
@@ -110,18 +115,29 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
           </div>
           <div className="mt-space-md space-y-1.5">
             <div className="flex items-center justify-between font-label-sm text-label-sm">
-              <span className="text-on-surface-variant">Tiến độ {currentLevel}</span>
-              <span className="text-secondary font-bold">{wordsPct}% Đạt chuẩn</span>
+              <span className="text-on-surface-variant">Mục tiêu {currentLevel}</span>
+              <span className="text-secondary font-bold">{wordsPct}% mục tiêu</span>
             </div>
-            <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+            <div
+              className="relative w-full h-2 bg-surface-container rounded-full overflow-hidden"
+              role="img"
+              aria-label={`Đã học ${wordsPct}%, đã thuộc ${masteredPct}% mục tiêu ${currentLevel}`}
+            >
               <div
-                className="h-full bg-secondary rounded-full transition-all duration-500"
+                className="absolute inset-y-0 left-0 bg-secondary/35 rounded-full transition-all duration-500"
                 style={{ width: `${wordsPct}%` }}
               ></div>
+              <div
+                className="absolute inset-y-0 left-0 bg-secondary rounded-full transition-all duration-500"
+                style={{ width: `${masteredPct}%` }}
+              ></div>
             </div>
-            <div className="flex items-center justify-between text-[11px] text-outline pt-0.5 font-label-sm">
-              <span>Đã củng cố: {metrics.consolidatedWords} từ</span>
-              <span>Cần học: {wordsRemaining} từ</span>
+            <div className="flex items-center justify-between gap-2 text-[11px] text-outline pt-0.5 font-label-sm">
+              <span className="inline-flex items-center gap-1" title="Thẻ có khoảng ôn từ 21 ngày trở lên">
+                <span aria-hidden="true" className="w-2 h-2 rounded-full bg-secondary shrink-0"></span>
+                Đã thuộc: {metrics.consolidatedWords.toLocaleString("vi-VN")} thẻ
+              </span>
+              <span>Còn: {wordsRemaining.toLocaleString("vi-VN")} thẻ</span>
             </div>
           </div>
         </div>
@@ -130,14 +146,21 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
         <div className="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow border border-surface-container-high/40">
           <div className="flex items-start justify-between">
             <div className="space-y-1">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-                Thẻ Đã Ôn 7 Ngày Qua
+              <span
+                className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold"
+                title={
+                  inferred
+                    ? "Ước tính từ lịch ôn: mỗi thẻ chỉ tính lần chấm gần nhất"
+                    : "Mỗi lần chấm thẻ là một lượt, theo nhật ký ôn trên máy chủ"
+                }
+              >
+                Lượt Ôn 7 Ngày Qua
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">
-                  {loading ? "…" : weekTotal.toLocaleString()}
+                  {loading ? "…" : weekTotal.toLocaleString("vi-VN")}
                 </span>
-                <span className="font-label-md text-label-md text-outline">thẻ</span>
+                <span className="font-label-md text-label-md text-outline">lượt</span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-secondary shrink-0">
@@ -157,7 +180,7 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
               fill="none"
               viewBox="0 0 80 28"
               role="img"
-              aria-label={`Số thẻ ôn 7 ngày: ${metrics.reviewsLast7Days.join(", ")}`}
+              aria-label={`Số lượt ôn 7 ngày: ${metrics.reviewsLast7Days.join(", ")}`}
             >
               {weekTotal > 0 ? (
                 <>
@@ -217,7 +240,14 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
         <div className="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between relative overflow-hidden group hover:shadow-md transition-shadow border border-surface-container-high/40">
           <div className="flex items-start justify-between">
             <div className="space-y-1">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
+              <span
+                className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold"
+                title={
+                  inferred
+                    ? "Ước tính từ lịch ôn (máy chủ chưa gửi nhật ký học), có thể thấp hơn thực tế"
+                    : "Ngày có ôn thẻ hoặc làm quiz; hôm nay chưa học thì chuỗi tính tới hôm qua"
+                }
+              >
                 Chuỗi Học Tập (Streak)
               </span>
               <div className="flex items-baseline gap-1.5">

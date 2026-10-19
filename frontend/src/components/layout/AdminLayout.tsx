@@ -1,17 +1,23 @@
-import React, { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
 import type { Role } from "@/lib/roles";
 import { DATA_CHANGED_EVENT } from "@/services/apiClient";
-import { fetchReports } from "@/services/adminService";
+import { fetchAdminQueueCounts } from "@/services/adminService";
+import { fetchFlaggedQuestionCount } from "@/services/adminQuestionService";
 import { RoleStatusBadge } from "@/features/admin/components/AdminStatusBadge";
+import { AdminErrorBoundary } from "@/features/admin/components/AdminErrorBoundary";
+import type { AdminOutletContext, QueueCounts, QueueKey } from "@/features/admin/useAdminQueues";
 
 interface NavItem {
   to: string;
   icon: string;
   label: string;
   end?: boolean;
+  /** Hàng đợi hiện badge số việc chờ; badgeLabel đọc cho trình đọc màn hình ("{n} …"). */
+  badge?: QueueKey;
+  badgeLabel?: string;
 }
 
 interface NavGroup {
@@ -26,7 +32,11 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin", icon: "monitoring", label: "Tổng quan hệ thống", end: true },
       { to: "/admin/users", icon: "group", label: "Người dùng" },
       { to: "/admin/decks", icon: "style", label: "Nội dung" },
-      { to: "/admin/reports", icon: "flag", label: "Báo cáo" },
+      { to: "/admin/reports", icon: "flag", label: "Báo cáo", badge: "openReports", badgeLabel: "báo cáo đang mở" },
+      { to: "/admin/mnemonics", icon: "lightbulb", label: "Mẹo nhớ", badge: "pendingMnemonics", badgeLabel: "mẹo nhớ chờ duyệt" },
+      { to: "/admin/questions", icon: "quiz", label: "Ngân hàng câu hỏi", badge: "openQuestionFlags", badgeLabel: "câu hỏi bị báo lỗi" },
+      { to: "/admin/knowledge", icon: "menu_book", label: "Nguồn tri thức" },
+      { to: "/admin/appeals", icon: "gavel", label: "Khiếu nại", badge: "openAppeals", badgeLabel: "khiếu nại đang mở" },
     ],
   },
   {
@@ -38,8 +48,19 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/**
+ * Số việc chờ cho badge, gom vào một lần gọi /admin/stats (thay cho fetchReports riêng như trước). Backend đợt 2 làm song
+ * song: stats cũ chưa có openQuestionFlags -> đếm qua danh sách câu hỏi bị báo lỗi; vẫn null (endpoint chưa có) thì ẩn badge.
+ */
+const loadQueueCounts = async (): Promise<QueueCounts> => {
+  const counts = await fetchAdminQueueCounts();
+  if (counts.openQuestionFlags !== null) return counts;
+  return { ...counts, openQuestionFlags: await fetchFlaggedQuestionCount() };
+};
+
 export const AdminLayout: React.FC = () => {
   const { userEmail, userProfile, logout } = useAuth();
+  const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
@@ -62,7 +83,14 @@ export const AdminLayout: React.FC = () => {
   };
 
   const [version, setVersion] = useState(0);
-  const open = useAsync(() => fetchReports({ status: "OPEN", size: 1 }), [version]);
+  // reload (không phải deps): tải lại ngầm, badge giữ số cũ thay vì chớp tắt mỗi lần dữ liệu đổi
+  const queues = useAsync(loadQueueCounts, [], version);
+  const reloadQueues = useCallback(() => setVersion((v) => v + 1), []);
+  // Trang kiểm duyệt đọc số này cho tab (useAdminQueues) thay vì tự gọi lại /admin/stats lần nữa.
+  const outletContext = useMemo<AdminOutletContext>(
+    () => ({ queues: queues.data ?? null, reloadQueues }),
+    [queues.data, reloadQueues]
+  );
 
   useEffect(() => {
     let timer: number | undefined;
@@ -77,7 +105,13 @@ export const AdminLayout: React.FC = () => {
     };
   }, []);
 
-  const openCount = open.data?.total ?? 0;
+  // null (trường chưa có) và 0 đều không hiện badge
+  const badgeCount = (key: QueueKey | undefined): number => (key ? queues.data?.[key] ?? 0 : 0);
+  // Thu gọn: aria-label của link thay cả nội dung, nên số việc chờ phải nằm trong nhãn (dot không đọc được)
+  const navTitle = (item: NavItem): string => {
+    const n = badgeCount(item.badge);
+    return n > 0 ? `${item.label} (${n} ${item.badgeLabel ?? "việc chờ"})` : item.label;
+  };
   const role = userProfile?.role as Role | undefined;
 
   return (
@@ -141,8 +175,8 @@ export const AdminLayout: React.FC = () => {
                   key={item.to}
                   to={item.to}
                   end={item.end}
-                  title={isCollapsed ? item.label : undefined}
-                  aria-label={isCollapsed ? item.label : undefined}
+                  title={isCollapsed ? navTitle(item) : undefined}
+                  aria-label={isCollapsed ? navTitle(item) : undefined}
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) =>
                     `relative flex items-center ${
@@ -154,38 +188,42 @@ export const AdminLayout: React.FC = () => {
                     }`
                   }
                 >
-                  {({ isActive }) => (
-                    <>
-                      <span className="flex items-center gap-2.5 min-w-0">
-                        <span
-                          aria-hidden="true"
-                          className={`material-symbols-outlined text-[20px] shrink-0 ${
-                            isActive ? "text-white" : "text-outline"
-                          }`}
-                        >
-                          {item.icon}
-                        </span>
-                        {!isCollapsed && <span className="truncate">{item.label}</span>}
-                      </span>
-
-                      {/* Badge báo cáo mở: pill khi mở rộng, dot nhỏ góc icon khi thu gọn */}
-                      {item.to === "/admin/reports" && openCount > 0 && (
-                        isCollapsed ? (
+                  {({ isActive }) => {
+                    const count = badgeCount(item.badge);
+                    const countLabel = `${count} ${item.badgeLabel ?? "việc chờ"}`;
+                    return (
+                      <>
+                        <span className="flex items-center gap-2.5 min-w-0">
                           <span
-                            className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"
-                            aria-label={`${openCount} báo cáo đang mở`}
-                          />
-                        ) : (
-                          <span
-                            className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-error text-white"
-                            aria-label={`${openCount} báo cáo đang mở`}
+                            aria-hidden="true"
+                            className={`material-symbols-outlined text-[20px] shrink-0 ${
+                              isActive ? "text-white" : "text-outline"
+                            }`}
                           >
-                            {openCount}
+                            {item.icon}
                           </span>
-                        )
-                      )}
-                    </>
-                  )}
+                          {!isCollapsed && <span className="truncate">{item.label}</span>}
+                        </span>
+
+                        {/* Badge hàng đợi (báo cáo, mẹo nhớ, câu hỏi, khiếu nại): pill khi mở rộng, dot nhỏ góc icon khi thu gọn */}
+                        {count > 0 && (
+                          isCollapsed ? (
+                            <span
+                              className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-error ring-2 ring-surface-container-lowest"
+                              aria-label={countLabel}
+                            />
+                          ) : (
+                            <span
+                              className="shrink-0 text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-error text-white"
+                              aria-label={countLabel}
+                            >
+                              {count > 99 ? "99+" : count}
+                            </span>
+                          )
+                        )}
+                      </>
+                    );
+                  }}
                 </NavLink>
               ))}
             </div>
@@ -212,7 +250,10 @@ export const AdminLayout: React.FC = () => {
       {/* Main content padding đồng bộ với trạng thái thu gọn */}
       <div className={`transition-all duration-300 ${isCollapsed ? "md:pl-16" : "md:pl-64"}`}>
         <main className="w-full pt-16 min-h-screen px-gutter py-margin">
-          <Outlet />
+          {/* key: chuyển trang thì ranh giới lỗi dựng lại, trang lỗi trước không chặn trang sau. */}
+          <AdminErrorBoundary key={pathname}>
+            <Outlet context={outletContext} />
+          </AdminErrorBoundary>
         </main>
       </div>
     </div>

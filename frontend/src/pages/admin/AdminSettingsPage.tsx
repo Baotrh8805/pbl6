@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
@@ -10,13 +10,31 @@ import { formatShort } from "@/features/admin/adminUtils";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 import { AdminDetailCard } from "@/features/admin/components/AdminDetailCard";
 import { adminFieldClass } from "@/features/admin/components/AdminFilterBar";
+import {
+  AI_MODEL_MAX,
+  AI_THRESHOLD_FIELDS,
+  EXTRACTION_LIMIT_MAX,
+  LEARNING_PATH_FIELDS,
+  SETTINGS_NUMBER_FIELDS,
+  buildSettingsPayload,
+  hasAllExtras,
+  isValidExtractionLimit,
+  normalizeAdminSettings,
+  parseSettingNumber,
+  settingNumberError,
+  type SettingsNumberField,
+  type SettingsNumberKey,
+} from "@/features/admin/settingsUtils";
 
 export const AdminSettingsPage: React.FC = () => {
   const { userProfile } = useAuth();
   const canEdit = atLeast(userProfile?.role, "SUPER_ADMIN");
   const [reload, setReload] = useState(0);
-  const { data, loading, error } = useAsync(fetchSettings, [reload]);
+  // normalize: khoá mới (G5) có thể chưa có ở backend cũ, hoặc được đặt tên camelCase -> xem settingsUtils.
+  const { data, loading, error } = useAsync(async () => normalizeAdminSettings(await fetchSettings()), [reload]);
   const [draft, setDraft] = useState<AdminSettings | null>(null);
+  // Ô số của khoá mới giữ nguyên chuỗi đang gõ ("0." / "0,8") — ép sang số mỗi lần gõ sẽ làm mất dấu thập phân.
+  const [numText, setNumText] = useState<Partial<Record<SettingsNumberKey, string>>>({});
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -28,26 +46,47 @@ export const AdminSettingsPage: React.FC = () => {
       </p>
     );
   }
-  const s = draft ?? data;
+  const base = data.settings;
+  const s = draft ?? base;
+  // Backend chưa trả đủ khoá mới: hiện "—", khoá ô nhập, PUT chỉ gửi 4 khoá cũ (buildSettingsPayload).
+  const extrasReady = hasAllExtras(base);
+  const textOf = (f: SettingsNumberField) => numText[f.key] ?? (s[f.key] === undefined ? "" : String(s[f.key]));
+  const numErrors: Partial<Record<SettingsNumberKey, string>> = {};
+  const numValues: Partial<Record<SettingsNumberKey, number>> = {};
+  if (extrasReady) {
+    for (const f of SETTINGS_NUMBER_FIELDS) {
+      const text = textOf(f);
+      const err = settingNumberError(f, text);
+      if (err) numErrors[f.key] = err;
+      else numValues[f.key] = parseSettingNumber(f, text) ?? undefined;
+    }
+  }
+  const limitError =
+    !isValidExtractionLimit(s.extraction_daily_limit_free) || !isValidExtractionLimit(s.extraction_daily_limit_premium)
+      ? `Hạn mức phải là số nguyên từ 0 đến ${EXTRACTION_LIMIT_MAX}.`
+      : null;
+  const modelError = (s.ai_model_primary ?? "").trim().length > AI_MODEL_MAX ? `Tối đa ${AI_MODEL_MAX} ký tự.` : null;
+  const invalid = !!limitError || !!modelError || Object.keys(numErrors).length > 0;
+  const merged: AdminSettings = { ...s, ...numValues };
   const dirty =
-    s.extraction_daily_limit_free !== data.extraction_daily_limit_free ||
-    s.extraction_daily_limit_premium !== data.extraction_daily_limit_premium ||
-    s.announcement !== data.announcement ||
-    s.registration_open !== data.registration_open;
+    s.extraction_daily_limit_free !== base.extraction_daily_limit_free ||
+    s.extraction_daily_limit_premium !== base.extraction_daily_limit_premium ||
+    s.announcement !== base.announcement ||
+    s.registration_open !== base.registration_open ||
+    (extrasReady &&
+      (SETTINGS_NUMBER_FIELDS.some((f) => numValues[f.key] !== undefined && numValues[f.key] !== base[f.key]) ||
+        (s.ai_model_primary ?? "").trim() !== (base.ai_model_primary ?? "") ||
+        s.email_verification_required !== base.email_verification_required));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit || !dirty) return;
+    if (!canEdit || !dirty || invalid) return;
     setSaving(true);
     setStatus(null);
     try {
-      await updateSettings({
-        extraction_daily_limit_free: s.extraction_daily_limit_free,
-        extraction_daily_limit_premium: s.extraction_daily_limit_premium,
-        announcement: s.announcement,
-        registration_open: s.registration_open,
-      });
+      await updateSettings(buildSettingsPayload(merged, data.camelExtras));
       setDraft(null);
+      setNumText({});
       setStatus({ ok: true, text: "Đã lưu và áp dụng cấu hình toàn hệ thống." });
       setReload((n) => n + 1);
     } catch (err) {
@@ -61,7 +100,7 @@ export const AdminSettingsPage: React.FC = () => {
     <section className="flex flex-col gap-space-lg pb-space-xl max-w-3xl">
       <AdminPageHeader
         title="Cấu hình hệ thống"
-        description={`Các thiết lập có hiệu lực ngay lập tức. Cập nhật lần cuối: ${formatShort(data.updatedAt)}`}
+        description={`Các thiết lập có hiệu lực ngay lập tức. Cập nhật lần cuối: ${formatShort(base.updatedAt)}`}
         actions={
           <div className="flex items-center gap-2">
             {!canEdit && (
@@ -74,7 +113,7 @@ export const AdminSettingsPage: React.FC = () => {
                 variant="primary"
                 size="sm"
                 isLoading={saving}
-                disabled={!dirty}
+                disabled={!dirty || invalid}
               >
                 Lưu cấu hình
               </Button>
@@ -139,6 +178,11 @@ export const AdminSettingsPage: React.FC = () => {
               </div>
             </label>
           </div>
+          {limitError && (
+            <p role="alert" className="text-label-sm text-error">
+              {limitError}
+            </p>
+          )}
         </AdminDetailCard>
 
         {/* Card 2: Thông báo phát thanh toàn hệ thống */}
@@ -200,12 +244,106 @@ export const AdminSettingsPage: React.FC = () => {
               />
             </label>
 
+            {/* G5: khoá email_verification_required (thiếu ở backend cũ -> khoá công tắc, hiện "—"). */}
+            <label
+              className={`flex items-center justify-between gap-4 p-3 rounded-xl bg-surface-container-low border border-surface-container-high ${
+                extrasReady ? "cursor-pointer" : ""
+              }`}
+            >
+              <div>
+                <div className="font-semibold text-body-sm">Bắt buộc xác thực email khi đăng ký</div>
+                <div className="text-label-sm text-on-surface-variant">
+                  Tài khoản mới phải bấm liên kết trong email xác thực trước khi đăng nhập được
+                  {!extrasReady && " — máy chủ chưa hỗ trợ khoá này"}
+                </div>
+              </div>
+              {extrasReady ? (
+                <input
+                  type="checkbox"
+                  role="switch"
+                  disabled={!canEdit}
+                  checked={s.email_verification_required === true}
+                  onChange={(e) => setDraft({ ...s, email_verification_required: e.target.checked })}
+                  className="w-5 h-5 text-primary rounded"
+                />
+              ) : (
+                <span className="text-body-sm text-outline font-mono" aria-label="Chưa có dữ liệu">—</span>
+              )}
+            </label>
+
             {!s.registration_open && (
               <div className="p-space-sm rounded-xl bg-error/10 border border-error/20 text-error text-body-sm flex items-center gap-2">
                 <span aria-hidden="true" className="material-symbols-outlined text-[20px]">lock</span>
                 <span>Đăng ký mới đang bị đóng. Mọi lượt submit form đăng ký sẽ nhận thông báo hệ thống tạm ngừng tiếp nhận.</span>
               </div>
             )}
+          </div>
+        </AdminDetailCard>
+
+        {!extrasReady && (
+          <p role="status" className="p-space-sm rounded-xl bg-surface-container-low border border-surface-container-high text-body-sm text-on-surface-variant flex items-start gap-2">
+            <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-outline shrink-0">info</span>
+            <span>
+              Máy chủ chưa trả các khoá “Tham số AI”, “Lộ trình học tập” và “Xác thực email” (cần backend bản mới). Các ô này chỉ
+              hiển thị; lưu cấu hình vẫn chỉ gửi 4 khoá cũ nên không ảnh hưởng thiết lập hiện tại.
+            </span>
+          </p>
+        )}
+
+        {/* Card 4 (G5): tham số AI — ngưỡng 0..1 + model chính */}
+        <AdminDetailCard
+          title="Tham số AI"
+          icon="tune"
+          description="Ngưỡng độ tin cậy (0–1) điều khiển khi nào hệ thống nhờ AI đọc lại, cảnh báo hoặc dùng gợi ý của AI."
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {AI_THRESHOLD_FIELDS.map((f) => (
+              <SettingNumberInput
+                key={f.key}
+                field={f}
+                value={textOf(f)}
+                error={numErrors[f.key] ?? null}
+                disabled={!canEdit || !extrasReady}
+                onChange={(text) => setNumText((cur) => ({ ...cur, [f.key]: text }))}
+              />
+            ))}
+            <label className="flex flex-col gap-1.5 p-3 rounded-xl bg-surface-container-low border border-surface-container-high sm:col-span-2">
+              <span className="font-semibold text-body-sm">Model AI chính</span>
+              <span className="text-label-sm text-on-surface-variant">
+                Tên model Gemini dùng cho bóc tách / dịch nghĩa (vd. gemini-2.5-flash). Để trống = dùng cấu hình mặc định của ai-service.
+              </span>
+              <input
+                type="text"
+                maxLength={AI_MODEL_MAX}
+                disabled={!canEdit || !extrasReady}
+                value={s.ai_model_primary ?? ""}
+                placeholder={extrasReady ? "Mặc định của ai-service" : "—"}
+                onChange={(e) => setDraft({ ...s, ai_model_primary: e.target.value })}
+                aria-invalid={modelError ? true : undefined}
+                className={`${adminFieldClass} w-full sm:max-w-xs font-mono mt-1`}
+              />
+              {modelError && <span className="text-label-sm text-error">{modelError}</span>}
+            </label>
+          </div>
+        </AdminDetailCard>
+
+        {/* Card 5 (G5): mặc định của lộ trình học tập */}
+        <AdminDetailCard
+          title="Lộ trình học tập"
+          icon="alt_route"
+          description="Giá trị mặc định cho lộ trình của mọi người học (người học vẫn tự đổi trần tải và bật / tắt nhắc học)."
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {LEARNING_PATH_FIELDS.map((f) => (
+              <SettingNumberInput
+                key={f.key}
+                field={f}
+                value={textOf(f)}
+                error={numErrors[f.key] ?? null}
+                disabled={!canEdit || !extrasReady}
+                onChange={(text) => setNumText((cur) => ({ ...cur, [f.key]: text }))}
+              />
+            ))}
           </div>
         </AdminDetailCard>
 
@@ -219,7 +357,7 @@ export const AdminSettingsPage: React.FC = () => {
               variant="primary"
               size="sm"
               isLoading={saving}
-              disabled={!dirty}
+              disabled={!dirty || invalid}
             >
               Lưu thay đổi
             </Button>
@@ -227,6 +365,47 @@ export const AdminSettingsPage: React.FC = () => {
         )}
       </form>
     </section>
+  );
+};
+
+/** Ô số của một khoá cấu hình: nhãn, giải thích, khoảng hợp lệ, lỗi ngay dưới ô (aria-invalid / aria-describedby). */
+const SettingNumberInput: React.FC<{
+  field: SettingsNumberField;
+  value: string;
+  error: string | null;
+  disabled: boolean;
+  onChange: (text: string) => void;
+}> = ({ field, value, error, disabled, onChange }) => {
+  const errorId = useId();
+  return (
+    <label className="flex flex-col gap-1.5 p-3 rounded-xl bg-surface-container-low border border-surface-container-high">
+      <span className="font-semibold text-body-sm">{field.label}</span>
+      <span className="text-label-sm text-on-surface-variant">{field.hint}</span>
+      <div className="flex items-center gap-2 mt-1">
+        <input
+          type="number"
+          inputMode={field.integer ? "numeric" : "decimal"}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          disabled={disabled}
+          value={value}
+          placeholder="—"
+          onChange={(e) => onChange(e.target.value)}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          className={`${adminFieldClass} w-28 font-mono`}
+        />
+        <span className="text-body-sm text-outline">
+          {field.unit ?? `${field.min}–${field.max}`}
+        </span>
+      </div>
+      {error && (
+        <span id={errorId} className="text-label-sm text-error">
+          {error}
+        </span>
+      )}
+    </label>
   );
 };
 

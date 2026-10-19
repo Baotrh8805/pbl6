@@ -1,7 +1,24 @@
 import { dayKey } from "../../lib/learningStats.ts";
 import { calcDeckProgress, type DeckProgress } from "../../lib/deckUtils.ts";
-import { isDue, type Review } from "../../lib/srs.ts";
-import type { Deck, LearningPathChapter, LearningPathStatus, LearningPathTask } from "../../types/api.types.ts";
+import { MAX_REACTION_MS, isDue, type Review } from "../../lib/srs.ts";
+import type {
+    Card,
+    Deck,
+    LearningPath,
+    LearningPathChapter,
+    LearningPathChapterState,
+    LearningPathCompletion,
+    LearningPathForecastDay,
+    LearningPathJob,
+    LearningPathPatch,
+    LearningPathStatus,
+    LearningPathTask,
+    LearningPathTodayState,
+    SessionCard,
+    SessionCardMode,
+    SessionCounts,
+    SessionKind,
+} from "../../types/api.types.ts";
 
 export const MIN_DAYS = 1;
 export const MAX_DAYS = 365;
@@ -29,20 +46,133 @@ export function addDaysStr(s: string, n: number): string {
     return dayKey(new Date(y, m - 1, d + n));
 }
 
-/** Ngày thứ mấy của lộ trình tại `today`, kẹp trong 1..totalDays. */
-export function dayIndexFor(startDate: string | null, today: Date, totalDays: number): number {
+/**
+ * Ngày thứ mấy của lộ trình tại `today`, kẹp trong 1..totalDays. Có `mask` (2.0) thì chỉ đếm ngày học và ngày nghỉ trả
+ * ngày học cuối trước đó — cùng kết quả với `today.dayIndex` server trả; không mặt nạ = cộng ngày lịch như 1.0.
+ * Chỉ là dự phòng khi response thiếu `today` (bản 1.0): trang luôn ưu tiên số server.
+ */
+export function dayIndexFor(startDate: string | null, today: Date, totalDays: number, mask: string = ALL_WEEK): number {
     if (!startDate) return 1;
-    const [y, m, d] = startDate.split("-").map(Number);
-    // So sánh theo UTC của các thành phần ngày để không bị lệch bởi giờ mùa hè.
-    const start = Date.UTC(y, m - 1, d);
-    const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-    const idx = Math.round((now - start) / 86_400_000) + 1;
+    const idx = dayIndexForMask(startDate, today, mask).index;
     return Math.min(Math.max(idx, 1), Math.max(totalDays, 1));
 }
 
 export const endDate = (startDate: string, totalDays: number): string => addDaysStr(startDate, totalDays - 1);
 
-export const dateForDay = (startDate: string, dayIndex: number): string => addDaysStr(startDate, dayIndex - 1);
+// ===== 2.0: ngày học / ngày nghỉ trong tuần (bản sao thuần của LearningPathScheduler.dateForDay / dayIndexFor) =====
+
+/** Mặt nạ ngày học: 7 ký tự 0/1 theo thứ tự Thứ 2..Chủ nhật (cột `study_days`). */
+export const ALL_WEEK = "1111111";
+export const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"] as const;
+
+export const isValidStudyDays = (mask: string): boolean => /^[01]{7}$/.test(mask) && mask !== "0000000";
+
+/** Mặt nạ hỏng (thiếu, sai ký tự, toàn 0) coi như học cả tuần: không bao giờ rơi vào vòng lặp không có ngày học. */
+const normalizeMask = (mask: string): string => (isValidStudyDays(mask) ? mask : ALL_WEEK);
+
+/** true khi `d` là ngày học theo mặt nạ (getDay: 0 = CN -> vị trí 6). */
+export const isStudyDay = (d: Date, mask: string = ALL_WEEK): boolean =>
+    normalizeMask(mask)[(d.getDay() + 6) % 7] === "1";
+
+const addDaysDate = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+/** Ngày học đầu tiên (ngày 1) = ngày đầu tiên được bật kể từ ngày bắt đầu (bắt đầu vào ngày nghỉ -> ngày học kế). */
+const firstStudyDate = (startDate: string, mask: string): Date => {
+    let cur = parseDateOnly(startDate);
+    while (!isStudyDay(cur, mask)) cur = addDaysDate(cur, 1);
+    return cur;
+};
+
+/** "YYYY-MM-DD" đọc được thành ngày; ô nhập ngày đang gõ dở ("") không được đưa vào vòng lặp đếm ngày học (treo). */
+const isParsableDate = (s: string): boolean => !Number.isNaN(parseDateOnly(s).getTime());
+
+/**
+ * Ngày lịch của ngày học thứ `dayIndex` (1-based). Có mặt nạ thì chỉ đếm ngày được bật. Mặc định cả tuần nên nơi gọi
+ * 1.0 không đổi (dayIndex ≤ 0 lùi về trước như cũ; với mặt nạ cũng lùi theo ngày học). Ngày bắt đầu hỏng -> cộng ngày
+ * lịch như 1.0 (ra chuỗi NaN, không treo).
+ */
+export function dateForDay(startDate: string, dayIndex: number, mask: string = ALL_WEEK): string {
+    const m = normalizeMask(mask);
+    if (m === ALL_WEEK || !isParsableDate(startDate)) return addDaysStr(startDate, dayIndex - 1);
+    let cur = firstStudyDate(startDate, m);
+    const step = dayIndex >= 1 ? 1 : -1;
+    for (let idx = 1; idx !== dayIndex; ) {
+        cur = addDaysDate(cur, step);
+        if (isStudyDay(cur, m)) idx += step;
+    }
+    return dayKey(cur);
+}
+
+export interface StudyDayIndex {
+    /** Ngày học thứ mấy, chưa kẹp: ≤ 0 trước ngày học đầu tiên; ngày nghỉ -> ngày học cuối trước đó. */
+    index: number;
+    /** true khi `date` không phải ngày học theo mặt nạ. */
+    rest: boolean;
+}
+
+/**
+ * Ngược với dateForDay: `date` là ngày học thứ mấy (spec §3.5). Ngày nghỉ trả index của ngày học cuối trước đó kèm
+ * rest = true. Trước ngày 1: 0, −1, … đếm lùi theo ngày học (cả tuần thì trùng dayIndexFor 1.0 chưa kẹp). Không trùng tên
+ * với dayIndexFor 1.0 vì kiểu trả về khác (trang 1.0 vẫn dùng bản kẹp 1..totalDays).
+ */
+export function dayIndexForMask(startDate: string, date: Date | string, mask: string = ALL_WEEK): StudyDayIndex {
+    const m = normalizeMask(mask);
+    const target = typeof date === "string" ? parseDateOnly(date) : new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    // Ngày hỏng: NaN như phép trừ ngày 1.0 (nơi gọi kẹp / so sánh ra false), không đi vào vòng lặp.
+    if (!isParsableDate(startDate) || Number.isNaN(target.getTime())) return { index: Number.NaN, rest: false };
+    const targetKey = dayKey(target);
+    const day1 = firstStudyDate(startDate, m);
+    const day1Key = dayKey(day1);
+    let index = 0;
+    if (day1Key <= targetKey) {
+        for (let cur = day1; dayKey(cur) <= targetKey; cur = addDaysDate(cur, 1)) if (isStudyDay(cur, m)) index++;
+    } else {
+        for (let cur = addDaysDate(target, 1); dayKey(cur) < day1Key; cur = addDaysDate(cur, 1)) if (isStudyDay(cur, m)) index--;
+    }
+    return { index, rest: !isStudyDay(target, m) };
+}
+
+/**
+ * Ngày học mà server xếp lại thẻ chưa học kể từ đó (`LearningPathService.placeFrom`): ngày nghỉ -> ngày học kế (chỉ số + 1),
+ * trước ngày 1 -> 1. Ở ACTIVE, `totalDays` mới phải ≥ mốc này (server trả 400 kèm mốc) — tính theo ngày bắt đầu / mặt nạ
+ * ĐANG gửi lên chứ không phải `today` của response cũ. Ngày bắt đầu hỏng -> 1 (không chặn, để server quyết).
+ */
+export function replanFromDay(startDate: string, date: Date | string, mask: string = ALL_WEEK): number {
+    const pos = dayIndexForMask(startDate, date, mask);
+    if (Number.isNaN(pos.index)) return MIN_DAYS;
+    return Math.max(MIN_DAYS, pos.rest ? pos.index + 1 : pos.index);
+}
+
+/** "1111100" -> [true×5, false, false]; mặt nạ hỏng -> cả tuần. */
+export const parseWeekdayMask = (mask: string): boolean[] => Array.from(normalizeMask(mask), (c) => c === "1");
+
+const maskFromBits = (bits: boolean[]): string => bits.map((b) => (b ? "1" : "0")).join("");
+
+/** Bật/tắt một ngày (0 = Thứ 2 … 6 = CN). Không cho tắt ngày học cuối cùng: server từ chối "0000000". */
+export function weekdayMaskToggle(mask: string, weekday: number): string {
+    const bits = parseWeekdayMask(mask);
+    if (weekday < 0 || weekday > 6 || !Number.isInteger(weekday)) return maskFromBits(bits);
+    if (bits[weekday] && bits.filter(Boolean).length === 1) return maskFromBits(bits);
+    bits[weekday] = !bits[weekday];
+    return maskFromBits(bits);
+}
+
+export const studyDaysPerWeek = (mask: string): number => parseWeekdayMask(mask).filter(Boolean).length;
+
+/** "Cả tuần" / "T2–T6" / "T2, T4, T6" / "T2–T3, T7–CN": gộp các ngày liền nhau thành dải. */
+export function studyDaysLabel(mask: string): string {
+    const bits = parseWeekdayMask(mask);
+    if (bits.every(Boolean)) return "Cả tuần";
+    const parts: string[] = [];
+    for (let i = 0; i < 7; i++) {
+        if (!bits[i]) continue;
+        let j = i;
+        while (j + 1 < 7 && bits[j + 1]) j++;
+        parts.push(j > i ? `${WEEKDAY_LABELS[i]}–${WEEKDAY_LABELS[j]}` : WEEKDAY_LABELS[i]);
+        i = j;
+    }
+    return parts.join(", ");
+}
 
 export function isPathEnded(startDate: string | null, totalDays: number, today: Date): boolean {
     if (!startDate) return false;
@@ -118,28 +248,6 @@ export function chapterProgress(
     return deck ? calcDeckProgress(deck.cards, reviews, now) : null;
 }
 
-export function pathProgress(
-    chapters: Pick<LearningPathChapter, "deckId">[],
-    decks: Deck[],
-    reviews: Record<string, Review>,
-    now: Date
-): { total: number; mastered: number; pct: number; missingDecks: number } {
-    let total = 0;
-    let mastered = 0;
-    let missingDecks = 0;
-    for (const ch of chapters) {
-        if (!ch.deckId) continue;
-        const p = chapterProgress(ch, decks, reviews, now);
-        if (!p) {
-            missingDecks++;
-            continue;
-        }
-        total += p.total;
-        mastered += p.mastered;
-    }
-    return { total, mastered, pct: total ? Math.round((mastered / total) * 100) : 0, missingDecks };
-}
-
 /** Số thẻ đã lên lịch tới hết ngày dayIndex-1 mà chưa có review nào. */
 export function behindCount(
     chapters: ChapterLite[],
@@ -156,16 +264,310 @@ export function behindCount(
     return n;
 }
 
-export function unreviewedInTasks(
-    tasks: LearningPathTask[],
+// ===== 2.0: tải / nợ / tiến độ (nhãn thuần cho PathActiveView, PathDraftEditor) =====
+
+/** Nhãn tải một ngày trên biểu đồ khối lượng: "27/30 thẻ", vượt trần thêm " · vượt trần"; cap ≤ 0 = không có trần. */
+export function loadLabel(load: number, cap: number): string {
+    const n = Math.round(Math.max(load, 0));
+    if (cap <= 0) return `${n} thẻ`;
+    return `${n}/${cap} thẻ${n > cap ? " · vượt trần" : ""}`;
+}
+
+/** "Gợi ý 13 ngày (~8 thẻ mới/ngày)" ở bản nháp (spec §3.6). */
+export const suggestDaysLabel = (days: number, cards: number): string =>
+    `Gợi ý ${days} ngày (~${Math.ceil(cards / Math.max(days, 1))} thẻ mới/ngày)`;
+
+export type BehindSeverity = "none" | "warn" | "severe";
+
+/**
+ * Mức cảnh báo nợ (spec §3.4): có nợ -> warn; nợ > trần/ngày hoặc > 20 % thẻ còn lại chưa học -> severe (dải
+ * "Bạn đang trễ N thẻ · Học bù / Cân lại lịch / Kéo dài"). cap ≤ 0 = không trần, chỉ xét tỉ lệ.
+ */
+export function behindSeverity(behind: number, cap: number, remaining: number): BehindSeverity {
+    if (behind <= 0) return "none";
+    if (cap > 0 && behind > cap) return "severe";
+    return behind > 0.2 * Math.max(remaining, 0) ? "severe" : "warn";
+}
+
+/** Một câu tóm tắt hai thước đo tiến độ (đã học / đã thuộc) + chương đã qua kiểm tra. */
+export function completionPhrase(c: LearningPathCompletion): string {
+    if (c.total <= 0) return "Lộ trình chưa có thẻ nào.";
+    const chapters = c.chaptersTotal > 0 ? ` · ${c.chaptersPassed}/${c.chaptersTotal} chương đã qua kiểm tra` : "";
+    if (c.done) return `Đã học hết ${c.total} thẻ · ${c.mastered} đã thuộc (${c.masteredPct}%)${chapters}`;
+    return `Đã học ${c.learned}/${c.total} thẻ (${c.learnedPct}%) · ${c.mastered} đã thuộc (${c.masteredPct}%)${chapters}`;
+}
+
+// ===== 2.0: phiên học hợp nhất (StudyPage ?session=) =====
+
+/** Một nguồn với studyService (lib/srs.ts): đổi CHECK của review_logs thì cả kẹp lẫn lọc đổi cùng lúc. */
+export { MAX_REACTION_MS };
+
+/** Thời gian phản xạ gửi server: làm tròn ms, kẹp 0..MAX_REACTION_MS (CHECK của review_logs); số hỏng -> undefined (không gửi). */
+export function clampReactionMs(ms: number): number | undefined {
+    if (!Number.isFinite(ms)) return undefined;
+    return Math.min(MAX_REACTION_MS, Math.max(0, Math.round(ms)));
+}
+
+export const SESSION_KINDS: readonly SessionKind[] = ["today", "catchup", "due", "chapter"];
+
+export const parseSessionKind = (raw: string | null): SessionKind | null =>
+    raw !== null && (SESSION_KINDS as readonly string[]).includes(raw) ? (raw as SessionKind) : null;
+
+export const SESSION_KIND_LABELS: Record<SessionKind, string> = {
+    today: "Phiên hôm nay",
+    catchup: "Học bù",
+    due: "Ôn thẻ đến hạn",
+    chapter: "Học chương",
+};
+
+export const SESSION_MODE_LABELS: Record<SessionCardMode, string> = { new: "Mới", due: "Ôn", cram: "Luyện" };
+
+/** URL trang học cho một phiên của lộ trình: mọi nút học từ lộ trình đi qua đây (LP-14). */
+export const sessionUrl = (pathId: string, kind: SessionKind, chapterId?: string | null): string =>
+    `/session?session=${kind}&path=${encodeURIComponent(pathId)}${chapterId ? `&chapter=${encodeURIComponent(chapterId)}` : ""}`;
+
+/**
+ * "Ôn 5 · Nợ 3 · Mới 10" (bỏ nhóm 0); không có gì -> "0 thẻ". `cram` = số thẻ mode=cram trong phiên (đã học, chưa đến hạn —
+ * server không đếm vào counts, chỉ có ở kind=chapter) -> thêm "Luyện n" để tổng các nhóm khớp số thẻ của phiên.
+ */
+export function sessionCountsLabel(counts: SessionCounts, cram = 0): string {
+    const parts: string[] = [];
+    if (counts.due > 0) parts.push(`Ôn ${counts.due}`);
+    if (counts.catchup > 0) parts.push(`Nợ ${counts.catchup}`);
+    if (counts.new > 0) parts.push(`Mới ${counts.new}`);
+    if (cram > 0) parts.push(`Luyện ${cram}`);
+    return parts.length > 0 ? parts.join(" · ") : "0 thẻ";
+}
+
+/** Tiêu đề màn hình kết thúc theo loại phiên; học bộ thẻ / dải 1.0 (kind null) giữ câu cũ. */
+export const sessionDoneHeading = (kind: SessionKind | null): string =>
+    kind === null || kind === "today" ? "Xong phiên hôm nay 🎉" : `Xong phiên ${SESSION_KIND_LABELS[kind].toLowerCase()} 🎉`;
+
+/** Lời nhắn khi phiên rỗng, theo loại phiên và trạng thái ngày của lộ trình (spec §7). */
+export function sessionEmptyMessage(kind: SessionKind, state: LearningPathTodayState): string {
+    if (kind === "chapter") return "Chương này không còn thẻ nào để học.";
+    if (state === "before") return "Lộ trình chưa bắt đầu. Hãy quay lại vào ngày bắt đầu nhé.";
+    if (state === "rest") return "Hôm nay nghỉ theo lịch và không có thẻ nào đến hạn. Nghỉ ngơi nhé!";
+    if (kind === "catchup") return "Bạn không nợ thẻ nào. Tuyệt!";
+    if (kind === "due") return "Không có thẻ nào đến hạn ôn.";
+    return state === "after"
+        ? "Lộ trình đã kết thúc, không còn thẻ nợ hay đến hạn."
+        : "Hôm nay không còn thẻ nào cần học.";
+}
+
+/**
+ * Chế độ của thẻ khi học bộ thẻ / dải 1.0 (không có server gán): chưa chấm = mới, đến hạn = ôn, còn lại = luyện
+ * (chỉ ghi log — cùng quy tắc rangeCram).
+ */
+export const deckCardMode = (review: Review | undefined, now: Date): SessionCardMode =>
+    !review ? "new" : isDue(review, now) ? "due" : "cram";
+
+/** Thẻ của phiên lộ trình -> Card để dùng chung Ruby / CardContent với trang học bộ thẻ. */
+export const sessionCardToCard = (c: SessionCard): Card => ({
+    id: c.cardId,
+    term: c.term,
+    reading: c.reading,
+    meaning: c.meaning,
+    level: c.level,
+    kind: c.kind,
+    readingSegments: c.readingSegments,
+    hanViet: c.hanViet,
+});
+
+// ===== 2.0: trần thẻ/ngày, "hôm nay", dự báo, chương, cài đặt (PathActiveView / PathDraftEditor / Tổng quan) =====
+
+export const MIN_DAILY_CAP = 5;
+export const MAX_DAILY_CAP = 200;
+/** Trùng mặc định server (app_settings learning_path_daily_cap_default, V20). */
+export const DEFAULT_DAILY_CAP = 50;
+
+export const isValidDailyCap = (n: number): boolean => Number.isInteger(n) && n >= MIN_DAILY_CAP && n <= MAX_DAILY_CAP;
+
+/**
+ * Lộ trình "đang bận" -> trang chi tiết tiếp tục poll: PROCESSING (bóc tách / chạy lại) hoặc job bóc tách đang chạy lại
+ * bước dịch nghĩa ở DRAFT/ACTIVE (POST /enrich giữ nguyên trạng thái lộ trình, chỉ job chuyển RUNNING).
+ */
+export const isPathBusy = (p: Pick<LearningPath, "status" | "job">): boolean =>
+    isPathProcessing(p.status) || p.job?.status === "QUEUED" || p.job?.status === "RUNNING";
+
+/** Ba nhóm thẻ của một ngày (today của lộ trình / dòng today-summary). */
+export interface TodayCounts {
+    newCount: number;
+    dueCount: number;
+    behindCount: number;
+}
+
+/**
+ * Số thẻ của phiên "hôm nay" theo đúng quy tắc server (GET /session?kind=today): đến hạn -> nợ (cắt sao cho
+ * đến hạn + nợ + mới ≤ trần, thẻ mới hôm nay không bao giờ bị bỏ) -> mới. before / rest: chỉ đến hạn; after: đến hạn + nợ
+ * (không còn thẻ mới). cap ≤ 0 = không cắt. Dùng cho nhãn "Bắt đầu phiên hôm nay (k thẻ)" mà không phải gọi /session.
+ */
+export function todaySessionSize(c: TodayCounts, cap: number, state: LearningPathTodayState): number {
+    const due = Math.max(c.dueCount, 0);
+    if (state === "before" || state === "rest") return due;
+    const fresh = state === "during" ? Math.max(c.newCount, 0) : 0;
+    const behind = Math.max(c.behindCount, 0);
+    const room = cap > 0 ? Math.max(cap - due - fresh, 0) : behind;
+    return due + Math.min(behind, room) + fresh;
+}
+
+/** "ôn 5 · nợ 3 · mới 10" — luôn đủ ba nhóm (thẻ danh sách, widget Tổng quan). */
+export const todayCountsLabel = (c: TodayCounts): string =>
+    `ôn ${Math.max(c.dueCount, 0)} · nợ ${Math.max(c.behindCount, 0)} · mới ${Math.max(c.newCount, 0)}`;
+
+/** Badge sidebar: tổng thẻ cần làm hôm nay của mọi lộ trình = mới + đến hạn + nợ. */
+export const todaySummaryTotal = (items: readonly TodayCounts[]): number =>
+    items.reduce((s, i) => s + Math.max(i.newCount, 0) + Math.max(i.dueCount, 0) + Math.max(i.behindCount, 0), 0);
+
+/** "Ngày 3/30" / "Nghỉ theo lịch" / "Chưa bắt đầu" / "Đã kết thúc" — nhãn ngắn cho thẻ danh sách và widget. */
+export function pathDayLabel(state: LearningPathTodayState, dayIndex: number, totalDays: number): string {
+    if (state === "during") return `Ngày ${dayIndex}/${totalDays}`;
+    if (state === "rest") return "Nghỉ theo lịch";
+    return state === "before" ? "Chưa bắt đầu" : "Đã kết thúc";
+}
+
+/** Tiêu đề khối "Hôm nay" của trang lộ trình theo trạng thái ngày (`date`, `startDate` dạng YYYY-MM-DD). */
+export function todayHeading(
+    state: LearningPathTodayState,
+    dayIndex: number,
+    totalDays: number,
+    date: string,
+    startDate: string
+): string {
+    if (state === "during") return `Hôm nay · Ngày ${dayIndex}/${totalDays} (${formatShortDate(date)})`;
+    if (state === "rest") return `Hôm nay nghỉ theo lịch (${formatShortDate(date)})`;
+    if (state === "before") return `Chưa bắt đầu — lộ trình bắt đầu ngày ${formatShortDate(startDate)}`;
+    return "Đã kết thúc — ôn nốt thẻ đến hạn và thẻ nợ";
+}
+
+// ----- Dự báo khối lượng (WorkloadChart) -----
+
+/** Thang chung của biểu đồ: max(tải mọi ngày, trần) để vạch trần luôn nằm trong khung; không có gì -> 1 (tránh chia 0). */
+export const forecastScaleMax = (forecast: readonly Pick<LearningPathForecastDay, "load">[], cap: number): number =>
+    Math.max(1, cap > 0 ? cap : 0, ...forecast.map((f) => (Number.isFinite(f.load) ? f.load : 0)));
+
+/** Chiều cao cột theo % (0..100) trên thang `max`. */
+export const barPct = (value: number, max: number): number =>
+    Math.min(100, Math.max(0, (Math.max(value, 0) / Math.max(max, 1)) * 100));
+
+/** "Ngày 3 (21/10): 8 mới + 12 ôn · 20/30 thẻ" (thêm " · vượt trần" khi quá) — tooltip cột và bảng ẩn cho screen reader. */
+export const forecastDayLabel = (f: LearningPathForecastDay, cap: number): string =>
+    `Ngày ${f.dayIndex} (${formatShortDate(f.date)}): ${f.newCount} mới + ${Math.round(f.predictedReviews)} ôn · ${loadLabel(f.load, cap)}`;
+
+/** Nhãn dưới cột: chỉ ngày 1, bội số 5 và hôm nay để trục không rối khi lộ trình dài. */
+export const forecastTick = (dayIndex: number, todayIndex: number | null): string =>
+    dayIndex === 1 || dayIndex % 5 === 0 || dayIndex === todayIndex ? String(dayIndex) : "";
+
+// ----- Chương (ChapterTimeline) -----
+
+export const CHAPTER_STATE_LABELS: Record<LearningPathChapterState, string> = {
+    locked: "Chưa mở",
+    current: "Đang học",
+    open: "Mở",
+    review: "Ôn lại",
+    passed: "Đã qua",
+};
+
+/** Trạng thái chương: ưu tiên server; response 1.0 thiếu -> suy từ dải ngày (đã qua kiểm tra -> passed; hết thẻ -> open). */
+export function chapterStateOf(
+    ch: Pick<LearningPathChapter, "state" | "quizPassedAt" | "dayFrom" | "dayTo" | "cardCount">,
+    dayIndex: number
+): LearningPathChapterState {
+    if (ch.state) return ch.state;
+    if (ch.quizPassedAt) return "passed";
+    if (ch.cardCount <= 0) return "open";
+    if (ch.dayFrom > dayIndex) return "locked";
+    return dayIndex <= ch.dayTo ? "current" : "open";
+}
+
+/** "Điểm cao nhất 85%"; chưa làm kiểm tra -> null. */
+export const quizBestLabel = (pct: number | null | undefined): string | null =>
+    pct == null || !Number.isFinite(pct) ? null : `Điểm cao nhất ${Math.round(pct)}%`;
+
+// ----- Tiến độ dự phòng (response 1.0 không có `completion`) -----
+
+/** Tính hai thước đo từ bộ thẻ + lịch ôn của máy khách; cùng quy ước floor(100·x/total) như server. */
+export function completionFallback(
+    chapters: Pick<LearningPathChapter, "deckId" | "quizPassedAt">[],
     decks: Deck[],
-    reviews: Record<string, Review>
-): number {
-    let n = 0;
-    for (const t of tasks) {
-        const deck = decks.find((d) => d.id === t.deckId);
+    reviews: Record<string, Review>,
+    now: Date
+): LearningPathCompletion {
+    let total = 0;
+    let learned = 0;
+    let mastered = 0;
+    for (const ch of chapters) {
+        const deck = ch.deckId ? decks.find((d) => d.id === ch.deckId) : undefined;
         if (!deck) continue;
-        n += deck.cards.slice(t.fromPos - 1, t.toPos).filter((c) => !reviews[c.id]).length;
+        total += deck.cards.length;
+        learned += deck.cards.filter((c) => !!reviews[c.id]).length;
+        mastered += calcDeckProgress(deck.cards, reviews, now).mastered;
     }
-    return n;
+    const pct = (x: number) => (total > 0 ? Math.floor((100 * x) / total) : 0);
+    return {
+        total,
+        learned,
+        mastered,
+        learnedPct: pct(learned),
+        masteredPct: pct(mastered),
+        chaptersPassed: chapters.filter((c) => !!c.quizPassedAt).length,
+        chaptersTotal: chapters.length,
+        done: total > 0 && learned === total,
+    };
+}
+
+// ----- Dịch lại nghĩa (POST /enrich, cooldown 5 phút) -----
+
+export const ENRICH_COOLDOWN_MS = 5 * 60_000;
+
+/**
+ * Còn hiện "Dịch lại nghĩa": job đã xong mà bước dịch không chạy được vì hết hạn mức / lỗi (no_api_key thì gọi lại vô ích).
+ * Job lộ trình FAILED cũng nhận: lần dịch lại trước bị ngắt (khởi động lại giữa chừng, hàng đợi đầy) — item còn nguyên,
+ * lộ trình vẫn DRAFT/ACTIVE và server (ExtractionService.reEnrichJob, forPath) vẫn cho chạy lại.
+ */
+export const canReEnrichPath = (job: LearningPathJob | null | undefined): boolean =>
+    !!job &&
+    (job.status === "DONE" || job.status === "FAILED") &&
+    job.stats?.enriched !== true &&
+    (job.stats?.enrichReason === "quota" || job.stats?.enrichReason === "error");
+
+/** ms còn phải chờ trước khi server cho dịch lại (5 phút kể từ `enrichedAt`); 0 = gọi được; mốc hỏng -> 0. */
+export function enrichCooldownLeft(enrichedAt: string | null | undefined, now: number): number {
+    if (!enrichedAt) return 0;
+    const t = Date.parse(enrichedAt);
+    if (!Number.isFinite(t)) return 0;
+    return Math.max(0, t + ENRICH_COOLDOWN_MS - now);
+}
+
+/** "4:59" cho đếm ngược (làm tròn lên giây). */
+export function formatCountdown(ms: number): string {
+    const s = Math.ceil(Math.max(ms, 0) / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// ----- Cài đặt / cảnh báo tải -----
+
+/** Câu cảnh báo chung khi server báo `overflow` (activate / PATCH / rebalance) hoặc `overCap` (bản nháp). */
+export const OVERFLOW_WARNING = "Lịch không xếp vừa trần thẻ/ngày: hãy tăng số ngày học hoặc nâng trần mỗi ngày.";
+
+export interface PathSettingsValues {
+    totalDays: number;
+    startDate: string;
+    dailyCap: number;
+    studyDays: string;
+    reminder: boolean;
+}
+
+/** Patch chỉ gồm trường khác với lộ trình hiện tại (không có gì đổi -> {} , nơi gọi bỏ qua PATCH). */
+export function settingsPatch(
+    path: Pick<LearningPath, "totalDays" | "startDate" | "dailyCap" | "studyDays" | "reminder">,
+    v: PathSettingsValues
+): LearningPathPatch {
+    const patch: LearningPathPatch = {};
+    if (v.totalDays !== path.totalDays) patch.totalDays = v.totalDays;
+    if (v.startDate !== path.startDate) patch.startDate = v.startDate;
+    if (v.dailyCap !== (path.dailyCap ?? DEFAULT_DAILY_CAP)) patch.dailyCap = v.dailyCap;
+    if (v.studyDays !== (path.studyDays ?? ALL_WEEK)) patch.studyDays = v.studyDays;
+    if (v.reminder !== (path.reminder ?? false)) patch.reminder = v.reminder;
+    return patch;
 }

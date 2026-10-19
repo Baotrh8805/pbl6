@@ -6,6 +6,8 @@ import { ProfileHero } from "@/features/profile/components/ProfileHero";
 import { ProfileInfoTab } from "@/features/profile/components/ProfileInfoTab";
 import { ProfileSecurityTab } from "@/features/profile/components/ProfileSecurityTab";
 import { QuizHistoryTab } from "@/features/profile/components/QuizHistoryTab";
+import { FrictionTab } from "@/features/profile/components/FrictionTab";
+import { PracticeStatsTab } from "@/features/profile/components/PracticeStatsTab";
 import { panelId, parseProfileTab, tabId, type ProfileTab } from "@/features/profile/lib/profileUtils";
 
 export const ProfilePage: React.FC = () => {
@@ -34,6 +36,8 @@ export const ProfilePage: React.FC = () => {
                 {activeTab === "info" && <ProfileInfoTab />}
                 {activeTab === "security" && <ProfileSecurityTab />}
                 {activeTab === "history" && <QuizHistoryTab />}
+                {activeTab === "friction" && <FrictionTab />}
+                {activeTab === "practice" && <PracticeStatsTab />}
             </div>
         </section>
     );

@@ -10,11 +10,17 @@ import { canSpeak, speak } from "@/lib/speech";
 import { Button } from "@/components/ui/Button";
 import { CardModal } from "@/features/decks/components/DeckModals";
 import { ShareDeckModal } from "@/features/decks/components/ShareDeckModal";
+import { SaveToFolderModal } from "@/features/decks/components/SaveToFolderModal";
 import { canEditDeck, deckSourceLabel } from "@/lib/deckUtils";
 import { useDialog } from "@/components/ui/dialogContext";
 import { CardContent } from "@/features/decks/components/CardContent";
 import { DeckRatings } from "@/features/decks/components/DeckRatings";
 import { ReportDeckModal } from "@/features/library/components/ReportDeckModal";
+import { Modal } from "@/components/ui/Modal";
+import { PronunciationPanel } from "@/features/practice/components/PronunciationPanel";
+import { KanjiWritePanel } from "@/features/practice/components/KanjiWritePanel";
+import { extractKanji, hasCjkIdeograph } from "@/lib/textUtils";
+import { HanVietBadge } from "@/features/hanviet/components/HanVietBadge";
 
 export const DeckDetailPage: React.FC = () => {
     const { deckId = "" } = useParams();
@@ -32,8 +38,15 @@ export const DeckDetailPage: React.FC = () => {
     const [isCardModalOpen, setIsCardModalOpen] = useState(false);
     const [editingCard, setEditingCard] = useState<Card | null>(null);
     const [isShareOpen, setIsShareOpen] = useState(false);
+    const [isSaveCopyOpen, setIsSaveCopyOpen] = useState(false);
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [reported, setReported] = useState(false);
+    // Thẻ đang mở hộp luyện phát âm (E3/E4); null = đóng.
+    const [practiceCard, setPracticeCard] = useState<Card | null>(null);
+    // Thẻ đang mở hộp luyện viết kanji (E2) + chữ đang chọn trong thẻ; null = đóng.
+    const [writeCard, setWriteCard] = useState<Card | null>(null);
+    const [writeKanji, setWriteKanji] = useState("");
+    const writeKanjiList = writeCard ? extractKanji(writeCard.term) : [];
 
     if (loading) return <p className="text-on-surface-variant py-space-lg">Đang tải bộ thẻ...</p>;
     if (error || !data)
@@ -48,6 +61,9 @@ export const DeckDetailPage: React.FC = () => {
 
     const { deck, reviews } = data;
     const isOwner = deck.access === "owner";
+    // Người xem (mở từ liên kết chia sẻ / Thư viện / được mời chỉ xem): không sửa được bản gốc,
+    // nên hành động chính là lưu bản sao về tài khoản mình (D2).
+    const isViewer = deck.access === "viewer";
     const canEdit = canEditDeck(deck);
     const now = new Date();
     const dueCount = deck.cards.filter((c) => isDue(reviews[c.id], now)).length;
@@ -83,6 +99,18 @@ export const DeckDetailPage: React.FC = () => {
             action: () => deleteCard(deck.id, card.id),
         });
         if (ok) setRefreshIndex((n) => n + 1);
+    };
+
+    // Bản sao đã nằm ở tài khoản người dùng: báo rồi đưa tới đúng chỗ (thư mục đã chọn / Bộ thẻ của tôi),
+    // cùng đích với toast ở trang Thư viện.
+    const handleSavedCopy = async (folderId: string | null) => {
+        await dialog.alert({
+            title: "Đã lưu bản sao",
+            message: `Bản sao của "${deck.title}" đã có trong tài khoản của bạn. Bạn có thể sửa thoải mái mà không ảnh hưởng bản gốc.`,
+            okLabel: folderId ? "Mở thư mục" : "Xem bộ thẻ của tôi",
+            tone: "success",
+        });
+        navigate(folderId ? `/decks?folderId=${encodeURIComponent(folderId)}` : "/decks");
     };
 
     return (
@@ -148,6 +176,19 @@ export const DeckDetailPage: React.FC = () => {
                                 Kiểm tra
                             </Link>
                         </>
+                    )}
+
+                    {isViewer && (
+                        <Button
+                            variant="primary"
+                            size="md"
+                            onClick={() => setIsSaveCopyOpen(true)}
+                            className="cursor-pointer"
+                            title="Sao chép bộ thẻ này về thư mục của bạn để tự chỉnh sửa"
+                        >
+                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_add</span>
+                            Lưu bản sao
+                        </Button>
                     )}
 
                     {isOwner && (
@@ -250,8 +291,24 @@ export const DeckDetailPage: React.FC = () => {
                                 className="flex items-center justify-between gap-space-md p-space-sm sm:p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant transition-colors"
                             >
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-title-md font-semibold">
+                                    <div className="text-title-md font-semibold flex items-baseline gap-2 flex-wrap">
                                         <Ruby term={card.term} reading={card.reading ?? undefined} segments={card.readingSegments} />
+                                        {/* Thẻ sinh từ bóc tách AI có âm Hán-Việt -> badge + link sang bản đồ Hán–Việt (F1) */}
+                                        {card.hanViet && <HanVietBadge hanViet={card.hanViet} />}
+                                        {/* C5: tra các chữ Hán của thẻ (âm On/Kun, bộ thủ, ví dụ) */}
+                                        {hasCjkIdeograph(card.term) && (
+                                            <Link
+                                                to={`/kanji?k=${encodeURIComponent(extractKanji(card.term).join(""))}`}
+                                                className="inline-flex items-center gap-0.5 text-label-sm font-medium text-primary hover:underline whitespace-nowrap"
+                                                title={`Tra chữ Hán trong «${card.term}»`}
+                                                aria-label={`Tra chữ Hán trong ${card.term}`}
+                                            >
+                                                <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+                                                    translate
+                                                </span>
+                                                Chữ Hán
+                                            </Link>
+                                        )}
                                     </div>
                                     <div className="text-body-sm text-on-surface-variant mt-0.5">
                                         <CardContent
@@ -273,6 +330,37 @@ export const DeckDetailPage: React.FC = () => {
                                         >
                                             <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
                                                 volume_up
+                                            </span>
+                                        </button>
+                                    )}
+
+                                    {/* Luyện phát âm / trọng âm ngay trong trình duyệt; panel tự báo khi trình duyệt không hỗ trợ */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setPracticeCard(card)}
+                                        aria-label={`Luyện phát âm ${card.term}`}
+                                        className="p-2 rounded-lg text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                                        title="Luyện phát âm"
+                                    >
+                                        <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                                            mic
+                                        </span>
+                                    </button>
+
+                                    {/* Luyện viết: chỉ thẻ có chữ Hán; mở với chữ đầu tiên của từ */}
+                                    {hasCjkIdeograph(card.term) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setWriteCard(card);
+                                                setWriteKanji(extractKanji(card.term)[0] ?? "");
+                                            }}
+                                            aria-label={`Luyện viết kanji trong ${card.term}`}
+                                            className="p-2 rounded-lg text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                                            title="Luyện viết kanji"
+                                        >
+                                            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                                                draw
                                             </span>
                                         </button>
                                     )}
@@ -321,6 +409,79 @@ export const DeckDetailPage: React.FC = () => {
             />
 
             <ReportDeckModal deckId={deck.id} isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} onReported={() => setReported(true)} />
+
+            {/* Luyện phát âm: key theo thẻ để đổi thẻ là panel dựng lại từ đầu (bỏ kết quả cũ, dừng ghi âm) */}
+            <Modal
+                isOpen={practiceCard !== null}
+                onClose={() => setPracticeCard(null)}
+                title="Luyện phát âm"
+                icon="mic"
+                subtitle={practiceCard ? `${practiceCard.term}${practiceCard.reading ? ` · ${practiceCard.reading}` : ""}` : undefined}
+                size="xl"
+            >
+                {practiceCard && (
+                    <PronunciationPanel
+                        key={practiceCard.id}
+                        term={practiceCard.term}
+                        reading={practiceCard.reading}
+                        cardId={practiceCard.id}
+                    />
+                )}
+            </Modal>
+
+            {/* Luyện viết kanji: key theo chữ để đổi chữ là panel dựng lại (bỏ nét vẽ / kết quả cũ).
+                Panel tự tải nét mẫu KanjiVG + chấm điểm qua máy chủ; chưa có nét mẫu thì vẫn vẽ, hoàn tác, đếm nét được. */}
+            <Modal
+                isOpen={writeCard !== null}
+                onClose={() => setWriteCard(null)}
+                title="Luyện viết kanji"
+                icon="draw"
+                subtitle={writeCard ? `${writeCard.term}${writeCard.reading ? ` · ${writeCard.reading}` : ""}` : undefined}
+                size="xl"
+            >
+                {writeCard && writeKanji && (
+                    <div className="flex flex-col gap-4">
+                        {writeKanjiList.length > 1 && (
+                            <div role="group" aria-label="Chọn chữ để luyện viết" className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-label-md text-on-surface-variant mr-1">Chữ:</span>
+                                {writeKanjiList.map((k) => (
+                                    <button
+                                        key={k}
+                                        type="button"
+                                        lang="ja"
+                                        aria-pressed={k === writeKanji}
+                                        onClick={() => setWriteKanji(k)}
+                                        className={`w-10 h-10 rounded-lg border font-japanese text-xl transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                            k === writeKanji
+                                                ? "bg-primary text-on-primary border-primary"
+                                                : "bg-surface-container-lowest text-on-surface border-outline-variant hover:border-primary"
+                                        }`}
+                                    >
+                                        {k}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <KanjiWritePanel key={writeKanji} kanji={writeKanji} cardId={writeCard.id} />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Lưu bản sao: dùng chung modal với Thư viện; chỉ có số thẻ, không có số lượt quiz */}
+            {isViewer && (
+                <SaveToFolderModal
+                    isOpen={isSaveCopyOpen}
+                    onClose={() => setIsSaveCopyOpen(false)}
+                    deck={{
+                        id: deck.id,
+                        title: deck.title,
+                        level: deck.level,
+                        description: deck.description,
+                        cardsCount: deck.cards.length,
+                    }}
+                    onSaved={(folderId) => void handleSavedCopy(folderId)}
+                />
+            )}
 
             {isShareOpen && (
                 <ShareDeckModal

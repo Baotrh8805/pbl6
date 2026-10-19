@@ -7,10 +7,17 @@ import { Modal } from "@/components/ui/Modal";
 import { extractErrorMessage } from "@/services/apiClient";
 import { flattenFolders } from "@/features/folders/components/folderTree";
 
+/**
+ * Dữ liệu tối thiểu để lưu bản sao: bộ thẻ Thư viện có đủ số liệu; bộ thẻ mở từ trang chi tiết
+ * (người xem theo liên kết chia sẻ) không có số lượt quiz nên để tuỳ chọn.
+ */
+export type SaveToFolderDeck = Pick<LibraryDeck, "id" | "title" | "level" | "description" | "cardsCount"> &
+  Partial<Pick<LibraryDeck, "quizCount">>;
+
 export interface SaveToFolderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  deck: LibraryDeck | null;
+  deck: SaveToFolderDeck | null;
   onSaved?: (folderId: string | null) => void;
 }
 
@@ -68,7 +75,7 @@ export const SaveToFolderModal: React.FC<SaveToFolderModalProps> = ({
 
 interface SaveToFolderFormProps {
   formId: string;
-  deck: LibraryDeck;
+  deck: SaveToFolderDeck;
   onSaved?: (folderId: string | null) => void;
   onClose: () => void;
   onSavingChange: (saving: boolean) => void;
@@ -167,8 +174,12 @@ const SaveToFolderForm: React.FC<SaveToFolderFormProps> = ({
         <p className="line-clamp-2">{deck.description}</p>
         <div className="flex items-center gap-3 pt-1 text-outline">
           <span>{deck.cardsCount} flashcards kèm audio & ví dụ</span>
-          <span aria-hidden="true">•</span>
-          <span>{deck.quizCount} lượt quiz</span>
+          {deck.quizCount != null && (
+            <>
+              <span aria-hidden="true">•</span>
+              <span>{deck.quizCount} lượt quiz</span>
+            </>
+          )}
         </div>
       </div>
 

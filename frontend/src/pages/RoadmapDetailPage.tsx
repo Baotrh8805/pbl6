@@ -6,28 +6,40 @@ import { dayKey } from "@/lib/learningStats";
 import { extractErrorMessage } from "@/services/apiClient";
 import {
   activateLearningPath,
+  completeLearningPath,
   deleteLearningPath,
+  enrichLearningPath,
   fetchLearningPath,
   mergeChapterUp,
+  rebalanceLearningPath,
   renameChapter,
+  retryLearningPath,
+  startChapterQuiz,
   updateLearningPath,
 } from "@/services/learningPathService";
 import type { LearningPath, LearningPathPatch } from "@/types/api.types";
 import { useShell } from "@/components/layout/shellContext";
-import { PathStatusChip } from "@/features/roadmap/components/PathStatusChip";
+import { PathStatusChip, RemedialChip } from "@/features/roadmap/components/PathStatusChip";
 import { PathProcessingPanel } from "@/features/roadmap/components/PathProcessingPanel";
 import { PathFailedPanel } from "@/features/roadmap/components/PathFailedPanel";
 import { CreateLearningPathModal } from "@/features/roadmap/components/CreateLearningPathModal";
-import { PathDraftEditor } from "@/features/roadmap/components/PathDraftEditor";
+import { PathDraftEditor, type ActivateValues } from "@/features/roadmap/components/PathDraftEditor";
 import { PathActiveView } from "@/features/roadmap/components/PathActiveView";
-import { isPathProcessing } from "@/features/roadmap/roadmapUtils";
+import { PathSettingsDrawer } from "@/features/roadmap/components/PathSettingsDrawer";
+import { OVERFLOW_WARNING, isPathBusy, isPathProcessing } from "@/features/roadmap/roadmapUtils";
 
 const POLL_MS = 2000;
 /** Sau khi kích hoạt: chờ danh sách bộ thẻ của shell có đủ bộ mới, tối đa chừng này. */
 const DECKS_PENDING_MS = 8000;
+/** Sau "Dịch lại nghĩa": poll thêm chừng này kể cả khi job chưa kịp chuyển RUNNING (202 trả trước khi worker nhận việc). */
+const ENRICH_POLL_MS = 30_000;
+/** Thông báo thành công tự ẩn sau chừng này. */
+const NOTICE_MS = 8000;
+
+type BusyAction = "rebalance" | "retry" | "enrich" | "complete" | "settings";
 
 /**
- * Route giữ nguyên component khi chỉ đổi :id (vd. "Thử lại" từ lộ trình FAILED sang lộ trình mới) ->
+ * Route giữ nguyên component khi chỉ đổi :id (vd. "Tạo lại" từ lộ trình FAILED sang lộ trình mới) ->
  * key={id} để mount lại: bỏ path / modal / lỗi của lộ trình cũ, vòng poll và refresh dở bị huỷ theo.
  */
 export const RoadmapDetailPage: React.FC = () => {
@@ -45,21 +57,36 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   // Tăng để khởi động lại vòng poll / tải lại.
   const [pollRound, setPollRound] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
+  const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
+  const [quizBusy, setQuizBusy] = useState<string | null>(null);
   const [decksPending, setDecksPending] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Mốc (ms) tới đó vòng poll vẫn chạy dù lộ trình không "bận" — dùng sau "Dịch lại nghĩa".
+  const pollExtraUntil = useRef(0);
 
-  // Poll mỗi 2 s khi PROCESSING; dừng khi sang trạng thái khác hoặc rời trang.
+  // Bộ đếm chung cho MỌI lần tải lộ trình (poll lẫn tải lại sau thao tác ghi): chỉ lần mới nhất được ghi vào state.
+  // Lưu-khi-blur và kích hoạt có thể chạy chồng nhau, phản hồi cũ về muộn không được đè bản ACTIVE bằng bản DRAFT; poll
+  // trong lúc dịch lại nghĩa trên bản nháp đang sửa cũng không được trả ô nhập về giá trị trước PATCH.
+  const refreshSeq = useRef(0);
+
+  // Poll mỗi 2 s khi PROCESSING (hoặc job đang chạy lại bước dịch nghĩa); dừng khi xong hoặc rời trang.
   useEffect(() => {
     let alive = true;
     let timer: number | undefined;
     const tick = async () => {
+      const seq = ++refreshSeq.current;
       try {
         const next = await fetchLearningPath(id, dayKey(new Date()));
         if (!alive) return;
-        setPath(next);
-        setLoadError(null);
-        if (isPathProcessing(next.status)) timer = window.setTimeout(tick, POLL_MS);
+        if (seq === refreshSeq.current) {
+          setPath(next);
+          setLoadError(null);
+        }
+        // Phản hồi cũ vẫn đủ để biết job còn chạy hay không: hẹn tick kế để vòng poll không tắt oan.
+        if (isPathBusy(next) || Date.now() < pollExtraUntil.current) timer = window.setTimeout(tick, POLL_MS);
       } catch (e) {
         if (alive) setLoadError(extractErrorMessage(e));
       }
@@ -71,10 +98,13 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     };
   }, [id, pollRound]);
 
-  // Tải lại sau khi sửa bản nháp / kích hoạt.
-  // Chỉ nhận kết quả của lần tải mới nhất: lưu-khi-blur và kích hoạt có thể chạy chồng nhau, phản hồi cũ về muộn
-  // không được đè bản ACTIVE bằng bản DRAFT.
-  const refreshSeq = useRef(0);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  // Tải lại sau khi sửa bản nháp / kích hoạt / cân lại lịch (cùng bộ đếm `refreshSeq` với vòng poll ở trên).
   const refreshPath = useCallback(async () => {
     const seq = ++refreshSeq.current;
     try {
@@ -98,16 +128,19 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   }, [decksPending]);
 
   /**
-   * Chạy một thao tác sửa bản nháp rồi tải lại. Không khoá cả trang: lưu khi blur mà khoá nút/ô nhập thì
+   * Chạy một thao tác ghi rồi tải lại. Không khoá cả trang: lưu khi blur mà khoá nút/ô nhập thì
    * cú click/Tab kế tiếp rơi vào phần tử bị disabled. Lỗi -> tải lại để bỏ thay đổi lạc quan rồi hiện lỗi.
+   * Trả kết quả của thao tác (undefined khi lỗi) để nơi gọi đọc cờ `overflow` của response.
    */
-  const runAction = async (action: () => Promise<unknown>) => {
+  const runAction = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
     try {
-      await action();
+      const result = await action();
       await refreshPath();
+      return result;
     } catch (e) {
       await refreshPath();
       setActionError(extractErrorMessage(e));
+      return undefined;
     }
   };
 
@@ -120,9 +153,11 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     void runAction(() => renameChapter(id, cid, title));
   };
 
-  const handleMergeUp = (cid: string) => runAction(() => mergeChapterUp(id, cid));
+  const handleMergeUp = async (cid: string) => {
+    await runAction(() => mergeChapterUp(id, cid));
+  };
 
-  const handleActivate = async ({ title, startDate, totalDays }: { title: string; startDate: string; totalDays: number }) => {
+  const handleActivate = async ({ title, startDate, totalDays, dailyCap, studyDays }: ActivateValues) => {
     if (!path) return;
     setActivating(true);
     try {
@@ -131,14 +166,19 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
       if (title !== path.title) patch.title = title;
       if (totalDays !== path.totalDays) patch.totalDays = totalDays;
       if (startDate !== path.startDate) patch.startDate = startDate;
+      if (path.dailyCap != null && dailyCap !== path.dailyCap) patch.dailyCap = dailyCap;
+      if (path.studyDays != null && studyDays !== path.studyDays) patch.studyDays = studyDays;
       if (Object.keys(patch).length > 0) await updateLearningPath(id, patch);
-      const next = await activateLearningPath(id, { startDate, totalDays });
+      const next = await activateLearningPath(id, { startDate, totalDays, dailyCap, studyDays });
       refreshSeq.current++; // bỏ các lần tải lại đang dở (còn là DRAFT)
       setPath(next);
       setActionError(null);
+      setNotice(next.overflow ? `Đã kích hoạt. ${OVERFLOW_WARNING}` : "Đã kích hoạt lộ trình. Chúc bạn học tốt!");
       reloadStats();
       setDecksPending(true);
-      void refreshPath(); // lấy "hôm nay" theo ngày của máy khách
+      // Response activate (?date=) đã có "hôm nay" đúng theo máy khách (LP-11), nhưng forecast[] / days[] chỉ có ở
+      // GET /{id} -> tải thêm một lần để biểu đồ khối lượng hiện ngay.
+      void refreshPath();
     } catch (e) {
       setActionError(extractErrorMessage(e));
     } finally {
@@ -157,6 +197,131 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     if (ok) navigate("/roadmap");
   };
 
+  // Cân lại lịch (LP-4): hỏi trước vì server xếp lại mọi thẻ chưa học; lỗi hiện ngay trong hộp thoại.
+  const handleRebalance = async (extend: boolean) => {
+    // Kết quả gom qua object vì gán trong closure `action` (TS không theo dõi gán trong hàm con).
+    const done: { path?: LearningPath } = {};
+    const ok = await dialog.confirm({
+      title: extend ? "Kéo dài lộ trình?" : "Cân lại lịch?",
+      message: extend
+        ? "Giữ nhịp học hiện tại và kéo dài số ngày tới khi đủ chỗ cho thẻ nợ. Thẻ đã học giữ nguyên lịch ôn."
+        : "Chia thẻ nợ và thẻ chưa tới ngày đều vào các ngày còn lại (giữ ngày kết thúc). Thẻ đã học giữ nguyên lịch ôn.",
+      confirmLabel: extend ? "Kéo dài" : "Cân lại",
+      tone: "info",
+      action: async () => {
+        setBusyAction("rebalance");
+        try {
+          done.path = await rebalanceLearningPath(id, extend);
+        } finally {
+          setBusyAction(null);
+        }
+      },
+    });
+    const next = done.path;
+    if (!ok || !next) return;
+    refreshSeq.current++;
+    setPath(next);
+    setActionError(null);
+    setNotice(
+      next.overflow
+        ? `Đã ${extend ? "kéo dài" : "cân lại"} lịch. ${OVERFLOW_WARNING}`
+        : extend
+          ? `Đã kéo dài lộ trình tới ${next.totalDays} ngày.`
+          : "Đã cân lại lịch cho các ngày còn lại."
+    );
+    void refreshPath(); // forecast[] chỉ có ở GET /{id}
+  };
+
+  const handleComplete = async () => {
+    const ok = await dialog.confirm({
+      title: "Hoàn thành lộ trình?",
+      message: "Bạn đã học hết thẻ của lộ trình. Chốt hoàn thành để ghi nhận; bộ thẻ và lịch ôn vẫn hoạt động bình thường.",
+      confirmLabel: "Hoàn thành",
+      tone: "success",
+      action: async () => {
+        setBusyAction("complete");
+        try {
+          await completeLearningPath(id);
+        } finally {
+          setBusyAction(null);
+        }
+      },
+    });
+    if (!ok) return;
+    setNotice("Chúc mừng! Lộ trình đã được đánh dấu hoàn thành.");
+    reloadStats();
+    await refreshPath();
+  };
+
+  // FAILED -> chạy lại từ bước phân tích (không tốn lượt). Server từ chối (400: job mất văn bản) -> hiện lý do trong panel.
+  const handleRetry = async () => {
+    setBusyAction("retry");
+    try {
+      const next = await retryLearningPath(id);
+      refreshSeq.current++;
+      setPath(next);
+      setActionError(null);
+      setPollRound((n) => n + 1); // PROCESSING: poll như lúc tạo
+    } catch (e) {
+      setActionError(extractErrorMessage(e));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  // Dịch lại nghĩa: 202 + lộ trình (trạng thái không đổi), job chuyển sang chạy bước ENRICH -> poll tới khi job DONE.
+  // Lỗi: tải lại (qua vòng poll, để tiếp tục poll nếu job hoá ra đang chạy). Cooldown 5 phút chỉ tính từ
+  // `job.stats.enrichedAt` server trả — 429 của server luôn kèm mốc đó, còn 429 "hàng đợi đầy" (job thành FAILED) thì
+  // không có cooldown và nút phải bấm lại được ngay, nên không đặt mốc chờ ở máy khách.
+  const handleEnrich = async () => {
+    setBusyAction("enrich");
+    try {
+      const next = await enrichLearningPath(id);
+      refreshSeq.current++;
+      setPath(next);
+      setActionError(null);
+      pollExtraUntil.current = Date.now() + ENRICH_POLL_MS;
+      setPollRound((n) => n + 1);
+    } catch (e) {
+      setActionError(extractErrorMessage(e));
+      setPollRound((n) => n + 1);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  // Kiểm tra chương: server mở (hoặc nối lại) lượt quiz exam trên bộ của chương; QuizPage khôi phục đúng lượt qua ?attempt=.
+  const handleStartQuiz = async (cid: string) => {
+    setQuizBusy(cid);
+    try {
+      const state = await startChapterQuiz(id, cid);
+      if (!state?.attemptId) {
+        setActionError("Không mở được lượt kiểm tra: bộ thẻ của chương cần ít nhất 2 thẻ có nghĩa khác nhau.");
+        return;
+      }
+      navigate(`/decks/${encodeURIComponent(state.deckId)}/quiz?attempt=${encodeURIComponent(state.attemptId)}`);
+    } catch (e) {
+      setActionError(extractErrorMessage(e));
+    } finally {
+      setQuizBusy(null);
+    }
+  };
+
+  // Cài đặt (trần / ngày học / nhắc / số ngày / ngày bắt đầu): PATCH ?date= trả lộ trình đã xếp lại; ném lỗi cho hộp thoại.
+  const handleSaveSettings = async (patch: LearningPathPatch) => {
+    setBusyAction("settings");
+    try {
+      const next = await updateLearningPath(id, patch);
+      refreshSeq.current++;
+      setPath(next);
+      setActionError(null);
+      setNotice(next.overflow ? `Đã lưu cài đặt. ${OVERFLOW_WARNING}` : "Đã lưu cài đặt lộ trình.");
+      void refreshPath(); // forecast[] chỉ có ở GET /{id}
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   if (loadError && !path)
     return (
       <div className="py-space-lg flex flex-col items-start gap-space-sm">
@@ -169,6 +334,7 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   if (!path) return <p className="text-on-surface-variant py-space-lg">Đang tải...</p>;
 
   const processing = isPathProcessing(path.status);
+  const busy = activating || busyAction !== null;
 
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
@@ -182,7 +348,10 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
       <header className="flex flex-col gap-space-sm p-space-md bg-surface-container-lowest border border-surface-container-high rounded-2xl shadow-xs">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
           <div className="min-w-0">
-            <PathStatusChip status={path.status} />
+            <div className="flex flex-wrap items-center gap-2">
+              <PathStatusChip status={path.status} />
+              {path.sourceType === "remedial" && <RemedialChip />}
+            </div>
             <h1 className="mt-2 font-headline-sm text-headline-sm font-bold text-on-surface truncate">{path.title}</h1>
           </div>
           {!processing && (
@@ -190,7 +359,7 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
               variant="ghost"
               size="md"
               onClick={handleDelete}
-              disabled={activating}
+              disabled={busy}
               className="text-error hover:bg-error/10 hover:text-error shrink-0"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
@@ -208,7 +377,21 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
         )}
       </header>
 
-      {actionError && path.status !== "DRAFT" && (
+      {notice && (
+        <p
+          role="status"
+          className="p-3 rounded-lg bg-secondary-container/40 border border-secondary/30 text-on-secondary-container text-body-sm flex items-start gap-2"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">check_circle</span>
+          <span className="flex-1">{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} className="p-0.5 rounded hover:bg-secondary/20" aria-label="Ẩn thông báo">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </p>
+      )}
+
+      {/* Bản nháp / thất bại tự hiện lỗi trong khối của mình. */}
+      {actionError && path.status !== "DRAFT" && path.status !== "FAILED" && (
         <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
           {actionError}
         </p>
@@ -217,7 +400,15 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
       {processing && <PathProcessingPanel path={path} />}
 
       {path.status === "FAILED" && (
-        <PathFailedPanel path={path} onRetry={() => setCreateOpen(true)} onDelete={handleDelete} busy={activating} />
+        <PathFailedPanel
+          path={path}
+          onRetry={() => void handleRetry()}
+          onRecreate={() => setCreateOpen(true)}
+          onDelete={handleDelete}
+          busy={busy}
+          retrying={busyAction === "retry"}
+          error={actionError}
+        />
       )}
 
       {path.status === "DRAFT" && (
@@ -230,11 +421,33 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
           onMergeUp={handleMergeUp}
           onItemsPatched={() => void refreshPath()}
           onActivate={(values) => void handleActivate(values)}
+          onEnrich={() => void handleEnrich()}
+          enriching={busyAction === "enrich"}
         />
       )}
 
       {path.status === "ACTIVE" && (
-        <PathActiveView path={path} decks={decks} reviews={reviews} now={new Date()} decksPending={showDecksPending} />
+        <>
+          <PathActiveView
+            path={path}
+            decks={decks}
+            reviews={reviews}
+            now={new Date()}
+            decksPending={showDecksPending}
+            busy={busy}
+            quizBusy={quizBusy}
+            onRebalance={(extend) => void handleRebalance(extend)}
+            onComplete={() => void handleComplete()}
+            onStartQuiz={(cid) => void handleStartQuiz(cid)}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+          <PathSettingsDrawer
+            isOpen={settingsOpen}
+            path={path}
+            onClose={() => setSettingsOpen(false)}
+            onSave={handleSaveSettings}
+          />
+        </>
       )}
 
       {createOpen && (

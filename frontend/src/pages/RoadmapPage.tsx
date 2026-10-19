@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
 import { useAsync } from "@/lib/useAsync";
@@ -6,6 +7,8 @@ import { deleteLearningPath, fetchLearningPaths } from "@/services/learningPathS
 import type { LearningPath } from "@/types/api.types";
 import { CreateLearningPathModal } from "@/features/roadmap/components/CreateLearningPathModal";
 import { LearningPathCard } from "@/features/roadmap/components/LearningPathCard";
+import { NextStepsCard } from "@/features/insights/components/NextStepsCard";
+import { WeaknessCard } from "@/features/insights/components/WeaknessCard";
 
 export const RoadmapPage: React.FC = () => {
   const dialog = useDialog();
@@ -14,6 +17,19 @@ export const RoadmapPage: React.FC = () => {
   const { data, error, loading } = useAsync(fetchLearningPaths, [refreshIndex]);
   const paths = data ?? [];
   const now = new Date();
+  // ?remedial=1 (mục "Bổ khuyết" của Học gì tiếp, kể cả từ Tổng quan): WeaknessCard mở sẵn modal rồi gỡ tham số.
+  const [params, setParams] = useSearchParams();
+  const autoOpenRemedial = params.get("remedial") === "1";
+  const clearRemedialParam = useCallback(() => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("remedial");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [setParams]);
 
   const handleDelete = async (path: LearningPath) => {
     const ok = await dialog.confirm({
@@ -39,6 +55,12 @@ export const RoadmapPage: React.FC = () => {
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">add</span>
           Tạo lộ trình
         </Button>
+      </div>
+
+      {/* Insights (spec §3.7–3.9): gợi ý việc tiếp theo + điểm yếu; cạnh nhau trên desktop, xếp chồng trên mobile. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-space-md items-start">
+        <NextStepsCard />
+        <WeaknessCard autoOpenRemedial={autoOpenRemedial} onAutoOpenHandled={clearRemedialParam} />
       </div>
 
       {error && (

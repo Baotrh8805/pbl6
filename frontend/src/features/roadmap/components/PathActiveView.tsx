@@ -1,20 +1,23 @@
 import React from "react";
-import { Link } from "react-router-dom";
 import type { Review } from "@/lib/srs";
 import { dayKey } from "@/lib/learningStats";
-import type { Deck, LearningPath } from "@/types/api.types";
+import type { Deck, LearningPath, LearningPathTodayState } from "@/types/api.types";
 import {
   behindCount,
+  behindSeverity,
+  completionFallback,
   dateForDay,
   dayIndexFor,
-  endDate,
-  formatShortDate,
   isPathEnded,
-  pathProgress,
+  pathDayLabel,
   tasksForDay,
+  todayCardCount,
+  type TodayCounts,
 } from "@/features/roadmap/roadmapUtils";
-import { ProgressBar } from "./ProgressBar";
-import { TodayPanel, type TodayState } from "./TodayPanel";
+import { ProgressSummary } from "./ProgressSummary";
+import { TodaySessionPanel } from "./TodaySessionPanel";
+import { BehindBanner } from "./BehindBanner";
+import { WorkloadChart } from "./WorkloadChart";
 import { ChapterTimeline } from "./ChapterTimeline";
 
 interface PathActiveViewProps {
@@ -23,69 +26,75 @@ interface PathActiveViewProps {
   reviews: Record<string, Review>;
   now: Date;
   decksPending: boolean;
+  /** Đang chạy một thao tác ghi (cân lại / hoàn thành / cài đặt): khoá các nút ghi, link học vẫn mở. */
+  busy: boolean;
+  quizBusy: string | null;
+  onRebalance: (extend: boolean) => void;
+  onComplete: () => void;
+  onStartQuiz: (chapterId: string) => void;
+  onOpenSettings: () => void;
 }
 
-export const PathActiveView: React.FC<PathActiveViewProps> = ({ path, decks, reviews, now, decksPending }) => {
+/**
+ * Bố cục 2.0: tiến độ (2 thước đo) -> dải nợ -> phiên hôm nay -> biểu đồ khối lượng -> chương.
+ * Mọi số liệu lấy từ response server (tính theo ?date= của máy khách); các hàm phía client chỉ là dự phòng khi
+ * response thiếu trường (1.0 / bộ thẻ chưa kịp tạo).
+ */
+export const PathActiveView: React.FC<PathActiveViewProps> = ({
+  path,
+  decks,
+  reviews,
+  now,
+  decksPending,
+  busy,
+  quizBusy,
+  onRebalance,
+  onComplete,
+  onStartQuiz,
+  onOpenSettings,
+}) => {
   const chapters = path.chapters ?? [];
   const total = Math.max(path.totalDays, 1);
-  // Ưu tiên số liệu server (tính theo ?date= của máy khách); hàm phía client chỉ là dự phòng.
-  const state: TodayState =
-    path.today?.state ??
+  const today = path.today ?? null;
+  const state: LearningPathTodayState =
+    today?.state ??
     (isPathEnded(path.startDate, path.totalDays, now) ? "after" : dayKey(now) < path.startDate ? "before" : "during");
-  const ended = state === "after";
-  // Server trả dayIndex chưa kẹp (≤ 0 trước ngày bắt đầu, > N sau khi kết thúc).
-  const rawIndex = path.today?.dayIndex ?? dayIndexFor(path.startDate, now, path.totalDays);
+  // Server trả dayIndex chưa kẹp (≤ 0 trước ngày bắt đầu, > N sau khi kết thúc); ngày nghỉ = ngày học cuối trước đó.
+  // Dự phòng đếm theo cùng mặt nạ ngày học để không lệch với server nếu response thiếu `today`.
+  const rawIndex = today?.dayIndex ?? dayIndexFor(path.startDate, now, path.totalDays, path.studyDays);
   const dayIndex = Math.min(Math.max(rawIndex, 1), total);
-  // Ngoài khoảng học, server để today.tasks rỗng -> lấy lịch của ngày cuối (đã kết thúc) / ngày đầu (chưa bắt đầu).
-  const tasks =
-    state === "during"
-      ? (path.today?.tasks ?? tasksForDay(chapters, dayIndex))
-      : (path.days?.find((d) => d.dayIndex === dayIndex)?.tasks ?? tasksForDay(chapters, dayIndex));
-  const date = state === "during" && path.today ? path.today.date : dateForDay(path.startDate, dayIndex);
-  const progress = pathProgress(chapters, decks, reviews, now);
-  // Đã kết thúc: thẻ chưa học của cả ngày cuối cũng tính là nợ.
-  const behind = behindCount(chapters, ended ? path.totalDays + 1 : dayIndex, decks, reviews);
+  const tasks = state === "during" ? (today?.tasks ?? tasksForDay(chapters, dayIndex)) : [];
+  const date = today?.date ?? dateForDay(path.startDate, dayIndex, path.studyDays);
+
+  const completion = path.completion ?? completionFallback(chapters, decks, reviews, now);
+  const cap = path.dailyCap ?? 0;
+  const counts: TodayCounts = {
+    newCount: today?.newCount ?? (state === "during" ? todayCardCount(tasks) : 0),
+    dueCount: today?.dueCount ?? 0,
+    // Đã kết thúc: thẻ chưa học của cả ngày cuối cũng là nợ (dự phòng 1.0).
+    behindCount: today?.behindCount ?? behindCount(chapters, state === "after" ? path.totalDays + 1 : dayIndex, decks, reviews),
+  };
+  const severity = behindSeverity(counts.behindCount, cap, completion.total - completion.learned);
+  const positionLabel = pathDayLabel(state, dayIndex, path.totalDays);
 
   return (
     <div className="flex flex-col gap-space-lg">
-      <div className="p-space-md rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs flex flex-col gap-space-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-label-md text-on-surface-variant">
-          <span className="inline-flex items-center gap-1">
-            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">event</span>
-            {formatShortDate(path.startDate, true)} → {formatShortDate(endDate(path.startDate, total), true)}
-          </span>
-          <span className="font-semibold text-on-surface">
-            {state === "before" ? "Chưa bắt đầu" : ended ? "Đã kết thúc" : `Ngày ${dayIndex}/${path.totalDays}`}
-          </span>
-        </div>
-        <ProgressBar pct={progress.pct} label="Tiến độ cả lộ trình" tone="primary" />
-        <div className="flex flex-wrap items-center justify-between gap-2 text-label-sm text-on-surface-variant">
-          <span>
-            {progress.mastered}/{progress.total} thẻ đã thuộc ({progress.pct}%)
-          </span>
-          {path.folderId && (
-            <Link
-              to={`/folders?folderId=${encodeURIComponent(path.folderId)}`}
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">folder</span>
-              Mở thư mục
-            </Link>
-          )}
-        </div>
-      </div>
-
-      <TodayPanel
+      <ProgressSummary
         path={path}
-        state={state}
-        dayIndex={dayIndex}
-        date={date}
-        tasks={tasks}
-        behind={behind}
-        decks={decks}
-        reviews={reviews}
-        decksPending={decksPending}
+        completion={completion}
+        positionLabel={positionLabel}
+        busy={busy}
+        onComplete={onComplete}
+        onOpenSettings={onOpenSettings}
       />
+
+      <BehindBanner pathId={path.id} behind={counts.behindCount} severity={severity} busy={busy} onRebalance={onRebalance} />
+
+      <TodaySessionPanel path={path} state={state} dayIndex={dayIndex} date={date} counts={counts} tasks={tasks} cap={cap} />
+
+      {path.forecast && path.forecast.length > 0 && (
+        <WorkloadChart forecast={path.forecast} cap={cap} todayIndex={state === "during" ? dayIndex : null} />
+      )}
 
       <ChapterTimeline
         path={path}
@@ -94,6 +103,8 @@ export const PathActiveView: React.FC<PathActiveViewProps> = ({ path, decks, rev
         reviews={reviews}
         now={now}
         decksPending={decksPending}
+        quizBusy={quizBusy}
+        onStartQuiz={onStartQuiz}
       />
     </div>
   );

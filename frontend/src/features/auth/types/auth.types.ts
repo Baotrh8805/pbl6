@@ -30,4 +30,13 @@ export interface UserProfile {
   role?: string;
   mustChangePassword?: boolean;
   premiumUntil?: string | null;
+  /** Đợt 2 (A1): đã bấm link xác thực email; backend cũ không gửi trường này. */
+  emailVerified?: boolean;
+}
+
+/** POST /auth/verify-email -> 200 {message, email}: email để điền sẵn ở trang đăng nhập. */
+export interface VerifyEmailResult {
+  message: string;
+  /** "" khi máy chủ không gửi. */
+  email: string;
 }

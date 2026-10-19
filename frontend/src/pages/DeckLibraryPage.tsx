@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { LibraryDeck, LibraryPage, LibraryRating } from "@/types/api.types";
 import { fetchLibrary } from "@/services/libraryService";
 import { useAsync } from "@/lib/useAsync";
@@ -18,9 +18,11 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export const DeckLibraryPage: React.FC = () => {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
 
   // Tìm kiếm & bộ lọc: gửi lên server. Ô tìm kiếm chờ ngừng gõ rồi mới gọi API.
-  const [searchTerm, setSearchTerm] = useState("");
+  // ?q= từ nơi khác (vd. "Tìm bộ thẻ" ở bản đồ Hán–Việt) chỉ là giá trị ban đầu; gõ tiếp không ghi ngược lên URL.
+  const [searchTerm, setSearchTerm] = useState(() => params.get("q") ?? "");
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), SEARCH_DEBOUNCE_MS);
   const [selectedLevel, setSelectedLevel] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");

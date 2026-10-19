@@ -6,6 +6,7 @@ import type {
   ExtractionOptions,
   ExtractionStage,
   ExtractionStatus,
+  JlptLevel,
 } from "../../types/api.types.ts";
 import { JLPT_LEVELS } from "../../lib/deckUtils.ts";
 
@@ -187,4 +188,154 @@ export function defaultDeckTitle(job: Pick<ExtractionJob, "sourceName" | "create
   const date = new Date(job.createdAt).toLocaleDateString("vi-VN");
   if (kind === "grammar") return base ? `Ngữ pháp – ${base}` : `Ngữ pháp trích xuất – ${date}`;
   return base || `Từ vựng trích xuất – ${date}`;
+}
+
+// ---- Màu cấp độ (dùng chung LevelBadge, badge "Cấp tổng thể", thanh phân bố) ---------------------------------------
+
+/** Tông nền + chữ từng cấp cho badge; đặt ở đây thay vì LevelBadge.tsx để file component chỉ export component. */
+export const LEVEL_TONE: Record<string, string> = {
+  N5: "bg-secondary-container/50 text-on-secondary-container",
+  N4: "bg-primary-fixed text-on-primary-fixed",
+  N3: "bg-[#FEF3C7] text-[#B45309]",
+  N2: "bg-tertiary-fixed text-on-tertiary-fixed",
+  N1: "bg-error-container text-on-error-container",
+};
+export const UNKNOWN_LEVEL_TONE = "bg-surface-container text-outline";
+
+// ---- B6: phân bố cấp JLPT toàn tài liệu + cấp tổng thể -------------------------------------------------------------
+
+/** Khoá một đoạn trên thanh phân bố: N5..N1 hoặc "unknown". */
+export type LevelKey = JlptLevel | typeof UNKNOWN_LEVEL;
+
+export interface LevelSegment {
+  level: LevelKey;
+  count: number;
+  /**
+   * Cấp rõ: % trên số mục rõ cấp, đã làm tròn để các số hiển thị cộng đúng 100.
+   * "unknown": % trên tổng (kể cả chưa rõ) – chỉ để hiển thị riêng, không nằm trong tổng 100.
+   */
+  pct: number;
+}
+
+export interface LevelDistribution {
+  /** Tổng mục, kể cả chưa rõ cấp. */
+  total: number;
+  /** Số mục rõ cấp (mẫu số của pct). */
+  known: number;
+  /** Luôn 6 phần tử, thứ tự N5 → N1 rồi "unknown"; cấp không có mục vẫn giữ với count = 0 để thanh ổn định. */
+  segments: LevelSegment[];
+  /** Lấy nguyên từ ai-service (quy tắc cumulative80); job cũ không có -> null, không tự suy từ số liệu sau lọc. */
+  overallLevel: JlptLevel | null;
+  /** "all" = toàn tài liệu (byLevelAll, trước lọc); "filtered" = chỉ item giữ lại sau lọc (byLevel của job cũ). */
+  source: "all" | "filtered";
+}
+
+export const LEVEL_SOURCE_LABELS: Record<LevelDistribution["source"], string> = {
+  all: "toàn tài liệu",
+  filtered: "sau lọc theo cấp",
+};
+
+/** Phần stats mà phân bố cấp cần; nới kiểu vì stats là JSON đi xuyên backend, có thể thiếu khoá / sai kiểu. */
+export interface LevelStatsInput {
+  byLevel?: Record<string, number>;
+  byLevelAll?: Partial<Record<string, number>>;
+  levelPct?: Partial<Record<string, number>>;
+  overallLevel?: string | null;
+}
+
+const isJlptLevel = (v: unknown): v is JlptLevel =>
+  typeof v === "string" && (JLPT_LEVELS as readonly string[]).includes(v);
+
+/** Giá trị không phải số hữu hạn dương -> 0 (stats là JSON không đáng tin). */
+const nonNegative = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+const safeCount = (v: unknown): number => Math.floor(nonNegative(v));
+const isCountMap = (v: unknown): v is Record<string, unknown> => v != null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * Làm tròn tỉ lệ thành số nguyên cộng đúng 100 (largest remainder): lấy phần nguyên của từng tỉ lệ, phần còn thiếu
+ * chia lần lượt cho các mục có phần thập phân lớn nhất (hoà -> mục đứng trước, tức cấp dễ hơn). Tổng 0 -> toàn 0.
+ */
+export function roundToHundred(shares: number[]): number[] {
+  const clean = shares.map(nonNegative);
+  const sum = clean.reduce((a, b) => a + b, 0);
+  if (sum === 0) return clean.map(() => 0);
+  const exact = clean.map((s) => (s / sum) * 100);
+  const out = exact.map(Math.floor);
+  let left = 100 - out.reduce((a, b) => a + b, 0);
+  const byRemainder = exact
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const { i } of byRemainder) {
+    if (left <= 0) break;
+    out[i]++;
+    left--;
+  }
+  return out;
+}
+
+/**
+ * Phân bố cấp để vẽ thanh. Ưu tiên byLevelAll (toàn tài liệu, trước lọc – B6); job cũ chỉ có byLevel (sau lọc) ->
+ * source "filtered"; không có số liệu hoặc tổng 0 -> null (không vẽ gì). Tỉ lệ cấp rõ lấy levelPct của ai-service
+ * nếu có, không thì tính từ số đếm; cả hai đều qua roundToHundred để số hiển thị cộng đúng 100.
+ */
+export function levelDistribution(stats: LevelStatsInput | null | undefined): LevelDistribution | null {
+  if (!stats) return null;
+  const all = isCountMap(stats.byLevelAll) ? stats.byLevelAll : null;
+  const counts = all ?? (isCountMap(stats.byLevel) ? stats.byLevel : null);
+  if (!counts) return null;
+
+  const knownCounts = JLPT_LEVELS.map((lvl) => safeCount(counts[lvl]));
+  const unknown = safeCount(counts[UNKNOWN_LEVEL]);
+  const known = knownCounts.reduce((a, b) => a + b, 0);
+  const total = known + unknown;
+  if (total === 0) return null;
+
+  // levelPct chỉ đi kèm byLevelAll; toàn 0 (không có ứng viên có cấp) hay hỏng -> tính lại từ số đếm.
+  const pctMap = all ? stats.levelPct : undefined;
+  const fromPct = isCountMap(pctMap) ? JLPT_LEVELS.map((lvl) => nonNegative(pctMap[lvl])) : [];
+  const pct = roundToHundred(fromPct.some((v) => v > 0) ? fromPct : knownCounts);
+
+  const segments: LevelSegment[] = JLPT_LEVELS.map((level, i) => ({ level, count: knownCounts[i], pct: pct[i] }));
+  segments.push({ level: UNKNOWN_LEVEL, count: unknown, pct: Math.round((unknown / total) * 100) });
+  return {
+    total,
+    known,
+    segments,
+    overallLevel: isJlptLevel(stats.overallLevel) ? stats.overallLevel : null,
+    source: all ? "all" : "filtered",
+  };
+}
+
+/** Một dòng chữ thay cho thanh (aria-label / tooltip): "Phân bố cấp JLPT (toàn tài liệu): N5 50 (50%), … · chưa rõ 7". */
+export function levelDistributionSummary(dist: LevelDistribution): string {
+  const parts = dist.segments
+    .filter((s) => s.level !== UNKNOWN_LEVEL && s.count > 0)
+    .map((s) => `${s.level} ${s.count} (${s.pct}%)`);
+  const unknown = dist.segments.find((s) => s.level === UNKNOWN_LEVEL)?.count ?? 0;
+  const body = parts.length ? parts.join(", ") : "không có mục rõ cấp";
+  return `Phân bố cấp JLPT (${LEVEL_SOURCE_LABELS[dist.source]}): ${body}${unknown ? ` · chưa rõ ${unknown}` : ""}`;
+}
+
+/** Nhãn badge cấp tổng thể; null = ai-service chưa đủ dữ liệu (dưới 10 từ rõ cấp). */
+export const overallLevelLabel = (level: JlptLevel | null): string => `Cấp tổng thể: ${level ?? "chưa xác định"}`;
+
+/** Giải thích quy tắc cumulative80 (tooltip badge). */
+export const OVERALL_RULE_HINT =
+  "Cấp thấp nhất sao cho cộng dồn từ N5 đến cấp đó chiếm ít nhất 80 % số từ vựng đã rõ cấp, " +
+  "tính trên toàn tài liệu trước khi lọc theo trình độ. Dưới 10 từ rõ cấp thì chưa xác định.";
+
+/**
+ * Cấp mặc định cho bộ thẻ tạo từ job: cấp phổ biến nhất trong các item đã chọn (mostCommonLevel). Riêng bộ TỪ VỰNG
+ * của job KHÔNG lọc cấp (levelFilter "all") thì ưu tiên cấp tổng thể của tài liệu (B6): ai-service tính overallLevel
+ * trên toàn bộ từ vựng trước lọc, nên khi đã lọc (vd. "chỉ từ chưa biết") nó không phản ánh thẻ thực sự vào bộ, và
+ * ngữ pháp không nằm trong phép tính đó. Không suy ra được -> null để nơi gọi dùng trình độ người dùng.
+ */
+export function defaultDeckLevel(
+  stats: Pick<LevelStatsInput, "overallLevel"> | null | undefined,
+  items: Pick<ExtractionItem, "level">[],
+  deck: { kind: CardKind; levelFilter: ExtractionOptions["levelFilter"] }
+): string | null {
+  const lvl = stats?.overallLevel;
+  const useOverall = deck.kind === "vocab" && deck.levelFilter === "all";
+  return useOverall && isJlptLevel(lvl) ? lvl : mostCommonLevel(items);
 }

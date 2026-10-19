@@ -1,4 +1,6 @@
 import { apiClient } from "./apiClient.ts";
+import { I_PLUS_ONE_LIMIT, parseIPlusOne } from "../features/extraction/iPlusOneUtils.ts";
+import type { IPlusOneResponse } from "../types/learner.types.ts";
 import type {
     CardKind,
     CreateDecksFromExtractionDto,
@@ -75,4 +77,37 @@ export const createDecksFromExtraction = async (id: string, dto: CreateDecksFrom
 
 export const deleteExtraction = async (id: string): Promise<void> => {
     await apiClient.delete(jobUrl(id));
+};
+
+// ===== Đợt 2 (docs/Plan/specs/2026-10-19-hop-dong-api-dot-2.md) — 404/405 = backend chưa có endpoint =====
+
+/**
+ * F2 §5: đối chiếu lại item của job với nguồn tri thức chuẩn ACTIVE (ai-service /extract/conflicts). Trả job với
+ * `stats.conflicts` mới; `conflicts` của từng item đổi theo nên nơi gọi tải lại items. Gọi ai-service nên timeout dài.
+ */
+export const recheckExtractionConflicts = async (id: string): Promise<ExtractionJob> =>
+    (await apiClient.post<ExtractionJob>(`${jobUrl(id)}/recheck-conflicts`, undefined, { timeout: 60_000 })).data;
+
+export interface IPlusOneQuery {
+    /** true = từ thuộc cấp thấp hơn trình độ của mình coi như đã biết (mặc định của hợp đồng). */
+    assumeLevelKnown?: boolean;
+    limit?: number;
+}
+
+/** C6 §9: câu trong tài liệu chỉ có đúng một từ mình chưa biết (i+1), tốt trước. */
+export const fetchIPlusOne = async (
+    id: string,
+    { assumeLevelKnown = true, limit = I_PLUS_ONE_LIMIT }: IPlusOneQuery = {}
+): Promise<IPlusOneResponse> =>
+    parseIPlusOne(
+        (await apiClient.get(`${jobUrl(id)}/i-plus-one`, { params: { assumeLevelKnown, limit }, timeout: 30_000 })).data
+    );
+
+/**
+ * Đặt câu i+1 làm câu ví dụ (`example`) của item; trả item đã cập nhật (null khi response hỏng — nơi gọi tải lại items).
+ */
+export const applyIPlusOne = async (id: string, itemId: string, sentence: string): Promise<ExtractionItem | null> => {
+    const data: unknown = (await apiClient.post(`${jobUrl(id)}/i-plus-one/apply`, { itemId, sentence })).data;
+    const rec = data && typeof data === "object" ? (data as Partial<ExtractionItem>) : null;
+    return rec && typeof rec.id === "string" && typeof rec.term === "string" ? (rec as ExtractionItem) : null;
 };

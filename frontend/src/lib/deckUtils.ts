@@ -62,3 +62,11 @@ export const deckSourceLabel = (deck: Pick<Deck, "access" | "visibility">): stri
 
 /** Chủ bộ thẻ và người được chia sẻ quyền sửa: sửa thông tin + thêm/sửa/xoá thẻ. Xoá bộ thẻ chỉ chủ. */
 export const canEditDeck = (deck: Pick<Deck, "access">): boolean => deck.access !== "viewer";
+
+/**
+ * Liên kết chia sẻ bộ thẻ = đúng trang chi tiết (/decks/:deckId), không phải route riêng:
+ * người mở chưa đăng nhập sẽ bị đưa tới /login rồi tự quay lại đây; backend cấp quyền xem
+ * nếu bộ thẻ công khai hoặc người đó được mời. Cắt "/" thừa cuối origin để không ra "//decks".
+ */
+export const deckShareUrl = (origin: string, deckId: string): string =>
+    `${origin.replace(/\/+$/, "")}/decks/${encodeURIComponent(deckId)}`;

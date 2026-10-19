@@ -1,18 +1,37 @@
 import React from "react";
+import { useOutletContext } from "react-router-dom";
+import type { ShellContext } from "@/components/layout/shellContext";
 
 interface SrsBannerProps {
+  /** Tổng thẻ cần học hôm nay (đến hạn + mới) — chỉ dùng khi không có số tách riêng. */
   srsDueCount: number;
+  /** A5: thẻ đã học đến hạn hôm nay. Bỏ trống -> lấy từ số liệu AppLayout (metrics.dueToday). */
+  dueToday?: number;
+  /** A5: thẻ mới chưa học lần nào. Bỏ trống -> metrics.newCards. */
+  newCards?: number;
   currentLevel: string;
   onDismiss: () => void;
   onStartSrs: () => void;
 }
 
+// Banner "hôm nay cần học gì": tách thẻ ĐẾN HẠN (ôn để không quên) với thẻ MỚI (chưa học lần nào) vì đó là hai việc khác
+// nhau — trước đây gộp chung thành "N thẻ đến hạn" khiến bộ thẻ mới tạo trông như nợ ôn. Số tách lấy từ props, không có
+// thì từ ngữ cảnh AppLayout (banner luôn nằm trong layout), để trang gọi chưa cần đổi.
 export const SrsBanner: React.FC<SrsBannerProps> = ({
   srsDueCount,
+  dueToday,
+  newCards,
   currentLevel,
   onDismiss,
   onStartSrs,
 }) => {
+  const shell = useOutletContext<ShellContext | undefined>();
+  const due = dueToday ?? shell?.metrics.dueToday ?? srsDueCount;
+  const fresh = newCards ?? shell?.metrics.newCards ?? 0;
+  const hasWork = due > 0 || fresh > 0;
+  const buttonLabel = due > 0 ? "Ôn tập ngay" : fresh > 0 ? "Học thẻ mới" : "Học thêm từ mới";
+  const buttonCount = due > 0 ? due : fresh;
+
   return (
     <section className="relative overflow-hidden rounded-xl bg-gradient-to-r from-tertiary via-tertiary-container to-primary p-space-md shadow-md text-on-tertiary transition-all duration-300">
       <div className="absolute -right-8 -bottom-10 w-44 h-44 rounded-full bg-on-tertiary-container/10 blur-2xl pointer-events-none" />
@@ -36,17 +55,19 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
               </span>
             </div>
 
-            {srsDueCount > 0 ? (
+            {hasWork ? (
               <>
                 <p className="font-headline-sm text-headline-sm text-on-tertiary leading-snug">
-                  Bạn có{" "}
+                  Hôm nay:{" "}
                   <span className="text-secondary-fixed font-bold underline decoration-secondary-fixed/40 underline-offset-4">
-                    {srsDueCount} thẻ
+                    {due} thẻ đến hạn
                   </span>{" "}
-                  từ vựng &amp; ngữ pháp {currentLevel} đã đến hạn ôn tập hôm nay!
+                  · <span className="font-bold">{fresh} thẻ mới</span>
                 </p>
                 <p className="font-body-sm text-body-sm text-on-tertiary/80">
-                  Duy trì chuỗi nhớ ngắt quãng (Spaced Repetition) để ghi nhớ lâu dài kiến thức {currentLevel}.
+                  {due > 0
+                    ? `Ôn thẻ đến hạn trước để giữ chuỗi nhớ ngắt quãng (Spaced Repetition), rồi học thẻ mới ${currentLevel}.`
+                    : `Không còn thẻ nào cần ôn — học thêm thẻ mới để mở rộng vốn từ ${currentLevel}.`}
                 </p>
               </>
             ) : (
@@ -71,10 +92,12 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
             <span aria-hidden="true" className="material-symbols-outlined text-tertiary-container group-hover:rotate-12 transition-transform">
               history_edu
             </span>
-            <span>{srsDueCount > 0 ? "Ôn tập ngay (SRS Mode)" : "Học thêm từ mới"}</span>
-            <span className="font-label-sm text-label-sm bg-tertiary-fixed text-on-tertiary-fixed px-1.5 py-0.5 rounded font-bold">
-              {srsDueCount} thẻ
-            </span>
+            <span>{buttonLabel}</span>
+            {buttonCount > 0 && (
+              <span className="font-label-sm text-label-sm bg-tertiary-fixed text-on-tertiary-fixed px-1.5 py-0.5 rounded font-bold">
+                {buttonCount} thẻ
+              </span>
+            )}
           </button>
 
           <button

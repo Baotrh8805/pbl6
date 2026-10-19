@@ -4,6 +4,7 @@ import { authService } from "../services/authService";
 import { useAuth } from "@/context/useAuth";
 import { extractErrorMessage } from "@/services/apiClient";
 import { isStaff, setupPending } from "@/lib/roles";
+import { loginErrorKind, type LoginErrorKind } from "../authUtils";
 
 export const useLoginForm = () => {
   const navigate = useNavigate();
@@ -17,6 +18,10 @@ export const useLoginForm = () => {
   
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [apiError, setApiError] = useState<string | null>(null);
+  // Lỗi cần nút riêng (gửi lại email xác thực / gửi khiếu nại) + email của lần đăng nhập đó: người dùng có sửa ô email
+  // sau khi lỗi thì nút vẫn gửi cho đúng tài khoản máy chủ vừa báo.
+  const [errorKind, setErrorKind] = useState<LoginErrorKind>(null);
+  const [failedEmail, setFailedEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const validate = (): boolean => {
@@ -39,6 +44,7 @@ export const useLoginForm = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setApiError(null);
+    setErrorKind(null);
 
     if (!validate()) {
       return;
@@ -57,6 +63,8 @@ export const useLoginForm = () => {
     } catch (err: unknown) {
       const msg = extractErrorMessage(err);
       setApiError(msg);
+      setErrorKind(loginErrorKind(err));
+      setFailedEmail(email.trim());
     } finally {
       setIsLoading(false);
     }
@@ -71,6 +79,8 @@ export const useLoginForm = () => {
     setRememberMe,
     errors,
     apiError,
+    errorKind,
+    failedEmail,
     isLoading,
     handleSubmit,
   };

@@ -5,6 +5,9 @@ import { JLPT_LEVELS } from "@/lib/deckUtils";
 import type { CardKind, ExtractionItem, ExtractionItemPatch, ExtractionStats } from "@/types/api.types";
 import { KIND_LABELS, UNKNOWN_LEVEL, filterItems, itemMeaning, type ItemFilter } from "../extractionUtils";
 import { LevelBadge } from "./LevelBadge";
+import { ConflictBadge } from "./ConflictBadge";
+import { HanVietBadge } from "@/features/hanviet/components/HanVietBadge";
+import { hasConflicts, itemConflicts } from "../conflictUtils";
 
 interface ExtractionItemsPanelProps {
   items: ExtractionItem[];
@@ -19,7 +22,8 @@ interface ExtractionItemsPanelProps {
 const inlineInput =
   "w-full bg-transparent border-b border-transparent hover:border-outline-variant focus:border-primary focus:outline-none text-body-sm text-on-surface px-0.5 py-0.5 transition-colors";
 
-// Một hàng item: tick chọn, thuật ngữ + furigana, ô sửa cách đọc / nghĩa (lưu khi blur), cấp, tần suất, ví dụ.
+// Một hàng item: tick chọn, thuật ngữ + furigana, cảnh báo mâu thuẫn với nguồn chuẩn (F2), ô sửa cách đọc / nghĩa (lưu khi
+// blur), cấp, tần suất, ví dụ.
 // Giá trị đang gõ giữ ở state riêng để không PATCH mỗi phím; blur mà không đổi thì không gửi.
 const ItemRow: React.FC<{
   item: ExtractionItem;
@@ -29,6 +33,7 @@ const ItemRow: React.FC<{
   const [meaning, setMeaning] = useState(itemMeaning(item));
   const [open, setOpen] = useState(false);
   const checkId = useId();
+  const conflicts = itemConflicts(item);
 
   const commitReading = () => {
     const next = reading.trim();
@@ -67,11 +72,8 @@ const ItemRow: React.FC<{
               </span>
             )}
             {item.pos && <span className="text-label-sm text-outline">{item.pos}</span>}
-            {item.hanViet && (
-              <span className="text-label-sm font-semibold text-tertiary tracking-wide" title="Âm Hán-Việt">
-                {item.hanViet}
-              </span>
-            )}
+            {item.hanViet && <HanVietBadge hanViet={item.hanViet} />}
+            <ConflictBadge conflicts={conflicts} term={item.term} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,10rem)_1fr] gap-x-3 gap-y-0.5">
@@ -144,21 +146,32 @@ const chipClass = (active: boolean) =>
       : "bg-surface-container-lowest text-on-surface-variant border-surface-container-high hover:bg-surface-container"
   }`;
 
-// Cột phải khi DONE: tab Từ vựng / Ngữ pháp, lọc cấp, tìm, chọn hàng loạt, danh sách item sửa được.
+// Cột phải khi DONE: tab Từ vựng / Ngữ pháp, lọc cấp, chỉ mục mâu thuẫn, tìm, chọn hàng loạt, danh sách item sửa được.
 export const ExtractionItemsPanel: React.FC<ExtractionItemsPanelProps> = ({ items, stats, onPatch, onCreateDecks, busy }) => {
   const [filter, setFilter] = useState<ItemFilter>({ kind: "vocab", level: "", query: "" });
+  // Lọc mâu thuẫn tách khỏi ItemFilter (extractionUtils dùng chung nhiều nơi) và áp sau filterItems.
+  const [onlyConflicts, setOnlyConflicts] = useState(false);
   const searchId = useId();
 
   const counts = useMemo(() => {
-    const out = { vocab: 0, grammar: 0, selected: 0 };
+    const out = { vocab: 0, grammar: 0, selected: 0, conflicts: 0, conflictsInKind: 0 };
     for (const it of items) {
       out[it.kind]++;
       if (it.selected) out.selected++;
+      if (hasConflicts(it)) {
+        out.conflicts++;
+        if (it.kind === filter.kind) out.conflictsInKind++;
+      }
     }
     return out;
-  }, [items]);
+  }, [items, filter.kind]);
 
-  const visible = useMemo(() => filterItems(items, filter), [items, filter]);
+  // Chạy lại / kiểm tra lại xong không còn mâu thuẫn nào: tắt lọc để danh sách không trống khó hiểu.
+  const conflictFilterOn = onlyConflicts && counts.conflicts > 0;
+  const visible = useMemo(() => {
+    const base = filterItems(items, filter);
+    return conflictFilterOn ? base.filter(hasConflicts) : base;
+  }, [items, filter, conflictFilterOn]);
   const allVisibleSelected = visible.length > 0 && visible.every((it) => it.selected);
 
   const toggleVisible = () => {
@@ -227,6 +240,22 @@ export const ExtractionItemsPanel: React.FC<ExtractionItemsPanelProps> = ({ item
               {byLevel[c.key] != null && <span className="ml-1 opacity-70 tabular-nums">{byLevel[c.key]}</span>}
             </button>
           ))}
+          {counts.conflicts > 0 && (
+            <button
+              type="button"
+              aria-pressed={conflictFilterOn}
+              onClick={() => setOnlyConflicts((v) => !v)}
+              title="Chỉ hiện mục mà tài liệu ghi khác nguồn tri thức chuẩn"
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-label-sm font-semibold border transition-colors cursor-pointer ${
+                conflictFilterOn
+                  ? "bg-amber-700 text-white border-amber-700"
+                  : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+              }`}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">warning</span>
+              Chỉ mục mâu thuẫn ({counts.conflictsInKind})
+            </button>
+          )}
         </div>
         <div className="relative sm:ml-auto sm:w-56">
           <label htmlFor={searchId} className="sr-only">
@@ -260,7 +289,11 @@ export const ExtractionItemsPanel: React.FC<ExtractionItemsPanelProps> = ({ item
 
       {visible.length === 0 ? (
         <p className="py-8 text-center text-body-sm text-outline">
-          {items.length === 0 ? "Không bóc tách được mục nào từ tài liệu này." : "Không có mục nào khớp bộ lọc."}
+          {items.length === 0
+            ? "Không bóc tách được mục nào từ tài liệu này."
+            : conflictFilterOn && counts.conflictsInKind === 0
+              ? `Không có mục ${KIND_LABELS[filter.kind].toLowerCase()} nào mâu thuẫn với nguồn chuẩn.`
+              : "Không có mục nào khớp bộ lọc."}
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5 max-h-[70vh] overflow-y-auto pr-1">

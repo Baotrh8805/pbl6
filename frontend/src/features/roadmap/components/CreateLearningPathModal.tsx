@@ -6,11 +6,22 @@ import { Input } from "@/components/ui/Input";
 import { extractErrorMessage } from "@/services/apiClient";
 import { createLearningPath } from "@/services/learningPathService";
 import { useAuth } from "@/context/useAuth";
+import { dayKey } from "@/lib/learningStats";
 import type { ExtractionOptions } from "@/types/api.types";
 import { loadSavedOptions, saveOptions } from "@/features/extraction/extractionUtils";
 import { SourceFields, type UploadSource } from "@/features/extraction/components/SourceFields";
 import { ExtractionOptionsFields } from "@/features/extraction/components/ExtractionOptionsFields";
-import { DEFAULT_DAYS, MAX_DAYS, MIN_DAYS, isValidDays } from "../roadmapUtils";
+import {
+  ALL_WEEK,
+  DEFAULT_DAYS,
+  MAX_DAILY_CAP,
+  MAX_DAYS,
+  MIN_DAILY_CAP,
+  MIN_DAYS,
+  isValidDailyCap,
+  isValidDays,
+} from "../roadmapUtils";
+import { StudyDaysToggles } from "./StudyDaysToggles";
 
 interface CreateLearningPathModalProps {
   isOpen: boolean;
@@ -19,6 +30,7 @@ interface CreateLearningPathModalProps {
 }
 
 const DAYS_ERROR = `Số ngày học phải từ ${MIN_DAYS} đến ${MAX_DAYS}.`;
+const CAP_ERROR = `Trần thẻ mỗi ngày phải từ ${MIN_DAILY_CAP} đến ${MAX_DAILY_CAP}.`;
 
 // Tải tệp / dán văn bản + số ngày học -> POST /learning-paths -> sang trang lộ trình (bản nháp chương).
 export const CreateLearningPathModal: React.FC<CreateLearningPathModalProps> = ({ isOpen, onClose, initial }) => {
@@ -63,13 +75,22 @@ const PathForm: React.FC<{
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
   const [days, setDays] = useState(String(initial?.days ?? DEFAULT_DAYS));
+  // LP-11: ngày bắt đầu luôn gửi theo máy khách (mặc định hôm nay) để server không lấy "hôm nay" theo múi giờ của nó.
+  const [startDate, setStartDate] = useState(() => dayKey(new Date()));
   const [title, setTitle] = useState(initial?.title ?? "");
+  // Để trống = không gửi dailyCap: server lấy mặc định do quản trị cấu hình (app_settings learning_path_daily_cap_default),
+  // không ghim cứng 50 ở máy khách.
+  const [dailyCap, setDailyCap] = useState("");
+  const [studyDays, setStudyDays] = useState(ALL_WEEK);
   const [options, setOptions] = useState<ExtractionOptions>(() => loadSavedOptions(userProfile?.jlptLevel));
   const [error, setError] = useState<string | null>(null);
   const [daysError, setDaysError] = useState<string | null>(null);
+  const [capError, setCapError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const daysId = useId();
+  const startId = useId();
   const titleId = useId();
+  const capId = useId();
 
   const set = <K extends keyof ExtractionOptions>(key: K, value: ExtractionOptions[K]) =>
     setOptions((o) => ({ ...o, [key]: value }));
@@ -78,11 +99,16 @@ const PathForm: React.FC<{
     e.preventDefault();
     if (saving) return;
     const daysNum = days.trim() === "" ? NaN : Number(days);
-    if (!isValidDays(daysNum)) {
-      setDaysError(DAYS_ERROR);
+    const capNum = dailyCap.trim() === "" ? undefined : Number(dailyCap);
+    const badDays = !isValidDays(daysNum);
+    const badCap = capNum !== undefined && !isValidDailyCap(capNum);
+    setDaysError(badDays ? DAYS_ERROR : null);
+    setCapError(badCap ? CAP_ERROR : null);
+    if (badDays || badCap) return;
+    if (!startDate) {
+      setError("Hãy chọn ngày bắt đầu.");
       return;
     }
-    setDaysError(null);
     if (source === "file" && !file) {
       setError("Hãy chọn tệp cần bóc tách.");
       return;
@@ -101,9 +127,12 @@ const PathForm: React.FC<{
         ...(source === "file" ? { file: file ?? undefined } : { text: text.trim() }),
         days: daysNum,
         title: trimmedTitle || undefined,
+        startDate,
+        dailyCap: capNum,
+        studyDays,
         options,
       });
-      // Đóng modal trước khi chuyển trang: mở từ /roadmap/:id (Thử lại) thì trang không unmount, modal sẽ còn mở.
+      // Đóng modal trước khi chuyển trang: mở từ /roadmap/:id (Tạo lại) thì trang không unmount, modal sẽ còn mở.
       onSavingChange(false);
       onDone();
       navigate(`/roadmap/${encodeURIComponent(path.id)}`);
@@ -150,7 +179,18 @@ const PathForm: React.FC<{
             setDaysError(null);
           }}
           error={daysError ?? undefined}
-          helperText="Hệ thống chia khối lượng học theo số ngày này."
+          helperText="Bản nháp sẽ gợi ý số ngày phù hợp với số thẻ."
+        />
+        <Input
+          id={startId}
+          label="Ngày bắt đầu"
+          type="date"
+          value={startDate}
+          onChange={(e) => {
+            setStartDate(e.target.value);
+            setError(null);
+          }}
+          helperText="Mặc định hôm nay; đổi được ở bản nháp."
         />
         <Input
           id={titleId}
@@ -165,7 +205,30 @@ const PathForm: React.FC<{
 
       <details className="group">
         <summary className="cursor-pointer select-none text-label-md font-semibold text-primary">Tuỳ chọn nâng cao</summary>
-        <div className="mt-3">
+        <div className="mt-3 space-y-3">
+          <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high/40 space-y-3">
+            <div className="font-label-md text-label-md text-on-surface font-semibold">Lịch học</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+              <Input
+                id={capId}
+                label="Trần thẻ mỗi ngày"
+                type="number"
+                inputMode="numeric"
+                min={MIN_DAILY_CAP}
+                max={MAX_DAILY_CAP}
+                step={1}
+                value={dailyCap}
+                placeholder="Mặc định hệ thống"
+                onChange={(e) => {
+                  setDailyCap(e.target.value);
+                  setCapError(null);
+                }}
+                error={capError ?? undefined}
+                helperText="Thẻ mới + thẻ ôn dự báo mỗi ngày không vượt quá mức này. Để trống để dùng mặc định; đổi được ở bản nháp."
+              />
+              <StudyDaysToggles mask={studyDays} onChange={setStudyDays} disabled={saving} />
+            </div>
+          </div>
           <ExtractionOptionsFields options={options} onChange={set} file={source === "file" ? file : null} />
         </div>
       </details>

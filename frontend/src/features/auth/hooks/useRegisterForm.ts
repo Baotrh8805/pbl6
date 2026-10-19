@@ -27,6 +27,8 @@ export const useRegisterForm = () => {
   }>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Đợt 2 (A1): máy chủ bật xác thực email -> ở lại trang, hiện hướng dẫn kiểm tra hộp thư + nút gửi lại.
+  const [pendingVerification, setPendingVerification] = useState<{ email: string; message: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const validate = (): boolean => {
@@ -79,13 +81,20 @@ export const useRegisterForm = () => {
 
     setIsLoading(true);
     try {
-      const message = await authService.register({
+      const result = await authService.register({
         fullName: fullName.trim(),
         email: email.trim(),
         password,
       });
 
-      setSuccessMessage(message || "Đăng ký tài khoản thành công!");
+      if (result.needsVerification) {
+        // Chưa đăng nhập được cho tới khi bấm link trong email: không tự chuyển sang /login.
+        setPendingVerification({ email: email.trim(), message: result.message });
+        setPassword("");
+        setConfirmPassword("");
+        return;
+      }
+      setSuccessMessage(result.message);
       // Automatically navigate to login page after 2 seconds
       redirectTimer.current = setTimeout(() => {
         navigate("/login", { state: { registeredEmail: email.trim() } });
@@ -110,6 +119,9 @@ export const useRegisterForm = () => {
     errors,
     apiError,
     successMessage,
+    pendingVerification,
+    /** "Đăng ký bằng email khác": quay lại form (giữ họ tên, xoá mật khẩu đã nhập). */
+    resetVerification: () => setPendingVerification(null),
     isLoading,
     handleSubmit,
   };

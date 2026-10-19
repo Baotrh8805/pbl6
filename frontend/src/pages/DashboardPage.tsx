@@ -13,6 +13,8 @@ import { RecentDecksSection } from "@/features/dashboard/components/RecentDecksS
 import { FolderManagerSection } from "@/features/dashboard/components/FolderManagerSection";
 import { CreateFolderModal } from "@/features/dashboard/components/modals/CreateFolderModal";
 import { QuickAiUploadModal } from "@/features/dashboard/components/modals/QuickAiUploadModal";
+import { TodayPathWidget } from "@/features/dashboard/components/TodayPathWidget";
+import { NextStepsCard } from "@/features/insights/components/NextStepsCard";
 
 export const DashboardPage: React.FC = () => {
   const {
@@ -55,6 +57,11 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="flex flex-col w-full gap-space-lg pb-space-xl">
+      {/* Lộ trình 2.0 (LP-9): "hôm nay của lộ trình" lên đầu Tổng quan; tự ẩn khi không có lộ trình đang học. */}
+      <TodayPathWidget />
+      {/* F3 "Học gì tiếp" bản gọn: bỏ phiên hôm nay / học bù vì TodayPathWidget ngay trên đã hiện; tự ẩn khi không có gợi ý. */}
+      <NextStepsCard compact exclude={["path_today", "catchup"]} />
+
       {isBannerVisible && !statsLoading && (
         <SrsBanner
           srsDueCount={metrics.srsDueCount}

@@ -4,6 +4,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
+import { VerifyEmailPage } from "@/pages/VerifyEmailPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DecksPage } from "@/pages/DecksPage";
 import { DeckDetailPage } from "@/pages/DeckDetailPage";
@@ -18,6 +19,8 @@ import { DeckLibraryPage } from "@/pages/DeckLibraryPage";
 import { FoldersPage } from "@/pages/FoldersPage";
 import { ExtractionPage } from "@/pages/ExtractionPage";
 import { ExtractionsPage } from "@/pages/ExtractionsPage";
+import { HanVietMapPage } from "@/pages/HanVietMapPage";
+import { KanjiPage } from "@/pages/KanjiPage";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
@@ -28,6 +31,11 @@ import { AdminDeckDetailPage } from "@/pages/admin/AdminDeckDetailPage";
 import { AdminReportsPage } from "@/pages/admin/AdminReportsPage";
 import { AdminAuditPage } from "@/pages/admin/AdminAuditPage";
 import { AdminSettingsPage } from "@/pages/admin/AdminSettingsPage";
+import { AdminMnemonicsPage } from "@/pages/admin/AdminMnemonicsPage";
+import { AdminQuestionsPage } from "@/pages/admin/AdminQuestionsPage";
+import { AdminKnowledgePage } from "@/pages/admin/AdminKnowledgePage";
+import { AdminKnowledgeDetailPage } from "@/pages/admin/AdminKnowledgeDetailPage";
+import { AdminAppealsPage } from "@/pages/admin/AdminAppealsPage";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicRoute } from "./PublicRoute";
 import { StaffSetupPage } from "@/pages/StaffSetupPage";
@@ -63,6 +71,8 @@ export const AppRoutes: React.FC = () => {
 
       {/* Mở từ link trong email: không bọc PublicRoute để người đang đăng nhập vẫn đặt lại được */}
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {/* Link kích hoạt tài khoản trong email (?token=): cũng không bọc PublicRoute, người đang đăng nhập vẫn kích hoạt được */}
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
 
       {/* Protected Routes: layout lồng, Outlet giữ Header/Sidebar không remount */}
       <Route
@@ -85,6 +95,10 @@ export const AppRoutes: React.FC = () => {
         <Route path="/roadmap" element={<RoadmapPage />} />
         <Route path="/roadmap/:id" element={<RoadmapDetailPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
+        {/* F1: bản đồ Hán–Việt (?reading=&level=) — trong layout để dùng danh sách bộ thẻ từ shell context */}
+        <Route path="/han-viet" element={<HanVietMapPage />} />
+        {/* C4 + C5: tra chữ Hán (?k=) và bảng bộ thủ (?tab=radicals&r=) — trong layout để dùng cấp người học từ shell context */}
+        <Route path="/kanji" element={<KanjiPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
@@ -113,6 +127,12 @@ export const AppRoutes: React.FC = () => {
         <Route path="decks" element={<AdminDecksPage />} />
         <Route path="decks/:id" element={<AdminDeckDetailPage />} />
         <Route path="reports" element={<AdminReportsPage />} />
+        <Route path="mnemonics" element={<AdminMnemonicsPage />} />
+        {/* Chi tiết câu hỏi là modal mở bằng ?question=<id> (link chia sẻ được), không có route riêng */}
+        <Route path="questions" element={<AdminQuestionsPage />} />
+        <Route path="knowledge" element={<AdminKnowledgePage />} />
+        <Route path="knowledge/:id" element={<AdminKnowledgeDetailPage />} />
+        <Route path="appeals" element={<AdminAppealsPage />} />
         <Route path="audit" element={<AdminAuditPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
       </Route>
@@ -131,6 +151,15 @@ export const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <QuizPage />
+          </ProtectedRoute>
+        }
+      />
+      {/* Lộ trình 2.0: phiên học hợp nhất (thẻ của nhiều bộ) — cùng StudyPage, chế độ ?session=&path= */}
+      <Route
+        path="/session"
+        element={
+          <ProtectedRoute>
+            <StudyPage />
           </ProtectedRoute>
         }
       />

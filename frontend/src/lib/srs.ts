@@ -1,6 +1,12 @@
 // Lịch ôn do server quyết định (SrsService.java). Client chỉ đọc kết quả.
 export type Grade = "again" | "hard" | "good" | "easy";
 
+/**
+ * Trần thời gian phản xạ (ms) server nhận ở POST /reviews — CHECK `review_logs.reaction_ms BETWEEN 0 AND 600000`.
+ * Một nguồn duy nhất: StudyPage kẹp (roadmapUtils.clampReactionMs) và studyService lọc cùng con số này.
+ */
+export const MAX_REACTION_MS = 600_000;
+
 export interface Review {
     cardId: string;
     reps: number;

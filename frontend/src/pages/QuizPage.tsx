@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { isAxiosError } from "axios";
 import {
     createQuizAttempt,
@@ -8,76 +8,64 @@ import {
     saveQuizAnswer,
     submitQuizAttempt,
 } from "@/services/studyService";
-import type { QuizAttemptState, QuizFeedback, QuizMode, QuizQuestionState } from "@/types/api.types";
-import { Ruby } from "@/lib/ja";
+import type { QuizMode } from "@/types/api.types";
+import type { QuizQuestionType, TypedQuizAttempt, TypedQuizFeedback } from "@/types/quiz.types";
 import { extractErrorMessage } from "@/services/apiClient";
+import { canSpeak } from "@/lib/speech";
+import { parseAudioMode } from "@/lib/audioOnly";
+import { useAuth } from "@/context/useAuth";
+import { loadLearningSettings } from "@/features/dashboard/lib/dashboardUtils";
+import { useQuizCapabilities } from "@/features/quiz/useQuizCapabilities";
+import { TypingAnswer } from "@/features/quiz/components/TypingAnswer";
+import { FlagQuestionModal, type FlagTarget } from "@/features/quiz/components/FlagQuestionModal";
+import { FeedbackBlock } from "@/features/quiz/components/FeedbackBlock";
+import { FlagButton } from "@/features/quiz/components/FlagButton";
+import { QuestionHeading } from "@/features/quiz/components/QuestionHeading";
+import { QuizReview } from "@/features/quiz/components/QuizReview";
+import { QuizStartScreen } from "@/features/quiz/components/QuizStartScreen";
+import { useTypingAutosave } from "@/features/quiz/useTypingAutosave";
+import { modeLabel, quizPrimaryBtn as primaryBtn, quizSecondaryBtn as secondaryBtn, quizShell as shell } from "@/features/quiz/quizUi";
+import {
+    DEFAULT_QUESTION_TYPES,
+    QUESTION_TYPE_LABELS,
+    normalizeTypedAnswer,
+    questionDisplay,
+    questionTypesForRequest,
+} from "@/features/quiz/quizUtils";
 
-const SECONDS_PER_QUESTION = 30; // QuizService.SECONDS_PER_QUESTION (server giữ hạn giờ thật)
 const GRACE_SECONDS = 60; // QuizService.GRACE_SECONDS: expiresAt của server đã cộng sẵn khoảng bù này
 const MAX_SAVE_TRIES = 3;
+const TYPING_SAVE_DELAY_MS = 800; // câu gõ ở exam: lưu sau khi ngừng gõ chừng này
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const modeLabel = (m: QuizMode) => (m === "practice" ? "Làm từng câu" : "Làm hết bài thi");
 
 type SaveState = "saved" | "saving" | "error";
 
-const shell = "min-h-screen bg-surface text-on-surface px-gutter py-space-lg";
-const primaryBtn =
-    "px-4 py-2.5 min-h-11 rounded-lg bg-primary text-on-primary font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2";
-const secondaryBtn =
-    "px-4 py-2.5 min-h-11 rounded-lg bg-surface-container-high font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary";
-
 /** Lỗi do trạng thái lượt làm (đã nộp / hết giờ / không còn): tải lại từ server thay vì thử lại. */
 const isStateConflict = (e: unknown) => isAxiosError(e) && (e.response?.status === 409 || e.response?.status === 404);
-
-/** Khối phản hồi một câu: chữ + biểu tượng (không chỉ dựa vào màu). */
-const FeedbackBlock: React.FC<{ q: QuizQuestionState; feedback: QuizFeedback; chosen: string | null }> = ({
-    q,
-    feedback,
-    chosen,
-}) => (
-    <div
-        className={`rounded-lg p-space-sm border ${
-            feedback.correct
-                ? "bg-secondary-container/40 border-secondary"
-                : "bg-error-container/30 border-error/40"
-        }`}
-    >
-        <p className={`font-label-md font-semibold ${feedback.correct ? "text-secondary" : "text-error"}`}>
-            <span aria-hidden="true" className="material-symbols-outlined align-middle text-[18px] mr-1">
-                {feedback.correct ? "check_circle" : "cancel"}
-            </span>
-            {feedback.correct ? "Chính xác" : chosen ? "Chưa đúng" : "Chưa trả lời"}
-        </p>
-        {!feedback.correct && (
-            <p className="text-body-sm mt-1">
-                Đáp án đúng: <strong>{feedback.correctAnswer}</strong>
-            </p>
-        )}
-        {!feedback.correct && chosen && (
-            <p className="text-body-sm text-on-surface-variant">Bạn chọn: {chosen}</p>
-        )}
-        {feedback.explanation && (
-            <p lang="ja" className="text-body-sm text-on-surface-variant mt-2 whitespace-pre-line">
-                {feedback.explanation}
-            </p>
-        )}
-        <span className="sr-only">{q.term}</span>
-    </div>
-);
 
 export const QuizPage: React.FC = () => {
     const { deckId = "" } = useParams(); // server kiểm quyền bộ thẻ, sai thì 404
     const [params, setParams] = useSearchParams();
     const attemptParam = params.get("attempt");
+    // E5 – chế độ chỉ nghe (cài đặt hoặc ?mode=audio): chốt lúc mở trang vì setParams({ attempt }) bên dưới xoá ?mode=.
+    const { userEmail } = useAuth();
+    const [audioOnly] = useState(() => canSpeak && (parseAudioMode(params.get("mode")) ?? loadLearningSettings(userEmail).audioOnly));
 
     const [size, setSize] = useState(10);
     const [mode, setMode] = useState<QuizMode>("practice");
-    const [attempt, setAttempt] = useState<QuizAttemptState | null>(null);
-    const [openAttempt, setOpenAttempt] = useState<QuizAttemptState | null>(null);
+    const [questionTypes, setQuestionTypes] = useState<QuizQuestionType[]>(() => [...DEFAULT_QUESTION_TYPES]);
+    const [attempt, setAttempt] = useState<TypedQuizAttempt | null>(null);
+    const [openAttempt, setOpenAttempt] = useState<TypedQuizAttempt | null>(null);
     const [answers, setAnswers] = useState<Record<string, string>>({});
-    const [feedbacks, setFeedbacks] = useState<Record<string, QuizFeedback>>({});
+    const [feedbacks, setFeedbacks] = useState<Record<string, TypedQuizFeedback>>({});
+    // Câu gõ: chuỗi đang gõ của từng câu (practice chỉ gửi khi Enter; exam tự lưu sau khi ngừng gõ).
+    const [drafts, setDrafts] = useState<Record<string, string>>({});
+    const [flagTarget, setFlagTarget] = useState<FlagTarget | null>(null);
+    const [flaggedIds, setFlaggedIds] = useState<ReadonlySet<string>>(() => new Set());
+    // Thông báo sau khi báo lỗi, gắn với đúng câu đó (sang câu khác thì không hiện nữa).
+    const [flagNotice, setFlagNotice] = useState<{ questionId: string; text: string } | null>(null);
     const [index, setIndex] = useState(0);
     const [deadline, setDeadline] = useState(0);
     const [now, setNow] = useState(() => Date.now());
@@ -94,21 +82,61 @@ export const QuizPage: React.FC = () => {
     const pending = useRef(0);
     const failedCards = useRef<Set<string>>(new Set()); // câu có lần lưu gần nhất thất bại; lưu lại thành công thì bỏ
 
+    // ---------- exam: tự lưu tuần tự (thử lại có giãn cách; lượt đã đóng thì thôi) ----------
+    const enqueueSave = (attemptId: string, cardId: string, option: string) => {
+        pending.current++;
+        setSaveState("saving");
+        queue.current = queue.current.then(async () => {
+            let ok = false;
+            for (let i = 0; i < MAX_SAVE_TRIES && !ok; i++) {
+                try {
+                    await saveQuizAnswer(attemptId, cardId, option);
+                    ok = true;
+                } catch (e) {
+                    if (isStateConflict(e)) break; // lượt đã đóng: thử lại vô ích
+                    await sleep(500 * 2 ** i);
+                }
+            }
+            pending.current--;
+            if (ok) failedCards.current.delete(cardId);
+            else failedCards.current.add(cardId);
+            if (pending.current === 0) setSaveState(failedCards.current.size > 0 ? "error" : "saved");
+        });
+    };
+    // Câu gõ ở exam: lưu sau khi ngừng gõ (gửi mỗi phím là spam hàng đợi lưu); Enter / nộp / rời trang thì gửi ngay.
+    const {
+        schedule: scheduleTypingSave,
+        flush: flushTypingSaves,
+        cancel: cancelTypingSave,
+        cancelAll: cancelTypingSaves,
+    } = useTypingAutosave(enqueueSave, TYPING_SAVE_DELAY_MS);
+
     const running = attempt !== null && !attempt.finished;
     const isExam = attempt?.mode === "exam";
     const left = running && isExam ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0;
+    // Số thẻ dùng được cho từng loại câu: chỉ màn bắt đầu cần (đang làm / xem lại bài thì không gọi).
+    const onStartScreen = !loading && !attempt?.finished && !(running && attempt?.questions[index]);
+    const capabilities = useQuizCapabilities(deckId, onStartScreen);
+    const requestTypes = questionTypesForRequest(questionTypes, capabilities.caps);
+    // Server có số liệu mà không loại nào được chọn còn dùng được -> chặn "Bắt đầu" (fieldset tự nói lý do).
+    const typesBlocked = capabilities.status === "ok" && requestTypes !== undefined && requestTypes.length === 0;
 
     /** Dựng giao diện từ trạng thái server (nguồn sự thật): đáp án đã chọn, phản hồi, câu đang làm, giờ còn lại. */
-    const load = useCallback((state: QuizAttemptState) => {
+    const load = useCallback((state: TypedQuizAttempt) => {
         const chosen: Record<string, string> = {};
-        const fb: Record<string, QuizFeedback> = {};
+        const fb: Record<string, TypedQuizFeedback> = {};
+        const typed: Record<string, string> = {};
         for (const q of state.questions) {
             if (q.chosen !== null) chosen[q.cardId] = q.chosen;
             if (q.feedback) fb[q.cardId] = q.feedback;
+            if (q.inputMode === "typing" && q.chosen) typed[q.cardId] = q.chosen;
         }
+        cancelTypingSaves();
         setAttempt(state);
         setAnswers(chosen);
         setFeedbacks(fb);
+        setDrafts(typed);
+        setFlagNotice(null);
         const firstOpen = state.questions.findIndex((q) => q.chosen === null);
         setIndex(state.mode === "practice" && !state.finished && firstOpen >= 0 ? firstOpen : 0);
         // Giờ còn lại tính theo đồng hồ server (expiresAt - serverNow), không phụ thuộc đồng hồ máy người dùng.
@@ -121,7 +149,7 @@ export const QuizPage: React.FC = () => {
         setNotice("");
         failedCards.current.clear();
         setSaveState("saved");
-    }, []);
+    }, [cancelTypingSaves]);
 
     // Vào trang: có ?attempt= thì khôi phục đúng lượt đó (kể cả xem lại bài đã nộp), không thì hỏi server có bài dở không.
     useEffect(() => {
@@ -155,9 +183,14 @@ export const QuizPage: React.FC = () => {
         setBusy(true);
         setError("");
         try {
-            const state = await createQuizAttempt(deckId, size, m);
+            // Server chưa hỗ trợ loại câu (capabilities 404/405) -> undefined: gửi đúng body cũ.
+            const state = await createQuizAttempt(deckId, size, m, requestTypes);
             if (!state?.attemptId || state.questions.length === 0) {
-                setError("Bộ thẻ cần ít nhất 2 thẻ có nghĩa khác nhau để tạo câu hỏi trắc nghiệm.");
+                setError(
+                    requestTypes && requestTypes.some((t) => t !== "meaning")
+                        ? "Chưa tạo được câu hỏi nào với các loại đã chọn. Hãy thử thêm loại \"Nghĩa\" hoặc chọn loại khác."
+                        : "Bộ thẻ cần ít nhất 2 thẻ có nghĩa khác nhau để tạo câu hỏi trắc nghiệm."
+                );
                 return;
             }
             setOpenAttempt(null);
@@ -187,30 +220,6 @@ export const QuizPage: React.FC = () => {
         if (state?.attemptId) load(state);
     };
 
-    // ---------- exam: tự lưu tuần tự ----------
-    // Hàng đợi tuần tự: các lần lưu đến server đúng thứ tự người dùng chọn, không đè nhau.
-
-    const enqueueSave = (attemptId: string, cardId: string, option: string) => {
-        pending.current++;
-        setSaveState("saving");
-        queue.current = queue.current.then(async () => {
-            let ok = false;
-            for (let i = 0; i < MAX_SAVE_TRIES && !ok; i++) {
-                try {
-                    await saveQuizAnswer(attemptId, cardId, option);
-                    ok = true;
-                } catch (e) {
-                    if (isStateConflict(e)) break; // lượt đã đóng: thử lại vô ích
-                    await sleep(500 * 2 ** i);
-                }
-            }
-            pending.current--;
-            if (ok) failedCards.current.delete(cardId);
-            else failedCards.current.add(cardId);
-            if (pending.current === 0) setSaveState(failedCards.current.size > 0 ? "error" : "saved");
-        });
-    };
-
     // Đồng hồ + tự nộp khi hết giờ (exam).
     useEffect(() => {
         if (!running || !isExam) return;
@@ -231,6 +240,7 @@ export const QuizPage: React.FC = () => {
         setBusy(true);
         setError("");
         try {
+            flushTypingSaves(); // câu gõ còn hẹn lưu: đưa vào hàng đợi trước khi chờ
             await queue.current; // chờ các lần tự lưu đang bay xong rồi mới chốt
             // exam: gửi kèm bản đầy đủ để bù chỗ tự lưu thất bại; server vẫn chấm trên bản đã lưu nếu quá hạn
             await submitQuizAttempt(attempt.attemptId, isExam ? answers : undefined);
@@ -291,12 +301,52 @@ export const QuizPage: React.FC = () => {
     const clearAnswer = () => {
         if (!current || !attempt?.attemptId || !answers[current.cardId]) return;
         const cardId = current.cardId;
+        cancelTypingSave(cardId);
         setAnswers((a) => {
             const copy = { ...a };
             delete copy[cardId];
             return copy;
         });
+        setDrafts((d) => ({ ...d, [cardId]: "" }));
         enqueueSave(attempt.attemptId, cardId, "");
+    };
+
+    // ---------- câu gõ (inputMode = typing) ----------
+    const typeAnswer = (value: string) => {
+        if (!current || !attempt?.attemptId) return;
+        const cardId = current.cardId;
+        setDrafts((d) => ({ ...d, [cardId]: value }));
+        if (attempt.mode !== "exam") return; // practice: chỉ gửi khi Enter (gửi là khoá câu + hiện đáp án)
+        // exam: như chọn phương án — đáp án vào bản nộp ngay, lên server sau khi ngừng gõ.
+        const has = normalizeTypedAnswer(value) !== "";
+        setAnswers((a) => {
+            const copy = { ...a };
+            if (has) copy[cardId] = value;
+            else delete copy[cardId];
+            return copy;
+        });
+        scheduleTypingSave(attempt.attemptId, cardId, has ? value : "");
+        setSaveState("saving"); // "Đang lưu..." hiện ngay để cảnh báo đóng tab có hiệu lực trong lúc chờ ngừng gõ
+    };
+
+    const submitTyped = (value: string) => {
+        if (!current || !attempt?.attemptId) return;
+        if (attempt.mode === "practice") {
+            if (normalizeTypedAnswer(value)) void choose(value);
+            return;
+        }
+        typeAnswer(value);
+        flushTypingSaves(current.cardId);
+    };
+
+    const openFlag = (target: FlagTarget) => {
+        setFlagNotice(null);
+        setFlagTarget(target);
+    };
+
+    const onFlagged = (questionId: string, message: string) => {
+        setFlaggedIds((s) => new Set(s).add(questionId));
+        setFlagNotice({ questionId, text: message });
     };
 
     const skip = async () => {
@@ -310,6 +360,7 @@ export const QuizPage: React.FC = () => {
         const onKey = (e: KeyboardEvent) => {
             const el = e.target as HTMLElement | null;
             if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+            if (el?.closest?.("dialog[open]")) return; // đang mở hộp thoại báo lỗi: phím số không được chọn đáp án phía sau
             const i = Number(e.key) - 1;
             if (i >= 0 && i < current.options.length) void choose(current.options[i]);
         };
@@ -321,6 +372,8 @@ export const QuizPage: React.FC = () => {
         setAttempt(null);
         setAnswers({});
         setFeedbacks({});
+        setDrafts({});
+        setFlagNotice(null);
         setParams({}, { replace: true });
         void fetchOpenQuizAttempt(deckId)
             .then((o) => setOpenAttempt(o?.attemptId ? o : null))
@@ -338,136 +391,39 @@ export const QuizPage: React.FC = () => {
 
     // Đã nộp: tổng kết + xem lại toàn bộ đáp án và lời giải
     if (attempt?.finished) {
-        const total = attempt.total ?? attempt.questions.length;
-        const score = attempt.score ?? 0;
-        const pct = total ? Math.round((score / total) * 100) : 0;
         return (
-            <section className={shell}>
-                <div className="max-w-2xl mx-auto flex flex-col gap-space-lg">
-                    <h1 className="font-headline-sm text-headline-sm font-bold">
-                        {score}/{total} câu đúng ({pct}%)
-                    </h1>
-                    <p className="text-label-md text-on-surface-variant">
-                        {modeLabel(attempt.mode)}
-                        {attempt.mode === "practice" && " · không tính vào độ chính xác bài thi"}
-                    </p>
-                    {attempt.expired && (
-                        <p role="alert" className="text-error text-label-md">
-                            Đã hết thời gian: chỉ các đáp án lưu trước giờ hết hạn được tính.
-                        </p>
-                    )}
-                    <div className="h-3 rounded-full bg-surface-container-high overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-                    </div>
-                    <ol className="flex flex-col gap-3">
-                        {attempt.questions.map((q, i) => (
-                            <li
-                                key={q.cardId}
-                                className="p-space-sm rounded-lg bg-surface-container-lowest border border-surface-container-high flex flex-col gap-2"
-                            >
-                                <div className="text-title-md">
-                                    <span className="text-outline text-label-md mr-2">{i + 1}.</span>
-                                    <Ruby term={q.term} reading={q.reading ?? undefined} />
-                                </div>
-                                {q.feedback && <FeedbackBlock q={q} feedback={q.feedback} chosen={q.chosen} />}
-                            </li>
-                        ))}
-                    </ol>
-                    <div className="flex gap-space-sm">
-                        <button type="button" onClick={backToStart} className={primaryBtn}>
-                            Làm lại
-                        </button>
-                        <Link to={`/decks/${deckId}`} className={`${secondaryBtn} inline-flex items-center`}>
-                            Về bộ thẻ
-                        </Link>
-                    </div>
-                </div>
-            </section>
+            <QuizReview
+                attempt={attempt}
+                deckId={deckId}
+                flaggedIds={flaggedIds}
+                flagNotice={flagNotice}
+                onFlag={openFlag}
+                onRestart={backToStart}
+            >
+                <FlagQuestionModal target={flagTarget} onClose={() => setFlagTarget(null)} onFlagged={onFlagged} />
+            </QuizReview>
         );
     }
 
     // Màn bắt đầu: chọn chế độ, hoặc tiếp tục bài đang làm dở
     if (!attempt || !current) {
         return (
-            <section className={shell}>
-                <div className="max-w-md mx-auto flex flex-col gap-space-md">
-                    <Link to={`/decks/${deckId}`} className="text-label-md text-primary hover:underline">
-                        ← Về bộ thẻ
-                    </Link>
-                    <h1 className="font-headline-sm text-headline-sm font-bold">Kiểm tra nhanh</h1>
-
-                    {openAttempt && (
-                        <div role="region" aria-label="Bài đang làm dở" className="rounded-lg border border-primary/40 bg-primary/5 p-space-sm flex flex-col gap-2">
-                            <p className="text-body-sm">
-                                Bạn có bài <strong>{modeLabel(openAttempt.mode)}</strong> đang làm dở (
-                                {openAttempt.questions.filter((q) => q.chosen !== null).length}/
-                                {openAttempt.questions.length} câu đã trả lời).
-                            </p>
-                            <button type="button" onClick={resume} className={primaryBtn}>
-                                Tiếp tục bài đang làm
-                            </button>
-                            <p className="text-label-sm text-on-surface-variant">
-                                Muốn làm bài mới, hãy tiếp tục và nộp bài này trước. Bài dở sẽ được chấm theo các câu đã trả lời.
-                            </p>
-                        </div>
-                    )}
-
-                    <fieldset className="flex flex-col gap-2" disabled={busy || openAttempt !== null}>
-                        <legend className="text-label-md mb-1">Chọn cách làm</legend>
-                        {(["practice", "exam"] as const).map((m) => (
-                            <label
-                                key={m}
-                                className={`flex items-start gap-3 p-space-sm rounded-lg border cursor-pointer ${
-                                    mode === m ? "border-primary bg-primary/5" : "border-surface-container-high"
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name="quiz-mode"
-                                    checked={mode === m}
-                                    onChange={() => setMode(m)}
-                                    className="mt-1"
-                                />
-                                <span>
-                                    <span className="block font-semibold">{modeLabel(m)}</span>
-                                    <span className="block text-body-sm text-on-surface-variant">
-                                        {m === "practice"
-                                            ? "Trả lời câu nào thấy ngay đáp án đúng và lời giải của câu đó. Không giới hạn giờ; kết quả không tính vào độ chính xác bài thi."
-                                            : `${SECONDS_PER_QUESTION} giây/câu, sửa đáp án được tới khi nộp. Đáp án đúng và lời giải chỉ hiện sau khi nộp bài. Hết giờ tự nộp; câu bỏ trống tính là sai.`}
-                                    </span>
-                                </span>
-                            </label>
-                        ))}
-                    </fieldset>
-
-                    <label className="flex flex-col gap-1 text-label-md">
-                        <span>Số câu</span>
-                        <select
-                            value={size}
-                            onChange={(e) => setSize(Number(e.target.value))}
-                            disabled={busy || openAttempt !== null}
-                            className="p-2.5 min-h-11 rounded-lg bg-surface-container-lowest border border-surface-container-high"
-                        >
-                            <option value={10}>10 câu</option>
-                            <option value={20}>20 câu</option>
-                            <option value={50}>50 câu</option>
-                        </select>
-                    </label>
-                    {error && (
-                        <p role="alert" className="text-error text-label-md">
-                            {error}
-                        </p>
-                    )}
-                    <button
-                        type="button"
-                        onClick={() => void start(mode)}
-                        disabled={busy || openAttempt !== null}
-                        className={primaryBtn}
-                    >
-                        {busy ? "Đang tạo đề..." : "Bắt đầu"}
-                    </button>
-                </div>
-            </section>
+            <QuizStartScreen
+                deckId={deckId}
+                openAttempt={openAttempt}
+                onResume={resume}
+                mode={mode}
+                onModeChange={setMode}
+                questionTypes={questionTypes}
+                onQuestionTypesChange={setQuestionTypes}
+                capabilities={capabilities}
+                size={size}
+                onSizeChange={setSize}
+                busy={busy}
+                error={error}
+                typesBlocked={typesBlocked}
+                onStart={() => void start(mode)}
+            />
         );
     }
 
@@ -479,6 +435,8 @@ export const QuizPage: React.FC = () => {
     const unanswered = total - answeredCount;
     const isLast = index + 1 >= total;
     const practiceDone = !isExam && answeredCount >= total;
+    const display = questionDisplay(current);
+    const mixedTypes = new Set(attempt.questions.map((q) => q.type)).size > 1;
 
     return (
         <section className={`${shell} pb-28`}>
@@ -527,45 +485,77 @@ export const QuizPage: React.FC = () => {
                     </nav>
                 )}
 
-                <h1 lang="ja" className="text-display-sm font-bold text-center">
-                    <Ruby term={current.term} reading={current.reading ?? undefined} />
-                </h1>
+                {/* Loại câu (đợt 2): nhãn nhỏ khi khác "Nghĩa" hoặc đề trộn nhiều loại, để người học biết đang được hỏi gì */}
+                {(mixedTypes || current.type !== "meaning") && (
+                    <p className="self-center px-3 py-1 rounded-full bg-surface-container text-label-sm font-semibold text-on-surface-variant">
+                        {QUESTION_TYPE_LABELS[current.type]}
+                    </p>
+                )}
 
-                <div role="radiogroup" aria-label="Chọn nghĩa đúng" className="flex flex-col gap-2">
-                    {current.options.map((option, i) => {
-                        const isChosen = chosen === option;
-                        const isCorrect = feedback?.correctAnswer === option;
-                        const revealed = feedback !== null;
-                        const tone = revealed
-                            ? isCorrect
-                                ? "border-secondary bg-secondary-container/40"
+                {/* E5: nút loa cạnh từ; chế độ chỉ nghe tự đọc và ẩn chữ sau "Hiện chữ" (key theo câu để trạng thái reset).
+                    Loại khác nghĩa: QuestionHeading ẩn từ / furigana / loa khi đó chính là đáp án. */}
+                <QuestionHeading key={`heading-${current.cardId}`} q={current} audioOnly={audioOnly} />
+
+                {current.inputMode === "typing" ? (
+                    <TypingAnswer
+                        key={`typing-${current.cardId}`}
+                        value={drafts[current.cardId] ?? ""}
+                        onChange={typeAnswer}
+                        onSubmit={submitTyped}
+                        submitLabel={isExam ? "Lưu đáp án" : "Trả lời"}
+                        disabled={busy || feedback !== null}
+                        autoFocus
+                    />
+                ) : (
+                    <div role="radiogroup" aria-label={display.groupLabel} className="flex flex-col gap-2">
+                        {current.options.map((option, i) => {
+                            const isChosen = chosen === option;
+                            const isCorrect = feedback?.correctAnswer === option;
+                            const revealed = feedback !== null;
+                            const tone = revealed
+                                ? isCorrect
+                                    ? "border-secondary bg-secondary-container/40"
+                                    : isChosen
+                                      ? "border-error bg-error-container/30"
+                                      : "border-surface-container-high opacity-70"
                                 : isChosen
-                                  ? "border-error bg-error-container/30"
-                                  : "border-surface-container-high opacity-70"
-                            : isChosen
-                              ? "border-primary bg-primary/10"
-                              : "border-surface-container-high bg-surface-container-lowest hover:bg-surface-container";
-                        return (
-                            <button
-                                key={`${i}-${option}`}
-                                type="button"
-                                role="radio"
-                                aria-checked={isChosen}
-                                onClick={() => void choose(option)}
-                                disabled={busy || revealed}
-                                className={`text-left p-space-sm min-h-11 rounded-lg border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${tone}`}
-                            >
-                                <kbd className="text-label-sm text-outline mr-2">{i + 1}</kbd>
-                                {option}
-                                {revealed && isCorrect && <span className="sr-only"> (đáp án đúng)</span>}
-                                {revealed && isChosen && !isCorrect && <span className="sr-only"> (bạn chọn, chưa đúng)</span>}
-                            </button>
-                        );
-                    })}
-                </div>
+                                  ? "border-primary bg-primary/10"
+                                  : "border-surface-container-high bg-surface-container-lowest hover:bg-surface-container";
+                            return (
+                                <button
+                                    key={`${i}-${option}`}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={isChosen}
+                                    onClick={() => void choose(option)}
+                                    disabled={busy || revealed}
+                                    className={`text-left p-space-sm min-h-11 rounded-lg border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${tone}`}
+                                >
+                                    <kbd className="text-label-sm text-outline mr-2">{i + 1}</kbd>
+                                    <span lang={display.optionsLang} className={display.optionsLang ? "font-japanese text-title-md" : undefined}>
+                                        {option}
+                                    </span>
+                                    {revealed && isCorrect && <span className="sr-only"> (đáp án đúng)</span>}
+                                    {revealed && isChosen && !isCorrect && <span className="sr-only"> (bạn chọn, chưa đúng)</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* Phản hồi từng câu (practice): vùng live để trình đọc màn hình đọc kết quả ngay */}
                 <div aria-live="polite">{feedback && <FeedbackBlock q={current} feedback={feedback} chosen={chosen} />}</div>
+
+                <FlagButton
+                    q={current}
+                    flagged={!!current.questionId && flaggedIds.has(current.questionId)}
+                    onFlag={openFlag}
+                />
+                {flagNotice && flagNotice.questionId === current.questionId && (
+                    <p role="status" className="text-label-md rounded-lg bg-primary/10 p-space-sm">
+                        {flagNotice.text}
+                    </p>
+                )}
 
                 {!isExam && !feedback && (
                     <button type="button" onClick={() => void skip()} disabled={busy} className={`${secondaryBtn} self-start`}>
@@ -575,7 +565,7 @@ export const QuizPage: React.FC = () => {
 
                 {isExam && chosen && (
                     <button type="button" onClick={clearAnswer} className={`${secondaryBtn} self-start`}>
-                        Xoá lựa chọn
+                        {current.inputMode === "typing" ? "Xoá câu trả lời" : "Xoá lựa chọn"}
                     </button>
                 )}
 
@@ -606,6 +596,8 @@ export const QuizPage: React.FC = () => {
                     </p>
                 )}
             </div>
+
+            <FlagQuestionModal target={flagTarget} onClose={() => setFlagTarget(null)} onFlagged={onFlagged} />
 
             {/* Thanh hành động cố định ở đáy: dễ chạm bằng ngón cái trên điện thoại */}
             <div className="fixed bottom-0 inset-x-0 bg-surface/95 border-t border-surface-container-high px-gutter py-space-sm">
@@ -654,7 +646,11 @@ export const QuizPage: React.FC = () => {
                     ) : (
                         <>
                             <span className="text-label-sm text-on-surface-variant">
-                                {feedback ? "Xem lời giải rồi sang câu tiếp" : "Chọn một đáp án"}
+                                {feedback
+                                    ? "Xem lời giải rồi sang câu tiếp"
+                                    : current.inputMode === "typing"
+                                      ? "Gõ cách đọc rồi nhấn Enter"
+                                      : "Chọn một đáp án"}
                             </span>
                             {practiceDone && feedback ? (
                                 <button ref={nextRef} type="button" onClick={() => void finish()} disabled={busy} className={primaryBtn}>

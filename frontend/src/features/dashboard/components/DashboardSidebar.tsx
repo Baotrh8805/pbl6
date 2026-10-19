@@ -1,8 +1,8 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { fetchLibrary } from "@/services/libraryService";
-import { fetchLearningPaths } from "@/services/learningPathService";
-import { todayCardCount } from "@/features/roadmap/roadmapUtils";
+import { todaySummaryTotal } from "@/features/roadmap/roadmapUtils";
+import { useTodaySummary } from "@/features/roadmap/useTodaySummary";
 import { useAsync } from "@/lib/useAsync";
 import type { UserMetrics } from "../types/dashboard.types";
 
@@ -49,12 +49,11 @@ const LibraryCountBadge: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   );
 };
 
-// Tổng số thẻ cần học hôm nay của các lộ trình đang học. 0 thẻ / lỗi / đang tải thì ẩn.
+// Tổng số thẻ cần làm hôm nay (mới + đến hạn + nợ) của các lộ trình đang học, từ cache /today-summary dùng chung
+// với widget Tổng quan (LP-16). 0 thẻ / lỗi / đang tải thì ẩn.
 const RoadmapTodayBadge: React.FC<{ isActive: boolean }> = ({ isActive }) => {
-  const { data } = useAsync(fetchLearningPaths, []);
-  const total = (data ?? [])
-    .filter((p) => p.status === "ACTIVE" && p.today?.state === "during")
-    .reduce((sum, p) => sum + todayCardCount(p.today?.tasks ?? []), 0);
+  const { data } = useTodaySummary();
+  const total = todaySummaryTotal(data ?? []);
   if (total <= 0) return null;
   return (
     <span
@@ -79,11 +78,30 @@ const SECTIONS: NavSectionConfig[] = [
         to: "/decks",
         icon: "style",
         label: "Bộ Thẻ Của Tôi",
+        // srsDueCount giờ = đến hạn + thẻ mới; badge "cần ôn" chỉ đếm thẻ đã học đến hạn (dueToday). Không có thẻ đến hạn
+        // mà còn thẻ mới thì nhắc nhẹ "{m} mới" (màu trung tính, không phải việc trễ).
         renderBadge: ({ isActive, metrics }) => {
-          const due = metrics?.srsDueCount ?? 0;
-          if (due <= 0) return null;
+          const due = metrics?.dueToday ?? 0;
+          const fresh = metrics?.newCards ?? 0;
+          if (due <= 0 && fresh <= 0) return null;
+          const title = `${due} thẻ đến hạn ôn, ${fresh} thẻ mới chưa học`;
+          if (due <= 0) {
+            return (
+              <span
+                title={title}
+                className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
+                  isActive
+                    ? "bg-white/20 text-white"
+                    : "bg-surface-container text-on-surface-variant border border-outline-variant/60"
+                }`}
+              >
+                {fresh} mới
+              </span>
+            );
+          }
           return (
             <span
+              title={title}
               className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
                 isActive
                   ? "bg-white/20 text-white"
@@ -138,6 +156,10 @@ const SECTIONS: NavSectionConfig[] = [
         label: "Thư Viện Cộng Đồng",
         renderBadge: ({ isActive }) => <LibraryCountBadge isActive={isActive} />,
       },
+      // F1: tra âm Hán-Việt -> chữ Hán -> từ ghép (khám phá, không gắn bộ thẻ nào)
+      { to: "/han-viet", icon: "hub", label: "Bản Đồ Hán–Việt" },
+      // C4 + C5: tra chữ Hán (On/Kun, ví dụ) và 214 bộ thủ -> tạo bộ thẻ
+      { to: "/kanji", icon: "translate", label: "Chữ Hán & Bộ Thủ" },
     ],
   },
 ];
@@ -239,7 +261,9 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                   Chuỗi {metrics?.currentStreak ?? 0} ngày
                 </div>
                 <div className="text-[10px] text-orange-800 truncate">
-                  Hôm nay: {metrics?.reviewedToday ?? 0}/{metrics?.dailyGoalWords ?? 20} thẻ
+                  {/* Server đếm mỗi lần chấm là một lượt (một thẻ có thể chấm nhiều lần); suy luận thì đếm theo thẻ */}
+                  Hôm nay: {metrics?.reviewedToday ?? 0}/{metrics?.dailyGoalWords ?? 20}{" "}
+                  {metrics?.activitySource === "server" ? "lượt" : "thẻ"}
                 </div>
               </div>
             </div>

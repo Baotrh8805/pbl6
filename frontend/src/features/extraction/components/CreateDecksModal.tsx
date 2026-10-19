@@ -10,7 +10,7 @@ import { useAsync } from "@/lib/useAsync";
 import { JLPT_LEVELS } from "@/lib/deckUtils";
 import { flattenFolders } from "@/features/folders/components/folderTree";
 import type { CardKind, Deck, ExtractionDeckSpec, ExtractionItem, ExtractionJob } from "@/types/api.types";
-import { KIND_LABELS, defaultDeckTitle, mostCommonLevel } from "../extractionUtils";
+import { KIND_LABELS, defaultDeckLevel, defaultDeckTitle } from "../extractionUtils";
 
 interface CreateDecksModalProps {
   isOpen: boolean;
@@ -70,7 +70,8 @@ const CreateDecksForm: React.FC<Omit<CreateDecksModalProps, "isOpen" | "onClose"
         count: selected.length,
         title: defaultDeckTitle(job, kind),
         folderId: null,
-        level: mostCommonLevel(selected) ?? job.options.userLevel,
+        // Cấp mặc định: cấp phổ biến nhất trong item đã chọn; bộ từ vựng của job không lọc cấp thì lấy cấp tổng thể (B6).
+        level: defaultDeckLevel(job.stats, selected, { kind, levelFilter: job.options.levelFilter }) ?? job.options.userLevel,
       };
     }
     return out;

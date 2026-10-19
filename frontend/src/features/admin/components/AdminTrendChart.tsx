@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useId } from "react";
 import gsap from "gsap";
 import { useGsap } from "../useGsap.ts";
 import {
@@ -11,27 +11,41 @@ import {
 
 export type TrendSeriesKey = "newUsers" | "extractions" | "quizzes";
 
-export interface TrendPoint {
-  date: string;
-  newUsers: number;
-  extractions: number;
-  quizzes: number;
-}
-
-interface AdminTrendChartProps {
-  series: TrendPoint[];
-  days: number;
-  onDaysChange: (days: number) => void;
-  isLoading?: boolean;
-}
-
-interface SeriesMeta {
-  key: TrendSeriesKey;
+/** Một chuỗi số liệu của biểu đồ (mặc định 3 chuỗi hoạt động; dashboard OCR truyền bộ chuỗi riêng). */
+export interface TrendSeriesMeta<K extends string = string> {
+  key: K;
   label: string;
   color: string;
-  accentClass: string;
+  accentClass?: string;
   dotClass: string;
+  /**
+   * Đơn vị sau số (vd "%"). Chuỗi có đơn vị là tỉ lệ: thẻ chọn chuỗi không hiện % biến động 7 ngày
+   * (cộng dồn tỉ lệ vô nghĩa) và số tiêu đề nên truyền qua summary.
+   */
+  unit?: string;
+  /** Số tiêu đề trên thẻ chọn chuỗi; thiếu = tổng cả kỳ; null = "—". */
+  summary?: number | null;
 }
+
+/** Một ngày: date + giá trị từng chuỗi (thiếu coi là 0). */
+export type TrendRow<K extends string> = { date: string } & Partial<Record<K, number>>;
+
+interface AdminTrendChartProps<K extends string> {
+  // NoInfer: K suy từ config (hoặc mặc định), không từ series — tránh suy ra cả khoá "date".
+  series: readonly TrendRow<NoInfer<K>>[];
+  days: number;
+  /** Thiếu = ẩn dải chọn mốc ngày (biểu đồ phụ dùng chung khoảng ngày với biểu đồ chính). */
+  onDaysChange?: (days: number) => void;
+  isLoading?: boolean;
+  /** Bộ chuỗi; thiếu = Đăng ký mới / Bóc tách AI / Lượt quiz như trước. */
+  config?: readonly TrendSeriesMeta<K>[];
+  title?: string;
+  description?: string;
+  /** Khoá localStorage nhớ chuỗi đang chọn (mỗi biểu đồ một khoá). */
+  storageKey?: string;
+}
+
+type SeriesMeta = TrendSeriesMeta<TrendSeriesKey> & { accentClass: string };
 
 const SERIES_CONFIG: Record<TrendSeriesKey, SeriesMeta> = {
   newUsers: {
@@ -57,7 +71,21 @@ const SERIES_CONFIG: Record<TrendSeriesKey, SeriesMeta> = {
   },
 };
 
+const DEFAULT_SERIES: readonly TrendSeriesMeta<TrendSeriesKey>[] = Object.values(SERIES_CONFIG);
+
 const DAY_OPTIONS = [7, 14, 30, 60, 90];
+
+// Lớp lưới cho hàng thẻ chọn chuỗi theo số chuỗi (chuỗi lớp viết sẵn để Tailwind quét được).
+const CARD_GRID: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-1 sm:grid-cols-2",
+  3: "grid-cols-1 md:grid-cols-3",
+  4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+};
+const CARD_GRID_MANY = "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5";
+
+const formatValue = (v: number, unit?: string): string =>
+  unit ? `${v.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}${unit}` : v.toLocaleString("vi-VN");
 
 // Kích thước chuẩn đồ họa SVG
 const CHART_W = 800;
@@ -81,26 +109,41 @@ const fullDate = (iso: string) => {
   return `${d}/${m}/${y}`;
 };
 
-export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
+/** Giá trị số của một chuỗi trong một ngày; thiếu / không phải số -> 0. */
+const valueOf = <K extends string>(p: TrendRow<K>, k: K): number => {
+  const v: unknown = p[k];
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+};
+
+export function AdminTrendChart<K extends string = TrendSeriesKey>({
   series,
   days,
   onDaysChange,
   isLoading,
-}) => {
-  const [activeSeries, setActiveSeries] = useState<TrendSeriesKey>(() => {
+  config,
+  title = "Xu hướng hoạt động",
+  description = "Dữ liệu thống kê từng ngày trong chuỗi thời gian được chọn.",
+  storageKey = "admin.trend.series",
+}: AdminTrendChartProps<K>) {
+  const cfgList = (config ?? DEFAULT_SERIES) as readonly TrendSeriesMeta<K>[];
+  const [selectedSeries, setActiveSeries] = useState<K>(() => {
     try {
-      const saved = localStorage.getItem("admin.trend.series");
-      if (saved && saved in SERIES_CONFIG) return saved as TrendSeriesKey;
+      const saved = localStorage.getItem(storageKey);
+      if (saved && cfgList.some((c) => c.key === saved)) return saved as K;
     } catch {
       // Bỏ qua lỗi trong private mode
     }
-    return "newUsers";
+    return cfgList[0].key;
   });
+  // Bộ chuỗi đổi (props mới) mà chuỗi đang chọn không còn -> về chuỗi đầu, không render chuỗi rỗng.
+  const activeSeries = cfgList.some((c) => c.key === selectedSeries) ? selectedSeries : cfgList[0].key;
+  // useId của React có ký tự không hợp lệ trong url(#…) -> chỉ giữ chữ/số để id gradient không đụng biểu đồ khác.
+  const gradientId = `trend-gradient-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}-${activeSeries}`;
 
-  const handleSelectSeries = (key: TrendSeriesKey) => {
+  const handleSelectSeries = (key: K) => {
     setActiveSeries(key);
     try {
-      localStorage.setItem("admin.trend.series", key);
+      localStorage.setItem(storageKey, key);
     } catch {
       // Bỏ qua
     }
@@ -110,7 +153,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   const currentValues = useMemo(
-    () => series.map((p) => p[activeSeries] || 0),
+    () => series.map((p) => valueOf(p, activeSeries)),
     [series, activeSeries],
   );
 
@@ -217,10 +260,10 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
       : 0;
   const activeY =
     activePoint && yMax > 0
-      ? PADDING_TOP + PLOT_H - (Math.min(activePoint[activeSeries], yMax) / yMax) * PLOT_H
+      ? PADDING_TOP + PLOT_H - (Math.min(valueOf(activePoint, activeSeries), yMax) / yMax) * PLOT_H
       : PADDING_TOP + PLOT_H;
 
-  const currentCfg = SERIES_CONFIG[activeSeries];
+  const currentCfg = cfgList.find((c) => c.key === activeSeries) ?? cfgList[0];
 
   return (
     <div className="rounded-2xl border border-surface-container-high bg-surface-container-lowest p-space-md sm:p-space-lg flex flex-col gap-4 shadow-xs">
@@ -228,14 +271,15 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="font-headline-sm text-title-md font-bold text-on-surface">
-            Xu hướng hoạt động
+            {title}
           </h2>
           <p className="text-body-sm text-on-surface-variant">
-            Dữ liệu thống kê từng ngày trong chuỗi thời gian được chọn.
+            {description}
           </p>
         </div>
 
-        {/* Dải nút mốc thời gian pill aria-pressed */}
+        {/* Dải nút mốc thời gian pill aria-pressed (biểu đồ phụ không có) */}
+        {onDaysChange && (
         <div
           className="inline-flex items-center gap-1 p-1 rounded-xl bg-surface-container-low border border-surface-container-high self-start sm:self-auto"
           role="group"
@@ -258,20 +302,22 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
             </button>
           ))}
         </div>
+        )}
       </div>
 
-      {/* Hàng 3 thẻ phân loại (Đăng ký mới / Bóc tách / Quiz) */}
+      {/* Hàng thẻ phân loại (mặc định Đăng ký mới / Bóc tách / Quiz) */}
       <div
-        className="grid grid-cols-1 md:grid-cols-3 gap-3"
+        className={`grid ${CARD_GRID[cfgList.length] ?? CARD_GRID_MANY} gap-3`}
         role="group"
         aria-label="Chọn chuỗi dữ liệu"
       >
-        {(Object.keys(SERIES_CONFIG) as TrendSeriesKey[]).map((key) => {
-          const cfg = SERIES_CONFIG[key];
+        {cfgList.map((cfg) => {
+          const key = cfg.key;
           const isSelected = activeSeries === key;
-          const totalInPeriod = series.reduce((sum, p) => sum + (p[key] || 0), 0);
-          const delta = days >= 14 ? periodDelta(series, key) : null;
-          const sparkVals = series.map((p) => p[key] || 0);
+          const totalInPeriod = series.reduce((sum, p) => sum + valueOf(p, key), 0);
+          const headline = cfg.summary !== undefined ? cfg.summary : totalInPeriod;
+          const delta = days >= 14 && !cfg.unit ? periodDelta(series as unknown as Record<string, unknown>[], key) : null;
+          const sparkVals = series.map((p) => valueOf(p, key));
           const sparkMax = sparkVals.reduce((m, v) => (v > m ? v : m), 0);
           const sparkPath = buildLinePath(sparkVals, 60, 20, sparkMax);
 
@@ -299,7 +345,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
                 </div>
                 <div className="mt-1 flex items-baseline gap-2">
                   <span className="font-headline-sm text-headline-sm font-bold text-on-surface">
-                    {totalInPeriod.toLocaleString("vi-VN")}
+                    {headline === null ? "—" : formatValue(headline, cfg.unit)}
                   </span>
                   {delta && delta.pct !== null && (
                     <span
@@ -343,7 +389,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
         tabIndex={0}
         onKeyDown={handleKeyDown}
         className="relative w-full rounded-xl bg-surface-container-low/40 border border-surface-container-high/60 p-2 sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-primary/40 select-none overflow-hidden"
-        aria-label={`Biểu đồ xu hướng ${currentCfg.label}, dùng phím mũi tên trái phải để xem từng ngày`}
+        aria-label={`Biểu đồ ${currentCfg.label}, dùng phím mũi tên trái phải để xem từng ngày`}
       >
         <svg
           viewBox={`0 0 ${CHART_W} ${CHART_H}`}
@@ -352,7 +398,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
         >
           <defs>
             <linearGradient
-              id={`trend-gradient-${activeSeries}`}
+              id={gradientId}
               x1="0"
               y1="0"
               x2="0"
@@ -382,7 +428,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
                     fontWeight="500"
                     stroke="none"
                   >
-                    {val.toLocaleString("vi-VN")}
+                    {formatValue(val, currentCfg.unit)}
                   </text>
                 </g>
               );
@@ -394,7 +440,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
             {areaPath && (
               <path
                 d={areaPath}
-                fill={`url(#trend-gradient-${activeSeries})`}
+                fill={`url(#${gradientId})`}
                 className="admin-trend-area"
               />
             )}
@@ -468,7 +514,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
           />
         </svg>
 
-        {/* Tooltip nổi bật hiển thị cả 3 chỉ số */}
+        {/* Tooltip nổi bật hiển thị mọi chỉ số của ngày */}
         {activePoint && hoverIndex !== null && (
           <div
             className="absolute z-20 pointer-events-none p-3 rounded-xl bg-primary text-on-primary shadow-lg text-body-sm transition-all duration-75 min-w-[170px]"
@@ -486,8 +532,8 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
               <span className="text-[10px] opacity-75">#{hoverIndex + 1}</span>
             </div>
             <div className="flex flex-col gap-1">
-              {(Object.keys(SERIES_CONFIG) as TrendSeriesKey[]).map((k) => {
-                const conf = SERIES_CONFIG[k];
+              {cfgList.map((conf) => {
+                const k = conf.key;
                 const isCur = activeSeries === k;
                 return (
                   <div
@@ -503,7 +549,7 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
                       />
                       <span>{conf.label}:</span>
                     </div>
-                    <span>{(activePoint[k] || 0).toLocaleString("vi-VN")}</span>
+                    <span>{formatValue(valueOf(activePoint, k), conf.unit)}</span>
                   </div>
                 );
               })}
@@ -512,30 +558,34 @@ export const AdminTrendChart: React.FC<AdminTrendChartProps> = ({
         )}
       </div>
 
-      {/* Bảng dữ liệu ngữ nghĩa ẩn cho Screen Reader */}
-      <table className="sr-only">
-        <caption>
-          Bảng số liệu xu hướng hệ thống {days} ngày gần nhất (Đăng ký mới, Bóc tách, Lượt quiz)
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Ngày</th>
-            <th scope="col">Đăng ký mới</th>
-            <th scope="col">Bóc tách AI</th>
-            <th scope="col">Lượt quiz</th>
-          </tr>
-        </thead>
-        <tbody>
-          {series.map((p) => (
-            <tr key={p.date}>
-              <td>{p.date}</td>
-              <td>{p.newUsers}</td>
-              <td>{p.extractions}</td>
-              <td>{p.quizzes}</td>
+      {/* Bảng dữ liệu cho trình đọc màn hình. */}
+      {/* sr-only đặt trên div bọc, không trên <table>: bảng bỏ qua width 1px của sr-only nên tràn ngang (nới rộng
+          trang ở 375 px); div 1px + overflow hidden giữ nó lại mà trình đọc màn hình vẫn đọc được. */}
+      <div className="sr-only">
+        <table>
+          <caption>
+            Bảng số liệu {title.toLowerCase()} {days} ngày gần nhất ({cfgList.map((c) => c.label).join(", ")})
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Ngày</th>
+              {cfgList.map((c) => (
+                <th key={c.key} scope="col">{c.label}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {series.map((p) => (
+              <tr key={p.date}>
+                <td>{p.date}</td>
+                {cfgList.map((c) => (
+                  <td key={c.key}>{formatValue(valueOf(p, c.key), c.unit)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
-};
+}

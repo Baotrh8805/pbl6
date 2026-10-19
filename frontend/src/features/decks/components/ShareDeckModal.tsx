@@ -1,11 +1,13 @@
-import React, { useId, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { labelClass, fieldClass } from "@/components/ui/formStyles";
 import { fetchDeckMembers, shareDeck, unshareDeck, updateDeckPublishing } from "@/services/deckService";
 import { extractErrorMessage } from "@/services/apiClient";
 import { useAsync } from "@/lib/useAsync";
-import type { Deck, DeckMember, SharePermission } from "@/types/api.types";
+import { deckShareUrl } from "@/lib/deckUtils";
+import { useCopyToClipboard } from "@/lib/clipboard";
+import type { Deck, DeckMember, DeckVisibility, SharePermission } from "@/types/api.types";
 import { CATEGORIES } from "@/features/library/components/libraryOptions";
 
 export interface ShareDeckModalProps {
@@ -18,17 +20,26 @@ const PERMISSIONS: { value: SharePermission; label: string }[] = [
   { value: "EDITOR", label: "Được chỉnh sửa" },
 ];
 
-// Chủ bộ thẻ: đăng lên Thư viện cộng đồng và chia sẻ quyền theo email.
-export const ShareDeckModal: React.FC<ShareDeckModalProps> = ({ deck, onClose }) => (
-  <Modal isOpen onClose={onClose} title="Chia sẻ bộ thẻ" subtitle={deck.title} icon="share" size="xl">
-    <div className="space-y-6">
-      <PublishSection deck={deck} />
-      <MembersSection deckId={deck.id} />
-    </div>
-  </Modal>
-);
+// Chủ bộ thẻ: đăng lên Thư viện cộng đồng, chia sẻ quyền theo email và gửi liên kết.
+export const ShareDeckModal: React.FC<ShareDeckModalProps> = ({ deck, onClose }) => {
+  // Chế độ hiển thị ĐÃ LƯU (không phải ô tick đang chỉnh): gợi ý ở khối liên kết phải nói đúng
+  // ai mở được link ngay lúc này. Trang cha chỉ tải lại deck khi đóng modal nên theo dõi ở đây.
+  const [visibility, setVisibility] = useState<DeckVisibility>(deck.visibility);
+  return (
+    <Modal isOpen onClose={onClose} title="Chia sẻ bộ thẻ" subtitle={deck.title} icon="share" size="xl">
+      <div className="space-y-6">
+        <PublishSection deck={deck} onSaved={setVisibility} />
+        <MembersSection deckId={deck.id} />
+        <LinkSection deckId={deck.id} isPublic={visibility === "public"} />
+      </div>
+    </Modal>
+  );
+};
 
-const PublishSection: React.FC<{ deck: Deck }> = ({ deck }) => {
+const PublishSection: React.FC<{ deck: Deck; onSaved: (visibility: DeckVisibility) => void }> = ({
+  deck,
+  onSaved,
+}) => {
   const [isPublic, setIsPublic] = useState(deck.visibility === "public");
   const [category, setCategory] = useState(deck.category ?? "");
   const [saving, setSaving] = useState(false);
@@ -42,11 +53,10 @@ const PublishSection: React.FC<{ deck: Deck }> = ({ deck }) => {
     setError(null);
     setSaved(false);
     try {
-      await updateDeckPublishing(deck, {
-        visibility: isPublic ? "public" : "private",
-        category: category || undefined,
-      });
+      const visibility: DeckVisibility = isPublic ? "public" : "private";
+      await updateDeckPublishing(deck, { visibility, category: category || undefined });
       setSaved(true);
+      onSaved(visibility);
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -227,6 +237,68 @@ const MembersSection: React.FC<{ deckId: string }> = ({ deckId }) => {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+};
+
+// Liên kết tới trang bộ thẻ (D2). Không có "link bí mật" riêng: ai mở được phụ thuộc vào
+// chế độ Công khai, danh sách mời ở trên và cả thư mục chứa bộ thẻ (backend DeckService.access
+// cấp quyền xem khi thư mục được chia sẻ / để công khai), nên gợi ý đổi theo chế độ đã lưu.
+const LinkSection: React.FC<{ deckId: string; isPublic: boolean }> = ({ deckId, isPublic }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { copied, copy } = useCopyToClipboard();
+  const [error, setError] = useState<string | null>(null);
+  const linkId = useId();
+  const shareLink = deckShareUrl(window.location.origin, deckId);
+
+  const handleCopyLink = async () => {
+    const ok = await copy(shareLink, inputRef.current);
+    setError(ok ? null : "Không thể sao chép tự động. Hãy chọn liên kết và sao chép thủ công.");
+  };
+
+  return (
+    <section className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high/60 space-y-3">
+      <h3 className="font-semibold text-sm">Liên kết</h3>
+      <div className="flex items-center gap-2">
+        <label htmlFor={linkId} className="sr-only">
+          Liên kết tới bộ thẻ
+        </label>
+        <input
+          ref={inputRef}
+          id={linkId}
+          type="text"
+          readOnly
+          value={shareLink}
+          onFocus={(e) => e.currentTarget.select()}
+          className="w-full bg-surface-container-lowest px-3 py-2 rounded-lg text-xs font-mono text-on-surface-variant select-all border border-outline-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        <button
+          type="button"
+          onClick={handleCopyLink}
+          className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 ${
+            copied ? "bg-secondary text-on-secondary" : "bg-primary text-on-primary hover:bg-primary-container"
+          }`}
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
+            {copied ? "check" : "content_copy"}
+          </span>
+          <span>{copied ? "Đã chép!" : "Sao chép"}</span>
+        </button>
+      </div>
+      <p className="text-[11px] text-outline">
+        {isPublic
+          ? "Ai có tài khoản đều mở được."
+          : "Chỉ người được mời theo email hoặc được xem thư mục chứa bộ thẻ mở được; bật Công khai để chia sẻ rộng."}
+      </p>
+      {/* Vùng thông báo cho trình đọc màn hình: nút đổi chữ nhưng không tự được đọc lại */}
+      <p aria-live="polite" className="sr-only">
+        {copied ? "Đã chép liên kết" : ""}
+      </p>
+      {error && (
+        <p role="alert" className="text-xs text-error font-medium">
+          {error}
+        </p>
       )}
     </section>
   );

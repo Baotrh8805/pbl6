@@ -13,6 +13,7 @@ import {
   patchAdminUser,
   revokeUserSessions,
   setUserRole,
+  verifyUserEmail,
 } from "@/services/adminService";
 import { AdminStatusBadge, RoleStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { AdminDetailCard } from "@/features/admin/components/AdminDetailCard";
@@ -51,6 +52,8 @@ export const AdminUserDetailPage: React.FC = () => {
 
   const canAct = !!myRole && atLeast(myRole, "ADMIN") && user.id !== userProfile?.id && RANK[user.role] < RANK[myRole];
   const canRole = myRole === "SUPER_ADMIN" && user.id !== userProfile?.id;
+  // §3 (A1): backend chỉ yêu cầu ADMIN; staff không bị chặn bởi xác thực nên không cần quy tắc bậc ở đây.
+  const canVerifyEmail = atLeast(myRole, "ADMIN") && user.id !== userProfile?.id && user.emailVerified === false;
   const targetIsStaff = isStaff(user.role);
   const premiumValue = premium ?? !!user.isPremium;
   const currentUntil = user.premiumUntil ? user.premiumUntil.slice(0, 10) : "";
@@ -99,6 +102,21 @@ export const AdminUserDetailPage: React.FC = () => {
     });
     if (ok) {
       setLockReason("");
+      setReload((n) => n + 1);
+    }
+  };
+
+  const verifyEmail = async () => {
+    const ok = await dialog.confirm({
+      title: `Xác thực email ${user.email}?`,
+      message:
+        "Dùng khi người dùng không nhận được thư xác thực. Tài khoản đăng nhập được ngay; thao tác được ghi vào nhật ký quản trị.",
+      confirmLabel: "Xác thực",
+      tone: "info",
+      action: () => verifyUserEmail(user.id),
+    });
+    if (ok) {
+      setStatus({ ok: true, text: "Đã xác thực email thủ công." });
       setReload((n) => n + 1);
     }
   };
@@ -202,7 +220,7 @@ export const AdminUserDetailPage: React.FC = () => {
               </div>
 
               {/* Email có nút bấm sao chép tức thì */}
-              <div className="flex items-center gap-2 text-body-sm text-on-surface-variant font-mono mt-0.5">
+              <div className="flex items-center gap-2 text-body-sm text-on-surface-variant font-mono mt-0.5 min-w-0">
                 <span className="truncate">{user.email}</span>
                 <button
                   type="button"
@@ -216,6 +234,30 @@ export const AdminUserDetailPage: React.FC = () => {
                   <span>{copiedEmail ? "Đã chép" : "Sao chép"}</span>
                 </button>
               </div>
+
+              {/* Trạng thái xác thực email (§3): backend cũ không trả emailVerified -> ẩn hẳn dòng này */}
+              {user.emailVerified !== undefined && (
+                <div className="flex items-center gap-2 flex-wrap mt-1.5 text-body-sm">
+                  <span
+                    className={`inline-flex items-center gap-1 ${
+                      user.emailVerified ? "text-secondary" : "text-error font-semibold"
+                    }`}
+                  >
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                      {user.emailVerified ? "mark_email_read" : "unsubscribe"}
+                    </span>
+                    <span>Email: {user.emailVerified ? "đã xác thực" : "chưa xác thực"}</span>
+                  </span>
+                  {canVerifyEmail && (
+                    <Button variant="outline" size="sm" onClick={verifyEmail}>
+                      <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                        verified
+                      </span>
+                      <span>Xác thực thủ công</span>
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

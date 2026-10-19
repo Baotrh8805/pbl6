@@ -7,6 +7,7 @@ import { deleteExtraction, fetchExtractions } from "@/services/extractionService
 import type { ExtractionJob } from "@/types/api.types";
 import { QuickAiUploadModal } from "@/features/dashboard/components/modals/QuickAiUploadModal";
 import { ExtractionStatusBadge } from "@/features/extraction/components/ExtractionStatusBadge";
+import { LevelDistributionBar } from "@/features/extraction/components/LevelDistributionBar";
 import { SOURCE_TYPE_LABELS, formatDateTime, isActiveStatus } from "@/features/extraction/extractionUtils";
 
 // Lịch sử bóc tách của tôi: mỗi job một dòng, bấm vào để duyệt / tạo bộ thẻ.
@@ -83,6 +84,8 @@ export const ExtractionsPage: React.FC = () => {
                   {job.deckIds.length > 0 && ` · đã tạo ${job.deckIds.length} bộ thẻ`}
                   {job.status === "FAILED" && job.errorMessage && ` · ${job.errorMessage}`}
                 </div>
+                {/* B6: thanh phân bố cấp rút gọn; chỉ khi DONE vì chạy lại vẫn giữ stats cũ. */}
+                {job.status === "DONE" && job.stats && <LevelDistributionBar stats={job.stats} compact className="mt-1.5" />}
               </Link>
               {!isActiveStatus(job.status) && (
                 <button

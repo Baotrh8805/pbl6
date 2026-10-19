@@ -19,6 +19,8 @@ interface ChapterDraftCardProps {
   onRename: (cid: string, title: string) => void;
   onMergeUp: (cid: string) => Promise<void>;
   onItemsPatched: () => void;
+  /** Đổi giá trị -> tải lại danh sách đang mở (vd. "Dịch lại nghĩa" xong: nghĩa tiếng Việt mới của item). */
+  reloadKey?: string;
 }
 
 export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
@@ -30,6 +32,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
   onRename,
   onMergeUp,
   onItemsPatched,
+  reloadKey = "",
 }) => {
   const [title, setTitle] = useState({ src: chapter.title, value: chapter.title });
   if (title.src !== chapter.title) setTitle({ src: chapter.title, value: chapter.title });
@@ -41,7 +44,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
   // Tải lại ngầm khi số thẻ của chương đổi (bỏ tick, gộp chương) để danh sách khớp server.
   const items = useAsync(
     () => (open ? fetchChapterItems(pathId, chapter.id) : Promise.resolve([])),
-    [pathId, chapter.id, open, version],
+    [pathId, chapter.id, open, version, reloadKey],
     chapter.cardCount
   );
 

@@ -7,6 +7,8 @@ const TAB_LABELS: Record<ProfileTab, { label: string; icon: string }> = {
     info: { label: "Thông tin & Mục tiêu", icon: "badge" },
     security: { label: "Bảo mật", icon: "lock" },
     history: { label: "Lịch sử kiểm tra", icon: "history" },
+    friction: { label: "Phản xạ chậm", icon: "timer" },
+    practice: { label: "Luyện tập", icon: "exercise" },
 };
 
 interface ProfileHeroProps {

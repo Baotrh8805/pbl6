@@ -19,8 +19,10 @@ export const useGsap = (
 
     if (prefersReducedMotion || !scopeRef.current) return;
 
-    const ctx = gsap.context(() => {
-      animationFn(ctx);
+    // gsap gọi callback NGAY trong constructor của Context, trước khi `const ctx` được gán -> đọc `ctx` trong callback
+    // ném ReferenceError (TDZ) và React gỡ cả cây (trang /admin trắng). Dùng Context mà gsap truyền vào làm đối số đầu.
+    const ctx = gsap.context((self: gsap.Context) => {
+      animationFn(self);
     }, scopeRef);
 
     return () => {

@@ -1,5 +1,15 @@
-import { apiClient } from "@/services/apiClient";
-import type { AuthRequest, AuthResponse, RegisterRequest, UserProfile } from "../types/auth.types";
+import { apiClient, extractErrorMessage } from "@/services/apiClient";
+import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
+import { parseRegisterResponse, type RegisterResult } from "../authUtils";
+import type { AuthRequest, AuthResponse, RegisterRequest, UserProfile, VerifyEmailResult } from "../types/auth.types";
+
+/**
+ * Thông báo lỗi cho các endpoint công khai mới của đợt 2 (verify-email, resend-verification, appeals): máy chủ chưa
+ * có route (404 chung / 405 / 401 body trống vì Spring Security chặn trước) -> câu "đang cập nhật" bình tĩnh thay vì
+ * "Phiên đăng nhập đã hết hạn" gây hiểu lầm.
+ */
+export const authErrorMessage = (err: unknown): string =>
+  isEndpointMissing(err, { publicEndpoint: true }) ? SERVER_PENDING_MESSAGE : extractErrorMessage(err);
 
 export const authService = {
   /** Tự xoá tài khoản (ẩn danh hoá; bộ thẻ public giữ lại dưới tên ẩn danh). Sau đó mọi token vô hiệu. */
@@ -16,13 +26,37 @@ export const authService = {
   },
 
   /**
-   * Đăng ký người dùng mới. Thành công: plain text "Đăng ký tài khoản thành công!"
-   * (axios để nguyên chuỗi khi không parse được JSON); lỗi: JSON {status, error, message}.
+   * Đăng ký người dùng mới. Backend mới: JSON {message, needsVerification}; backend cũ: plain text
+   * "Đăng ký tài khoản thành công!" -> parseRegisterResponse đọc cả hai. Lỗi: JSON {status, error, message}.
    * Không đặt responseType "text": lỗi JSON sẽ thành chuỗi thô hiện lên giao diện.
    */
-  async register(payload: RegisterRequest): Promise<string> {
-    const response = await apiClient.post<string>("/auth/register", payload);
-    return response.data;
+  async register(payload: RegisterRequest): Promise<RegisterResult> {
+    const response = await apiClient.post<unknown>("/auth/register", payload);
+    return parseRegisterResponse(response.data);
+  },
+
+  /** Token từ link trong email (/verify-email?token=…), dùng một lần, hạn 24 giờ; 400 khi sai / hết hạn. */
+  async verifyEmail(token: string): Promise<VerifyEmailResult> {
+    const response = await apiClient.post<Partial<VerifyEmailResult>>("/auth/verify-email", { token });
+    return {
+      message: response.data?.message || "Xác thực email thành công!",
+      email: typeof response.data?.email === "string" ? response.data.email : "",
+    };
+  },
+
+  /** 202 cùng một thông báo dù email có tồn tại hay không; giới hạn 5 lần / 15 phút (429). */
+  async resendVerification(email: string): Promise<string> {
+    const response = await apiClient.post<{ message?: string }>("/auth/resend-verification", { email });
+    return response.data?.message || "Nếu email này cần xác thực, chúng tôi đã gửi lại liên kết kích hoạt.";
+  },
+
+  /** Khiếu nại tài khoản bị khoá (không cần đăng nhập). 202 cùng một thông báo; giới hạn 5 lần / giờ (429). */
+  async submitAppeal(email: string, message: string): Promise<string> {
+    const response = await apiClient.post<{ message?: string }>("/auth/appeals", { email, message });
+    return (
+      response.data?.message ||
+      "Đã ghi nhận khiếu nại. Nếu email thuộc một tài khoản đang bị khoá, quản trị viên sẽ xem xét và phản hồi qua email."
+    );
   },
 
   /** Thu hồi refresh token của phiên này ở server. Gọi kèm request không cần access token (có thể đã hết hạn). */

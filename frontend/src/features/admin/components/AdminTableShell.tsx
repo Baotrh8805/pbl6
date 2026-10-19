@@ -46,7 +46,9 @@ export const AdminTableShell: React.FC<AdminTableShellProps> = ({
         {emptyText}
       </p>
     ) : (
-      <div className="overflow-x-auto rounded-2xl border border-surface-container-high bg-surface-container-lowest">
+      // relative: phần tử sr-only (position:absolute) trong bảng, vd. tiêu đề "Thao tác" cột cuối, lấy vùng cuộn này làm
+      // khối chứa; không có thì nó định vị theo <body> và nới rộng cả trang trên điện thoại.
+      <div className="relative overflow-x-auto rounded-2xl border border-surface-container-high bg-surface-container-lowest">
         <table className="w-full text-body-sm [&_th]:text-left [&_th]:px-3 [&_th]:py-2 [&_th]:text-label-sm [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-outline [&_th]:font-bold [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_tbody_tr]:border-t [&_tbody_tr]:border-surface-container-high">
           <caption className="sr-only">{caption}</caption>
           {children}

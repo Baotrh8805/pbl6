@@ -13,7 +13,8 @@ export const scoreTone = (score: number, total: number): ScoreTone => {
     return "poor";
 };
 
-export const PROFILE_TABS = ["info", "security", "history"] as const;
+// friction (F4): thẻ phản xạ chậm; practice (E2–E4): thống kê luyện viết / phát âm — thêm cuối để thứ tự tab cũ không đổi.
+export const PROFILE_TABS = ["info", "security", "history", "friction", "practice"] as const;
 export type ProfileTab = (typeof PROFILE_TABS)[number];
 
 export const parseProfileTab = (raw: string | null): ProfileTab =>
