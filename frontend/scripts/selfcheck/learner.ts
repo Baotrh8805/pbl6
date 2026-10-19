@@ -18,10 +18,13 @@ import {
     surfaceSegments,
 } from "../../src/features/extraction/iPlusOneUtils.ts";
 import {
+    MNEMONIC_AI_DOWN_MESSAGE,
     MNEMONIC_USER_MAX,
     mnemonicCharsLeft,
+    mnemonicGenerateErrorMessage,
     mnemonicInputError,
     mnemonicOriginLabel,
+    mnemonicSubmitErrorMessage,
     parseGenerateResult,
     parseKanjiMnemonics,
     parseRadicalMnemonicSources,
@@ -34,7 +37,7 @@ import {
     parseReviewActivity,
     streaksFromActivity,
 } from "../../src/lib/learningStats.ts";
-import { isEndpointMissing } from "../../src/lib/apiErrorInfo.ts";
+import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "../../src/lib/apiErrorInfo.ts";
 import { JLPT_TARGET_WORDS, getTargetWordsByLevel } from "../../src/features/dashboard/lib/dashboardUtils.ts";
 
 export function runLearnerChecks(assert: (cond: boolean, msg: string) => void): void {
@@ -207,6 +210,31 @@ export function runLearnerChecks(assert: (cond: boolean, msg: string) => void): 
     });
     eq(Object.entries(sources).map(([kk, v]) => `${kk}:${v}`).join(","), "休:approved,木:template", "Nguồn mẹo thẻ bộ thủ: giữ approved, bỏ chữ không có mẹo / nguồn lạ");
     eq(`${radicalMnemonicSourceLabel("approved")}|${radicalMnemonicSourceLabel(undefined)}`, "Đã duyệt|null", "Nhãn mẹo đã duyệt");
+
+    // ---- Câu lỗi gửi / sinh mẹo: câu của server luôn thắng (409 có hai trần khác nhau) ----
+    // Body lỗi đúng dạng ApiExceptionHandler: {status, error, message}.
+    const apiErr = (status: number, message?: string, error = "Conflict") => ({
+        response: { status, data: message === undefined ? "" : { status, error, message } },
+    });
+    const perUser = "Bạn đã có 50 mẹo nhớ đang chờ duyệt (tối đa 50). Hãy đợi quản trị duyệt bớt rồi gửi tiếp.";
+    const perKanji = "Bạn đã có 3 mẹo nhớ đang chờ duyệt cho chữ 休.";
+    eq(mnemonicSubmitErrorMessage(apiErr(409, perUser)), perUser, "Gửi mẹo: 409 trần 50 mẹo/người -> đúng câu của server, không phải câu '3 mẹo cho chữ này'");
+    eq(mnemonicSubmitErrorMessage(apiErr(409, perKanji)), perKanji, "Gửi mẹo: 409 trần 3 mẹo/chữ -> câu của server");
+    assert(/3/.test(mnemonicSubmitErrorMessage(apiErr(409)) ?? "") && /50/.test(mnemonicSubmitErrorMessage(apiErr(409)) ?? ""), "Gửi mẹo: 409 body trống -> câu dự phòng nói cả hai trần");
+    assert(/50/.test(mnemonicSubmitErrorMessage(apiErr(409, "Conflict")) ?? ""), "Gửi mẹo: message chỉ là reason phrase 'Conflict' -> câu dự phòng tiếng Việt");
+    eq(mnemonicSubmitErrorMessage(apiErr(400, "Chỉ nhận đúng một chữ Hán.", "Bad Request")), "Chỉ nhận đúng một chữ Hán.", "Gửi mẹo: 400 -> câu của server");
+    eq(mnemonicSubmitErrorMessage(apiErr(404, "No static resource api/kanji/mnemonics.", "Not Found")), SERVER_PENDING_MESSAGE, "Gửi mẹo: route chưa có -> đang cập nhật");
+    eq(mnemonicSubmitErrorMessage(new Error("Network Error")), null, "Gửi mẹo: lỗi mạng -> null (nơi gọi dùng extractErrorMessage)");
+    const tooMany = "Bạn đã sinh mẹo nhớ quá nhiều lần, vui lòng thử lại sau.";
+    eq(mnemonicGenerateErrorMessage(apiErr(429, tooMany, "Too Many Requests")), tooMany, "Sinh mẹo: 429 -> câu của server");
+    eq(mnemonicGenerateErrorMessage(apiErr(409, perUser)), perUser, "Sinh mẹo: 409 trần 50 mẹo -> câu của server");
+    assert(/lượt/.test(mnemonicGenerateErrorMessage(apiErr(429)) ?? ""), "Sinh mẹo: 429 body trống -> câu dự phòng");
+    eq(
+        mnemonicGenerateErrorMessage(apiErr(503, "Không kết nối được dịch vụ AI (sinh mẹo nhớ bộ thủ). Hãy chắc ai-service đang chạy.", "Service Unavailable")),
+        MNEMONIC_AI_DOWN_MESSAGE,
+        "Sinh mẹo: 503 -> câu thân thiện (message 503 viết cho người vận hành)"
+    );
+    eq(mnemonicGenerateErrorMessage(apiErr(405, "Request method 'POST' is not supported", "Method Not Allowed")), SERVER_PENDING_MESSAGE, "Sinh mẹo: 405 -> đang cập nhật");
 
     // ---- Endpoint đợt 2 chưa có trên server ----
     eq(

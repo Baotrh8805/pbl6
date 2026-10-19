@@ -118,7 +118,8 @@ export const AdminLayout: React.FC = () => {
     <div className="bg-surface font-body-md text-on-surface antialiased min-h-screen">
       <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-container-high/40 shadow-[0_1px_8px_rgba(4,21,52,0.05)]">
         <div className="h-full px-gutter flex items-center justify-between gap-space-md">
-          <div className="flex items-center gap-space-sm min-w-0">
+          {/* shrink-0: chỗ thiếu thì email bên phải co lại (truncate), không để tên app tràn đè lên badge vai trò. */}
+          <div className="flex items-center gap-space-sm shrink-0">
             <button
               type="button"
               onClick={() => setMobileOpen((v) => !v)}
@@ -130,7 +131,10 @@ export const AdminLayout: React.FC = () => {
               <span aria-hidden="true" className="material-symbols-outlined text-[24px]">menu</span>
             </button>
             <img alt="" className="h-8 w-auto shrink-0" src="/favicon.svg" />
-            <span className="font-headline-sm text-headline-sm text-primary font-bold whitespace-nowrap">NihonGen AI</span>
+            {/* < 480 px (vd. 375): nút menu + logo + tên + badge "Super admin" + "Đăng xuất" rộng hơn màn hình -> chỉ giữ logo. */}
+            <span className="hidden min-[480px]:inline font-headline-sm text-headline-sm text-primary font-bold whitespace-nowrap">
+              NihonGen AI
+            </span>
             <span className="hidden sm:inline text-label-sm px-2 py-0.5 rounded-full bg-primary-container text-on-primary font-semibold">
               Quản trị
             </span>

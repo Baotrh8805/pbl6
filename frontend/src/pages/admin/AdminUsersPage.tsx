@@ -3,7 +3,14 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { fetchAdminUsers } from "@/services/adminService";
-import { downloadCsv, fetchAllPages, formatShort, stringToHslColor, stringToTextColor } from "@/features/admin/adminUtils";
+import {
+  adminAccountStatus,
+  downloadCsv,
+  fetchAllPages,
+  formatShort,
+  stringToHslColor,
+  stringToTextColor,
+} from "@/features/admin/adminUtils";
 import { getInitials } from "@/lib/textUtils";
 import { AdminTableShell } from "@/features/admin/components/AdminTableShell";
 import { Pager } from "@/features/admin/components/Pager";
@@ -58,6 +65,7 @@ export const AdminUsersPage: React.FC = () => {
           vai_tro: u.role,
           premium: u.isPremium ? 1 : 0,
           khoa_tu: u.lockedAt ?? "",
+          da_xoa: u.deleted ? 1 : 0,
           tao_luc: u.createdAt ?? "",
           so_bo_the: u.deckCount,
         }))
@@ -165,7 +173,7 @@ export const AdminUsersPage: React.FC = () => {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={100}
-            className={`${adminFieldClass} w-60`}
+            className={`${adminFieldClass} w-full sm:w-60`}
             placeholder="nhap-email@..."
           />
         </label>
@@ -295,8 +303,11 @@ export const AdminUsersPage: React.FC = () => {
                 <td>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <RoleStatusBadge role={u.role} />
-                    {u.lockedAt && (
-                      <AdminStatusBadge label="Khoá" tone="error" icon="lock" />
+                    {/* Tài khoản đã tự xoá cũng có lockedAt nhưng không mở khoá được -> nhãn riêng, không lẫn với "Khoá" */}
+                    {adminAccountStatus(u) === "deleted" ? (
+                      <AdminStatusBadge label="Đã xoá" tone="neutral" icon="person_off" />
+                    ) : (
+                      u.lockedAt && <AdminStatusBadge label="Khoá" tone="error" icon="lock" />
                     )}
                   </div>
                 </td>

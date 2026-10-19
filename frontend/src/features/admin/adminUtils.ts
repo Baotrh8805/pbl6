@@ -109,6 +109,16 @@ export const AUDIT_TARGET_LABELS: Record<string, string> = {
 /** Vai trò được phép gán qua UI (SUPER_ADMIN chọn). */
 export const ASSIGNABLE_ROLES: Role[] = ["USER", "ADMIN", "SUPER_ADMIN"];
 
+export type AdminAccountStatus = "deleted" | "locked" | "active";
+
+/**
+ * Trạng thái tài khoản cho nhãn / nút ở trang Người dùng. Tài khoản đã tự xoá cũng có lockedAt (khoá vĩnh viễn) nhưng không
+ * phải "bị khoá" chờ mở: backend trả 409 cho mở khoá / Premium / hạn mức / vai trò, nên "deleted" thắng "locked" để UI hiện
+ * "Đã xoá" và ẩn các nút đó thay vì để admin bấm rồi mới thấy lỗi.
+ */
+export const adminAccountStatus = (u: { lockedAt: string | null; deleted?: boolean }): AdminAccountStatus =>
+  u.deleted ? "deleted" : u.lockedAt ? "locked" : "active";
+
 /** dd/MM HH:mm cho bảng admin; null -> "—". */
 export const formatShort = (iso: string | null | undefined): string => {
   if (!iso) return "—";

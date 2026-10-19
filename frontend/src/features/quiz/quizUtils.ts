@@ -1,6 +1,6 @@
 // Hàm thuần cho quiz đa loại + ngân hàng câu hỏi (hợp đồng API đợt 2, §1). Không gọi API, không đụng DOM;
 // import tương đối + đuôi .ts để scripts/selfcheck/quiz.ts chạy được bằng node.
-import { SERVER_PENDING_MESSAGE, httpStatusOf, isEndpointMissing } from "../../lib/apiErrorInfo.ts";
+import { apiErrorText, httpStatusOf } from "../../lib/apiErrorInfo.ts";
 import { kataToHira } from "../../lib/kana.ts";
 import type {
     AdminQuestionPatch,
@@ -203,22 +203,27 @@ export const buildFlagRequest = (reason: QuestionFlagReason, detail: string): Qu
 // "Endpoint chưa có" dùng chung quy tắc của src/lib/apiErrorInfo.ts: 404 chỉ tính khi body là câu mặc định của Spring
 // (hoặc trống), để 404 nghiệp vụ (vd. báo lỗi câu hỏi của thẻ vừa bị xoá) vẫn hiện đúng lỗi của server.
 
-/** Câu báo lỗi cho người học theo lỗi axios; null = dùng thông điệp của server. */
-export const flagErrorMessage = (error: unknown): string | null => {
-    const status = httpStatusOf(error);
-    if (status === 409) return "Bạn đã báo lỗi câu hỏi này rồi — quản trị viên đang xem xét.";
-    if (status === 429) return "Bạn đã gửi quá nhiều báo lỗi trong một giờ (tối đa 20). Hãy thử lại sau.";
-    if (isEndpointMissing(error)) return SERVER_PENDING_MESSAGE;
-    return null;
-};
+/**
+ * Câu báo lỗi khi gửi báo lỗi câu hỏi: câu của server (409 đã có báo lỗi đang mở, 429 quá 20 lần / giờ, 400 / 404...);
+ * câu dự phòng chỉ khi body trống. null = lỗi mạng... -> extractErrorMessage.
+ */
+export const flagErrorMessage = (error: unknown): string | null =>
+    apiErrorText(error, {
+        fallbacks: {
+            409: "Bạn đã báo lỗi câu hỏi này rồi — quản trị viên đang xem xét.",
+            429: "Bạn đã gửi quá nhiều báo lỗi trong một giờ (tối đa 20). Hãy thử lại sau.",
+        },
+    });
 
-/** Câu lỗi khi sinh câu nhiễu; null = dùng thông điệp của server. */
+/**
+ * Câu lỗi khi sinh câu nhiễu: 4xx là câu của server (403 "Bạn chỉ có quyền xem bộ thẻ này"...). Riêng 503 dùng câu của
+ * mình: message 503 là lỗi ai-service chuyển tiếp, viết cho người vận hành. null = lỗi mạng... -> extractErrorMessage.
+ */
 export const distractorErrorMessage = (error: unknown): string | null => {
-    const status = httpStatusOf(error);
-    if (status === 503) return "Dịch vụ AI đang tạm dừng nên chưa sinh được câu nhiễu. Hãy thử lại sau ít phút.";
-    if (status === 403) return "Chỉ chủ bộ thẻ hoặc người được chia sẻ quyền sửa mới sinh được câu nhiễu.";
-    if (isEndpointMissing(error)) return SERVER_PENDING_MESSAGE;
-    return null;
+    if (httpStatusOf(error) === 503) return "Dịch vụ AI đang tạm dừng nên chưa sinh được câu nhiễu. Hãy thử lại sau ít phút.";
+    return apiErrorText(error, {
+        fallbacks: { 403: "Chỉ chủ bộ thẻ hoặc người được chia sẻ quyền sửa mới sinh được câu nhiễu." },
+    });
 };
 
 export const parseDistractorResult = (raw: unknown): DistractorResult => {

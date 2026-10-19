@@ -1,5 +1,6 @@
 // Mẹo nhớ chữ Hán (C4, hợp đồng đợt 2 §4): đọc response (dữ liệu không đáng tin), nhãn nguồn / trạng thái, kiểm tra ô
-// tự viết. Hàm thuần, không gọi API / DOM -> kiểm được bằng scripts/selfcheck/learner.ts.
+// tự viết, câu lỗi. Hàm thuần, không gọi API / DOM -> kiểm được bằng scripts/selfcheck/learner.ts.
+import { apiErrorText, httpStatusOf } from "../../lib/apiErrorInfo.ts";
 import type {
     ApprovedMnemonic,
     GenerateMnemonicsResult,
@@ -15,6 +16,8 @@ import type {
 export const MNEMONIC_USER_MAX = 300;
 /** Server từ chối (409) khi đã có chừng này mẹo PENDING của mình cho cùng một chữ. */
 export const MAX_PENDING_PER_KANJI = 3;
+/** Server cũng từ chối (409) khi tổng mẹo PENDING của mình (mọi chữ) vượt chừng này — dùng cho câu dự phòng. */
+export const MAX_PENDING_PER_USER = 50;
 
 const asRecord = (v: unknown): Record<string, unknown> | null =>
     v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -128,6 +131,36 @@ export const mnemonicCharsLeft = (text: string): number => MNEMONIC_USER_MAX - [
 
 /** Mẹo PENDING của mình cho chữ này (để báo trước khi chạm giới hạn 3 của server). */
 export const pendingCount = (mine: Pick<MyMnemonic, "status">[]): number => mine.filter((m) => m.status === "PENDING").length;
+
+// ---- Câu lỗi khi gửi / sinh mẹo ----------------------------------------------------------------------------------------
+// 409 có HAI lý do (3 mẹo chờ duyệt cho chữ này / 50 mẹo chờ duyệt tất cả) mà chỉ server biết là lý do nào, nên luôn hiện
+// câu của server; câu dự phòng (proxy / body trống) nói chung cho cả hai lý do. null = lỗi mạng... -> extractErrorMessage.
+
+const PENDING_LIMIT_FALLBACK =
+    `Bạn đã có quá nhiều mẹo nhớ đang chờ duyệt (tối đa ${MAX_PENDING_PER_KANJI} cho mỗi chữ, ${MAX_PENDING_PER_USER} tất cả). ` +
+    "Hãy đợi quản trị viên duyệt bớt rồi gửi thêm.";
+
+/** Câu lỗi khi gửi mẹo tự viết (POST /kanji/mnemonics). */
+export const mnemonicSubmitErrorMessage = (error: unknown): string | null =>
+    apiErrorText(error, { fallbacks: { 409: PENDING_LIMIT_FALLBACK } });
+
+/** ai-service tắt: người học vẫn tự viết được mẹo, nói rõ để họ không nghĩ cả tính năng hỏng. */
+export const MNEMONIC_AI_DOWN_MESSAGE = "Dịch vụ AI đang tạm dừng. Hãy thử lại sau ít phút hoặc tự viết mẹo.";
+
+/**
+ * Câu lỗi khi nhờ AI gợi ý mẹo (POST /kanji/mnemonics/generate): 409 / 429 / 400 là câu của server. Riêng 503 dùng câu
+ * của mình: message 503 là lỗi ai-service chuyển tiếp, viết cho người vận hành ("Hãy chắc ai-service đang chạy", hoặc
+ * detail tiếng Anh của FastAPI), như câu nhiễu ở quizUtils.distractorErrorMessage.
+ */
+export const mnemonicGenerateErrorMessage = (error: unknown): string | null => {
+    if (httpStatusOf(error) === 503) return MNEMONIC_AI_DOWN_MESSAGE;
+    return apiErrorText(error, {
+        fallbacks: {
+            409: PENDING_LIMIT_FALLBACK,
+            429: "Bạn đã dùng hết lượt gợi ý trong giờ này. Hãy thử lại sau hoặc tự viết mẹo.",
+        },
+    });
+};
 
 // ---- Thẻ bộ thủ (/api/nlp/radicals/cards) --------------------------------------------------------------------------
 

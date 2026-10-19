@@ -2,7 +2,7 @@ import React, { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { mnemonicReasonLabel } from "@/lib/kanjiUtils";
-import { SERVER_PENDING_MESSAGE, httpStatusOf, isEndpointMissing } from "@/lib/apiErrorInfo";
+import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchKanjiMnemonics, generateKanjiMnemonics, submitKanjiMnemonic } from "@/services/mnemonicService";
 import {
@@ -10,8 +10,10 @@ import {
   MNEMONIC_USER_MAX,
   MNEMONIC_STATUS_LABELS,
   mnemonicCharsLeft,
+  mnemonicGenerateErrorMessage,
   mnemonicInputError,
   mnemonicOriginLabel,
+  mnemonicSubmitErrorMessage,
   pendingCount,
 } from "@/features/kanji/mnemonicUtils";
 import type { KanjiMnemonics, MnemonicStatus, MyMnemonic } from "@/types/learner.types";
@@ -125,7 +127,9 @@ export const KanjiMnemonicSection: React.FC<{ kanji: string }> = ({ kanji }) => 
       }
       setVersion((v) => v + 1);
     } catch (e) {
-      setNotice(isEndpointMissing(e) ? pendingNotice : { tone: "error", text: `Không nhờ AI gợi ý được: ${extractErrorMessage(e)}` });
+      // 409 (đủ 50 mẹo chờ duyệt) / 429 (quá 10 lượt / giờ): câu của server nói đúng trần nào; 503: câu thân thiện.
+      const text = mnemonicGenerateErrorMessage(e) ?? extractErrorMessage(e);
+      setNotice(text === SERVER_PENDING_MESSAGE ? pendingNotice : { tone: "error", text: `Không nhờ AI gợi ý được: ${text}` });
     } finally {
       setGenerating(false);
     }
@@ -149,13 +153,11 @@ export const KanjiMnemonicSection: React.FC<{ kanji: string }> = ({ kanji }) => 
       setNotice({ tone: "success", text: "Đã gửi mẹo nhớ — mẹo đang chờ quản trị viên duyệt." });
       setVersion((v) => v + 1);
     } catch (e2) {
-      if (isEndpointMissing(e2)) setNotice(pendingNotice);
-      else
-        setInputError(
-          httpStatusOf(e2) === 409
-            ? `Bạn đã có ${MAX_PENDING_PER_KANJI} mẹo đang chờ duyệt cho chữ này. Hãy đợi quản trị viên duyệt rồi gửi thêm.`
-            : extractErrorMessage(e2)
-        );
+      // 409 có hai trần (3 mẹo chờ duyệt cho chữ này / 50 mẹo chờ duyệt tất cả): hiện đúng câu của server, không đoán.
+      // Lỗi hiện dưới ô nhập và giữ nguyên bản nháp để người học gửi lại sau khi được duyệt bớt.
+      const text = mnemonicSubmitErrorMessage(e2) ?? extractErrorMessage(e2);
+      if (text === SERVER_PENDING_MESSAGE) setNotice(pendingNotice);
+      else setInputError(text);
     } finally {
       setSubmitting(false);
     }

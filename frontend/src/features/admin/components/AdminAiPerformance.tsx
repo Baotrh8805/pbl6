@@ -66,7 +66,8 @@ export const AdminAiPerformance: React.FC<AdminAiPerformanceProps> = ({ engines,
     </div>
 
     {engines.length > 0 && (
-      <div className="overflow-x-auto rounded-xl border border-surface-container-high">
+      // relative: caption sr-only (position:absolute) lấy vùng cuộn làm khối chứa, như AdminTableShell.
+      <div className="relative overflow-x-auto rounded-xl border border-surface-container-high">
         <table className="w-full text-body-sm [&_th]:text-left [&_th]:px-3 [&_th]:py-2 [&_th]:text-label-sm [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-outline [&_th]:font-bold [&_td]:px-3 [&_td]:py-2 [&_tbody_tr]:border-t [&_tbody_tr]:border-surface-container-high">
           <caption className="sr-only">Hiệu suất từng engine đọc văn bản</caption>
           <thead>

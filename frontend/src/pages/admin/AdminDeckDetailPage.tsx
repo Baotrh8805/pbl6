@@ -406,7 +406,8 @@ export const AdminDeckDetailPage: React.FC = () => {
             Không tìm thấy thẻ nào khớp với từ khoá &ldquo;{cardSearch}&rdquo;.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
+          // relative: caption sr-only (position:absolute) lấy vùng cuộn làm khối chứa, như AdminTableShell.
+          <div className="relative overflow-x-auto rounded-2xl border border-surface-container-high bg-surface-container-lowest shadow-xs">
             <table className="w-full text-body-sm [&_th]:text-left [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-label-sm [&_th]:uppercase [&_th]:text-outline [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-top [&_tbody_tr]:border-t [&_tbody_tr]:border-surface-container-high">
               <caption className="sr-only">Thẻ trong bộ {deck.title}</caption>
               <thead>

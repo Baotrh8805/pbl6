@@ -118,7 +118,7 @@ const DecksTab: React.FC<{ q: ReturnType<typeof useAdminQuery> }> = ({ q }) => {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={100}
-            className={`${adminFieldClass} w-60`}
+            className={`${adminFieldClass} w-full sm:w-60`}
             placeholder="Tìm theo tiêu đề..."
           />
         </label>
@@ -300,7 +300,7 @@ const RatingsTab: React.FC<{ q: ReturnType<typeof useAdminQuery>; canAct: boolea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={100}
-            className={`${adminFieldClass} w-72`}
+            className={`${adminFieldClass} w-full sm:w-72`}
             placeholder="Nội dung cần kiểm tra..."
           />
         </label>

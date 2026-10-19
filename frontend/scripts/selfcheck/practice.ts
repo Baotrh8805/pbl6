@@ -2,6 +2,7 @@
 // runPracticeChecks((cond, msg) => assertStrictEqual(cond, true, msg)). Chỉ import file thuần (đường dẫn tương đối + .ts).
 import {
     SERVER_PENDING_MESSAGE,
+    apiErrorText,
     errorCodeOf,
     errorMessageOf,
     httpStatusOf,
@@ -49,6 +50,19 @@ export function runPracticeChecks(assert: (cond: boolean, msg: string) => void):
     assert(!isEndpointMissing(axiosErr(401, { message: "Sai mật khẩu" }), { publicEndpoint: true }), "401 có message vẫn là lỗi thật");
     assert(!isEndpointMissing(axiosErr(500, {})) && !isEndpointMissing(new Error("x")), "500 / lỗi mạng không phải thiếu route");
     assert(SERVER_PENDING_MESSAGE.startsWith("Tính năng đang được cập nhật trên máy chủ"), "Câu thông báo bình tĩnh đúng hợp đồng giao việc");
+
+    // ---- apiErrorText: route chưa có -> đang cập nhật; message server > câu dự phòng theo mã; còn lại null
+    const fb = { fallbacks: { 409: "dự phòng 409", 429: "dự phòng 429" } };
+    const conflict = (message: string) => axiosErr(409, { status: 409, error: "Conflict", message });
+    assert(apiErrorText(conflict("Chỉ sửa được khi lộ trình đang ở bước xem trước."), fb) === "Chỉ sửa được khi lộ trình đang ở bước xem trước.", "apiErrorText: 409 có message -> câu của server, không phải câu dự phòng");
+    assert(apiErrorText(axiosErr(409, ""), fb) === "dự phòng 409" && apiErrorText(axiosErr(429, {}), fb) === "dự phòng 429", "apiErrorText: body trống / không có message -> câu dự phòng theo mã");
+    assert(apiErrorText(conflict("Conflict"), fb) === "dự phòng 409", "apiErrorText: message = reason phrase ('Conflict') -> coi như không có, dùng câu dự phòng");
+    assert(apiErrorText(conflict("Conflict")) === null, "apiErrorText: reason phrase, không có câu dự phòng -> null");
+    assert(apiErrorText(axiosErr(409, '{"status":409,"error":"Conflict","message":"Bạn đã báo cáo bộ thẻ này, đang chờ xử lý."}'), fb) === "Bạn đã báo cáo bộ thẻ này, đang chờ xử lý.", "apiErrorText: body JSON bị đọc thành chuỗi vẫn lấy được message");
+    assert(apiErrorText(axiosErr(404, { status: 404, error: "Not Found", message: "No static resource api/x." }), fb) === SERVER_PENDING_MESSAGE && apiErrorText(axiosErr(405, ""), fb) === SERVER_PENDING_MESSAGE, "apiErrorText: 404 chung / 405 -> đang cập nhật");
+    assert(apiErrorText(axiosErr(404, { message: "Không tìm thấy lượt bóc tách." }), fb) === "Không tìm thấy lượt bóc tách.", "apiErrorText: 404 nghiệp vụ -> câu của server");
+    assert(apiErrorText(axiosErr(401, ""), { publicEndpoint: true }) === SERVER_PENDING_MESSAGE && apiErrorText(axiosErr(401, "")) === null, "apiErrorText: 401 body trống chỉ là 'chưa có' với endpoint công khai");
+    assert(apiErrorText(axiosErr(500, ""), fb) === null && apiErrorText(new Error("Network Error"), fb) === null && apiErrorText(null) === null, "apiErrorText: mã không có câu dự phòng / lỗi mạng -> null");
 
     // ---- Đăng ký: chuỗi cũ / JSON mới
     const oldStr = parseRegisterResponse("Đăng ký tài khoản thành công!");

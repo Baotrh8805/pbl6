@@ -76,3 +76,35 @@ export const isEndpointMissing = (error: unknown, opts: EndpointMissingOptions =
     const msg = errorMessageOf(error);
     return msg === null || GENERIC_NOT_FOUND.test(msg);
 };
+
+export interface ApiErrorTextOptions extends EndpointMissingOptions {
+    /**
+     * Câu dự phòng theo mã HTTP, CHỈ dùng khi body không có message (proxy chặn, body trống). Không dùng để thay câu của
+     * server: một mã có thể có nhiều lý do — vd. 409 của POST /kanji/mnemonics là "3 mẹo chờ duyệt cho chữ này" HOẶC
+     * "50 mẹo chờ duyệt tất cả" — câu đoán theo mã chỉ đúng với một lý do, còn backend biết chính xác.
+     */
+    fallbacks?: Partial<Record<number, string>>;
+}
+
+/**
+ * Message thật của server. ApiExceptionHandler điền message = reason phrase ("Conflict", trùng trường `error`) khi exception
+ * không kèm lý do: câu tiếng Anh đó không nói gì hơn mã HTTP nên coi như không có, để câu dự phòng tiếng Việt được dùng.
+ */
+const realMessageOf = (error: unknown): string | null => {
+    const msg = errorMessageOf(error);
+    const reason = errorBodyOf(error)?.error;
+    return msg !== null && typeof reason === "string" && msg === reason.trim() ? null : msg;
+};
+
+/**
+ * Câu lỗi cho người dùng, theo thứ tự: route chưa có -> SERVER_PENDING_MESSAGE; server có message -> đúng câu đó; không
+ * có thì câu dự phòng theo mã HTTP. null = không có gì để nói (lỗi mạng, lỗi JS, mã không có câu dự phòng) -> nơi gọi
+ * dùng extractErrorMessage (file này không import axios nên không gọi được nó).
+ */
+export const apiErrorText = (error: unknown, opts: ApiErrorTextOptions = {}): string | null => {
+    if (isEndpointMissing(error, opts)) return SERVER_PENDING_MESSAGE;
+    const message = realMessageOf(error);
+    if (message !== null) return message;
+    const status = httpStatusOf(error);
+    return status === null ? null : opts.fallbacks?.[status] ?? null;
+};

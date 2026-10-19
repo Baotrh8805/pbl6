@@ -19,7 +19,13 @@ import { AdminStatusBadge, RoleStatusBadge } from "@/features/admin/components/A
 import { AdminDetailCard } from "@/features/admin/components/AdminDetailCard";
 import { AdminJsonViewer } from "@/features/admin/components/AdminJsonViewer";
 import { adminFieldClass } from "@/features/admin/components/AdminFilterBar";
-import { ASSIGNABLE_ROLES, formatShort, stringToHslColor, stringToTextColor } from "@/features/admin/adminUtils";
+import {
+  ASSIGNABLE_ROLES,
+  adminAccountStatus,
+  formatShort,
+  stringToHslColor,
+  stringToTextColor,
+} from "@/features/admin/adminUtils";
 import { getInitials } from "@/lib/textUtils";
 import type { AdminUserDetail } from "@/types/api.types";
 
@@ -51,9 +57,14 @@ export const AdminUserDetailPage: React.FC = () => {
   }
 
   const canAct = !!myRole && atLeast(myRole, "ADMIN") && user.id !== userProfile?.id && RANK[user.role] < RANK[myRole];
-  const canRole = myRole === "SUPER_ADMIN" && user.id !== userProfile?.id;
+  // Tài khoản đã tự xoá: backend trả 409 cho mở khoá / Premium / hạn mức / vai trò -> ẩn các nút đó, chỉ còn thu hồi phiên.
+  const accountStatus = adminAccountStatus(user);
+  const isDeleted = accountStatus === "deleted";
+  const canRole = myRole === "SUPER_ADMIN" && user.id !== userProfile?.id && !isDeleted;
   // §3 (A1): backend chỉ yêu cầu ADMIN; staff không bị chặn bởi xác thực nên không cần quy tắc bậc ở đây.
-  const canVerifyEmail = atLeast(myRole, "ADMIN") && user.id !== userProfile?.id && user.emailVerified === false;
+  // Tài khoản đã xoá không đăng nhập lại được nên xác thực email cũng vô nghĩa.
+  const canVerifyEmail =
+    atLeast(myRole, "ADMIN") && user.id !== userProfile?.id && user.emailVerified === false && !isDeleted;
   const targetIsStaff = isStaff(user.role);
   const premiumValue = premium ?? !!user.isPremium;
   const currentUntil = user.premiumUntil ? user.premiumUntil.slice(0, 10) : "";
@@ -157,13 +168,22 @@ export const AdminUserDetailPage: React.FC = () => {
           <span>Quay lại danh sách Người dùng</span>
         </Link>
 
-        {user.lockedAt && (
-          <span className="inline-flex items-center gap-1 text-label-sm font-semibold px-2.5 py-1 rounded-full bg-error/15 text-error border border-error/30 animate-pulse">
+        {isDeleted ? (
+          <span className="inline-flex items-center gap-1 text-label-sm font-semibold px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant border border-surface-container-high">
             <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
-              lock
+              person_off
             </span>
-            <span>Tài khoản đang bị khoá</span>
+            <span>Tài khoản đã bị xoá theo yêu cầu</span>
           </span>
+        ) : (
+          user.lockedAt && (
+            <span className="inline-flex items-center gap-1 text-label-sm font-semibold px-2.5 py-1 rounded-full bg-error/15 text-error border border-error/30 animate-pulse">
+              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
+                lock
+              </span>
+              <span>Tài khoản đang bị khoá</span>
+            </span>
+          )
         )}
       </div>
 
@@ -264,7 +284,9 @@ export const AdminUserDetailPage: React.FC = () => {
           {/* Dải huy hiệu trạng thái chính */}
           <div className="flex items-center gap-2 flex-wrap shrink-0">
             <RoleStatusBadge role={user.role} />
-            {user.lockedAt ? (
+            {accountStatus === "deleted" ? (
+              <AdminStatusBadge label="Đã xoá" tone="neutral" icon="person_off" />
+            ) : accountStatus === "locked" ? (
               <AdminStatusBadge label="Đang khoá" tone="error" icon="lock" />
             ) : (
               <AdminStatusBadge label="Hoạt động" tone="success" icon="check_circle" />
@@ -383,40 +405,45 @@ export const AdminUserDetailPage: React.FC = () => {
             <AdminDetailCard
               title="Kỷ luật & Trạng thái tài khoản"
               icon="gavel"
-              danger={!!user.lockedAt}
+              danger={accountStatus === "locked"}
               description={
-                user.lockedAt
-                  ? `Đang khoá từ ${formatShort(user.lockedAt)}: "${user.lockedReason || "Không ghi lý do"}"`
-                  : "Khoá tài khoản sẽ ngăn cản đăng nhập và thu hồi phiên ngay lập tức."
+                isDeleted
+                  ? `Chủ tài khoản đã tự xoá lúc ${formatShort(user.lockedAt)}: dữ liệu cá nhân đã ẩn danh, tài khoản bị khoá vĩnh viễn và không thể mở khoá.`
+                  : user.lockedAt
+                    ? `Đang khoá từ ${formatShort(user.lockedAt)}: "${user.lockedReason || "Không ghi lý do"}"`
+                    : "Khoá tài khoản sẽ ngăn cản đăng nhập và thu hồi phiên ngay lập tức."
               }
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                {!user.lockedAt && (
-                  <input
-                    value={lockReason}
-                    onChange={(e) => setLockReason(e.target.value)}
-                    maxLength={200}
-                    placeholder="Lý do khoá (hiển thị cho người dùng khi đăng nhập)"
-                    aria-label="Lý do khoá"
-                    className={`${adminFieldClass} flex-1`}
-                  />
-                )}
-                <Button
-                  variant={user.lockedAt ? "secondary" : "danger"}
-                  size="sm"
-                  onClick={() => toggleLock(user)}
-                >
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-                    {user.lockedAt ? "lock_open" : "lock"}
-                  </span>
-                  <span>{user.lockedAt ? "Mở khoá tài khoản" : "Khoá tài khoản"}</span>
-                </Button>
-              </div>
+              {/* Đã xoá: không có nút — mở khoá bị backend chặn (409), khoá lại thì đã khoá vĩnh viễn rồi */}
+              {!isDeleted && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  {!user.lockedAt && (
+                    <input
+                      value={lockReason}
+                      onChange={(e) => setLockReason(e.target.value)}
+                      maxLength={200}
+                      placeholder="Lý do khoá (hiển thị cho người dùng khi đăng nhập)"
+                      aria-label="Lý do khoá"
+                      className={`${adminFieldClass} flex-1`}
+                    />
+                  )}
+                  <Button
+                    variant={user.lockedAt ? "secondary" : "danger"}
+                    size="sm"
+                    onClick={() => toggleLock(user)}
+                  >
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                      {user.lockedAt ? "lock_open" : "lock"}
+                    </span>
+                    <span>{user.lockedAt ? "Mở khoá tài khoản" : "Khoá tài khoản"}</span>
+                  </Button>
+                </div>
+              )}
             </AdminDetailCard>
           )}
 
           {/* Card: Gói cước Pro & Hạn mức AI */}
-          {canAct && !targetIsStaff && (
+          {canAct && !targetIsStaff && !isDeleted && (
             <AdminDetailCard title="Gói cước & Hạn mức AI" icon="bolt">
               {/* Form Gói cước */}
               <form

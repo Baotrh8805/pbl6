@@ -128,17 +128,26 @@ export function runQuizChecks(assert: (cond: boolean, msg: string) => void): voi
   assert(!flagReasonsFor("typing").includes("BAD_DISTRACTOR") && flagReasonsFor("choice").length === 4, "Báo lỗi: câu gõ không có lý do câu nhiễu");
   // Lỗi dạng axios (không import axios): { response: { status, data: { message } } }.
   const httpErr = (status: number, message?: string) => ({ response: { status, data: message ? { status, message } : "" } });
-  assert(/rồi/.test(flagErrorMessage(httpErr(409)) ?? "") && /20/.test(flagErrorMessage(httpErr(429)) ?? ""), "Báo lỗi: câu riêng cho 409 / 429");
+  assert(/rồi/.test(flagErrorMessage(httpErr(409)) ?? "") && /20/.test(flagErrorMessage(httpErr(429)) ?? ""), "Báo lỗi: 409 / 429 body trống -> câu dự phòng");
+  const dupFlag = "Bạn đã báo lỗi câu hỏi này, quản trị viên đang xem xét.";
+  const flagLimit = "Bạn đã gửi quá nhiều báo lỗi câu hỏi, vui lòng thử lại sau.";
+  assert(flagErrorMessage(httpErr(409, dupFlag)) === dupFlag && flagErrorMessage(httpErr(429, flagLimit)) === flagLimit, "Báo lỗi: 409 / 429 có message -> đúng câu của server");
   assert(
     flagErrorMessage(httpErr(404, "No static resource api/quiz-questions/q1/flags.")) === SERVER_PENDING_MESSAGE &&
-      flagErrorMessage(httpErr(400, "Lý do không hợp lệ")) === null,
+      flagErrorMessage(httpErr(400, "Lý do không hợp lệ")) === "Lý do không hợp lệ",
     "Báo lỗi: route chưa có -> đang cập nhật; 400 -> thông điệp server"
   );
-  assert(flagErrorMessage(httpErr(404, "Không tìm thấy câu hỏi.")) === null, "Báo lỗi: 404 nghiệp vụ (thẻ đã xoá) -> lỗi thật của server, không phải đang cập nhật");
+  assert(flagErrorMessage(httpErr(404, "Không tìm thấy câu hỏi.")) === "Không tìm thấy câu hỏi.", "Báo lỗi: 404 nghiệp vụ (thẻ đã xoá) -> lỗi thật của server, không phải đang cập nhật");
+  assert(flagErrorMessage(new Error("Network Error")) === null, "Báo lỗi: lỗi mạng -> null (nơi gọi dùng extractErrorMessage)");
 
   // ---------- lỗi HTTP / sinh câu nhiễu ----------
-  assert(/AI/.test(distractorErrorMessage(httpErr(503)) ?? "") && distractorErrorMessage(httpErr(500)) === null, "Câu nhiễu: 503 -> dịch vụ AI tạm dừng");
+  assert(/AI/.test(distractorErrorMessage(httpErr(503, "Không kết nối được dịch vụ AI (distractors).")) ?? "") && distractorErrorMessage(httpErr(500)) === null, "Câu nhiễu: 503 -> dịch vụ AI tạm dừng (không lộ câu cho người vận hành)");
   assert(distractorErrorMessage(httpErr(405)) === SERVER_PENDING_MESSAGE && distractorErrorMessage(new Error("x")) === null, "Câu nhiễu: 405 -> đang cập nhật; lỗi mạng -> thông điệp chung");
+  assert(
+    distractorErrorMessage(httpErr(403, "Bạn chỉ có quyền xem bộ thẻ này.")) === "Bạn chỉ có quyền xem bộ thẻ này." &&
+      /quyền sửa/.test(distractorErrorMessage(httpErr(403)) ?? ""),
+    "Câu nhiễu: 403 -> câu của server; body trống -> câu dự phòng"
+  );
   const dr = parseDistractorResult({ updated: 10, withLookalike: 4, withHomophone: "2" });
   assert(dr.withHomophone === 2 && /10 thẻ/.test(describeDistractorResult(dr)), "Câu nhiễu: tóm tắt kết quả");
   assert(/Không có thẻ/.test(describeDistractorResult(parseDistractorResult(null))), "Câu nhiễu: response hỏng -> 0, câu báo không có gì");

@@ -729,6 +729,11 @@ export interface AdminUserRow {
     lockedAt: string | null;
     createdAt: string | null;
     deckCount: number;
+    /**
+     * Tài khoản đã tự xoá (email ẩn danh, khoá vĩnh viễn): backend luôn trả (boolean nguyên thuỷ) và trả 409 cho mở khoá /
+     * Premium / hạn mức / vai trò -> hiện nhãn "Đã xoá" thay "Bị khoá" và ẩn các nút đó (adminAccountStatus).
+     */
+    deleted: boolean;
 }
 
 export interface AdminUserDetail extends AdminUserRow {

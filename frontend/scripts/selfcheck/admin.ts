@@ -2,6 +2,7 @@
 // §8 thống kê AI). scripts/selfCheck.ts gọi runAdminChecks(assert). Chỉ hàm thuần; import tương đối + đuôi .ts để node
 // chạy trực tiếp (node --experimental-strip-types).
 import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "../../src/lib/apiErrorInfo.ts";
+import { adminAccountStatus } from "../../src/features/admin/adminUtils.ts";
 import type { AccountAppeal } from "../../src/types/adminModeration.types.ts";
 import {
   aiEngineRows,
@@ -44,6 +45,16 @@ export function runAdminChecks(assert: (cond: boolean, msg: string) => void): vo
     "Admin: 404 chỉ coi là chưa triển khai khi thân lỗi là của Spring / rỗng; 405 luôn là chưa có"
   );
   assert(isPendingError(SERVER_PENDING_MESSAGE) && !isPendingError("Lỗi khác") && !isPendingError(undefined), "Nhận ra lỗi 'đang cập nhật'");
+
+  // ---------- §3 tài khoản đã tự xoá (deleted) ----------
+  const lockedAt = "2026-10-19T00:00:00Z";
+  assert(
+    adminAccountStatus({ lockedAt, deleted: true }) === "deleted" &&
+      adminAccountStatus({ lockedAt, deleted: false }) === "locked" &&
+      adminAccountStatus({ lockedAt: null, deleted: false }) === "active",
+    "Đã tự xoá thắng 'bị khoá' (cũng có lockedAt nhưng backend 409 khi mở khoá / Premium / vai trò) -> nhãn 'Đã xoá', ẩn nút"
+  );
+  assert(adminAccountStatus({ lockedAt }) === "locked" && adminAccountStatus({ lockedAt: null }) === "active", "Thiếu deleted (backend cũ) = chưa xoá");
 
   // ---------- tỉ lệ & định dạng ----------
   assert(
