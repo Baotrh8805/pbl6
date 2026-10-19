@@ -3,7 +3,9 @@
 Nguồn 1: 5 file CSV data/jlpt/n5..n1.csv (expression,reading,meaning,tags).
   Tra (expression, reading) → expression → reading (chỉ khi từ toàn kana).
   Nhiều cấp → chọn cấp dễ nhất, confidence = 1/số cấp, sources liệt kê hết.
-  Vài từ lõi N5 mà danh sách xếp cao / bỏ sót (日本, 日本語, 日本人) được sửa tay lúc nạp (_LEVEL_FIXES).
+  Dòng gộp nhiều biến thể ("高校; 高等学校", "こうこう; こうとうがっこう") tách thành từng mục lúc nạp (_split_variants).
+  Vài từ lõi N5 mà danh sách xếp cao / bỏ sót (日本, 日本語, 日本人) được sửa tay lúc nạp (_LEVEL_FIXES); nghĩa sai rõ
+  ràng (中学校 "junior high school pupil") sửa bằng data/jlpt_meaning_overrides.csv (OVERRIDE_FILE).
 Nguồn 2 (fallback): wordfreq zipf_frequency(lemma, 'ja') → N4/N3/N2/N1, confidence 0.4.
 Không có → (None, 0.0, []).
 """
@@ -11,15 +13,19 @@ from __future__ import annotations
 
 import csv
 import math
+import re
 import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-from app.extract.jachars import is_kanji, kata_to_hira
+from app.extract.jachars import is_kana, is_kanji, kata_to_hira
 
 LEVELS = ["N5", "N4", "N3", "N2", "N1"]  # dễ → khó
 DATA_DIR = Path(__file__).parent.parent / "data" / "jlpt"
+# Nghĩa EN sửa tay (expression,reading,meaning) cho vài mục mà CSV ghi sai nghĩa thông dụng; nằm ngoài data/jlpt/ vì
+# thư mục đó do build_dicts.py ghi đè mỗi lần dựng lại — sửa thẳng n*.csv sẽ mất.
+OVERRIDE_FILE = Path(__file__).parent.parent / "data" / "jlpt_meaning_overrides.csv"
 
 _by_pair: dict[tuple[str, str], set[str]] | None = None
 _by_expr: dict[str, set[str]] = {}
@@ -43,6 +49,77 @@ def _clean(s: str) -> str:
     return s.strip().replace("～", "").replace("〜", "")
 
 
+# ----------------------------------------------------------------------------- tách dòng nhiều biến thể
+
+# Danh sách Tanos gộp các cách viết / cách đọc của cùng một mục vào một ô: "高校; 高等学校" + "こうこう; こうとうがっこう",
+# "行く" + "いく; ゆく", "回る、回す" + "まわる、まわす". Để nguyên thì cả chuỗi thành một "từ" — đồ thị Hán-Việt vẽ node
+# "高校; 高等学校" không có âm Hán-Việt, thẻ chữ Hán không căn được furigana, tra (高校, こうこう) không trúng cặp nào.
+# Chỉ tách ở ";" / "；" / "、": dấu phẩy và ngoặc trong ô là ghi chú ngữ cảnh ("(花を〜) 生ける, 活ける"), không phải biến thể.
+_VARIANT_SEP = re.compile(r"[;；、]")
+_HIRA_TAIL = re.compile(r"[ぁ-ゖ]+$")
+
+
+def _variants(cell: str) -> list[str]:
+    """Một ô expression / reading → các biến thể đã _clean, bỏ phần rỗng ("～くらい; ぐらい" → ["くらい", "ぐらい"])."""
+    return [v for v in (_clean(p) for p in _VARIANT_SEP.split(cell or "")) if v]
+
+
+def _kana_fits(expr: str, reading: str) -> bool:
+    """Phần kana của cách viết phải nằm đúng chỗ trong cách đọc (mỗi cụm chữ Hán khớp ≥ 1 kana bất kỳ): お金持ち (お…ち)
+    nhận おかねもち nhưng không nhận かねもち — cách đọc thứ hai của dòng "お金持ち / かねもち; おかねもち" là của 金持ち."""
+    parts: list[str] = []
+    for ch in expr:
+        if is_kana(ch) and not is_kanji(ch):   # ヶ thuộc cả hai lớp: coi như chữ Hán (一ヶ月 いっかげつ)
+            parts.append(re.escape(kata_to_hira(ch)))
+        elif not parts or parts[-1] != ".+":
+            parts.append(".+")
+    return re.fullmatch("".join(parts), reading) is not None
+
+
+def _share_okurigana(exprs: list[str], readings: list[str]) -> list[str]:
+    """Viết tắt kiểu "堅; 硬; 固い" / "伯父; 叔父さん": các biến thể trước bỏ phần kana cuối dùng chung với biến thể cuối.
+    Gắn lại phần đó cho biến thể kết thúc bằng chữ Hán khi mọi cách đọc đều kết thúc bằng nó (かたい → 堅い, 硬い, 固い);
+    không thì giữ nguyên ("足; 脚" không có đuôi kana)."""
+    m = _HIRA_TAIL.search(exprs[-1])
+    # biến thể cuối toàn kana ("足; あし") thì phần "đuôi" là cả từ, không phải okurigana → không gắn
+    if len(exprs) < 2 or not m or m.start() == 0 or not all(r.endswith(m.group()) for r in readings):
+        return exprs
+    return [e + m.group() if is_kanji(e[-1]) else e for e in exprs[:-1]] + [exprs[-1]]
+
+
+def _split_variants(expression: str, reading: str) -> list[tuple[str, str]]:
+    """Ô expression + ô reading của một dòng CSV → [(cách viết, cách đọc hiragana)], mỗi biến thể một mục.
+    Số biến thể hai ô bằng nhau → ghép theo vị trí (高校 ↔ こうこう, 高等学校 ↔ こうとうがっこう). Lệch nhau ("足; 脚" / あし,
+    "行く" / "いく; ゆく") → mỗi cách viết nhận mọi cách đọc khớp phần kana của nó (_kana_fits); không cách đọc nào khớp
+    thì nhận hết, không bỏ mất mục. Dòng thường (một biến thể) → đúng một cặp như trước."""
+    exprs = _variants(expression)
+    if not exprs:
+        return []
+    readings = [kata_to_hira(r) for r in _variants(reading)] or [""]
+    if len(exprs) == len(readings):
+        return list(zip(exprs, readings))
+    out: list[tuple[str, str]] = []
+    for expr in _share_okurigana(exprs, readings):
+        fits = [r for r in readings if r and _kana_fits(expr, r)] or readings
+        out.extend((expr, r) for r in fits)
+    return out
+
+
+def _read_overrides() -> dict[tuple[str, str], str]:
+    """jlpt_meaning_overrides.csv → {(expression, cách đọc hiragana): nghĩa}. Khoá chuẩn hoá như CSV JLPT (_clean, bỏ ～,
+    katakana → hiragana) nên ghi "～人" hay "人" đều được. Thiếu file / dòng thiếu nghĩa → bỏ qua, dòng đầu thắng."""
+    out: dict[tuple[str, str], str] = {}
+    if not OVERRIDE_FILE.exists():
+        return out
+    with open(OVERRIDE_FILE, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            expr = _clean(row.get("expression") or "")
+            meaning = (row.get("meaning") or "").strip()
+            if expr and meaning:
+                out.setdefault((expr, kata_to_hira(_clean(row.get("reading") or ""))), meaning)
+    return out
+
+
 # Sửa tay danh sách Tanos: 日本 chỉ có trong n3.csv (tag cũ JLPT_2 / JLPT_3) dù là từ bài 1 của mọi giáo trình N5
 # (CSV còn ghi Genki_Ln.1), còn 日本語 / 日本人 không có trong danh sách nào (wordfreq xếp N3) → học viên dán câu N5 thấy
 # 日本 nằm trong lát N3 của thanh cấp độ. Mục ở đây THAY mọi dòng CSV của cùng (expression, reading) và chèn vào đúng
@@ -56,9 +133,10 @@ _LEVEL_FIXES: dict[tuple[str, str], tuple[str, str]] = {   # (expression, readin
 
 
 def _read_rows() -> dict[str, list[tuple[str, str, str]]]:
-    """Cấp → các dòng (expression, reading hiragana, meaning) theo thứ tự CSV, đã áp _LEVEL_FIXES: dòng CSV của một cặp
-    được sửa bị bỏ, mục sửa đứng đầu cấp mới (dùng nghĩa CSV của cặp đó nếu có). Không có file CSV nào → bảng rỗng, kể
-    cả mục sửa (để available() vẫn báo thiếu dữ liệu)."""
+    """Cấp → các mục (expression, reading hiragana, meaning) theo thứ tự CSV; dòng nhiều biến thể tách thành nhiều mục
+    liền nhau cùng cấp, cùng nghĩa (_split_variants). Đã áp _LEVEL_FIXES: mục CSV của một cặp được sửa bị bỏ, mục sửa
+    đứng đầu cấp mới (dùng nghĩa CSV của cặp đó nếu có); rồi nghĩa sửa tay (OVERRIDE_FILE) thắng mọi nghĩa khác. Không
+    có file CSV nào → bảng rỗng, kể cả mục sửa (để available() vẫn báo thiếu dữ liệu)."""
     rows: dict[str, list[tuple[str, str, str]]] = {level: [] for level in LEVELS}
     fixed_meaning: dict[tuple[str, str], str] = {}
     found = False
@@ -69,21 +147,20 @@ def _read_rows() -> dict[str, list[tuple[str, str, str]]]:
         found = True
         with open(path, encoding="utf-8", newline="") as fh:
             for row in csv.DictReader(fh):
-                expr = _clean(row.get("expression", ""))
-                reading = kata_to_hira(_clean(row.get("reading", "")))
-                if not expr:
-                    continue
                 meaning = (row.get("meaning") or "").strip()
-                if (expr, reading) in _LEVEL_FIXES:
-                    if meaning:
-                        fixed_meaning.setdefault((expr, reading), meaning)
-                    continue
-                rows[level].append((expr, reading, meaning))
+                for expr, reading in _split_variants(row.get("expression") or "", row.get("reading") or ""):
+                    if (expr, reading) in _LEVEL_FIXES:
+                        if meaning:
+                            fixed_meaning.setdefault((expr, reading), meaning)
+                        continue
+                    rows[level].append((expr, reading, meaning))
     if found:
+        overrides = _read_overrides()
         for level in LEVELS:
             fixes = [(expr, reading, fixed_meaning.get((expr, reading)) or meaning)
                      for (expr, reading), (lv, meaning) in _LEVEL_FIXES.items() if lv == level]
-            rows[level] = fixes + rows[level]
+            rows[level] = [(expr, reading, overrides.get((expr, reading), meaning))
+                           for expr, reading, meaning in fixes + rows[level]]
     return rows
 
 

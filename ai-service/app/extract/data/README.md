@@ -17,7 +17,8 @@ Máy mới clone chỉ cần dựng 4 file không commit: `--only jmdict`, `--on
 
 | File | Commit? | Nguồn | Giấy phép |
 |---|---|---|---|
-| `jlpt/n5.csv … n1.csv` | Có (~500 KB) | [elzup/jlpt-word-list](https://github.com/elzup/jlpt-word-list) `src/n*.csv`, gốc từ danh sách của Jonathan Waller (tanos.co.uk) | CC BY 4.0 theo tanos.co.uk (repo elzup ghi "dữ liệu theo giấy phép của tanos") |
+| `jlpt/n5.csv … n1.csv` | Có (~500 KB) | [elzup/jlpt-word-list](https://github.com/elzup/jlpt-word-list) `src/n*.csv`, gốc từ danh sách của Jonathan Waller (tanos.co.uk). Giữ nguyên văn (dựng lại bằng `--only jlpt` sẽ ghi đè) — ~30 dòng gộp nhiều biến thể trong một ô (`高校; 高等学校` / `こうこう; こうとうがっこう`, `行く` / `いく; ゆく`, `回る、回す`) được `classifier._split_variants` tách lúc nạp, xem mục cuối tệp này | CC BY 4.0 theo tanos.co.uk (repo elzup ghi "dữ liệu theo giấy phép của tanos") |
+| `jlpt_meaning_overrides.csv` | Có (< 1 KB) | `expression,reading,meaning` — nghĩa EN sửa tay cho vài mục JLPT mà cột `meaning` ghi sai nghĩa thông dụng; thắng nghĩa CSV lúc nạp. Nằm ngoài `jlpt/` vì thư mục đó do `build_dicts.py` ghi đè. Nguồn và tiêu chí ở mục cuối tệp này. Không có script tải về, sửa trực tiếp | Nội dung tự biên soạn |
 | `unihan_vietnamese.csv` | Có (~120 KB) | Unicode [Unihan](https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip) trường `kVietnamese` (giữ âm đầu nếu có nhiều) | [Unicode License](https://www.unicode.org/license.txt) |
 | `unihan_japanese.csv` | Có (~480 KB) | Unihan trường `kJapanese` (on katakana + kun hiragana), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
 | `unihan_rs.csv` | Có (~280 KB) | Unihan `Unihan_IRGSources.txt`: `kRSUnicode` (bộ thủ Khang Hi `.` nét ngoài bộ; lấy giá trị đầu, bỏ dấu `'` của bộ dạng giản thể) và `kTotalStrokes` (giá trị đầu), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
@@ -103,3 +104,34 @@ bố cục danh sách). `heteronyms.resolve` chỉ đổi cách đọc Sudachi k
 pipeline khi đó ghi `readingNote`, hạ `levelConfidence` 0.1, thêm `heteronym:<cue>` vào `levelSources`. Cách đọc tài
 liệu khai báo (ruby / cột kana) không bao giờ bị đổi. Thiếu file / YAML hỏng → bảng rỗng, giữ cách đọc Sudachi.
 Bảng nạp một lần → sửa file xong phải khởi động lại service.
+
+## Danh sách JLPT: dòng nhiều biến thể và nghĩa sửa tay (`app/extract/jlpt/classifier.py`, LC-11)
+
+Danh sách Tanos gộp các cách viết / cách đọc của một mục vào cùng ô, nối bằng `; ` (hay `、`). `classifier._read_rows`
+tách mỗi dòng như vậy thành nhiều mục **cùng cấp, cùng nghĩa** trước mọi chỉ mục (phân cấp, đồng âm, chữ → từ), nên
+đồ thị Hán-Việt, thẻ chữ Hán, phương án nhiễu… đều thấy `高校` và `高等学校` là hai từ riêng, mỗi từ một cách đọc và
+âm Hán-Việt:
+
+- Hai ô cùng số biến thể → ghép theo vị trí (`高校` ↔ `こうこう`, `高等学校` ↔ `こうとうがっこう`).
+- Lệch số → mỗi cách viết nhận mọi cách đọc khớp phần kana của nó (`行く` → `いく`, `ゆく`; `足; 脚` → cùng `あし`;
+  `お金持ち` chỉ nhận `おかねもち`, không nhận `かねもち`); không cách đọc nào khớp thì nhận hết.
+- Viết tắt dùng chung đuôi kana với biến thể cuối được gắn lại: `堅; 硬; 固い` → `堅い`, `硬い`, `固い`;
+  `伯父; 叔父さん` → `伯父さん`, `叔父さん`.
+- Dấu phẩy và ngoặc trong ô là ghi chú ngữ cảnh (`(花を〜) 生ける, 活ける`, `パート (タイム)`), **không** tách.
+
+`jlpt_meaning_overrides.csv` (`expression,reading,meaning`) thay cột `meaning` của đúng cặp (cách viết, cách đọc) sau
+khi tách, thắng cả nghĩa của `_LEVEL_FIXES`; khoá chuẩn hoá như CSV JLPT (bỏ `～`, katakana → hiragana) nên ghi `～人`
+hay `人` đều được. Dòng không trúng mục nào thì không thêm từ mới (test kiểm mỗi dòng phải trúng một mục thật).
+
+Cách lập danh sách (19/10/2026): quét `n5.csv` / `n4.csv`, đối chiếu cột `meaning` với gloss JMdict (`jmdict.sqlite`)
+của cùng (cách viết, cách đọc) — liệt kê dòng không chung từ nào với JMdict và dòng thêm danh từ chỉ người / nơi chốn
+("pupil", "student", "person"…) mà JMdict không có — rồi duyệt tay. **Chỉ giữ lỗi rõ ràng** (nghĩa của một từ khác),
+không sửa gloss chỉ thiếu sắc thái hay ghi kiểu phụ tố (`～時間` "~ hours", `～本` "counter for…" là đúng cho phụ tố):
+
+| Mục | CSV ghi | Sửa thành | Lý do |
+|---|---|---|---|
+| 中学校 ちゅうがっこう (N4) | junior high school pupil | junior high school | Nghĩa của 中学生; JMdict: "junior high school, middle school" |
+| 辞典 じてん (N4) | encyclopedia, reference book | dictionary, lexicon | "encyclopedia" là 事典 (cùng cách đọc); JMdict: "dictionary, lexicon" |
+| ～人 じん (N5) | counter for people | ~ person (nationality, e.g. American, Japanese) | Lượng từ đếm người là ～人 にん (dòng riêng trong n5.csv); じん là hậu tố quốc tịch / nghề (日本人, アメリカ人) |
+
+Giữ bảng ≤ 30 dòng; sửa xong phải khởi động lại service (bảng nạp lười một lần).

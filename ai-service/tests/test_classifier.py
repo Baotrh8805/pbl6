@@ -1,3 +1,5 @@
+import pytest
+
 from app.extract.jlpt import classifier
 
 
@@ -109,3 +111,105 @@ def test_level_fixes_not_applied_without_csv(tmp_path, monkeypatch):
                         ("_entries", []), ("_idx_expr", {}), ("_idx_reading", {}), ("_idx_char", {})):
         monkeypatch.setattr(classifier, name, empty)
     assert not classifier.available()
+
+
+# ----------------------------------------------------------------------------- LC-11: dòng nhiều biến thể, nghĩa sửa tay
+
+def _fresh_tables(monkeypatch, data_dir, override_file):
+    """Trỏ classifier sang CSV tạm và đưa bảng về trạng thái chưa nạp (monkeypatch trả lại bảng thật sau test)."""
+    monkeypatch.setattr(classifier, "DATA_DIR", data_dir)
+    monkeypatch.setattr(classifier, "OVERRIDE_FILE", override_file)
+    for name, empty in (("_by_pair", None), ("_by_expr", {}), ("_by_reading", {}), ("_meaning", {}),
+                        ("_entries", []), ("_idx_expr", {}), ("_idx_reading", {}), ("_idx_char", {})):
+        monkeypatch.setattr(classifier, name, empty)
+
+
+def test_split_variants_pairs_by_index_or_shares_readings():
+    sv = classifier._split_variants
+    # cùng số biến thể → ghép theo vị trí; katakana → hiragana; ～ bỏ như dòng thường
+    assert sv("高校; 高等学校", "こうこう; こうとうがっこう") == [("高校", "こうこう"), ("高等学校", "こうとうがっこう")]
+    assert sv("キロ; キログラム", "キロ; キログラム") == [("キロ", "きろ"), ("キログラム", "きろぐらむ")]
+    assert sv("～くらい; ぐらい", "～くらい; ぐらい") == [("くらい", "くらい"), ("ぐらい", "ぐらい")]
+    assert sv("回る、回す", "まわる、まわす") == [("回る", "まわる"), ("回す", "まわす")]
+    # lệch số → mỗi cách viết nhận mọi cách đọc
+    assert sv("足; 脚", "あし") == [("足", "あし"), ("脚", "あし")]
+    assert sv("行く", "いく; ゆく") == [("行く", "いく"), ("行く", "ゆく")]
+    # … trừ cách đọc không khớp phần kana của cách viết (かねもち là của 金持ち)
+    assert sv("お金持ち", "かねもち; おかねもち") == [("お金持ち", "おかねもち")]
+    # viết tắt dùng chung okurigana / さん với biến thể cuối
+    assert sv("堅; 硬; 固い", "かたい") == [("堅い", "かたい"), ("硬い", "かたい"), ("固い", "かたい")]
+    assert sv("伯父; 叔父さん", "おじさん") == [("伯父さん", "おじさん"), ("叔父さん", "おじさん")]
+    # dòng thường / thiếu cách đọc / dấu phẩy trong ô (ghi chú, không phải biến thể) → một mục như trước
+    assert sv("勉強", "べんきょう") == [("勉強", "べんきょう")]
+    assert sv("猫", "") == [("猫", "")]
+    assert sv("(花を〜) 生ける, 活ける", "(はなを～) いける") == [("(花を) 生ける, 活ける", "(はなを) いける")]
+    assert sv(" ; ", "あ") == []
+
+
+def test_multi_variant_rows_load_as_separate_entries(tmp_path, monkeypatch):
+    (tmp_path / "n4.csv").write_text(
+        "expression,reading,meaning,tags\n"
+        "高校; 高等学校,こうこう; こうとうがっこう,high school; senior high school,JLPT\n"
+        "堅; 硬; 固い,かたい,\"solid, hard, firm\",JLPT\n", encoding="utf-8")
+    _fresh_tables(monkeypatch, tmp_path, tmp_path / "missing.csv")
+    monkeypatch.setattr(classifier, "_LEVEL_FIXES", {})   # mục sửa 日本… sẽ đứng đầu N5, không liên quan test này
+    classifier._load()
+    assert classifier._entries == [
+        ("高校", "こうこう", "high school; senior high school", "N4"),
+        ("高等学校", "こうとうがっこう", "high school; senior high school", "N4"),
+        ("堅い", "かたい", "solid, hard, firm", "N4"), ("硬い", "かたい", "solid, hard, firm", "N4"),
+        ("固い", "かたい", "solid, hard, firm", "N4")]
+    assert classifier.classify("高校", "こうこう", False) == ("N4", 1.0, ["jlpt_list:N4"])
+    assert classifier.classify("高等学校", None, False) == ("N4", 1.0, ["jlpt_list:N4"])
+    assert classifier.meaning_hint("高等学校") == "high school; senior high school"
+    # chỉ mục chữ / cách đọc thấy từng biến thể: 学 chỉ có trong 高等学校, đồng âm かたい gom cả ba cách viết
+    assert [e[0] for e in classifier.entries_containing("学")] == ["高等学校"]
+    assert [e[0] for e in classifier.entries_containing("校")] == ["高校", "高等学校"]
+    assert [e[0] for e in classifier.homophones_jlpt("かたい")] == ["堅い", "硬い", "固い"]
+    assert classifier.entries_of("高校; 高等学校") == []
+
+
+def test_meaning_overrides_replace_csv_gloss(tmp_path, monkeypatch):
+    (tmp_path / "n5.csv").write_text("expression,reading,meaning,tags\n～人,～じん,counter for people,\n"
+                                     "日本,にほん,Japan (CSV),\n", encoding="utf-8")
+    (tmp_path / "n4.csv").write_text("expression,reading,meaning,tags\n中学校,ちゅうがっこう,junior high school pupil,\n"
+                                     "高校; 高等学校,こうこう; こうとうがっこう,high school,\n", encoding="utf-8")
+    (tmp_path / "over.csv").write_text(
+        "expression,reading,meaning\n"
+        "中学校,ちゅうがっこう,junior high school\n"
+        "人,ジン,~ person (nationality)\n"          # khoá chuẩn hoá: không ～, katakana → hiragana vẫn khớp ～人 / じん
+        "高等学校,こうとうがっこう,senior high school\n"   # áp sau khi tách: chỉ biến thể này đổi
+        "日本,にほん,Japan (override)\n"            # thắng cả nghĩa CSV của mục _LEVEL_FIXES
+        "存在しない,そんざいしない,nothing\n"       # không có trong CSV → không thêm mục
+        "猫,ねこ,\n", encoding="utf-8")             # thiếu nghĩa → bỏ qua
+    _fresh_tables(monkeypatch, tmp_path, tmp_path / "over.csv")
+    monkeypatch.setattr(classifier, "_LEVEL_FIXES", {("日本", "にほん"): ("N5", "Japan")})
+    assert classifier.entries_of("中学校") == [("ちゅうがっこう", "junior high school", "N4")]
+    assert classifier.meaning_hint("中学校") == "junior high school"
+    assert classifier.entries_of("人") == [("じん", "~ person (nationality)", "N5")]
+    assert classifier.entries_of("高校") == [("こうこう", "high school", "N4")]
+    assert classifier.entries_of("高等学校") == [("こうとうがっこう", "senior high school", "N4")]
+    assert classifier.entries_of("日本") == [("にほん", "Japan (override)", "N5")]
+    assert classifier.entries_of("存在しない") == [] and classifier.entries_of("猫") == []
+
+
+def test_meaning_overrides_file_is_optional(tmp_path, monkeypatch):
+    (tmp_path / "n4.csv").write_text("expression,reading,meaning,tags\n中学校,ちゅうがっこう,junior high school pupil,\n",
+                                     encoding="utf-8")
+    _fresh_tables(monkeypatch, tmp_path, tmp_path / "missing.csv")
+    assert classifier.entries_of("中学校") == [("ちゅうがっこう", "junior high school pupil", "N4")]
+
+
+@pytest.mark.skipif(not (classifier.DATA_DIR / "n4.csv").exists() or not classifier.OVERRIDE_FILE.exists(),
+                    reason="chưa có jlpt/n4.csv / jlpt_meaning_overrides.csv")
+def test_real_overrides_file_rows_hit_real_csv_entries():
+    """Mỗi dòng sửa tay phải trúng đúng một mục thật (sai chính tả khoá → dòng chết, nghĩa sai vẫn hiện)."""
+    import csv
+    overrides = classifier._read_overrides()
+    assert 0 < len(overrides) <= 30
+    classifier._load()
+    for (expr, reading), meaning in overrides.items():
+        assert (reading, meaning) in [(r, m) for r, m, _ in classifier.entries_of(expr)], (expr, reading)
+    assert classifier.entries_of("中学校") == [("ちゅうがっこう", "junior high school", "N4")]
+    with open(classifier.OVERRIDE_FILE, encoding="utf-8", newline="") as fh:
+        assert next(csv.reader(fh)) == ["expression", "reading", "meaning"]

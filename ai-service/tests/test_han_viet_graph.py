@@ -279,3 +279,27 @@ def test_real_data_nhat_and_hoc():
         assert {"NHAN", "NHÂN"} <= readings and readings <= {s["reading"] for s in han_viet_graph.suggest("nhan", 50)}
     finally:
         han_viet_graph.reset()
+
+
+@needs_real
+def test_real_data_multi_variant_rows_are_separate_words():
+    """LC-11: n4.csv gộp "高校; 高等学校" / "こうこう; こうとうがっこう" trong một dòng → đồ thị từng vẽ một node
+    "高校; 高等学校" không có âm Hán-Việt. Sau khi tách, mỗi cách viết là một node riêng với cách đọc và Hán-Việt của nó;
+    中学校 mang nghĩa sửa tay (CSV ghi "junior high school pupil")."""
+    han_viet_graph.reset()
+    try:
+        words = {n["label"]: n for n in _by_type(han_viet_graph.graph("HỌC", limit_words=100), "word")}
+        senior = words["高等学校"]
+        assert senior["reading"] == "こうとうがっこう" and senior["level"] == "N4" and senior["hanViet"] == "CAO ĐẲNG HỌC HIỆU"
+        middle = words["中学校"]
+        assert middle["meaning"] == "junior high school" and middle["hanViet"] == "TRUNG HỌC HIỆU"
+        # 高校 không chứa 学 nên nằm dưới 校 (HIỆU), cạnh 高等学校 — hai node riêng, không còn node gộp
+        g = han_viet_graph.graph("HIỆU", limit_words=100)
+        words = {n["label"]: n for n in _by_type(g, "word")}
+        assert words["高校"]["reading"] == "こうこう" and words["高校"]["hanViet"] == "CAO HIỆU"
+        assert words["高等学校"]["reading"] == "こうとうがっこう"
+        assert {"from": "k:校", "to": "w:高校", "type": "in_word"} in g["edges"]
+        assert {"from": "k:校", "to": "w:高等学校", "type": "in_word"} in g["edges"]
+        assert not [label for label in words if ";" in label or "；" in label or "、" in label]
+    finally:
+        han_viet_graph.reset()
