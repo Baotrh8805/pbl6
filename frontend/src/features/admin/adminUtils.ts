@@ -100,6 +100,10 @@ export const AUDIT_TARGET_LABELS: Record<string, string> = {
   EXTRACTION: "Bóc tách",
   REPORT: "Báo cáo",
   SETTINGS: "Cấu hình",
+  QUESTION: "Câu hỏi quiz",
+  MNEMONIC: "Mẹo nhớ",
+  KNOWLEDGE_SOURCE: "Nguồn tri thức",
+  APPEAL: "Khiếu nại",
 };
 
 /** Vai trò được phép gán qua UI (SUPER_ADMIN chọn). */

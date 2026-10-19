@@ -8,6 +8,12 @@ export type NotificationType =
     | "COMMENT_CLEARED"
     | "PREMIUM_CHANGED"
     | "ROLE_CHANGED"
+    | "LEARNING_PATH_READY"
+    | "LEARNING_PATH_FAILED"
+    | "LEARNING_PATH_REMINDER"
+    | "LEARNING_PATH_CHAPTER_PASSED"
+    | "LEARNING_PATH_COMPLETED"
+    | "MNEMONIC_REVIEWED"
     | (string & {});
 
 export interface AppNotification {
@@ -35,12 +41,16 @@ export const markAllNotificationsRead = async (): Promise<void> => {
 };
 
 const str = (v: unknown): string => (typeof v === "string" && v ? v : "");
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 /** Câu hiển thị cho từng loại; loại chưa biết (thêm sau ở backend) vẫn hiện được nhờ fallback. */
 export const describeNotification = (n: AppNotification): { text: string; to?: string } => {
     const p = n.payload;
     const title = str(p.deckTitle) ? `"${str(p.deckTitle)}"` : "một bộ thẻ";
     const deckLink = str(p.deckId) ? `/decks/${str(p.deckId)}` : undefined;
+    // Lộ trình: READY/FAILED/REMINDER/COMPLETED gửi `title`, CHAPTER_PASSED gửi `pathTitle`.
+    const pathName = str(p.title) || str(p.pathTitle) ? `"${str(p.title) || str(p.pathTitle)}"` : "học tập";
+    const pathLink = str(p.pathId) ? `/roadmap/${encodeURIComponent(str(p.pathId))}` : "/roadmap";
     switch (n.type) {
         case "REPORT_RESOLVED": {
             const outcome =
@@ -63,6 +73,31 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
             return { text: p.premium ? "Tài khoản của bạn đã được nâng lên Premium." : "Tài khoản của bạn không còn Premium." };
         case "ROLE_CHANGED":
             return { text: p.role === "USER" ? "Tài khoản của bạn đã trở lại vai trò người học." : `Tài khoản của bạn được chuyển sang vai trò ${str(p.role)}.` };
+        case "LEARNING_PATH_READY":
+            return { text: `Bản nháp lộ trình ${pathName} đã sẵn sàng${num(p.chapters) > 0 ? ` (${num(p.chapters)} chương)` : ""}. Xem lại và kích hoạt để bắt đầu học.`, to: pathLink };
+        case "LEARNING_PATH_FAILED":
+            return { text: `Không tạo được lộ trình ${pathName}.${str(p.reason) ? ` Lý do: ${str(p.reason)}` : ""}`, to: pathLink };
+        case "LEARNING_PATH_REMINDER": {
+            const day = num(p.dayIndex) > 0 ? `Ngày ${num(p.dayIndex)}${num(p.totalDays) > 0 ? `/${num(p.totalDays)}` : ""} của lộ trình` : "Lộ trình";
+            const work = [
+                num(p.newCount) > 0 ? `${num(p.newCount)} thẻ mới` : "",
+                num(p.dueCount) > 0 ? `${num(p.dueCount)} thẻ đến hạn` : "",
+                num(p.behindCount) > 0 ? `${num(p.behindCount)} thẻ còn nợ` : "",
+            ].filter(Boolean);
+            return { text: `${day} ${pathName}: hôm nay có ${work.length ? work.join(", ") : "bài cần học"}.`, to: pathLink };
+        }
+        case "LEARNING_PATH_CHAPTER_PASSED":
+            return { text: `Bạn đã qua chương${str(p.chapterTitle) ? ` "${str(p.chapterTitle)}"` : ""} của lộ trình ${pathName} (${num(p.pct)}%).`, to: pathLink };
+        case "LEARNING_PATH_COMPLETED":
+            return { text: `Chúc mừng! Bạn đã hoàn thành lộ trình ${pathName}.`, to: pathLink };
+        case "MNEMONIC_REVIEWED": {
+            const kanji = str(p.kanji);
+            const subject = `Mẹo nhớ cho chữ ${kanji || "Hán"} của bạn`;
+            const to = kanji ? `/kanji?k=${encodeURIComponent(kanji)}` : "/kanji";
+            return p.status === "REJECTED"
+                ? { text: `${subject} đã bị từ chối.${str(p.note) ? ` Lý do: ${str(p.note)}` : ""}`, to }
+                : { text: `${subject} đã được duyệt.${str(p.note) ? ` Ghi chú: ${str(p.note)}` : ""}`, to };
+        }
         default:
             return { text: `Thông báo: ${n.type}` };
     }
