@@ -55,6 +55,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -125,6 +126,8 @@ public class LearningPathService {
     // Bài kiểm tra chương dùng lại lượt quiz exam của bộ thẻ chương
     private final QuizAttemptService quizAttempts;
     private final TransactionTemplate tx;
+    // GET /{id}: đọc trước, chỉ mở giao dịch ghi khi bản nháp chương "Ngày N" đang lưu bố cục cũ (xem get)
+    private final TransactionTemplate readTx;
     private final ZoneId zone;
 
     public LearningPathService(LearningPathRepository paths, LearningPathChapterRepository chapters,
@@ -149,6 +152,8 @@ public class LearningPathService {
         this.users = users;
         this.settings = settings;
         this.tx = new TransactionTemplate(txm);
+        this.readTx = new TransactionTemplate(txm);
+        this.readTx.setReadOnly(true);
         this.zone = ZoneId.of(zone);
     }
 
@@ -667,46 +672,54 @@ public class LearningPathService {
      * LP-01 + LP-08: bản nháp không nhận ra chương lưu từ trước khi bố cục chương "Ngày N" thành hàm thuần ({@link #layoutDayChapters})
      * — gộp một chiều khi bỏ tick, gộp tay vào chương "Ngày N" (giờ 400) — vẫn mang cấu trúc cũ. GET chỉ đồng bộ tên (đọc, không
      * ghi) còn kích hoạt và lần ghi đầu tiên chia lại, nên bản xem trước người dùng duyệt khác lộ trình họ nhận (số bộ thẻ, lịch).
-     * Khởi động: đưa mọi bản nháp ấy về đúng bố cục ({@link #fitDayChapters}) để GET hiện đúng thứ kích hoạt tạo ra. Bố cục là hàm
-     * thuần, cả id chương ({@link #keepRunIds}), nên bản nháp đã đúng không bị ghi gì và chạy lại ở lần khởi động sau không đổi gì.
-     * Mỗi bản nháp một giao dịch, khoá dòng như mọi lối ghi; job đang chạy thì bỏ qua (lần ghi đầu sau khi job xong sẽ chia lại);
-     * lỗi ở một bản nháp chỉ ghi log, không chặn khởi động.
+     * Chuẩn hoá LƯỜI và theo chủ: {@link #get} gọi hàm này cho bản nháp của chính người đang mở nó, trước khi dựng response, khi
+     * lượt đọc thấy bố cục đang lưu khác bố cục đúng ({@link #dayLayoutStale}) — một lần cho mỗi bản nháp cũ. Không quét lúc khởi
+     * động: DB dùng chung cả nhóm (máy khác chạy nhánh / mã cũ hơn) nên mỗi lần khởi động nhánh này ở bất kỳ máy nào sẽ ghi lên
+     * bản nháp của mọi người dùng (D7: thay đổi trên DB chung chỉ thêm, tối thiểu).
+     * <p>path là dòng caller vừa khoá — cùng thứ tự khoá với mọi lối ghi (dòng lộ trình trước, rồi chương / item) nên không deadlock
+     * với chúng — và điều kiện được xét LẠI sau khi khoá: kích hoạt hay "Dịch lại nghĩa" có thể chen vào giữa lượt đọc của GET và
+     * lượt khoá; job đang chạy thì bỏ qua (worker ghi item, GET đầu tiên sau khi job xong sẽ chia lại). Bố cục là hàm thuần, cả id
+     * chương ({@link #keepRunIds}), nên bản nháp đã đúng không có giá trị nào đổi → không câu UPDATE nào; hai GET song song chỉ ghi
+     * một lần: GET sau chờ khoá, đọc lại bố cục đã chuẩn hoá và không đổi gì.
      */
-    @EventListener(ApplicationReadyEvent.class)
-    public void relayoutDayChapterDraftsOnStartup() {
-        relayoutDayChapterDrafts(); // listener trả void: giá trị trả về của @EventListener bị phát lại thành sự kiện mới
-    }
-
-    /** Thân của {@link #relayoutDayChapterDraftsOnStartup}; trả số bản nháp đã đổi bố cục (test gọi trực tiếp). */
-    public int relayoutDayChapterDrafts() {
-        int changed = 0;
-        for (UUID id : paths.findDayChapterDraftIds()) {
-            try {
-                if (Boolean.TRUE.equals(tx.execute(st -> relayoutDayChapterDraft(id)))) changed++;
-            } catch (RuntimeException e) {
-                log.warn("Không chia lại được chương bản nháp {} khi khởi động: {}", id, e.toString());
-            }
-        }
-        if (changed > 0) log.info("Đưa {} bản nháp về đúng bố cục chương theo ngày sau khi khởi động", changed);
-        return changed;
-    }
-
-    /** Một bản nháp của {@link #relayoutDayChapterDrafts} (trong giao dịch của caller); true = bố cục / tên chương đã đổi. */
-    private boolean relayoutDayChapterDraft(UUID id) {
-        LearningPath found = paths.findById(id).orElse(null);
-        if (found == null) return false;
-        LearningPath path = paths.lockByIdAndUserId(id, found.getUserId()).orElse(null);
-        if (path == null || !LearningPath.DRAFT.equals(path.getStatus())
-                || Boolean.TRUE.equals(path.getChaptersDetected()) || path.getJobId() == null) {
-            return false;
-        }
-        ExtractionJob job = jobs.findById(path.getJobId()).orElse(null);
-        if (job == null || !job.isTerminal()) return false; // worker đang ghi item: chờ lần ghi sau
-        List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
-        List<ExtractionItem> all = items.findByJobIdOrderByPositionAsc(job.getId());
+    private void relayoutDayChapterDraft(LearningPath path) {
+        if (!dayLayoutDue(path)) return;
+        List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(path.getId());
+        List<ExtractionItem> all = items.findByJobIdOrderByPositionAsc(path.getJobId());
         List<String> before = layoutKey(rows, all);
         List<LearningPathChapter> after = fitDayChapters(path, rows, all, userLevel(path));
-        return !before.equals(layoutKey(after, all));
+        if (!before.equals(layoutKey(after, all))) {
+            log.info("Đưa bản nháp {} về đúng bố cục chương theo ngày khi chủ lộ trình mở", path.getId());
+        }
+    }
+
+    /**
+     * Bản nháp mà {@link #relayoutDayChapterDraft} có thể phải chia lại: DRAFT không nhận ra chương (chaptersDetected null cũng coi
+     * là không, như {@link #fitDayChapters}) và job đã xong. Job đang chạy thì không: trang lộ trình poll GET suốt lúc dịch lại
+     * nghĩa, các lần ấy vẫn chỉ đọc, không khoá dòng.
+     */
+    private boolean dayLayoutDue(LearningPath p) {
+        if (!LearningPath.DRAFT.equals(p.getStatus()) || Boolean.TRUE.equals(p.getChaptersDetected()) || p.getJobId() == null) {
+            return false;
+        }
+        return jobs.findById(p.getJobId()).map(ExtractionJob::isTerminal).orElse(false);
+    }
+
+    /**
+     * Bản nháp {@link #dayLayoutDue} mà bố cục đang lưu khác bố cục đúng ({@link #layoutDayChapters}): chỉ khi đó {@link #get} mới mở
+     * giao dịch ghi khoá dòng. Bản nháp đã đúng là trường hợp thường — vừa dựng, sau mỗi lối ghi (đều qua {@link #fitDayChapters}),
+     * sau GET đầu đã chuẩn hoá — mà trang lộ trình gọi GET sau mỗi thao tác sửa và poll mỗi 2 s sau "Dịch lại nghĩa": các lần ấy chỉ
+     * đọc, không khoá dòng nên không xếp hàng sau kích hoạt / PATCH đang giữ khoá. Chạy trong giao dịch CHỈ ĐỌC của GET:
+     * layoutDayChapters sửa chương / item tại chỗ nhưng giao dịch chỉ đọc không flush (FlushMode.MANUAL, entity read-only) nên
+     * không gì xuống DB; layoutKey phủ đúng các trường nó sửa (id / position / tên chương, chương của item) nên hai khoá bằng nhau
+     * = các entity đã về đúng giá trị đang lưu, caller dựng response tiếp trên chúng được. Khác nhau thì caller bỏ giao dịch này
+     * và không dùng các entity đã sửa: get chỉ gọi hàm này khi lượt đọc là giao dịch ngoài cùng, EntityManager của nó đóng cùng
+     * giao dịch (spring.jpa.open-in-view=false) nên giao dịch ghi sau đó nạp lại chương / item từ DB.
+     */
+    private boolean dayLayoutStale(LearningPath p, List<LearningPathChapter> rows, List<ExtractionItem> all) {
+        if (rows.isEmpty()) return false; // fitDayChapters cũng không đụng
+        List<String> before = layoutKey(rows, all);
+        return !before.equals(layoutKey(layoutDayChapters(p, rows, all, userLevel(p)), all));
     }
 
     /** Dấu vân tay bố cục để biết có đổi gì: chương (id, position, tên) rồi chương của từng item theo thứ tự tài liệu. */
@@ -752,9 +765,32 @@ public class LearningPathService {
         return out;
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Lộ trình đầy đủ, một giao dịch chỉ đọc như trước — kể cả bản nháp chương "Ngày N" đã đúng bố cục: lượt đọc dựng bố cục đúng
+     * trong bộ nhớ để so ({@link #dayLayoutStale}) rồi dựng response trên chính chương / item đã nạp. Chỉ bản nháp đang lưu bố cục
+     * cũ (job đã xong): giao dịch ghi ngắn khoá dòng, xét lại dưới khoá và đưa bố cục về đúng thứ kích hoạt sẽ tạo
+     * ({@link #relayoutDayChapterDraft}), sau đó response dựng trong giao dịch chỉ đọc như mọi GET — tên chương draftResponse đồng
+     * bộ vẫn chỉ nằm ở response, không ghi. Chỉ chủ lộ trình tới được bước ghi: người khác nhận 404 ngay ở lượt đọc (staff bị chặn
+     * 403 từ SecurityConfig). Lỗi ở bước chuẩn hoá (vd. deadlock với lối ghi khác) không làm hỏng GET: trả bố cục đang lưu, GET sau
+     * thử lại. Đang trong giao dịch của caller (InsightService.next: readOnly, chỉ đọc lộ trình ACTIVE) thì chỉ đọc, không chuẩn hoá
+     * — giao dịch ghi lồng vào đó sẽ hỏng (SELECT ... FOR UPDATE trong giao dịch chỉ đọc) và kéo hỏng luôn giao dịch của caller.
+     */
     public LearningPathResponse get(Long uid, UUID id, LocalDate date) {
-        return toResponse(owned(uid, id), date, true, null);
+        boolean outermost = !TransactionSynchronizationManager.isActualTransactionActive();
+        LearningPathResponse plain = readTx.execute(s -> {
+            LearningPath p = owned(uid, id);
+            if (!outermost || !dayLayoutDue(p)) return toResponse(p, date, true, null);
+            List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(id);
+            List<ExtractionItem> all = items.findByJobIdOrderByPositionAsc(p.getJobId());
+            return dayLayoutStale(p, rows, all) ? null : draftResponse(p, jobSummaryOf(p), rows, all);
+        });
+        if (plain != null) return plain;
+        try {
+            tx.executeWithoutResult(s -> paths.lockByIdAndUserId(id, uid).ifPresent(this::relayoutDayChapterDraft));
+        } catch (RuntimeException e) {
+            log.warn("Không chia lại được chương bản nháp {}: {}", id, e.toString());
+        }
+        return readTx.execute(s -> toResponse(owned(uid, id), date, true, null)); // vừa bị xoá giữa chừng: 404 như mọi GET
     }
 
     /**
@@ -988,7 +1024,11 @@ public class LearningPathService {
         return path.getJobId();
     }
 
-    /** Mọi item (chọn và bỏ chọn) của một chương, theo vị trí trong tài liệu. */
+    /**
+     * Mọi item (chọn và bỏ chọn) của một chương, theo vị trí trong tài liệu. Chỉ đọc, không chuẩn hoá bố cục như {@link #get}: client
+     * chỉ hỏi id chương lấy từ GET /{id} hay response của lối ghi (đều đã đúng bố cục); chia lại ở đây có thể xoá đúng chương mà thẻ
+     * đang mở hỏi tới (404) khi job vừa xong giữa hai lời gọi, trong khi danh sách chương client đang hiện vẫn là bản cũ.
+     */
     @Transactional(readOnly = true)
     public List<ExtractionItemResponse> chapterItems(Long uid, UUID id, UUID cid) {
         LearningPath path = owned(uid, id);
@@ -1911,6 +1951,12 @@ public class LearningPathService {
     private LearningPathResponse draftResponse(LearningPath p, JobSummary job) {
         List<LearningPathChapter> rows = chapters.findByPathIdOrderByPositionAsc(p.getId());
         List<ExtractionItem> all = p.getJobId() != null ? items.findByJobIdOrderByPositionAsc(p.getJobId()) : List.of();
+        return draftResponse(p, job, rows, all);
+    }
+
+    /** {@link #draftResponse(LearningPath, JobSummary)} trên chương / item caller đã nạp ({@link #get} vừa dùng để so bố cục). */
+    private LearningPathResponse draftResponse(LearningPath p, JobSummary job, List<LearningPathChapter> rows,
+                                               List<ExtractionItem> all) {
         DraftSchedule s = draftSchedule(p, rows, all, userLevel(p));
         syncDayTitles(p, rows, s.ranges());
 

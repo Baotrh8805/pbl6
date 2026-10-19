@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.pbl6.flashcard.config.AsyncConfig;
 import com.pbl6.flashcard.dto.extraction.AiDtos;
 import com.pbl6.flashcard.model.LearningPath;
+import com.pbl6.flashcard.model.Role;
 import com.pbl6.flashcard.service.AiServiceClient;
 import com.pbl6.flashcard.service.LearningPathService;
 import com.pbl6.flashcard.support.IntegrationTest;
@@ -38,11 +39,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -713,52 +716,218 @@ class LearningPathIT extends IntegrationTest {
     }
 
     /**
+     * Phiên bản (xmin) của mọi dòng mà việc chia lại chương có thể chạm tới — lộ trình, chương, item, job — để chứng minh "không ghi
+     * gì": mọi UPDATE (kể cả ghi lại đúng giá trị cũ) đổi xmin của dòng, INSERT / DELETE đổi danh sách, còn khoá dòng
+     * (SELECT ... FOR UPDATE) thì không đổi gì.
+     */
+    private List<String> rowVersions(String pathId, String jobId) {
+        UUID p = UUID.fromString(pathId);
+        UUID j = UUID.fromString(jobId);
+        List<String> out = new ArrayList<>();
+        out.addAll(jdbc.queryForList("SELECT 'path ' || id || ' ' || xmin::text FROM learning_paths WHERE id = ?",
+                String.class, p));
+        out.addAll(jdbc.queryForList("SELECT 'chapter ' || id || ' ' || xmin::text FROM learning_path_chapters "
+                + "WHERE path_id = ? ORDER BY id", String.class, p));
+        out.addAll(jdbc.queryForList("SELECT 'item ' || id || ' ' || xmin::text FROM extraction_items WHERE job_id = ? ORDER BY id",
+                String.class, j));
+        out.addAll(jdbc.queryForList("SELECT 'job ' || id || ' ' || xmin::text FROM extraction_jobs WHERE id = ?",
+                String.class, j));
+        return out;
+    }
+
+    /**
      * LP-01 + LP-08: bản nháp lưu từ trước khi bố cục "Ngày N" thành hàm thuần (vd. "Ngày 3" đã gộp tay vào "Ngày 2") — GET chỉ
-     * đồng bộ tên nên vẫn hiện cấu trúc cũ, còn kích hoạt chia lại: bản xem trước khác lộ trình nhận được. Khởi động đưa bản nháp
-     * ấy về đúng bố cục (giữ id các chương còn lại), chạy lại không đổi gì, kích hoạt = bản xem trước; job đang chạy thì bỏ qua.
+     * đồng bộ tên nên vẫn hiện cấu trúc cũ, còn kích hoạt chia lại: bản xem trước khác lộ trình nhận được. Chuẩn hoá lười, theo
+     * chủ (không quét lúc khởi động: DB dùng chung cả nhóm): GET của chủ đưa bản nháp về đúng bố cục (giữ id các chương còn lại),
+     * GET lần hai không ghi gì, kích hoạt = bản xem trước. Không ghi khi: job đang chạy, người khác / staff mở (404 / 403), hay chủ
+     * mở bản nháp KHÁC của mình; nhiều GET song song chỉ chia lại một lần.
      */
     @Test
-    void legacy_day_chapter_drafts_are_relaid_out_on_startup() throws Exception { // LP-01, LP-08
+    void legacy_day_chapter_drafts_are_relaid_out_when_the_owner_opens_them() throws Exception { // LP-01, LP-08
         List<AiDtos.Item> six = new ArrayList<>();
         for (int i = 1; i <= 6; i++) six.add(vocab(i, "語" + i, null, false));
         stubAnalyze(six, Map.of("vocab", 6, "grammar", 0, "chaptersDetected", false));
         String token = newUser();
         JsonNode draft = draftPath(token, "6", null);
         String id = draft.get("id").asText();
+        String jobId = draft.get("jobId").asText();
         List<String> original = layout(token, draft);
         List<String> ids = chapterIds(draft);
-        legacyMerge(id, ids.get(1), ids.get(2), "Ngày 2–3");
-        JsonNode legacy = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
-        assertEquals(5, legacy.get("chapters").size(), legacy.get("chapters").toString());
 
         // Bản nháp thứ hai cũng mang bố cục cũ nhưng job đang dịch lại nghĩa: worker ghi item -> để nguyên
         JsonNode busy = draftPath(token, "6", null);
         String busyId = busy.get("id").asText();
+        String busyJob = busy.get("jobId").asText();
         List<String> busyIds = chapterIds(busy);
         legacyMerge(busyId, busyIds.get(0), busyIds.get(1), "Ngày 1–2");
-        UUID busyJob = UUID.fromString(busy.get("jobId").asText());
-        jdbc.update("UPDATE extraction_jobs SET status = 'RUNNING' WHERE id = ?", busyJob);
+        jdbc.update("UPDATE extraction_jobs SET status = 'RUNNING' WHERE id = ?", UUID.fromString(busyJob));
 
-        assertTrue(pathService.relayoutDayChapterDrafts() >= 1);
+        // Người dùng khác cũng có một bản nháp bố cục cũ
+        String otherToken = newUser();
+        JsonNode otherDraft = draftPath(otherToken, "6", null);
+        String otherId = otherDraft.get("id").asText();
+        String otherJob = otherDraft.get("jobId").asText();
+        List<String> otherIds = chapterIds(otherDraft);
+        legacyMerge(otherId, otherIds.get(1), otherIds.get(2), "Ngày 2–3");
+
+        legacyMerge(id, ids.get(1), ids.get(2), "Ngày 2–3");
+        assertEquals(5, chapterRows(id));
+        List<String> legacy = rowVersions(id, jobId);
+        List<String> busyBefore = rowVersions(busyId, busyJob);
+        List<String> otherBefore = rowVersions(otherId, otherJob);
+
+        // Người khác / staff mở: 404 / 403 như trước, bản nháp không bị chạm
+        call(get(BASE + id), otherToken, null).andExpect(status().isNotFound());
+        call(get(BASE + id), newStaff(Role.ADMIN), null).andExpect(status().isForbidden());
+        assertEquals(legacy, rowVersions(id, jobId));
+
+        // Job đang chạy: GET chỉ đọc, bản nháp giữ nguyên bố cục cũ
+        JsonNode busyRead = read(call(get(BASE + busyId), token, null).andExpect(status().isOk()));
+        assertEquals(5, busyRead.get("chapters").size(), busyRead.get("chapters").toString());
+        assertEquals(busyBefore, rowVersions(busyId, busyJob));
+
+        // Chủ mở: về đúng bố cục lúc dựng; chương bị gộp đi không còn, các chương còn lại giữ id, chương thiếu tạo mới ở cuối
         JsonNode fixed = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
         assertEquals(original, layout(token, fixed));
         List<String> kept = new ArrayList<>(ids);
-        kept.remove(2); // chương đã bị gộp đi không còn; các chương còn lại giữ id, chương thiếu tạo mới ở cuối
+        kept.remove(2);
         assertEquals(kept, chapterIds(fixed).subList(0, 5));
         assertEquals(6, chapterRows(id));
-        assertNoOrphanItems(draft.get("jobId").asText());
-        assertEquals(5, chapterRows(busyId));
+        assertNoOrphanItems(jobId);
+        // ... chỉ bản nháp đang mở: bản nháp của người khác (và bản đang chạy job) không bị ghi gì
+        assertEquals(otherBefore, rowVersions(otherId, otherJob));
+        assertEquals(busyBefore, rowVersions(busyId, busyJob));
 
-        // Lần khởi động sau: bản nháp đã đúng bố cục không bị ghi gì
-        assertEquals(0, pathService.relayoutDayChapterDrafts());
+        // GET lần hai: bố cục đã đúng nên không ghi dòng nào
+        List<String> settled = rowVersions(id, jobId);
         JsonNode again = read(call(get(BASE + id), token, null).andExpect(status().isOk()));
+        assertEquals(settled, rowVersions(id, jobId));
         assertEquals(chapterPlan(fixed), chapterPlan(again));
 
         // Kích hoạt không đổi body: đúng bản xem trước người dùng thấy
         JsonNode active = activate(token, id, Map.of());
         assertEquals(chapterPlan(again), chapterPlan(active));
         assertEquals(dayPlan(again), dayPlan(active));
-        jdbc.update("UPDATE extraction_jobs SET status = 'DONE' WHERE id = ?", busyJob);
+
+        // Người kia mở bản nháp của họ bằng bốn GET cùng lúc: tất cả 200 với cùng một bố cục đúng, chia lại đúng một lần (không
+        // thừa chương, không item mồ côi)
+        CountDownLatch ready = new CountDownLatch(4);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        List<JsonNode> reads = new ArrayList<>();
+        try {
+            List<Future<MvcResult>> futures = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    assertTrue(go.await(10, TimeUnit.SECONDS), "hiệu lệnh xuất phát không tới");
+                    return call(get(BASE + otherId), otherToken, null).andReturn();
+                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            go.countDown();
+            for (Future<MvcResult> f : futures) {
+                MvcResult r = f.get(60, TimeUnit.SECONDS);
+                assertEquals(200, r.getResponse().getStatus(), r.getResponse().getContentAsString());
+                reads.add(json.readTree(r.getResponse().getContentAsString()));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        for (JsonNode r : reads) assertEquals(chapterPlan(reads.get(0)), chapterPlan(r));
+        assertEquals(original, layout(otherToken, reads.get(0)));
+        assertEquals(6, chapterRows(otherId));
+        assertNoOrphanItems(otherJob);
+        jdbc.update("UPDATE extraction_jobs SET status = 'DONE' WHERE id = ?", UUID.fromString(busyJob));
+    }
+
+    /** Kết quả của {@link #getWhileLocked}: doneUnderLock = GET đã trả lời khi test còn giữ khoá dòng lộ trình. */
+    private record LockedGet(boolean doneUnderLock, JsonNode body) {}
+
+    /**
+     * GET /{id} ở thread khác trong lúc test giữ khoá dòng lộ trình (SELECT ... FOR UPDATE — như kích hoạt hay PATCH đang chạy)
+     * trong transaction của mình; chờ GET tối đa waitMs rồi mới commit nhả khoá, sau đó lấy response (phải 200).
+     */
+    private LockedGet getWhileLocked(String token, Long uid, String id, long waitMs) throws Exception {
+        ExecutorService single = Executors.newSingleThreadExecutor();
+        try {
+            boolean[] done = new boolean[1];
+            Future<MvcResult> pending = new TransactionTemplate(txm).execute(s -> {
+                assertTrue(pathRepo.lockByIdAndUserId(UUID.fromString(id), uid).isPresent());
+                Future<MvcResult> f = single.submit(() -> call(get(BASE + id), token, null).andReturn());
+                try {
+                    f.get(waitMs, TimeUnit.MILLISECONDS);
+                    done[0] = true;
+                } catch (TimeoutException e) {
+                    // GET đang chờ khoá: commit của transaction này nhả nó
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new IllegalStateException(e);
+                }
+                return f;
+            });
+            MvcResult r = pending.get(60, TimeUnit.SECONDS);
+            assertEquals(200, r.getResponse().getStatus(), r.getResponse().getContentAsString());
+            return new LockedGet(done[0], json.readTree(r.getResponse().getContentAsString()));
+        } finally {
+            single.shutdownNow();
+        }
+    }
+
+    /**
+     * LP-01 + LP-08 + LP-13: GET chỉ khoá dòng và chia lại khi bố cục ĐANG LƯU khác bố cục đúng (bản nháp cũ, một lần). Bản nháp đã
+     * đúng — vừa dựng, sau mỗi lối ghi (fitDayChapters), sau GET đầu đã chuẩn hoá — là trường hợp thường: GET chỉ đọc như mọi GET,
+     * không ghi, không xếp hàng sau lối ghi đang giữ khoá. Trước đây điều kiện chỉ là "nháp chương Ngày N, job đã xong": trang lộ
+     * trình gọi lại GET sau mỗi thao tác sửa và poll mỗi 2 s sau "Dịch lại nghĩa" (cả khi job đã xong), mỗi lần là một giao dịch
+     * ghi SELECT ... FOR UPDATE + chia lại toàn bộ, và GET đứng chờ suốt lúc kích hoạt giữ khoá.
+     */
+    @Test
+    void settled_day_chapter_drafts_are_read_without_the_row_lock() throws Exception { // LP-01, LP-08, LP-13
+        List<AiDtos.Item> six = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) six.add(vocab(i, "語" + i, null, false));
+        stubAnalyze(six, Map.of("vocab", 6, "grammar", 0, "chaptersDetected", false));
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        JsonNode draft = draftPath(token, "6", null);
+        String id = draft.get("id").asText();
+        String jobId = draft.get("jobId").asText();
+
+        // Vừa dựng (draftByDays): GET trả lời ngay khi khoá còn giữ, cùng bố cục, không dòng nào bị ghi
+        List<String> built = rowVersions(id, jobId);
+        LockedGet fresh = getWhileLocked(token, uid, id, 10_000);
+        assertTrue(fresh.doneUnderLock(), "GET bản nháp đã đúng bố cục không được chờ khoá dòng");
+        assertEquals(chapterPlan(draft), chapterPlan(fresh.body()));
+        assertEquals(built, rowVersions(id, jobId));
+
+        // Sau lối ghi (bỏ chọn một thẻ, rút số ngày — fitDayChapters đã chia lại): vẫn chỉ đọc
+        Map<String, String> itemIds = itemIdsByTerm(token, draft);
+        call(patch(BASE + id + "/items"), token, List.of(Map.of("id", itemIds.get("語2"), "selected", false)))
+                .andExpect(status().isOk());
+        JsonNode edited = read(call(patch(BASE + id), token, Map.of("totalDays", 4)).andExpect(status().isOk()));
+        List<String> saved = rowVersions(id, jobId);
+        LockedGet afterEdit = getWhileLocked(token, uid, id, 10_000);
+        assertTrue(afterEdit.doneUnderLock(), "GET sau lối ghi không được chờ khoá dòng");
+        assertEquals(chapterPlan(edited), chapterPlan(afterEdit.body()));
+        assertEquals(saved, rowVersions(id, jobId));
+
+        // Bản nháp bố cục cũ thì vẫn khoá: GET chờ lối ghi đang giữ khoá (chưa xong sau 500 ms), nhả khoá rồi mới chia lại
+        JsonNode legacyDraft = draftPath(token, "6", null);
+        String legacyId = legacyDraft.get("id").asText();
+        List<String> original = layout(token, legacyDraft);
+        List<String> ids = chapterIds(legacyDraft);
+        legacyMerge(legacyId, ids.get(1), ids.get(2), "Ngày 2–3");
+        LockedGet stale = getWhileLocked(token, uid, legacyId, 500);
+        assertFalse(stale.doneUnderLock(), "GET bản nháp bố cục cũ phải khoá dòng để chia lại");
+        assertEquals(original, layout(token, stale.body()));
+        assertEquals(6, chapterRows(legacyId));
+        assertNoOrphanItems(legacyDraft.get("jobId").asText());
+
+        // ... và chỉ một lần: GET sau đó đã thấy bố cục đúng nên không chờ khoá nữa
+        List<String> relaid = rowVersions(legacyId, legacyDraft.get("jobId").asText());
+        LockedGet settled = getWhileLocked(token, uid, legacyId, 10_000);
+        assertTrue(settled.doneUnderLock(), "GET sau khi đã chuẩn hoá không được chờ khoá dòng");
+        assertEquals(chapterPlan(stale.body()), chapterPlan(settled.body()));
+        assertEquals(relaid, rowVersions(legacyId, legacyDraft.get("jobId").asText()));
     }
 
     /**
