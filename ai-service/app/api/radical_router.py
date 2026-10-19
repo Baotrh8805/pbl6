@@ -100,8 +100,9 @@ def _clean_kanji(kanji_list: list[str]) -> list[str]:
 
 
 def _meaning_en(ch: str) -> Optional[str]:
-    """Nghĩa EN cho thẻ / prompt Gemini: cùng nguồn với thẻ chữ Hán C5 (JMdict rồi cột meaning JLPT) nhưng bỏ nghĩa là
-    phụ tố / lượng từ (人 → "-ian (e.g. Italian)", 回 → "counter for…"); JMdict chỉ còn phụ tố → thử cột JLPT, rồi mọi
+    """Nghĩa EN cho thẻ / prompt Gemini: cùng nguồn với thẻ chữ Hán C5 (kanji_meanings: bảng sửa tay rồi Unihan
+    kDefinition; thiếu mới tới JMdict rồi cột meaning JLPT) nhưng bỏ nghĩa là phụ tố / lượng từ (人 → "-ian (e.g.
+    Italian)", 回 → "counter for…"); nguồn đó chỉ còn phụ tố → thử cột JLPT, rồi mọi
     mục JLPT của đúng chữ đó (meaning_hint chỉ trả mục đầu: 人 じん / にん "counter for people" đứng trước ひと "man,
     person"); vẫn không → None (template bỏ phần nghĩa, nghĩa bộ thủ tiếng Việt vẫn có)."""
     found = radicals.clean_meaning(kanji_cards._meaning_en(ch)) or radicals.clean_meaning(classifier.meaning_hint(ch))

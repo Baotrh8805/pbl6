@@ -1,12 +1,13 @@
 """Tải và dựng dữ liệu từ điển cho app/extract.
 
-Chạy:  venv/Scripts/python.exe scripts/build_dicts.py [--only jlpt|unihan|unihan_rs|jmdict|kanjivg|kradfile|pitch]
+Chạy:  venv/Scripts/python.exe scripts/build_dicts.py [--only jlpt|unihan|unihan_rs|unihan_def|jmdict|kanjivg|kradfile|pitch]
 
 Tạo ra:
   app/extract/data/jlpt/n1..n5.csv        (commit)
   app/extract/data/unihan_vietnamese.csv  (commit)
   app/extract/data/unihan_japanese.csv    (commit; kJapanese = cách đọc on/kun từng kanji, dùng tách furigana)
   app/extract/data/unihan_rs.csv          (commit; kRSUnicode/kTotalStrokes = bộ thủ + số nét, ~21k chữ, ~250 KB)
+  app/extract/data/unihan_definitions.csv (commit; kDefinition = nghĩa EN của từng chữ, chữ JIS có âm Nhật, ~280 KB)
   app/extract/data/jmdict.sqlite          (KHÔNG commit, ~30 MB)
   app/extract/data/kanji_strokes.json     (KHÔNG commit; nét viết KanjiVG 32 điểm/nét, chỉ kanji trong từ vựng JLPT)
   app/extract/data/kradfile.csv           (KHÔNG commit; thành phần cấu tạo kanji theo KRADFILE của EDRDG)
@@ -280,6 +281,51 @@ def build_unihan_rs() -> None:
     with open(out, "w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["char", "radical_no", "residual_strokes", "total_strokes"])
+        w.writerows(rows)
+    print(f"  {out.name}: {len(rows)} chars")
+
+
+# ----------------------------------------------------------------------------- unihan_def
+
+def parse_unihan_definitions(readings: Iterable[str], mappings: Iterable[str]) -> list[tuple[str, str]]:
+    """Unihan_Readings.txt (kDefinition, kJapanese) + Unihan_OtherMappings.txt (kJis0, kJIS0213) → [(chữ, nghĩa EN)]
+    cho chữ khối CJK U+4E00–9FFF có cách đọc tiếng Nhật và nằm trong bảng mã JIS X 0208 / 0213 (~8 600 chữ, đủ cho
+    văn bản tiếng Nhật thường gặp, file ~280 KB). Giữ nguyên văn kDefinition: ghi chú Trung văn (bộ Khang Hi, nhị thập
+    bát tú, họ…) lọc lúc nạp (kanji_meanings.clean_definition) để sửa luật không phải dựng lại file."""
+    defs: dict[int, str] = {}
+    ja: set[int] = set()
+    jis: set[int] = set()
+    for lines, fields in ((readings, ("kDefinition", "kJapanese")), (mappings, ("kJis0", "kJIS0213"))):
+        for line in lines:
+            if line.startswith("#") or "\t" not in line:
+                continue
+            try:
+                code, field, value = line.rstrip("\n").split("\t", 2)
+                if field not in fields or not code.startswith("U+"):
+                    continue
+                cp = int(code[2:], 16)
+            except ValueError:
+                continue
+            if not 0x4E00 <= cp <= 0x9FFF:
+                continue
+            if field == "kDefinition":
+                defs[cp] = value.strip()
+            elif field == "kJapanese":
+                ja.add(cp)
+            else:
+                jis.add(cp)
+    return [(chr(cp), defs[cp]) for cp in sorted(defs) if cp in ja and cp in jis and defs[cp]]
+
+
+def build_unihan_def() -> None:
+    print("[unihan_def]")
+    zpath = _download(UNIHAN_URL, CACHE_DIR / "Unihan.zip")  # cùng file cache với build_unihan
+    with zipfile.ZipFile(zpath) as zf, zf.open("Unihan_Readings.txt") as r1, zf.open("Unihan_OtherMappings.txt") as r2:
+        rows = parse_unihan_definitions(io.TextIOWrapper(r1, encoding="utf-8"), io.TextIOWrapper(r2, encoding="utf-8"))
+    out = DATA_DIR / "unihan_definitions.csv"
+    with open(out, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["char", "definition"])
         w.writerows(rows)
     print(f"  {out.name}: {len(rows)} chars")
 
@@ -585,11 +631,12 @@ def build_pitch() -> None:
     print(f"  {out.name}: {len(rows)} rows")
 
 
-# Thứ tự chạy khi không có --only; unihan_rs ngay sau unihan vì dùng chung Unihan.zip trong cache
+# Thứ tự chạy khi không có --only; unihan_rs / unihan_def ngay sau unihan vì dùng chung Unihan.zip trong cache
 BUILDERS = {
     "jlpt": build_jlpt,
     "unihan": build_unihan,
     "unihan_rs": build_unihan_rs,
+    "unihan_def": build_unihan_def,
     "jmdict": build_jmdict,
     "kanjivg": build_kanjivg,
     "kradfile": build_kradfile,

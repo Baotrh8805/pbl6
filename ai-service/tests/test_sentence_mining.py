@@ -182,13 +182,14 @@ def test_function_words_and_numbers_are_not_candidates():
 
 @pytest.mark.skipif(PIPELINE_PARAGRAPH is None, reason="tests.test_pipeline.PARAGRAPH không nạp được")
 def test_pipeline_paragraph_targets_follow_user_level():
-    # N5: 日本語 (wordfreq N3) lạ ở câu 1 và 3; こと (N4) lạ ở câu 5
+    # N5: こと (N4) lạ ở câu 5; 日本語 là từ N5 (classifier._LEVEL_FIXES — trước đây wordfreq xếp N3) nên câu 1 / 3
+    # không còn từ lạ
     targets = {it["sentence"]: it["target"]["lemma"] for it in sm.mine(PIPELINE_PARAGRAPH, [], "N5")}
-    assert set(targets.values()) == {"日本語", "こと"} and len(targets) == 3
-    # N4: こと đã biết, 日本語 vẫn lạ
-    assert {it["target"]["lemma"] for it in sm.mine(PIPELINE_PARAGRAPH, [], "N4")} == {"日本語"}
+    assert set(targets.values()) == {"こと"} and len(targets) == 1
+    # N4: こと đã biết → không còn câu i+1; người N5 khai báo đã biết こと cũng vậy
+    assert sm.mine(PIPELINE_PARAGRAPH, [], "N4") == []
     assert sm.mine(PIPELINE_PARAGRAPH, [], "N3") == []
-    assert sm.mine(PIPELINE_PARAGRAPH, ["日本語"], "N4") == []
+    assert sm.mine(PIPELINE_PARAGRAPH, ["こと"], "N5") == []
 
 
 # ----------------------------------------------------------------------------- mine_for_terms

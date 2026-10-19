@@ -930,3 +930,20 @@ def test_ichinichijuu_in_prose_is_not_nicchuu():
     assert "日中" not in _vocab(r)
     segs = _example_segments("一日中家にいた。")
     assert {"text": "家", "reading": "いえ"} in segs and all(sg["reading"] != "にっちゅう" for sg in segs)
+
+
+def test_nihon_item_reading_and_level_lc03():
+    """LC-03: câu trong đoạn 4 câu của báo lỗi — 日本 phải là にほん / N5 (trước: にっぽん / N3, furigana 日にっ本ぽん)."""
+    r = analyze("図書館で日本の歴史について勉強しました。", None, {"userLevel": "N5", "levelFilter": "all"})
+    nihon = next(it for it in r["items"] if it["term"] == "日本")
+    assert nihon["reading"] == "にほん" and nihon["level"] == "N5" and nihon["levelSources"] == ["jlpt_list:N5"]
+    assert nihon["readingSegments"] == [{"kanji": "日", "kana": "に"}, {"kanji": "本", "kana": "ほん"}]
+    assert nihon["hanViet"] == "NHẬT BẢN"
+
+
+def test_han_viet_of_extracted_items_lc01():
+    """LC-01: 予定 lấy âm Hán-Việt DỰ ĐỊNH (Unihan ghi âm Nôm "nhừ"), 郵便局 có đủ BƯU."""
+    r = analyze("週末は友達と一緒に映画を見に行く予定です。郵便局で切手を買いました。", None, {"levelFilter": "all"})
+    by_term = {it["term"]: it for it in r["items"]}
+    assert by_term["予定"]["hanViet"] == "DỰ ĐỊNH"
+    assert by_term["郵便局"]["hanViet"] == "BƯU TIỆN CỤC"

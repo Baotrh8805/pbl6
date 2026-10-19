@@ -70,13 +70,24 @@ def available() -> bool:
         return False
 
 
+# SudachiDict đọc một số từ theo cách đọc trang trọng / ít gặp mà giáo trình và furigana thông thường không dùng:
+# 日本 (danh từ riêng) → ニッポン, trong khi 日本人 / 日本語 Sudachi đã đọc にほん. Đọc にっぽん làm furigana sai và
+# lệch cặp (từ, cách đọc) khi phân cấp JLPT → đổi sang cách đọc chuẩn, chỉ khi token đúng bằng từ đó.
+_PREFERRED_READINGS: dict[tuple[str, str], str] = {("日本", "にっぽん"): "にほん"}
+
+
+def _reading(surface: str, reading_form: str) -> str:
+    reading = kata_to_hira(reading_form)
+    return _PREFERRED_READINGS.get((surface, reading), reading)
+
+
 def tokenize(text: str, mode: Mode = "C") -> list[Token]:
     tok, modes = _load()
     return [
         Token(
             surface=m.surface(),
             lemma=m.dictionary_form(),
-            reading=kata_to_hira(m.reading_form()),
+            reading=_reading(m.surface(), m.reading_form()),
             pos=tuple(m.part_of_speech()),
             normalized=m.normalized_form(),
             begin=m.begin(),

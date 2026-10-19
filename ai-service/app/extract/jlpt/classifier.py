@@ -3,6 +3,7 @@
 Nguồn 1: 5 file CSV data/jlpt/n5..n1.csv (expression,reading,meaning,tags).
   Tra (expression, reading) → expression → reading (chỉ khi từ toàn kana).
   Nhiều cấp → chọn cấp dễ nhất, confidence = 1/số cấp, sources liệt kê hết.
+  Vài từ lõi N5 mà danh sách xếp cao / bỏ sót (日本, 日本語, 日本人) được sửa tay lúc nạp (_LEVEL_FIXES).
 Nguồn 2 (fallback): wordfreq zipf_frequency(lemma, 'ja') → N4/N3/N2/N1, confidence 0.4.
 Không có → (None, 0.0, []).
 """
@@ -42,6 +43,50 @@ def _clean(s: str) -> str:
     return s.strip().replace("～", "").replace("〜", "")
 
 
+# Sửa tay danh sách Tanos: 日本 chỉ có trong n3.csv (tag cũ JLPT_2 / JLPT_3) dù là từ bài 1 của mọi giáo trình N5
+# (CSV còn ghi Genki_Ln.1), còn 日本語 / 日本人 không có trong danh sách nào (wordfreq xếp N3) → học viên dán câu N5 thấy
+# 日本 nằm trong lát N3 của thanh cấp độ. Mục ở đây THAY mọi dòng CSV của cùng (expression, reading) và chèn vào đúng
+# lượt cấp của nó lúc nạp, nên levelSources vẫn là jlpt_list:<cấp> và thứ tự "cấp dễ → khó" của các chỉ mục giữ nguyên.
+_LEVEL_FIXES: dict[tuple[str, str], tuple[str, str]] = {   # (expression, reading) → (cấp, nghĩa EN nếu CSV không có)
+    ("日本", "にほん"): ("N5", "Japan"),
+    ("日本", "にっぽん"): ("N5", "Japan"),
+    ("日本語", "にほんご"): ("N5", "Japanese (language)"),
+    ("日本人", "にほんじん"): ("N5", "Japanese (person)"),
+}
+
+
+def _read_rows() -> dict[str, list[tuple[str, str, str]]]:
+    """Cấp → các dòng (expression, reading hiragana, meaning) theo thứ tự CSV, đã áp _LEVEL_FIXES: dòng CSV của một cặp
+    được sửa bị bỏ, mục sửa đứng đầu cấp mới (dùng nghĩa CSV của cặp đó nếu có). Không có file CSV nào → bảng rỗng, kể
+    cả mục sửa (để available() vẫn báo thiếu dữ liệu)."""
+    rows: dict[str, list[tuple[str, str, str]]] = {level: [] for level in LEVELS}
+    fixed_meaning: dict[tuple[str, str], str] = {}
+    found = False
+    for level in LEVELS:
+        path = DATA_DIR / f"{level.lower()}.csv"
+        if not path.exists():
+            continue
+        found = True
+        with open(path, encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                expr = _clean(row.get("expression", ""))
+                reading = kata_to_hira(_clean(row.get("reading", "")))
+                if not expr:
+                    continue
+                meaning = (row.get("meaning") or "").strip()
+                if (expr, reading) in _LEVEL_FIXES:
+                    if meaning:
+                        fixed_meaning.setdefault((expr, reading), meaning)
+                    continue
+                rows[level].append((expr, reading, meaning))
+    if found:
+        for level in LEVELS:
+            fixes = [(expr, reading, fixed_meaning.get((expr, reading)) or meaning)
+                     for (expr, reading), (lv, meaning) in _LEVEL_FIXES.items() if lv == level]
+            rows[level] = fixes + rows[level]
+    return rows
+
+
 def _load() -> None:
     global _by_pair, _by_expr, _by_reading, _meaning, _entries, _idx_expr, _idx_reading, _idx_char
     if _by_pair is not None:
@@ -59,34 +104,25 @@ def _load() -> None:
         idx_expr: dict[str, list[int]] = {}
         idx_reading: dict[str, list[int]] = {}
         idx_char: dict[str, list[int]] = {}
-        for level in LEVELS:
-            path = DATA_DIR / f"{level.lower()}.csv"
-            if not path.exists():
-                continue
-            with open(path, encoding="utf-8", newline="") as fh:
-                for row in csv.DictReader(fh):
-                    expr = _clean(row.get("expression", ""))
-                    reading = kata_to_hira(_clean(row.get("reading", "")))
-                    if not expr:
-                        continue
-                    meaning = (row.get("meaning") or "").strip()
-                    if (expr, reading) not in by_pair:
-                        i = len(entries)
-                        entries.append((expr, reading, meaning, level))
-                        idx_expr.setdefault(expr, []).append(i)
-                        if reading:
-                            idx_reading.setdefault(reading, []).append(i)
-                        for ch in dict.fromkeys(expr):  # mỗi chữ một lần dù lặp trong từ (人々, 日々)
-                            if is_kanji(ch):
-                                idx_char.setdefault(ch, []).append(i)
-                    by_pair[(expr, reading)].add(level)
-                    by_expr.setdefault(expr, set()).add(level)
+        for level, rows in _read_rows().items():
+            for expr, reading, meaning in rows:
+                if (expr, reading) not in by_pair:
+                    i = len(entries)
+                    entries.append((expr, reading, meaning, level))
+                    idx_expr.setdefault(expr, []).append(i)
                     if reading:
-                        by_reading.setdefault(reading, set()).add(level)
-                    if meaning:
-                        meaning_of.setdefault(expr, meaning)
-                        if reading:
-                            meaning_of.setdefault(reading, meaning)
+                        idx_reading.setdefault(reading, []).append(i)
+                    for ch in dict.fromkeys(expr):  # mỗi chữ một lần dù lặp trong từ (人々, 日々)
+                        if is_kanji(ch):
+                            idx_char.setdefault(ch, []).append(i)
+                by_pair[(expr, reading)].add(level)
+                by_expr.setdefault(expr, set()).add(level)
+                if reading:
+                    by_reading.setdefault(reading, set()).add(level)
+                if meaning:
+                    meaning_of.setdefault(expr, meaning)
+                    if reading:
+                        meaning_of.setdefault(reading, meaning)
         _by_expr, _by_reading, _meaning = by_expr, by_reading, meaning_of
         _entries, _idx_expr, _idx_reading, _idx_char = entries, idx_expr, idx_reading, idx_char
         _by_pair = dict(by_pair)   # gán cuối cùng: cờ "đã nạp" chỉ bật khi mọi bảng đã sẵn sàng

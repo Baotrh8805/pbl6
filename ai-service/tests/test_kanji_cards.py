@@ -2,7 +2,7 @@
 sang fixture). Một test cuối skipif chạy trên dữ liệu đã commit: 学 → on がく có 学校, kun まなぶ có 学ぶ."""
 import pytest
 
-from app.extract import han_viet, han_viet_graph, jmdict, kanji_cards, kanji_readings, kanjidata
+from app.extract import han_viet, han_viet_graph, jmdict, kanji_cards, kanji_meanings, kanji_readings, kanjidata
 from app.extract.jlpt import classifier
 
 VIET_CSV = "char,reading\n日,nhật\n学,học\n生,sinh\n校,hiệu\n曜,diệu\n毎,mỗi\n本,bản\n五,ngũ\n大,đại\n"
@@ -42,6 +42,11 @@ def data(tmp_path, monkeypatch):
     monkeypatch.setattr(kanji_readings, "_table", None)
     monkeypatch.setattr(kanji_readings, "_raw_table", None)
     monkeypatch.setattr(kanjidata, "RS_FILE", tmp_path / "rs.csv")
+    # bảng nghĩa chữ (Unihan kDefinition + sửa tay) mặc định vắng để các test dưới thấy nhánh JMdict / cột JLPT;
+    # test nghĩa chữ tự ghi file vào đúng hai đường dẫn này
+    monkeypatch.setattr(kanji_meanings, "DEFINITIONS_FILE", tmp_path / "def.csv")
+    monkeypatch.setattr(kanji_meanings, "OVERRIDE_FILE", tmp_path / "meaning.csv")
+    monkeypatch.setattr(kanji_meanings, "_table", None)
     monkeypatch.setattr(classifier, "entries_containing", lambda ch: list(JLPT.get(ch, [])))
     monkeypatch.setattr(classifier, "meaning_hint", lambda lemma, reading=None: MEANING_HINT.get(lemma))
     monkeypatch.setattr(jmdict, "lookup", lambda lemma, reading=None: JMDICT.get(lemma))
@@ -62,7 +67,7 @@ def test_card_structure_and_examples_easiest_first(data):
     (c,) = kanji_cards.cards(["学"])
     assert c["kanji"] == "学" and c["hanViet"] == "HỌC" and c["strokeCount"] == 8
     assert c["radical"] == {"no": 39, "strokes": 3}          # 8 nét tổng − 5 nét ngoài bộ 子
-    assert c["meaningEn"] == "learning, scholarship"          # JMdict có entry đúng chữ
+    assert c["meaningEn"] == "learning, scholarship"          # không có bảng nghĩa chữ → entry JMdict đúng chữ
     # on ガク: 3 ví dụ dễ nhất (N5), cùng cấp thì thông dụng trước (大学 5.2 > 学生 5.0 dù CSV ghi 学生 trước) —
     # 科学 N3 / 学問 N2 bị cắt; カク không ví dụ xếp sau
     assert [r["reading"] for r in c["on"]] == ["ガク", "カク"]

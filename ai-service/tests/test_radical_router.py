@@ -224,10 +224,11 @@ def test_real_data_umi(monkeypatch):
 
 @needs_real
 def test_real_data_hito_meaning_skips_counter_entries(monkeypatch):
-    # 人: JMdict chỉ có mục phụ tố (じん "-ian…"), mục JLPT đầu là じん / にん "counter for people" → lấy mục ひと
+    # 人: nghĩa của chữ (Unihan kDefinition) đứng trước JMdict — JMdict chỉ có mục phụ tố (じん "-ian…") và mục JLPT đầu
+    # là じん / にん "counter for people" (nhánh lọc phụ tố của hai nguồn đó có test riêng ở trên)
     monkeypatch.setattr(gemini, "generate_mnemonics", lambda items: {"items": [], "reason": "no_key"})
     kanjidata.reset()
     radicals.reset()
     (hito,) = _post(kanji=["人"])["items"]
-    assert hito["meaningEn"] == "man, person"
+    assert hito["meaningEn"].startswith("man; people")
     assert "-ian" not in hito["mnemonicVi"] and "counter" not in hito["mnemonicVi"] and "NHÂN" in hito["mnemonicVi"]

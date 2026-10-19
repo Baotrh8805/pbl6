@@ -73,3 +73,39 @@ def test_phrase_level_none_when_no_word_has_level():
     from app.extract.jlpt import phrase_level
     assert phrase_level([("逝得", None), ("償友", None)]) == (None, 0.0, [])
     assert phrase_level([]) == (None, 0.0, [])
+
+
+def test_nihon_family_is_n5():
+    """LC-03: danh sách Tanos chỉ có 日本 ở n3.csv (cả にほん lẫn にっぽん), 日本語 / 日本人 không có (wordfreq → N3);
+    _LEVEL_FIXES xếp lại N5 và thay hẳn dòng N3 (nguồn chỉ còn jlpt_list:N5, confidence 1.0)."""
+    for term, reading in (("日本", "にほん"), ("日本", "にっぽん"), ("日本語", "にほんご"), ("日本人", "にほんじん")):
+        assert classifier.classify(term, reading, False) == ("N5", 1.0, ["jlpt_list:N5"])
+    assert classifier.classify("日本", None, False) == ("N5", 1.0, ["jlpt_list:N5"])
+    # cách đọc chuẩn đứng trước; nghĩa CSV gốc vẫn giữ
+    assert classifier.entries_of("日本") == [("にほん", "Japan", "N5"), ("にっぽん", "Japan", "N5")]
+    assert ("日本", "にほん", "Japan", "N5") in classifier.entries_containing("本")
+
+
+def test_level_fixes_replace_csv_rows_and_keep_level_order(tmp_path, monkeypatch):
+    (tmp_path / "n5.csv").write_text("expression,reading,meaning,tags\n猫,ねこ,cat,\n", encoding="utf-8")
+    (tmp_path / "n3.csv").write_text("expression,reading,meaning,tags\n日本,にほん,Japan (CSV),\n政治,せいじ,politics,\n",
+                                     encoding="utf-8")
+    monkeypatch.setattr(classifier, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(classifier, "_LEVEL_FIXES", {("日本", "にほん"): ("N5", "Japan"), ("国語", "こくご"): ("N5", "")})
+    for name, empty in (("_by_pair", None), ("_by_expr", {}), ("_by_reading", {}), ("_meaning", {}),
+                        ("_entries", []), ("_idx_expr", {}), ("_idx_reading", {}), ("_idx_char", {})):
+        monkeypatch.setattr(classifier, name, empty)
+    classifier._load()
+    # mục sửa đứng đầu cấp N5 (trước 猫), dòng N3 của cùng cặp bị bỏ, nghĩa CSV thắng nghĩa ghi trong bảng sửa
+    assert classifier._entries == [("日本", "にほん", "Japan (CSV)", "N5"), ("国語", "こくご", "", "N5"),
+                                   ("猫", "ねこ", "cat", "N5"), ("政治", "せいじ", "politics", "N3")]
+    assert classifier.classify("日本", "にほん", False) == ("N5", 1.0, ["jlpt_list:N5"])
+    assert classifier.classify("政治", "せいじ", False) == ("N3", 1.0, ["jlpt_list:N3"])
+
+
+def test_level_fixes_not_applied_without_csv(tmp_path, monkeypatch):
+    monkeypatch.setattr(classifier, "DATA_DIR", tmp_path)   # thư mục rỗng: thiếu dữ liệu thì vẫn báo thiếu
+    for name, empty in (("_by_pair", None), ("_by_expr", {}), ("_by_reading", {}), ("_meaning", {}),
+                        ("_entries", []), ("_idx_expr", {}), ("_idx_reading", {}), ("_idx_char", {})):
+        monkeypatch.setattr(classifier, name, empty)
+    assert not classifier.available()

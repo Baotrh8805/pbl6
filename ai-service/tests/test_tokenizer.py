@@ -63,3 +63,14 @@ def test_oov_compound_split_only_when_all_components_known(monkeypatch):
     # Không phải OOV → không bao giờ tách, dù từ điển không biết
     known.clear()
     assert [t.surface for t in pipeline._expand_compound(c_tokens[0], a_tokens)] == ["日本語"]
+
+
+def test_nihon_read_nihon_not_nippon():
+    """LC-03: SudachiDict đọc danh từ riêng 日本 là ニッポン → furigana 日にっ本ぽん và cặp (日本, にっぽん) khi phân cấp.
+    Cách đọc chuẩn của giáo trình là にほん; từ ghép Sudachi đã đọc にほん thì giữ nguyên."""
+    toks = {t.surface: t for t in tokenize("図書館で日本の歴史について勉強しました。", "C")}
+    assert toks["日本"].reading == "にほん" and toks["日本"].lemma == "日本"
+    assert [t.reading for t in tokenize("日本", "A")] == ["にほん"]
+    assert {t.surface: t.reading for t in tokenize("日本人と日本語", "C")} == {"日本人": "にほんじん", "と": "と",
+                                                                              "日本語": "にほんご"}
+    assert tokenize("東京", "C")[0].reading == "とうきょう"   # bảng sửa chỉ đụng đúng từ đã liệt kê

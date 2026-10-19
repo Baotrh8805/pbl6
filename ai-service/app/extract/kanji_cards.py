@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.extract import furigana, han_viet, han_viet_graph, jmdict, kanjidata
+from app.extract import furigana, han_viet, han_viet_graph, jmdict, kanji_meanings, kanjidata
 from app.extract.jachars import is_kanji
 from app.extract.jlpt import classifier
 from app.extract.kanji_readings import readings_split
@@ -129,8 +129,13 @@ def _examples(ch: str, on: list[dict], kun: list[dict], user_level: Optional[str
 # ----------------------------------------------------------------------------- thẻ
 
 def _meaning_en(ch: str) -> Optional[str]:
-    """Nghĩa EN của chữ đứng một mình: entry JMdict có kanji đúng là chữ đó (学 → "learning, scholarship…"),
-    không có thì cột meaning JLPT (classifier.meaning_hint); không nguồn nào → None."""
+    """Nghĩa EN của **chữ** (không phải của từ một chữ): kanji_meanings (bảng sửa tay → Unihan kDefinition; 日 → "day;
+    sun; Japan", 存 → "exist, live, be…"). Chỉ khi chữ không có trong hai bảng đó mới dùng entry JMdict có kanji đúng là
+    chữ (nghĩa của *từ* một chữ: 日 にち "Sunday; nth day", 字 あざ "section of village" — vì vậy không đặt trước), rồi
+    cột meaning JLPT (classifier.meaning_hint); không nguồn nào → None."""
+    found = kanji_meanings.meaning(ch)
+    if found:
+        return found
     entry = jmdict.lookup(ch)
     if entry and entry.get("kanji") == ch and entry.get("gloss"):
         return entry["gloss"]
