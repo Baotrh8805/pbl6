@@ -1,6 +1,6 @@
 import React from "react";
 import type { Card, LibraryDeck } from "@/types/api.types";
-import { formatCompactCount, initials } from "./libraryOptions";
+import { formatCompactCount, initials, ratingSummary } from "./libraryOptions";
 import { CardContent } from "@/features/decks/components/CardContent";
 
 interface FeaturedDeckHeroProps {
@@ -66,8 +66,9 @@ export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sample
             >
               star
             </span>
-            <span className="font-bold">{deck.rating ?? "Chưa có"}</span>
-            <span className="text-inverse-primary font-normal">({deck.ratingsCount} đánh giá)</span>
+            {/* Cùng nhãn với thẻ Thư viện (NEW-02): "4 · 1 đánh giá" / "Chưa có đánh giá" — trước đây banner in
+                "Chưa có (0 đánh giá)" trong khi thẻ của chính bộ đó ở lưới bên dưới ghi khác. */}
+            <span className="font-bold">{ratingSummary(deck.rating, deck.ratingsCount)}</span>
           </div>
           <div className="flex items-center gap-1">
             <span aria-hidden="true" className="material-symbols-outlined text-[17px]">cloud_download</span>

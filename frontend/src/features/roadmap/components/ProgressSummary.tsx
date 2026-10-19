@@ -17,7 +17,8 @@ interface ProgressSummaryProps {
 }
 
 // Hai thước đo (LP-3): "đã học" = có ít nhất một lần chấm (thanh chính), "đã thuộc" = khoảng ôn ≥ 21 ngày (thanh phụ).
-// Học hết thẻ -> mời bấm "Hoàn thành" (server không tự chốt khi chỉ đọc); đã chốt -> chip.
+// Học hết thẻ -> mời bấm "Hoàn thành" (server không tự chốt khi chỉ đọc); đã chốt -> dòng ngày ghi mốc hoàn thành bằng chữ
+// thường: chip "Đã hoàn thành" đã nằm cạnh tên lộ trình ở đầu trang, lặp lại ở đây thành hai chip giống hệt.
 export const ProgressSummary: React.FC<ProgressSummaryProps> = ({
   path,
   completion: c,
@@ -42,14 +43,8 @@ export const ProgressSummary: React.FC<ProgressSummaryProps> = ({
           {formatShortDate(path.startDate, true)} → {formatShortDate(endDay, true)}
         </span>
         <span className="inline-flex items-center gap-2">
-          {completed ? (
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container/50 text-on-secondary-container text-label-sm font-semibold"
-              title={path.completedAt ? `Hoàn thành lúc ${formatDateTime(path.completedAt)}` : undefined}
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">verified</span>
-              Đã hoàn thành
-            </span>
+          {path.completedAt ? (
+            <span className="text-on-surface">Hoàn thành lúc {formatDateTime(path.completedAt)}</span>
           ) : (
             <span className="font-semibold text-on-surface">{positionLabel}</span>
           )}

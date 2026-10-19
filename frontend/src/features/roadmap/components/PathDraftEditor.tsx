@@ -149,6 +149,9 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   const jobRunning = path.job?.status === "QUEUED" || path.job?.status === "RUNNING";
   // F2: mỗi lần "Kiểm tra lại mâu thuẫn" đổi reloadKey để chương đang mở tải lại `conflicts` của từng mục.
   const [recheckCount, setRecheckCount] = useState(0);
+  // Đổi số ngày / trần: server chia lại mục giữa các chương "Ngày N" mà giữ id (và có khi cả số thẻ) của chương đầu -> chương đang
+  // mở phải tải lại, không thì vẫn hiện mục nay đã thuộc chương khác và bỏ tick ở đó là bỏ nhầm thẻ của chương kia.
+  const chapterItemsKey = `${path.job?.status ?? ""}|${enrichedAt ?? ""}|${recheckCount}|${path.totalDays}|${serverCap}`;
 
   const blockReason = activateBlockReason({ totalCards, daysError, capError });
   const activate = () => {
@@ -353,7 +356,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
               onRename={onRenameChapter}
               onMergeUp={onMergeUp}
               onItemsPatched={onItemsPatched}
-              reloadKey={`${path.job?.status ?? ""}|${enrichedAt ?? ""}|${recheckCount}`}
+              reloadKey={chapterItemsKey}
             />
           ))}
         </ol>
