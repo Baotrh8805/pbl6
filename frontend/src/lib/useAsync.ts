@@ -6,9 +6,9 @@ type Primitive = string | number | boolean | null | undefined;
 // ponytail: fetch một lần mỗi khi deps đổi, không cache/retry.
 // Nâng cấp khi cần chia sẻ cache giữa các trang: thay bằng TanStack Query.
 // deps chỉ nhận giá trị nguyên thủy để so bằng một khóa chuỗi (object tạo mới mỗi render sẽ fetch lặp vô hạn).
-// reload: tăng số này để tải lại NGẦM (vẫn giữ dữ liệu cũ, loading không bật), dùng sau khi sửa dữ liệu ngay tại trang.
-// Muốn hiện trạng thái "đang tải" khi tải lại thì đưa số đếm vào deps.
-export function useAsync<T>(run: () => Promise<T>, deps: readonly Primitive[], reload = 0) {
+// reload: đổi giá trị này (số đếm, hoặc một khoá chuỗi tóm tắt dữ liệu đang hiện) để tải lại NGẦM (vẫn giữ dữ liệu cũ, loading
+// không bật), dùng sau khi sửa dữ liệu ngay tại trang. Muốn hiện trạng thái "đang tải" khi tải lại thì đưa số đếm vào deps.
+export function useAsync<T>(run: () => Promise<T>, deps: readonly Primitive[], reload: Primitive = 0) {
     const key = JSON.stringify(deps);
     const runRef = useRef(run);
     useEffect(() => {

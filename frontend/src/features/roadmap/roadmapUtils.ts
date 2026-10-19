@@ -603,13 +603,53 @@ export const daysFieldError = (value: string): string | null =>
 export const capFieldError = (value: string): string | null =>
     value.trim() !== "" && isValidDailyCap(Number(value)) ? null : `Nhập số nguyên từ ${MIN_DAILY_CAP} đến ${MAX_DAILY_CAP} thẻ.`;
 
-/** Vì sao "Tạo lộ trình" đang bị khoá (hiện cạnh nút); bấm được -> null. */
-export function activateBlockReason(o: { totalCards: number; daysError: string | null; capError: string | null }): string | null {
+/**
+ * Vì sao "Tạo lộ trình" đang bị khoá (hiện cạnh nút); bấm được -> null. jobRunning: đang "Dịch lại nghĩa" — server trả 409 cho
+ * kích hoạt tới khi job xong (LearningPathService.jobIfIdle), nên nói trước thay vì để người dùng bấm rồi nhận lỗi.
+ */
+export function activateBlockReason(o: {
+    totalCards: number;
+    daysError: string | null;
+    capError: string | null;
+    jobRunning?: boolean;
+}): string | null {
+    if (o.jobRunning) return "Đang dịch lại nghĩa: chờ xong rồi tạo lộ trình.";
     if (o.totalCards <= 0) return "Chưa chọn thẻ nào: hãy tick ít nhất một mục trong các chương để tạo lộ trình.";
     if (o.daysError) return "Sửa ô «Số ngày học» trước khi tạo lộ trình.";
     if (o.capError) return "Sửa ô «Trần thẻ mỗi ngày» trước khi tạo lộ trình.";
     return null;
 }
+
+/**
+ * Bản nháp trong lúc "Dịch lại nghĩa": server từ chối (409) mọi thao tác đổi cấu trúc chương — số ngày, trần, chọn thẻ, gộp, đổi
+ * tên chương, kích hoạt — cho cả bản nháp nhận ra chương lẫn không, nên các ô ấy khoá kèm câu này thay vì giữ số vừa gõ mà server
+ * không lưu.
+ */
+export const ENRICH_LOCK_HINT = "Đang dịch lại nghĩa: số ngày, trần thẻ và các chương tạm khoá tới khi xong.";
+
+// Tên chương tự sinh của bản nháp không nhận ra chương — cùng mẫu với LearningPathService.isDayTitle (khớp trọn chuỗi).
+const DAY_CHAPTER_TITLE = /^Ngày \d+(–\d+)?$/;
+const WEEK_CHAPTER_TITLE = /^Tuần \d+ \(ngày \d+(–\d+)?\)$/;
+
+/** "Ngày 3", "Ngày 3–4" (gạch nối "–"), "Tuần 2 (ngày 8–14)": chương server tự chia lại theo thẻ đang chọn / số ngày / trần. */
+export const isAutoDayChapterTitle = (title: string): boolean =>
+    DAY_CHAPTER_TITLE.test(title) || WEEK_CHAPTER_TITLE.test(title);
+
+/**
+ * Hiện "Gộp vào chương trước" cho chương có chương đứng trước tên previousTitle. Bản nháp không nhận ra chương: chương trước phải
+ * là chương đặt tên riêng — chương "Ngày N" được server chia lại ngay sau mỗi lần sửa nên gộp vào nó vô tác dụng (server trả 400).
+ */
+export const canMergeIntoPrevious = (chaptersDetected: boolean | null | undefined, previousTitle: string | undefined): boolean =>
+    previousTitle !== undefined && (!!chaptersDetected || !isAutoDayChapterTitle(previousTitle));
+
+/**
+ * Khoá tải lại NGẦM danh sách mục của các chương đang mở: server chia lại chương "Ngày N" sau mỗi lần chọn thẻ / gộp / đổi số
+ * ngày, trần (thẻ dời sang chương bên cạnh mà id chương — có khi cả số thẻ của chính nó — giữ nguyên), nên mọi chương đang mở phải
+ * tải lại khi bố cục bất kỳ chương nào đổi. Bố cục = id + số thẻ + dải ngày của từng chương; tập thẻ chọn đổi thì tổng số thẻ
+ * đổi, số xô / dải đổi thì id hoặc dải đổi.
+ */
+export const chapterLayoutKey = (chapters: readonly Pick<LearningPathChapter, "id" | "cardCount" | "dayFrom" | "dayTo">[]): string =>
+    chapters.map((c) => `${c.id}:${c.cardCount}:${c.dayFrom}-${c.dayTo}`).join(",");
 
 /**
  * Câu giải thích của dải nợ theo đúng lý do làm nó "severe" (behindSeverity có hai ngưỡng): vượt trần/ngày thì nói

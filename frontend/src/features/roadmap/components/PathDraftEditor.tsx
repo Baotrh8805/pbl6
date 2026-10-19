@@ -6,13 +6,16 @@ import { geminiReasonText } from "@/features/extraction/extractionUtils";
 import {
   ALL_WEEK,
   DEFAULT_DAILY_CAP,
+  ENRICH_LOCK_HINT,
   MAX_DAILY_CAP,
   MAX_DAYS,
   MIN_DAILY_CAP,
   MIN_DAYS,
   activateBlockReason,
+  canMergeIntoPrevious,
   canReEnrichPath,
   capFieldError,
+  chapterLayoutKey,
   daysFieldError,
   enrichCooldownLeft,
   enrichNoticeReason,
@@ -146,14 +149,20 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [canEnrich, enrichedAt]);
+  // Đang dịch lại nghĩa: server trả 409 cho mọi thay đổi cấu trúc chương của bản nháp (số ngày, trần, chọn thẻ, gộp, tên chương,
+  // kích hoạt) — cùng một quy tắc cho bản nhận ra chương lẫn không — nên khoá đúng các ô ấy thay vì để ô giữ số vừa gõ mà server
+  // không lưu. Vòng poll của trang chạy tới khi job xong (isPathBusy) nên khoá tự mở.
   const jobRunning = path.job?.status === "QUEUED" || path.job?.status === "RUNNING";
   // F2: mỗi lần "Kiểm tra lại mâu thuẫn" đổi reloadKey để chương đang mở tải lại `conflicts` của từng mục.
   const [recheckCount, setRecheckCount] = useState(0);
   // Đổi số ngày / trần: server chia lại mục giữa các chương "Ngày N" mà giữ id (và có khi cả số thẻ) của chương đầu -> chương đang
   // mở phải tải lại, không thì vẫn hiện mục nay đã thuộc chương khác và bỏ tick ở đó là bỏ nhầm thẻ của chương kia.
   const chapterItemsKey = `${path.job?.status ?? ""}|${enrichedAt ?? ""}|${recheckCount}|${path.totalDays}|${serverCap}`;
+  // Chọn / bỏ chọn thẻ ở MỘT chương cũng làm server chia lại các chương "Ngày N" khác (chương là xô ngày của thẻ đang chọn):
+  // mọi chương đang mở tải lại ngầm khi bố cục bất kỳ chương nào đổi, không chỉ khi số thẻ của chính nó đổi.
+  const layoutKey = chapterLayoutKey(chapters);
 
-  const blockReason = activateBlockReason({ totalCards, daysError, capError });
+  const blockReason = activateBlockReason({ totalCards, daysError, capError, jobRunning });
   const activate = () => {
     // Ô số đang sai (kể cả chưa rời ô): hiện lỗi thay vì kích hoạt bằng giá trị cũ của server.
     if (daysFieldError(days.value) || capFieldError(cap.value)) {
@@ -251,10 +260,12 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             min={MIN_DAYS}
             max={MAX_DAYS}
             value={days.value}
+            disabled={jobRunning}
             onChange={(e) => days.set(e.target.value)}
             onBlur={commitDays}
             onKeyDown={blurOnEnter}
             aria-invalid={!!daysError}
+            aria-describedby={jobRunning ? "path-enrich-lock" : undefined}
             error={daysError ?? undefined}
             helperText={`Từ ${MIN_DAYS} đến ${MAX_DAYS} ngày`}
           />
@@ -275,14 +286,22 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             min={MIN_DAILY_CAP}
             max={MAX_DAILY_CAP}
             value={cap.value}
+            disabled={jobRunning}
             onChange={(e) => cap.set(e.target.value)}
             onBlur={commitCap}
             onKeyDown={blurOnEnter}
             aria-invalid={!!capError}
+            aria-describedby={jobRunning ? "path-enrich-lock" : undefined}
             error={capError ?? undefined}
             helperText={`Mới + ôn dự báo, ${MIN_DAILY_CAP}–${MAX_DAILY_CAP}`}
           />
         </div>
+        {jobRunning && (
+          <p id="path-enrich-lock" className="text-body-sm text-on-surface-variant flex items-start gap-1.5">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">lock</span>
+            <span>{ENRICH_LOCK_HINT}</span>
+          </p>
+        )}
 
         <StudyDaysToggles mask={mask.value} onChange={toggleMask} disabled={activating} />
 
@@ -292,7 +311,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             <span>{suggestDaysLabel(suggested, totalCards)} với trần {serverCap} thẻ.</span>
             <button
               type="button"
-              disabled={activating}
+              disabled={activating || jobRunning}
               onClick={() => {
                 days.set(String(suggested));
                 onPatchPath({ totalDays: suggested });
@@ -318,7 +337,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
           <span>
             {path.chaptersDetected
               ? `Đã nhận dạng ${chapters.length} chương theo cấu trúc tài liệu.`
-              : "Không nhận ra chương trong tài liệu, đã chia theo ngày."}
+              : "Không nhận ra chương trong tài liệu, đã chia theo ngày: các chương «Ngày N» tự chia lại theo số ngày, trần thẻ và thẻ đang chọn. Đặt tên riêng cho một chương để giữ nguyên thẻ của nó và gộp được chương sau vào."}
             {skipped.length > 0 && ` Đã bỏ qua: ${skipped.join(", ")}.`}
           </span>
         </p>
@@ -332,7 +351,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
           {/* Lộ trình server trả về bỏ qua: tải lại qua onItemsPatched như mọi thao tác sửa mục để trang giữ một nguồn đúng */}
           <RecheckPathConflictsButton
             pathId={path.id}
-            disabled={activating}
+            disabled={activating || jobRunning}
             onUpdated={() => {
               setRecheckCount((c) => c + 1);
               onItemsPatched();
@@ -351,12 +370,14 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
               pathId={path.id}
               chapter={ch}
               index={i}
-              canMergeUp={i > 0}
+              canMergeUp={canMergeIntoPrevious(path.chaptersDetected, chapters[i - 1]?.title)}
               activating={activating}
+              locked={jobRunning}
               onRename={onRenameChapter}
               onMergeUp={onMergeUp}
               onItemsPatched={onItemsPatched}
               reloadKey={chapterItemsKey}
+              layoutKey={layoutKey}
             />
           ))}
         </ol>

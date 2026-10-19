@@ -23,9 +23,12 @@ import { QUIZ_SIZE_OPTIONS, quizSizeNote, quizSizeOptionLabel } from "../../src/
 import {
   activateBlockReason,
   behindMessage,
+  canMergeIntoPrevious,
   capFieldError,
+  chapterLayoutKey,
   daysFieldError,
   enrichNoticeReason,
+  isAutoDayChapterTitle,
   pathStatusLabel,
   todayNewTasksLine,
 } from "../../src/features/roadmap/roadmapUtils.ts";
@@ -188,6 +191,11 @@ export function runManualChecks(assert: (cond: boolean, msg: string) => void): v
       activateBlockReason({ totalCards: 5, daysError: null, capError: null }) === null,
     "LP-11: nói rõ vì sao 'Tạo lộ trình' bị khoá"
   );
+  assert(
+    activateBlockReason({ totalCards: 5, daysError: null, capError: null, jobRunning: true })?.startsWith("Đang dịch lại nghĩa") === true &&
+      activateBlockReason({ totalCards: 0, daysError: "x", capError: null, jobRunning: true })?.startsWith("Đang dịch lại nghĩa") === true,
+    "LP-08 (7): đang dịch lại nghĩa -> kích hoạt bị khoá như server (409)"
+  );
   assert(recheckResultText({ conflicts: 0 }) === "Đã kiểm tra lại: không còn mâu thuẫn.", "LP-11: kiểm tra lại xong có câu xác nhận");
   assert(recheckResultText({ conflicts: 3 }).includes("còn 3") && recheckResultText(null) === "Đã kiểm tra lại.", "LP-11: câu theo số cảnh báo");
   assert(behindMessage(6, 30, 17).includes("20 %") && !behindMessage(6, 30, 17).includes("sức học một ngày"), "LP-07: nợ 6 / trần 30 -> lý do theo tỉ lệ");
@@ -195,6 +203,25 @@ export function runManualChecks(assert: (cond: boolean, msg: string) => void): v
   assert(behindMessage(3, 30, 100).startsWith("Học bù trong phiên hôm nay"), "LP-07: mức warn giữ câu nhẹ");
   assert(todayNewTasksLine(["Bài 1 (2 thẻ)"], 0) === "Thẻ mới hôm nay (đã học xong): Bài 1 (2 thẻ)", "LP-09: học hết thẻ mới -> nói đã học xong");
   assert(todayNewTasksLine(["A (2 thẻ)", "B (3 thẻ)"], 5) === "Thẻ mới hôm nay: A (2 thẻ) · B (3 thẻ)" && todayNewTasksLine([], 3) === null, "LP-09: còn thẻ mới / không có chương");
+
+  // ---------- LP-08 (6): chương "Ngày N" tự chia lại, chỉ gộp được vào chương đặt tên riêng ----------
+  assert(
+    ["Ngày 3", "Ngày 3–4", "Tuần 2 (ngày 8–14)", "Tuần 1 (ngày 1)"].every(isAutoDayChapterTitle) &&
+      !["Ngày 3-4", "Ngày 3 ", "ngày 3", "Chào hỏi", "Ngày 1 + 2", "Tuần 2", "第1課"].some(isAutoDayChapterTitle),
+    "LP-08: nhận đúng tên chương tự sinh như server (gạch nối '–', khớp trọn chuỗi)"
+  );
+  assert(
+    !canMergeIntoPrevious(false, "Ngày 1") && canMergeIntoPrevious(false, "Chào hỏi") && canMergeIntoPrevious(null, "Bài 1") &&
+      canMergeIntoPrevious(true, "Ngày 5") && !canMergeIntoPrevious(true, undefined),
+    "LP-08: bản nháp chia theo ngày chỉ gộp vào chương đặt tên riêng; bản nhận ra chương gộp tự do; chương đầu không gộp"
+  );
+  const chap = (cardCount: number, dayFrom = 1, dayTo = 1, id = "a") => ({ id, cardCount, dayFrom, dayTo });
+  assert(
+    chapterLayoutKey([chap(2), chap(1, 2, 2, "b")]) !== chapterLayoutKey([chap(2), chap(2, 2, 2, "b")]) &&
+      chapterLayoutKey([chap(2), chap(1, 2, 2, "b")]) !== chapterLayoutKey([chap(2), chap(1, 2, 3, "b")]) &&
+      chapterLayoutKey([chap(2), chap(1, 2, 2, "b")]) === chapterLayoutKey([chap(2), chap(1, 2, 2, "b")]),
+    "LP-08: số thẻ / dải ngày của chương KHÁC đổi -> chương đang mở tải lại; không đổi gì -> không tải"
+  );
 
   // ---------- STAFF-02/13: mật khẩu staff ----------
   assert(staffRedirectFor("/profile") === STAFF_ACCOUNT_PATH && staffRedirectFor("/decks") === "/admin", "STAFF-02: staff mở /profile -> Hồ sơ trong Admin Panel");

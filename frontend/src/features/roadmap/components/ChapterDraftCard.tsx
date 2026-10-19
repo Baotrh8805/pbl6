@@ -16,11 +16,18 @@ interface ChapterDraftCardProps {
   canMergeUp: boolean;
   /** Đang kích hoạt lộ trình: khoá gộp chương / chọn thẻ. */
   activating: boolean;
+  /** Đang "Dịch lại nghĩa": server trả 409 cho mọi thay đổi chương nên khoá cả tên chương, gộp và chọn thẻ (vẫn xem được). */
+  locked?: boolean;
   onRename: (cid: string, title: string) => void;
   onMergeUp: (cid: string) => Promise<void>;
   onItemsPatched: () => void;
   /** Đổi giá trị -> tải lại danh sách đang mở (vd. "Dịch lại nghĩa" xong: nghĩa tiếng Việt mới của item). */
   reloadKey?: string;
+  /**
+   * Bố cục chương của cả bản nháp (chapterLayoutKey): đổi -> tải lại NGẦM danh sách đang mở. Server chia lại chương "Ngày N" sau
+   * mỗi lần chọn thẻ ở BẤT KỲ chương nào, nên chương này có thể nhận / mất mục dù số thẻ của chính nó không đổi.
+   */
+  layoutKey?: string;
 }
 
 export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
@@ -29,10 +36,12 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
   index,
   canMergeUp,
   activating,
+  locked = false,
   onRename,
   onMergeUp,
   onItemsPatched,
   reloadKey = "",
+  layoutKey,
 }) => {
   const [title, setTitle] = useState({ src: chapter.title, value: chapter.title });
   if (title.src !== chapter.title) setTitle({ src: chapter.title, value: chapter.title });
@@ -41,12 +50,14 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
 
-  // Tải lại ngầm khi số thẻ của chương đổi (bỏ tick, gộp chương) để danh sách khớp server.
+  // Tải lại ngầm khi bố cục chương đổi (bỏ tick ở đây hay chương khác, gộp chương) để danh sách khớp server; không có khoá bố
+  // cục thì theo số thẻ của chính chương.
   const items = useAsync(
     () => (open ? fetchChapterItems(pathId, chapter.id) : Promise.resolve([])),
     [pathId, chapter.id, open, version, reloadKey],
-    chapter.cardCount
+    layoutKey ?? chapter.cardCount
   );
+  const busy = activating || locked;
 
   const commitTitle = () => {
     const next = title.value.trim();
@@ -94,6 +105,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
             <input
               value={title.value}
               maxLength={100}
+              disabled={locked}
               onChange={(e) => setTitle({ src: chapter.title, value: e.target.value })}
               onBlur={commitTitle}
               onKeyDown={(e) => {
@@ -128,7 +140,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
         {canMergeUp && index > 0 && (
           <button
             type="button"
-            disabled={activating || merging}
+            disabled={busy || merging}
             onClick={() => void mergeUp()}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
@@ -150,7 +162,7 @@ export const ChapterDraftCard: React.FC<ChapterDraftCardProps> = ({
           ) : items.error ? (
             <p className="text-body-sm text-error">{items.error}</p>
           ) : (
-            <ChapterItemsList items={items.data ?? []} busy={activating} onToggle={toggle} />
+            <ChapterItemsList items={items.data ?? []} busy={busy} onToggle={toggle} />
           )}
         </div>
       )}
