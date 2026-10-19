@@ -35,6 +35,54 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
             + "WHERE created_at >= :since GROUP BY day", nativeQuery = true)
     List<DayCount> countByDay(@Param("since") Instant since, @Param("zone") String zone);
 
+    /**
+     * Engine bước TEXT của một job: text_meta.engine (tesseract | gemini | pdf-text | docx | text); job hỏng trước khi có text_meta
+     * (hoặc dòng cũ) suy từ source_type: ảnh -> tesseract (ocrMode chỉ là auto/vertical/horizontal, Gemini chỉ là đường dự phòng),
+     * txt / dán -> text, còn lại giữ nguyên (pdf, docx).
+     */
+    String ENGINE_SQL = "COALESCE(NULLIF(text_meta->>'engine', ''), CASE source_type WHEN 'image' THEN 'tesseract' "
+            + "WHEN 'txt' THEN 'text' ELSE source_type END)";
+
+    /**
+     * G6 (hợp đồng đợt 2 §8): hiệu suất từng engine trên job đã kết thúc (DONE / FAILED, bỏ CANCELLED) tạo từ :since.
+     * avgConfidence = trung bình text_meta.meanConfidence (0..1, chỉ OCR có); avgSeconds = finished_at - started_at của job DONE
+     * (job "Phân tích lại" đặt lại started_at nên chỉ đo lượt chạy gần nhất).
+     */
+    @Query(value = "SELECT " + ENGINE_SQL + " AS \"engine\", count(*) AS \"total\", "
+            + "count(*) FILTER (WHERE status = 'FAILED') AS \"failed\", "
+            + "count(*) FILTER (WHERE text_meta->>'lowConfidence' = 'true') AS \"lowConfidence\", "
+            + "CAST(avg(CASE WHEN jsonb_typeof(text_meta->'meanConfidence') = 'number' "
+            + "THEN CAST(text_meta->>'meanConfidence' AS double precision) END) AS double precision) AS \"avgConfidence\", "
+            + "CAST(avg(CASE WHEN status = 'DONE' AND started_at IS NOT NULL AND finished_at >= started_at "
+            + "THEN EXTRACT(EPOCH FROM finished_at - started_at) END) AS double precision) AS \"avgSeconds\" "
+            + "FROM extraction_jobs WHERE created_at >= :since AND status IN ('DONE', 'FAILED') "
+            + "GROUP BY 1 ORDER BY 2 DESC, 1", nativeQuery = true)
+    List<AiEngineStatRow> engineStats(@Param("since") Instant since);
+
+    /**
+     * G6: chuỗi OCR theo ngày (múi :zone) — job nguồn ảnh / PDF đã kết thúc, trừ PDF có lớp chữ (engine pdf-text: không OCR).
+     * geminiFallback = Tesseract tin cậy thấp nên ai-service chuyển Gemini chép lại (engine = gemini).
+     */
+    @Query(value = "SELECT CAST(created_at AT TIME ZONE :zone AS date) AS \"day\", count(*) AS \"ocrJobs\", "
+            + "count(*) FILTER (WHERE status = 'FAILED') AS \"failed\", "
+            + "count(*) FILTER (WHERE text_meta->>'lowConfidence' = 'true') AS \"lowConfidence\", "
+            + "count(*) FILTER (WHERE text_meta->>'engine' = 'gemini') AS \"geminiFallback\" "
+            + "FROM extraction_jobs WHERE created_at >= :since AND source_type IN ('image', 'pdf') "
+            + "AND status IN ('DONE', 'FAILED') AND COALESCE(text_meta->>'engine', '') <> 'pdf-text' "
+            + "GROUP BY 1", nativeQuery = true)
+    List<OcrDayRow> ocrByDay(@Param("since") Instant since, @Param("zone") String zone);
+
+    /**
+     * G6: bước dịch nghĩa VI của job tạo từ :since. Chỉ đếm job đã thật sự gọi enrich (stats.enriched = true hoặc có
+     * stats.enrichReason: quota | error | no_api_key); job không cần dịch (nghĩa EN, mọi nghĩa VI đã có) không vào total.
+     */
+    @Query(value = "SELECT count(*) AS \"total\", count(*) FILTER (WHERE stats->>'enriched' = 'true') AS \"enriched\", "
+            + "count(*) FILTER (WHERE stats->>'enrichReason' = 'quota') AS \"quota\", "
+            + "count(*) FILTER (WHERE stats->>'enrichReason' = 'error') AS \"error\" "
+            + "FROM extraction_jobs WHERE created_at >= :since "
+            + "AND (stats->>'enriched' = 'true' OR stats->>'enrichReason' IS NOT NULL)", nativeQuery = true)
+    EnrichStatRow enrichStats(@Param("since") Instant since);
+
     /** Admin: mọi job; status/userId null = không lọc. */
     @Query("SELECT j FROM ExtractionJob j WHERE (:status IS NULL OR j.status = :status) "
             + "AND (:userId IS NULL OR j.userId = :userId) ORDER BY j.createdAt DESC")

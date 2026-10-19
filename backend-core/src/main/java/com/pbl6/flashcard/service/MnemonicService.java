@@ -10,6 +10,7 @@ import com.pbl6.flashcard.dto.mnemonic.MnemonicDtos.KanjiMnemonicsResponse;
 import com.pbl6.flashcard.dto.mnemonic.MnemonicDtos.Mine;
 import com.pbl6.flashcard.dto.mnemonic.MnemonicDtos.RadicalRef;
 import com.pbl6.flashcard.model.KanjiMnemonic;
+import com.pbl6.flashcard.model.Notification;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.repository.KanjiMnemonicRepository;
 import com.pbl6.flashcard.security.MnemonicRateLimiter;
@@ -46,8 +47,6 @@ public class MnemonicService {
 
     private static final Logger log = LoggerFactory.getLogger(MnemonicService.class);
 
-    /** Loại thông báo (cột type dài 30, không CHECK): hằng riêng ở đây để không sửa model Notification dùng chung giữa các làn. */
-    private static final String NOTIFY_REVIEWED = "MNEMONIC_REVIEWED";
     private static final String AUDIT_TARGET = "MNEMONIC";
     static final String REPLACED_NOTE = "Thay bằng mẹo mới";
     /** Mẹo PENDING tối đa của một người cho một chữ: chặn spam hàng chờ duyệt. */
@@ -232,7 +231,7 @@ public class MnemonicService {
         payload.put("kanji", m.getKanji());
         payload.put("status", status);
         payload.put("note", note);
-        notifications.notify(m.getCreatedBy(), NOTIFY_REVIEWED, payload);
+        notifications.notify(m.getCreatedBy(), Notification.MNEMONIC_REVIEWED, payload);
     }
 
     private KanjiMnemonic find(UUID id) {

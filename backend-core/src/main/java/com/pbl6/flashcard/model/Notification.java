@@ -23,6 +23,8 @@ public class Notification {
     public static final String LEARNING_PATH_REMINDER = "LEARNING_PATH_REMINDER";
     public static final String LEARNING_PATH_CHAPTER_PASSED = "LEARNING_PATH_CHAPTER_PASSED";
     public static final String LEARNING_PATH_COMPLETED = "LEARNING_PATH_COMPLETED";
+    /** Đợt 2 §4 (G2): mẹo nhớ bộ thủ của người dùng đã được duyệt / từ chối; payload {kanji, status, note}. */
+    public static final String MNEMONIC_REVIEWED = "MNEMONIC_REVIEWED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

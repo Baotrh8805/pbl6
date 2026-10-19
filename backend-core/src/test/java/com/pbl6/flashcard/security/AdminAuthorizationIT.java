@@ -41,6 +41,12 @@ class AdminAuthorizationIT extends IntegrationTest {
                 .andExpect(status().isForbidden());
         call(get("/api/library/decks"), token, null).andExpect(status().isForbidden());
         call(get("/api/quizzes/n5-core"), token, null).andExpect(status().isForbidden());
+        // đợt 2: API học tập mới cũng chỉ cho USER
+        call(get("/api/reviews/activity"), token, null).andExpect(status().isForbidden());
+        call(get("/api/practice/stats"), token, null).andExpect(status().isForbidden());
+        call(get("/api/kanji/日/mnemonics"), token, null).andExpect(status().isForbidden());
+        call(get("/api/decks/n5-core/quiz-capabilities"), token, null).andExpect(status().isForbidden());
+        call(post("/api/quiz-questions/" + NO_UUID + "/flags"), token, Map.of("reason", "TYPO")).andExpect(status().isForbidden());
     }
 
     @Test
@@ -169,28 +175,68 @@ class AdminAuthorizationIT extends IntegrationTest {
                 org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/extractions/00000000-0000-0000-0000-000000000000", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/reports", Role.ADMIN),
                 org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/resolve", Role.ADMIN),
-                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/dismiss", Role.ADMIN));
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/reports/999999/dismiss", Role.ADMIN),
+                // ---------- đợt 2 (hợp đồng 2026-10-19): ngân hàng câu hỏi §1.3 ----------
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/questions", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/questions/" + NO_UUID, Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("PATCH", "/api/admin/questions/" + NO_UUID, Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/questions/" + NO_UUID + "/hide", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/questions/" + NO_UUID + "/unhide", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/question-flags/999999/resolve", Role.ADMIN),
+                // §3 xác thực email
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/users/999999/verify-email", Role.ADMIN),
+                // §4 mẹo nhớ bộ thủ
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/mnemonics", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("PATCH", "/api/admin/mnemonics/" + NO_UUID, Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/mnemonics/" + NO_UUID + "/approve", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/mnemonics/" + NO_UUID + "/reject", Role.ADMIN),
+                // §5 nguồn tri thức chuẩn (xoá: SUPER_ADMIN)
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/knowledge-sources", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/knowledge-sources/" + NO_UUID, Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/knowledge-sources", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("PUT", "/api/admin/knowledge-sources/" + NO_UUID, Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/knowledge-sources/" + NO_UUID + "/archive", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/knowledge-sources/" + NO_UUID + "/activate", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("DELETE", "/api/admin/knowledge-sources/" + NO_UUID, Role.SUPER_ADMIN),
+                // §6 khiếu nại tài khoản
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/appeals", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/appeals/999999/resolve", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("POST", "/api/admin/appeals/999999/dismiss", Role.ADMIN),
+                // §8 thống kê / health
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/stats", Role.ADMIN),
+                org.junit.jupiter.params.provider.Arguments.of("GET", "/api/admin/health", Role.ADMIN));
     }
 
-    /** AZ-01: 403 khi và chỉ khi bậc thấp hơn vai trò tối thiểu (body rỗng {} -> có thể 200/404/400 nhưng không 403). */
+    private static final String NO_UUID = "00000000-0000-0000-0000-000000000000";
+
+    /**
+     * AZ-01: 403 khi và chỉ khi bậc thấp hơn vai trò tối thiểu (body rỗng {} -> có thể 200/404/400/415 nhưng không 403);
+     * không token -> 401 với mọi endpoint admin.
+     */
     @ParameterizedTest
     @org.junit.jupiter.params.provider.MethodSource("contentEndpoints")
     void content_matrix(String method, String path, Role min) throws Exception {
+        // Body hợp lệ tối thiểu: @Valid chạy trước @PreAuthorize nên body sai sẽ ra 400 thay vì 403
+        Object body = method.equals("GET") || method.equals("DELETE") ? null
+                : path.endsWith("/resolve") ? Map.of("action", "NONE") : Map.of();
+        assertEquals(401, call(request(method, path), null, body).andReturn().getResponse().getStatus(),
+                method + " " + path + " không token");
         for (Role role : Role.values()) {
             String token = role == Role.USER ? newUser() : newStaff(role);
-            var req = switch (method) {
-                case "POST" -> post(path);
-                case "PATCH" -> patch(path);
-                case "DELETE" -> delete(path);
-                default -> get(path);
-            };
-            // Body hợp lệ tối thiểu: @Valid chạy trước @PreAuthorize nên body sai sẽ ra 400 thay vì 403
-            Object body = method.equals("GET") || method.equals("DELETE") ? null
-                    : path.endsWith("/resolve") ? Map.of("action", "NONE") : Map.of();
-            int status = call(req, token, body)
+            int status = call(request(method, path), token, body)
                     .andReturn().getResponse().getStatus();
             boolean forbidden = status == 403;
             assertEquals(role.rank() < min.rank(), forbidden, method + " " + path + " với " + role + " -> " + status);
         }
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request(String method, String path) {
+        return switch (method) {
+            case "POST" -> post(path);
+            case "PUT" -> put(path);
+            case "PATCH" -> patch(path);
+            case "DELETE" -> delete(path);
+            default -> get(path);
+        };
     }
 }

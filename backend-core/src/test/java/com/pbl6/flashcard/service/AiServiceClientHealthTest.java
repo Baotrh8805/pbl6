@@ -48,5 +48,29 @@ class AiServiceClientHealthTest {
         server.stop(0);
         AiServiceClient c = new AiServiceClient(RestClient.builder(), baseUrl, "secret", Duration.ofSeconds(5));
         assertFalse(c.health());
+        assertTrue(c.healthBody().isEmpty(), "không kết nối được -> rỗng");
+    }
+
+    @Test
+    void health_body_returns_engine_flags_with_internal_key() {
+        server.removeContext("/api/extract/health");
+        server.createContext("/api/extract/health", ex -> {
+            if (!"secret".equals(ex.getRequestHeaders().getFirst("X-Internal-Key"))) {
+                ex.sendResponseHeaders(401, -1);
+                ex.close();
+                return;
+            }
+            byte[] body = "{\"sudachi\":true,\"gemini\":false}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            ex.getResponseHeaders().add("Content-Type", "application/json");
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        AiServiceClient withKey = new AiServiceClient(RestClient.builder(), baseUrl, "secret", Duration.ofSeconds(5));
+        var body = withKey.healthBody().orElseThrow();
+        assertTrue(body.get("sudachi").asBoolean());
+        assertFalse(body.get("gemini").asBoolean());
+        AiServiceClient noKey = new AiServiceClient(RestClient.builder(), baseUrl, "", Duration.ofSeconds(5));
+        assertTrue(noKey.healthBody().isEmpty(), "401 -> rỗng");
     }
 }

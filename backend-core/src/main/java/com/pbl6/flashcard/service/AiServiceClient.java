@@ -80,10 +80,22 @@ public class AiServiceClient {
 
     /** true khi GET /api/extract/health trả 2xx trong 2 giây; mọi lỗi = false. */
     public boolean health() {
+        return healthBody().isPresent();
+    }
+
+    /**
+     * GET /api/extract/health (cùng client 2 giây như {@link #health()}) và trả body JSON — cờ từng thành phần
+     * {sudachi, jmdict, tesseract, gemini, kanjivg…: boolean} cho dashboard admin (hợp đồng đợt 2 §8). Rỗng khi không gọi được /
+     * không 2xx / body không đọc được; 2xx không body = object rỗng (dịch vụ vẫn "ok", chỉ là không có cờ).
+     */
+    public java.util.Optional<JsonNode> healthBody() {
         try {
-            return healthHttp.get().uri("/api/extract/health").retrieve().toBodilessEntity().getStatusCode().is2xxSuccessful();
+            var res = healthHttp.get().uri("/api/extract/health").retrieve().toEntity(JsonNode.class);
+            if (!res.getStatusCode().is2xxSuccessful()) return java.util.Optional.empty();
+            JsonNode body = res.getBody();
+            return java.util.Optional.of(body != null ? body : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode());
         } catch (RuntimeException e) {
-            return false;
+            return java.util.Optional.empty();
         }
     }
 

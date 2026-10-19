@@ -29,8 +29,9 @@ public class AdminStatsController {
         return service.stats(days);
     }
 
+    /** db / aiService / version / backup / lastBackupAt + engines (cờ thành phần ai-service, hợp đồng đợt 2 §8). */
     @GetMapping("/health")
-    public Map<String, String> health() {
+    public Map<String, Object> health() {
         return service.health();
     }
 }
