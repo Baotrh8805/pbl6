@@ -16,8 +16,9 @@ public final class AiDtos {
 
     /**
      * conflicts (F2, hợp đồng đợt 2 §5): cảnh báo mâu thuẫn ai-service gắn cho item (khoá note_vi như Python, ConflictSupport chuẩn
-     * hoá thành noteVi khi lưu); ai-service cũ không trả = null. docReading / docMeaningEn: cách đọc / nghĩa EN TÀI LIỆU khai báo
-     * (tuỳ chọn — ai-service hiện chỉ dùng nội bộ rồi bỏ khỏi item, nên thường null).
+     * hoá thành noteVi khi lưu); ai-service cũ không trả = null. docReading / docMeaningEn: cách đọc / nghĩa EN TÀI LIỆU khai báo —
+     * item /extract/analyze luôn mang hai khoá này (và docLevel, backend không lưu nên không khai ở đây), null = tài liệu không ghi
+     * (hoặc ai-service cũ chưa trả). ExtractionWorker lưu chúng để kiểm tra lại mâu thuẫn; KnowledgeSourceService lấy cách đọc từ đây.
      */
     public record Item(String kind, Integer position, String term, String surface, String reading,
                        List<Map<String, String>> readingSegments, String hanViet, String pos,

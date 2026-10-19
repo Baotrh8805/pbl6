@@ -2,6 +2,8 @@ package com.pbl6.flashcard.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.pbl6.flashcard.model.Role;
+import com.pbl6.flashcard.model.User;
+import com.pbl6.flashcard.service.AccountDeletionService;
 import com.pbl6.flashcard.service.AiServiceClient;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Admin quản lý người dùng: khoá, premium, hạn mức AI riêng, thu hồi phiên; bảo vệ lẫn nhau theo bậc. */
@@ -181,6 +184,7 @@ class AdminUserIT extends IntegrationTest {
         assertTrue(d.get("lastReviewAt").isNull());
         assertEquals(1, d.get("activeSessions").asInt());
         assertEquals(u.email, d.get("email").asText());
+        assertFalse(d.get("deleted").asBoolean());
     }
 
     @Test
@@ -206,7 +210,49 @@ class AdminUserIT extends IntegrationTest {
                 .andExpect(status().isOk()));
         assertEquals(1, page.get("total").asLong());
         assertEquals(1, page.get("items").get(0).get("deckCount").asInt());
+        assertFalse(page.get("items").get(0).get("deleted").asBoolean());
         assertEquals(0, read(call(get("/api/admin/users").param("q", u.email).param("role", "ADMIN"), viewer.token, null))
                 .get("total").asLong());
+    }
+
+    /**
+     * Tài khoản đã tự xoá: danh sách / chi tiết đánh dấu deleted=true; mở khoá (kể cả Super admin), Premium, hạn mức, vai trò
+     * đều 409 để không hồi sinh tài khoản chủ nhân đã yêu cầu xoá. Khoá lại là no-op nên vẫn 200 và không audit.
+     */
+    @Test
+    void self_deleted_account_is_flagged_and_cannot_be_revived() throws Exception {
+        Account u = user();
+        call(delete("/api/auth/me"), u.token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        Account admin = staff(Role.ADMIN);
+        Account root = staff(Role.SUPER_ADMIN);
+        String anonymized = AccountDeletionService.anonymizedEmail(u.id);
+
+        JsonNode page = read(call(get("/api/admin/users").param("q", anonymized), admin.token, null).andExpect(status().isOk()));
+        assertEquals(1, page.get("total").asLong());
+        JsonNode row = page.get("items").get(0);
+        assertTrue(row.get("deleted").asBoolean());
+        assertFalse(row.get("lockedAt").isNull());
+        JsonNode d = read(call(get("/api/admin/users/" + u.id), admin.token, null).andExpect(status().isOk()));
+        assertTrue(d.get("deleted").asBoolean());
+        assertEquals(AccountDeletionService.DELETED_NAME, d.get("fullName").asText());
+
+        patchUser(admin.token, u.id, body("locked", false)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(AccountDeletionService.CANNOT_UNLOCK));
+        patchUser(root.token, u.id, body("locked", false)).andExpect(status().isConflict());
+        patchUser(admin.token, u.id, body("premium", true)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(AccountDeletionService.CANNOT_CHANGE));
+        patchUser(admin.token, u.id, body("extractionDailyLimit", 5)).andExpect(status().isConflict());
+        patchUser(admin.token, u.id, body("clearLimit", true)).andExpect(status().isConflict());
+        call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "ADMIN")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(AccountDeletionService.CANNOT_CHANGE));
+        patchUser(admin.token, u.id, body("locked", true)).andExpect(status().isOk());
+
+        User after = userRepository.findById(u.id).orElseThrow();
+        assertNotNull(after.getLockedAt(), "khoá vĩnh viễn giữ nguyên");
+        assertEquals(Role.USER, after.getRole());
+        assertFalse(after.getIsPremium());
+        assertNull(after.getExtractionDailyLimit());
+        assertEquals(anonymized, after.getEmail());
+        assertEquals(1, auditCount(admin.token, u.id), "chỉ có USER_SELF_DELETE, không USER_UNLOCK / USER_PREMIUM / USER_ROLE");
     }
 }

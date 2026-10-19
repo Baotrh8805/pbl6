@@ -102,6 +102,11 @@ public class AuthService {
      * chưa xác thực + gửi link, needsVerification=true; tắt -> đã xác thực sẵn, đăng nhập được ngay.
      */
     public RegisterResponse register(RegisterRequest request, String ip) {
+        // Miền @deleted.local dành cho tài khoản đã tự xoá (AccountDeletionService.isReservedEmail). Báo y hệt lỗi @Email của
+        // RegisterRequest và kiểm trước mọi thứ như @Valid: người đăng ký không biết đây là miền dành riêng, không tốn lượt.
+        if (AccountDeletionService.isReservedEmail(User.normalizeEmail(request.getEmail()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email: " + RegisterRequest.EMAIL_INVALID);
+        }
         if (!settings.getBool(SettingsService.KEY_REGISTRATION_OPEN)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Hệ thống tạm ngừng đăng ký tài khoản mới.");
         }

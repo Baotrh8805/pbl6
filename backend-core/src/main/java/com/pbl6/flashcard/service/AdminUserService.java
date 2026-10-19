@@ -82,7 +82,8 @@ public class AdminUserService {
                 decks.countByOwnerId(u.getId()), cards.countByDeck_OwnerId(u.getId()),
                 jobs.countByUserId(u.getId()), jobs.countByUserIdAndCreatedAtAfter(u.getId(), now.minus(Duration.ofHours(24))),
                 quizzes.countByUserId(u.getId()), users.lastReviewAt(u.getId()),
-                sessions.countByUserIdAndExpiresAtAfter(u.getId(), now), u.isMustChangePassword(), u.getEmailVerifiedAt() != null);
+                sessions.countByUserIdAndExpiresAtAfter(u.getId(), now), u.isMustChangePassword(), u.getEmailVerifiedAt() != null,
+                AccountDeletionService.isDeleted(u));
     }
 
     /**
@@ -108,6 +109,11 @@ public class AdminUserService {
     public Detail patch(User actor, Long id, AdminUserPatch req) {
         User target = find(id);
         requireBelow(actor, target);
+        Integer newLimit = Boolean.TRUE.equals(req.clearLimit()) ? null : req.extractionDailyLimit();
+        boolean limitGiven = Boolean.TRUE.equals(req.clearLimit()) || req.extractionDailyLimit() != null;
+        // Tài khoản đã tự xoá: khoá lại (locked=true) là no-op nên vẫn cho qua, mọi thay đổi khác -> 409 (xem requireNotDeleted)
+        if (Boolean.FALSE.equals(req.locked())) requireNotDeleted(target, AccountDeletionService.CANNOT_UNLOCK);
+        if (req.premium() != null || limitGiven) requireNotDeleted(target, AccountDeletionService.CANNOT_CHANGE);
         Map<String, Object> changes = new HashMap<>();
 
         if (req.locked() != null && req.locked() != (target.getLockedAt() != null)) {
@@ -135,8 +141,6 @@ public class AdminUserService {
                 notifications.notify(target.getId(), com.pbl6.flashcard.model.Notification.PREMIUM_CHANGED, p);
             }
         }
-        Integer newLimit = Boolean.TRUE.equals(req.clearLimit()) ? null : req.extractionDailyLimit();
-        boolean limitGiven = Boolean.TRUE.equals(req.clearLimit()) || req.extractionDailyLimit() != null;
         if (limitGiven && !Objects.equals(newLimit, target.getExtractionDailyLimit())) {
             changes.putAll(AuditService.diff("extractionDailyLimit", target.getExtractionDailyLimit(), newLimit));
             target.setExtractionDailyLimit(newLimit);
@@ -156,6 +160,7 @@ public class AdminUserService {
     public Detail changeRole(User actor, Long id, Role role) {
         User target = find(id);
         requireNotSelf(actor, target);
+        requireNotDeleted(target, AccountDeletionService.CANNOT_CHANGE);
         if (target.getRole() != role) {
             audit.log(actor.getId(), "USER_ROLE", "USER", String.valueOf(id), AuditService.diff("role", target.getRole(), role));
             target.setRole(role);
@@ -185,6 +190,17 @@ public class AdminUserService {
     private static void requireNotSelf(User actor, User target) {
         if (actor.getId().equals(target.getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể thao tác trên tài khoản của chính bạn.");
+        }
+    }
+
+    /**
+     * Tài khoản đã tự xoá chỉ còn là hàng giữ FK (bộ thẻ public, đánh giá, nhật ký) với email ẩn danh, mật khẩu ngẫu nhiên:
+     * mở khoá là hồi sinh tài khoản chủ nhân đã yêu cầu xoá (Nghị định 13/2023), còn vai trò / Premium / hạn mức thì không ai
+     * dùng nữa. 409 (trạng thái tài khoản không cho phép) thay vì 403: admin có quyền, chỉ là tài khoản không còn.
+     */
+    private static void requireNotDeleted(User target, String message) {
+        if (AccountDeletionService.isDeleted(target)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, message);
         }
     }
 

@@ -155,7 +155,8 @@ class AppealIT extends IntegrationTest {
 
     /**
      * Tài khoản đã tự xoá bị khoá vĩnh viễn với email ẩn danh đoán được theo id: không nhận khiếu nại (vẫn 202 chung), và
-     * khiếu nại có sẵn (dữ liệu cũ / ghi tay) không mở khoá được. Địa chỉ @deleted.local tự đăng ký không bị coi là đã xoá.
+     * khiếu nại có sẵn (dữ liệu cũ / ghi tay) không mở khoá được (409 từ AdminUserService.patch, như trang Người dùng).
+     * Đăng ký không còn nhận @deleted.local, nhưng hàng cũ mang địa chỉ như vậy (không khớp id) không bị coi là đã xoá.
      */
     @Test
     void self_deleted_accounts_cannot_appeal_or_be_unlocked() throws Exception {
@@ -175,14 +176,21 @@ class AppealIT extends IntegrationTest {
         String root = newStaff(Role.SUPER_ADMIN, rootEmail);
         long id = findAppeal(root, "OPEN", anonymized).get("id").asLong();
         call(post("/api/admin/appeals/" + id + "/resolve"), root, Map.of("action", "UNLOCK"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message", containsString("đã bị xoá")));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(AccountDeletionService.CANNOT_UNLOCK));
         assertNotNull(findAppeal(root, "OPEN", anonymized), "bị từ chối -> khiếu nại vẫn chờ");
         assertNotNull(userRepository.findById(uid).orElseThrow().getLockedAt(), "khoá vĩnh viễn giữ nguyên");
         assertEquals(0, audits("USER_UNLOCK", userId(rootEmail)));
+        assertEquals(0, audits("APPEAL_RESOLVE", userId(rootEmail)), "rollback cả transaction");
         call(post("/api/admin/appeals/" + id + "/dismiss"), root, null).andExpect(status().isOk());
 
+        // Hàng cũ có email @deleted.local nhưng không phải deleted+{id của chính nó}: khiếu nại như tài khoản khoá thường
         String lookalike = "it-" + java.util.UUID.randomUUID() + "@deleted.local";
-        lockedUser(lookalike, null);
+        String normal = newEmail();
+        lockedUser(normal, null);
+        User legacy = userRepository.findByEmail(normal).orElseThrow();
+        legacy.setEmail(lookalike);
+        userRepository.save(legacy);
         appeal(lookalike, MESSAGE).andExpect(status().isAccepted());
         assertEquals(1, appealRows(lookalike));
     }

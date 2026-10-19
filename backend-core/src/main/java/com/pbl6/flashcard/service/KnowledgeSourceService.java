@@ -322,8 +322,9 @@ public class KnowledgeSourceService {
      *   <li>level = cấp quản trị khai cho cả nguồn (KHÔNG lấy cấp ai-service đoán: đó là ý kiến của danh sách JLPT, đem làm "mục
      *       quản trị" sẽ báo lệch 1 cấp với độ tin cậy 0.95).</li>
      * </ul>
-     * ai-service hiện dùng docReading / docMeaningEn nội bộ rồi bỏ khỏi item (khoá _doc), nên tới khi nó trả hai trường này, mục VOCAB
-     * chỉ có nghĩa VI / cấp — thiếu cách đọc là im lặng (từ điển quyết), không bao giờ là cảnh báo sai.
+     * Item /extract/analyze luôn mang docReading / docMeaningEn / docLevel (null = tài liệu không ghi), nên mục VOCAB lấy cách đọc từ
+     * docReading; tài liệu không ghi cách đọc (hoặc ai-service cũ chưa trả khoá) thì mục chỉ có nghĩa / cấp — thiếu cách đọc là im lặng
+     * (từ điển quyết), không bao giờ là cảnh báo sai.
      */
     static List<Map<String, Object>> entriesOf(List<AiDtos.Item> items, String level) {
         Map<String, Map<String, Object>> byTerm = new LinkedHashMap<>();

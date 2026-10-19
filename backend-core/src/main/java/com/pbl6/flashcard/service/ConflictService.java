@@ -41,8 +41,10 @@ import java.util.UUID;
  *   <li>Job phân tích bởi pipeline có F2 (options có {@value ConflictSupport#OPTION_MIN_CONFIDENCE}): reading / furigana chỉ khi đã lưu
  *       docReading, meaning chỉ khi đã lưu docMeaningEn; gửi docReading / docMeaningEn = null tường minh để ai-service không coi cách
  *       đọc Sudachi / nghĩa từ điển của thẻ là của tài liệu, và không gửi meaningVi (có thể do Gemini / người dùng viết, lúc phân tích
- *       ai-service chưa thấy nó). Hiện ai-service chưa trả docReading / docMeaningEn trên item của /extract/analyze nên với job mới,
- *       kiểm tra lại giữ nguyên cảnh báo lúc phân tích thay vì bịa thêm hay xoá oan.</li>
+ *       ai-service chưa thấy nó). Item của /extract/analyze luôn mang docReading / docMeaningEn / docLevel (null = tài liệu không
+ *       ghi) và worker lưu hai khoá đầu vào doc_reading / doc_meaning_en, nên với job mới kiểm tra lại đánh giá lại reading / meaning
+ *       từ đúng khai báo đó. Item chưa lưu khai báo (phân tích bởi ai-service F2 cũ, lúc nó còn bỏ khai báo khỏi item) thì trường đó
+ *       không được đánh giá lại: giữ nguyên cảnh báo lúc phân tích thay vì bịa thêm hay xoá oan.</li>
  *   <li>Job cũ (trước F2, không có khoá trên): reading / furigana / meaning của thẻ được coi là của tài liệu như ai-service quy ước
  *       cho ConflictItem thiếu khoá doc* — đó là mục đích kiểm tra lại job cũ.</li>
  *   <li>level / grammar không bao giờ được đánh giá lại (cần docLevel mà backend không lưu): cảnh báo lúc phân tích được giữ.</li>

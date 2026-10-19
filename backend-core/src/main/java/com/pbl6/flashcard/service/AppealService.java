@@ -111,8 +111,9 @@ public class AppealService {
      * UNLOCK đi qua AdminUserService.patch(locked=false): cùng quy tắc bậc (ADMIN chỉ mở khoá USER -> 403) và cùng audit
      * USER_UNLOCK như mở khoá ở trang Người dùng. Mọi bước chung một transaction: bị từ chối mở khoá thì khiếu nại vẫn OPEN.
      * Tài khoản đã được mở khoá ở chỗ khác -> patch không đổi gì (không USER_UNLOCK), khiếu nại vẫn đóng với action UNLOCK.
-     * Tài khoản đã tự xoá -> 400: khoá vĩnh viễn của AccountDeletionService không được gỡ qua khiếu nại (create() đã không
-     * nhận khiếu nại như vậy; đây là chốt chặn cho dữ liệu cũ / ghi tay).
+     * Tài khoản đã tự xoá -> 409 từ chính patch() (cùng chốt chặn với trang Người dùng): khoá vĩnh viễn của
+     * AccountDeletionService không được gỡ qua khiếu nại (create() đã không nhận khiếu nại như vậy; đây là chốt chặn cho dữ
+     * liệu cũ / ghi tay). Bị từ chối -> rollback, khiếu nại vẫn OPEN để admin bác bỏ.
      */
     @Transactional
     public AppealResponse resolve(User actor, Long id, AppealResolveRequest req) {
@@ -120,13 +121,8 @@ public class AppealService {
         String note = trimToNull(req.note());
         close(a, AccountAppeal.RESOLVED, req.action().name(), note, actor);
         if (req.action() == AppealResolveRequest.Action.UNLOCK) {
-            User target = a.getUserId() == null ? null : users.findById(a.getUserId()).orElse(null);
-            if (target == null) {
+            if (a.getUserId() == null || !users.existsById(a.getUserId())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tài khoản của khiếu nại này không còn tồn tại.");
-            }
-            if (AccountDeletionService.isDeleted(target)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Tài khoản này đã bị xoá theo yêu cầu của chủ tài khoản, không mở khoá được.");
             }
             adminUsers.patch(actor, a.getUserId(), new AdminUserPatch(false, null, null, null, null, null));
         }

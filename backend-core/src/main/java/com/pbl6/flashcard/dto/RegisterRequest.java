@@ -9,9 +9,11 @@ public class RegisterRequest {
     public static final int MIN_PASSWORD = 6;
     /** BCrypt chỉ dùng 72 byte đầu (Spring Security từ chối mật khẩu dài hơn). */
     public static final int MAX_PASSWORD = 72;
+    /** Dùng chung với AuthService.register (miền @deleted.local dành riêng): hai lỗi trông như nhau. */
+    public static final String EMAIL_INVALID = "Email không đúng định dạng";
 
     @NotBlank(message = "Email không được để trống")
-    @Email(message = "Email không đúng định dạng")
+    @Email(message = EMAIL_INVALID)
     @Size(max = 255, message = "Email tối đa 255 ký tự")
     private String email;
 

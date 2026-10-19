@@ -67,6 +67,37 @@ class SelfDeleteIT extends IntegrationTest {
         assertTrue(lib.toString().contains("Người dùng đã xoá"), () -> lib.toString().substring(0, Math.min(400, lib.toString().length())));
     }
 
+    /**
+     * Miền @deleted.local dành cho tài khoản đã xoá: đăng ký báo lỗi y như email sai định dạng (không lộ miền dành riêng, không
+     * lộ email ẩn danh nào đã có). Nếu không chặn, ai đăng ký trước deleted+{id}@deleted.local sẽ làm người dùng {id} không tự
+     * xoá được (unique email).
+     */
+    @Test
+    void registration_rejects_the_reserved_deleted_domain() throws Exception {
+        String malformed = read(call(post("/api/auth/register"), null,
+                Map.of("email", "khong-phai-email", "password", "secret123", "fullName", "X"))
+                .andExpect(status().isBadRequest())).get("message").asText();
+        assertEquals("email: Email không đúng định dạng", malformed);
+
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+
+        String unclaimed = "deleted+" + (uid + 1_000_000) + "@deleted.local";
+        for (String reserved : List.of(unclaimed, "deleted+" + uid + "@deleted.local",
+                "IT-" + java.util.UUID.randomUUID() + "@Deleted.LOCAL")) {
+            JsonNode err = read(call(post("/api/auth/register"), null,
+                    Map.of("email", reserved, "password", "secret123", "fullName", "X"))
+                    .andExpect(status().isBadRequest()));
+            assertEquals(malformed, err.get("message").asText(), reserved);
+        }
+        assertTrue(userRepository.findByEmail(unclaimed).isEmpty());
+        // Email thật cũ vẫn đăng ký lại được (miền thường không bị ảnh hưởng)
+        call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "Lại"))
+                .andExpect(status().isOk());
+    }
+
     @Test
     void staff_cannot_delete_own_account() throws Exception {
         String admin = newStaff(Role.ADMIN);

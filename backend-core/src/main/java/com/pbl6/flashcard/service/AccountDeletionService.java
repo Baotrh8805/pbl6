@@ -38,6 +38,23 @@ public class AccountDeletionService {
         return u.getId() != null && anonymizedEmail(u.getId()).equals(u.getEmail());
     }
 
+    /** Đuôi email dành riêng cho tài khoản đã tự xoá (anonymizedEmail). */
+    public static final String RESERVED_DOMAIN = "@deleted.local";
+
+    /**
+     * Email (đã chuẩn hoá) thuộc miền dành riêng -> đăng ký không nhận (AuthService.register). Email ẩn danh đoán được theo id:
+     * nếu ai đó đăng ký trước deleted+{id}@deleted.local thì lúc người dùng {id} tự xoá, users.save() đụng unique email và họ
+     * không xoá được tài khoản; đồng thời admin không còn bị lẫn tài khoản thật với tài khoản đã xoá trong danh sách.
+     */
+    public static boolean isReservedEmail(String normalizedEmail) {
+        return normalizedEmail != null && normalizedEmail.endsWith(RESERVED_DOMAIN);
+    }
+
+    /** 409 khi admin mở khoá tài khoản đã tự xoá (trang Người dùng hoặc khiếu nại UNLOCK). */
+    public static final String CANNOT_UNLOCK = "Tài khoản đã bị xoá theo yêu cầu, không thể mở khoá.";
+    /** 409 khi admin đổi vai trò / Premium / hạn mức AI của tài khoản đã tự xoá. */
+    public static final String CANNOT_CHANGE = "Tài khoản đã bị xoá theo yêu cầu, không thể thay đổi.";
+
     private final UserRepository users;
     private final DeckRepository decks;
     private final DeckService deckService;
