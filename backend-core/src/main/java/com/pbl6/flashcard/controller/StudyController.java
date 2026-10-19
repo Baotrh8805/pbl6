@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.controller;
 
+import com.pbl6.flashcard.dto.deck.ActivityResponse;
 import com.pbl6.flashcard.dto.deck.QuizOutcomeResponse;
 import com.pbl6.flashcard.dto.deck.QuizResultResponse;
 import com.pbl6.flashcard.dto.deck.QuizAttemptDtos.*;
@@ -8,6 +9,7 @@ import com.pbl6.flashcard.dto.deck.ReviewResponse;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.QuizAttemptService;
 import com.pbl6.flashcard.service.QuizService;
+import com.pbl6.flashcard.service.ReviewActivityService;
 import com.pbl6.flashcard.service.ReviewService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -29,10 +31,13 @@ public class StudyController {
 
     private final ReviewService reviewService;
     private final QuizAttemptService quizService;
+    private final ReviewActivityService activityService;
 
-    public StudyController(ReviewService reviewService, QuizAttemptService quizService) {
+    public StudyController(ReviewService reviewService, QuizAttemptService quizService,
+                           ReviewActivityService activityService) {
         this.reviewService = reviewService;
         this.quizService = quizService;
+        this.activityService = activityService;
     }
 
     private static Long uid(CustomUserDetails principal) {
@@ -43,6 +48,18 @@ public class StudyController {
     @GetMapping("/reviews")
     public List<ReviewResponse> myReviews(@AuthenticationPrincipal CustomUserDetails me) {
         return reviewService.reviews(uid(me));
+    }
+
+    /**
+     * Dashboard cá nhân (A5): heatmap ?days= ngày (1–730, mặc định 400) kết thúc hôm nay theo ?tz= (tên IANA hoặc offset, mặc định
+     * múi giờ ứng dụng; sai → 400), chuỗi ngày học, số thẻ đến hạn / mới / đã học / thuộc lâu.
+     */
+    @GetMapping("/reviews/activity")
+    public ActivityResponse activity(@AuthenticationPrincipal CustomUserDetails me,
+                                     @RequestParam(defaultValue = "" + ReviewActivityService.DEFAULT_DAYS)
+                                     @Min(1) @Max(ReviewActivityService.MAX_DAYS) int days,
+                                     @RequestParam(required = false) String tz) {
+        return activityService.activity(uid(me), days, activityService.zone(tz));
     }
 
     /** Client chỉ gửi cardId + grade (+ reactionMs?, pathId? — E1, chỉ ghi nhật ký); ngày ôn kế tiếp do server quyết định. */

@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.model.EmailVerificationToken;
 import com.pbl6.flashcard.model.ExtractionJob;
 import com.pbl6.flashcard.model.LearningPath;
 import com.pbl6.flashcard.model.PasswordResetToken;
@@ -28,6 +29,7 @@ class HousekeepingIT extends IntegrationTest {
     @Autowired HousekeepingJob housekeeping;
     @Autowired RefreshTokenRepository refreshTokens;
     @Autowired PasswordResetTokenRepository resetTokens;
+    @Autowired com.pbl6.flashcard.repository.EmailVerificationTokenRepository verificationTokens;
     @Autowired ExtractionJobRepository jobs;
     @Autowired LearningPathRepository paths;
     @Autowired JdbcTemplate jdbc;
@@ -58,6 +60,8 @@ class HousekeepingIT extends IntegrationTest {
         refreshTokens.save(new RefreshToken(uid, "h-dead", now.minus(Duration.ofMinutes(1))));
         resetTokens.save(new PasswordResetToken(uid, "r-live", now.plus(Duration.ofMinutes(30))));
         resetTokens.save(new PasswordResetToken(uid, "r-dead", now.minus(Duration.ofMinutes(1))));
+        verificationTokens.save(new EmailVerificationToken(uid, "v-live", now.plus(Duration.ofHours(24))));
+        verificationTokens.save(new EmailVerificationToken(uid, "v-dead", now.minus(Duration.ofMinutes(1))));
         ExtractionJob oldDone = job(uid, ExtractionJob.DONE, now.minus(Duration.ofDays(91)));
         ExtractionJob oldFailed = job(uid, ExtractionJob.FAILED, now.minus(Duration.ofDays(400)));
         ExtractionJob oldRunning = job(uid, ExtractionJob.RUNNING, now.minus(Duration.ofDays(91)));
@@ -71,6 +75,9 @@ class HousekeepingIT extends IntegrationTest {
         assertEquals(0, rows("refresh_tokens", "h-dead"));
         assertEquals(1, rows("password_reset_tokens", "r-live"));
         assertEquals(0, rows("password_reset_tokens", "r-dead"));
+        assertTrue(n[6] >= 1, "token xác thực email hết hạn bị xoá (V24)");
+        assertEquals(1, rows("email_verification_tokens", "v-live"));
+        assertEquals(0, rows("email_verification_tokens", "v-dead"));
         assertFalse(jobs.existsById(oldDone.getId()));
         assertFalse(jobs.existsById(oldFailed.getId()));
         assertTrue(jobs.existsById(oldRunning.getId()), "job đang chạy không bị xoá dù cũ");
@@ -125,7 +132,7 @@ class HousekeepingIT extends IntegrationTest {
         jobs.save(orphanRecent);
 
         int[] n = housekeeping.run(now);
-        assertEquals(6, n.length);
+        assertEquals(7, n.length, "chỉ số cũ giữ nguyên, n[6] = token xác thực email (V24)");
         assertTrue(n[4] >= 1, "ít nhất job của lộ trình ACTIVE cũ vừa tạo bị xoá trắng văn bản");
         assertTrue(n[5] >= 1, "job lộ trình mồ côi > 90 ngày bị xoá ở bước riêng (LP-10), không lẫn vào số job thường");
 

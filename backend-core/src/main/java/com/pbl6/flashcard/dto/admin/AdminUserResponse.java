@@ -20,5 +20,7 @@ public final class AdminUserResponse {
     public record Detail(Long id, String email, String fullName, String jlptLevel, Role role, Boolean isPremium, Instant premiumUntil,
                          Instant lockedAt, String lockedReason, LocalDateTime createdAt, Integer extractionDailyLimit,
                          long deckCount, long cardCount, long extractionCount, long extractionsToday, long quizCount,
-                         Instant lastReviewAt, long activeSessions, boolean mustChangePassword) {}
+                         Instant lastReviewAt, long activeSessions, boolean mustChangePassword,
+                         /* hợp đồng API đợt 2 §3: false -> nút "Xác thực email" (POST /api/admin/users/{id}/verify-email) */
+                         boolean emailVerified) {}
 }

@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.repository.EmailVerificationTokenRepository;
 import com.pbl6.flashcard.repository.ExtractionJobRepository;
 import com.pbl6.flashcard.repository.PasswordResetTokenRepository;
 import com.pbl6.flashcard.repository.RefreshTokenRepository;
@@ -32,9 +33,12 @@ public class HousekeepingJob {
     private final ExtractionJobRepository jobs;
     private final UserRepository users;
     private final NotificationService notifications;
+    private final EmailVerificationTokenRepository verificationTokens;
 
     public HousekeepingJob(RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
-                           ExtractionJobRepository jobs, UserRepository users, NotificationService notifications) {
+                           ExtractionJobRepository jobs, UserRepository users, NotificationService notifications,
+                           EmailVerificationTokenRepository verificationTokens) {
+        this.verificationTokens = verificationTokens;
         this.refreshTokens = refreshTokens;
         this.resetTokens = resetTokens;
         this.jobs = jobs;
@@ -70,8 +74,11 @@ public class HousekeepingJob {
             notifications.notify(u.getId(), Notification.PREMIUM_CHANGED, Map.of("premium", false, "expired", true));
             d++;
         }
+        // Thêm ở cuối mảng: chỉ số cũ (HousekeepingIT, log) giữ nguyên nghĩa
+        int g = verificationTokens.deleteExpired(now);
         log.info("Housekeeping: xoá {} refresh token, {} reset token, {} job bóc tách cũ; {} Premium hết hạn; "
-                + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi", a, b, c, d, e, f);
-        return new int[] {a, b, c, d, e, f};
+                + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi; xoá {} token xác thực email",
+                a, b, c, d, e, f, g);
+        return new int[] {a, b, c, d, e, f, g};
     }
 }

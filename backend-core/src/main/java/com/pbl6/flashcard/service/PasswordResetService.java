@@ -6,17 +6,12 @@ import com.pbl6.flashcard.repository.PasswordResetTokenRepository;
 import com.pbl6.flashcard.repository.UserRepository;
 import com.pbl6.flashcard.security.AttemptLimiter;
 import com.pbl6.flashcard.security.LoginAttemptLimiter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
@@ -31,12 +26,11 @@ import java.util.HexFormat;
 /**
  * Quên mật khẩu: gửi link chứa token ngẫu nhiên (dùng 1 lần, hết hạn sau {@link #TTL}); DB chỉ lưu SHA-256.
  * Đặt lại xong: token cũ bị thu hồi như đổi mật khẩu (passwordChangedAt + refresh token) -> mọi phiên cũ đăng xuất.
- * Không cấu hình SMTP (spring.mail.host): link được ghi vào log để dev dùng - KHÔNG dùng cách này khi triển khai thật.
+ * Gửi mail qua {@link MailService}: không cấu hình SMTP (spring.mail.host) thì link được ghi vào log để dev dùng.
  */
 @Service
 public class PasswordResetService {
 
-    private static final Logger log = LoggerFactory.getLogger(PasswordResetService.class);
     public static final Duration TTL = Duration.ofMinutes(30);
     static final String INVALID = "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.";
 
@@ -44,31 +38,29 @@ public class PasswordResetService {
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokens;
-    private final ObjectProvider<JavaMailSender> mailSender;
-    private final String frontendUrl;
-    private final String mailFrom;
+    private final MailService mail;
+    private final TransactionTemplate tx;
     private final SecureRandom random = new SecureRandom();
     private final AttemptLimiter forgotLimiter = new AttemptLimiter(5, Duration.ofMinutes(15));
 
     public PasswordResetService(UserRepository userRepository, PasswordResetTokenRepository tokenRepository,
                                 PasswordEncoder passwordEncoder, RefreshTokenService refreshTokens,
-                                ObjectProvider<JavaMailSender> mailSender,
-                                @Value("${app.frontend-url}") String frontendUrl,
-                                @Value("${app.mail.from}") String mailFrom) {
+                                MailService mail, PlatformTransactionManager txManager) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.refreshTokens = refreshTokens;
-        this.mailSender = mailSender;
-        this.frontendUrl = frontendUrl.replaceAll("/+$", "");
-        this.mailFrom = mailFrom;
+        this.mail = mail;
+        this.tx = new TransactionTemplate(txManager);
     }
 
     /**
      * Email không tồn tại cũng không báo lỗi: không cho dò email nào đã đăng ký.
      * Tối đa 5 lần / 15 phút cho mỗi (IP, email) -> không spam hộp thư người khác.
+     * <p>
+     * Không @Transactional: ghi token trong một transaction ngắn, gửi mail SAU khi commit (như
+     * EmailVerificationService.issue) để SMTP chậm không giữ kết nối DB của endpoint công khai này.
      */
-    @Transactional
     public void requestReset(String email, String ip) {
         String key = LoginAttemptLimiter.key(ip, User.normalizeEmail(email));
         if (forgotLimiter.isBlocked(key)) {
@@ -77,12 +69,15 @@ public class PasswordResetService {
         }
         forgotLimiter.record(key);
         userRepository.findByEmail(User.normalizeEmail(email)).ifPresent(user -> {
-            tokenRepository.deleteByUserId(user.getId()); // link mới thay link cũ
-            byte[] raw = new byte[32];
-            random.nextBytes(raw);
-            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
-            tokenRepository.save(new PasswordResetToken(user.getId(), sha256(token), Instant.now().plus(TTL)));
-            send(user.getEmail(), frontendUrl + "/reset-password?token=" + token);
+            String token = tx.execute(s -> {
+                tokenRepository.deleteByUserId(user.getId()); // link mới thay link cũ
+                byte[] raw = new byte[32];
+                random.nextBytes(raw);
+                String t = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+                tokenRepository.save(new PasswordResetToken(user.getId(), sha256(t), Instant.now().plus(TTL)));
+                return t;
+            });
+            send(user.getEmail(), mail.frontendLink("/reset-password?token=" + token));
         });
     }
 
@@ -101,24 +96,11 @@ public class PasswordResetService {
     }
 
     private void send(String to, String link) {
-        JavaMailSender sender = mailSender.getIfAvailable();
-        if (sender == null) {
-            log.warn("Chưa cấu hình SMTP (spring.mail.host) - link đặt lại mật khẩu cho {}: {}", to, link);
-            return;
-        }
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(mailFrom);
-        message.setTo(to);
-        message.setSubject("Đặt lại mật khẩu NihonGen");
-        message.setText("Bạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu cho tài khoản này.\n\n"
-                + "Mở liên kết sau trong " + TTL.toMinutes() + " phút để đặt mật khẩu mới:\n" + link + "\n\n"
-                + "Nếu không phải bạn yêu cầu, hãy bỏ qua email này; mật khẩu hiện tại vẫn giữ nguyên.");
-        try {
-            sender.send(message);
-        } catch (MailException e) {
-            // Không lộ cho client (vẫn trả thông báo chung), chỉ ghi log để vận hành xử lý
-            log.error("Gửi email đặt lại mật khẩu thất bại cho {}", to, e);
-        }
+        mail.sendLink(to, "đặt lại mật khẩu", "Đặt lại mật khẩu NihonGen",
+                "Bạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu cho tài khoản này.\n\n"
+                        + "Mở liên kết sau trong " + TTL.toMinutes() + " phút để đặt mật khẩu mới:\n" + link + "\n\n"
+                        + "Nếu không phải bạn yêu cầu, hãy bỏ qua email này; mật khẩu hiện tại vẫn giữ nguyên.",
+                link);
     }
 
     static String sha256(String value) {
