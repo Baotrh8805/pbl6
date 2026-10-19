@@ -122,7 +122,11 @@ public class ExtractionService {
         job.setUserId(user.getId());
         job.setSourceType(sourceType);
         job.setSourceName(hasFile ? ExtractionWorker.cut(filename, 255) : null);
-        job.setOptions(json.convertValue(options, new TypeReference<Map<String, Object>>() {}));
+        Map<String, Object> stored = json.convertValue(options, new TypeReference<Map<String, Object>>() {});
+        // F2: ngưỡng cảnh báo mâu thuẫn (contradiction_alert_threshold) chốt lúc gửi như ngưỡng OCR, để một lượt dùng đúng giá trị
+        // lúc người dùng gửi. Mục tham chiếu của nguồn chuẩn KHÔNG lưu ở đây (tới 2000 mục) — worker gắn lúc gọi ai-service.
+        stored.put(ConflictSupport.OPTION_MIN_CONFIDENCE, ConflictSupport.minConfidence(settings));
+        job.setOptions(stored);
         job.setPurpose(purpose);
         job.setCreatedAt(Instant.now());
         jobs.save(job);

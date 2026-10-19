@@ -84,10 +84,57 @@ class NlpIT extends IntegrationTest {
 
         JsonNode radicalCards = node("{\"items\":[{\"kanji\":\"河\",\"mnemonicVi\":null}],\"groups\":[],\"reason\":null}");
         Mockito.when(ai.radicalCards(List.of("河"), false)).thenReturn(radicalCards);
-        assertEquals(radicalCards, read(call(post("/api/nlp/radicals/cards"), user,
-                Map.of("kanji", List.of("河"), "withMnemonic", true)).andExpect(status().isOk())));
+        // Nguyên văn trừ mẹo nhớ: chữ chưa có mẹo đã duyệt nhận câu mẫu (hợp đồng đợt 2 §4, xem radical_cards_use_approved_...)
+        assertEquals(node("{\"items\":[{\"kanji\":\"河\",\"mnemonicVi\":\"Chữ 河: viết lại ba lần và đọc to nghĩa để nhớ mặt chữ.\","
+                        + "\"mnemonicSource\":\"template\"}],\"groups\":[],\"reason\":null}"),
+                read(call(post("/api/nlp/radicals/cards"), user,
+                        Map.of("kanji", List.of("河"), "withMnemonic", true)).andExpect(status().isOk())));
         // Mẹo nhớ Gemini chưa qua kiểm duyệt: luôn gửi withMnemonic=false
         Mockito.verify(ai).radicalCards(List.of("河"), false);
+        Mockito.verify(ai, Mockito.never()).radicalCards(anyList(), eq(true));
+    }
+
+    @Test
+    void radical_cards_use_approved_mnemonic_else_template() throws Exception {
+        String author = newUser();
+        String learner = newUser();
+        String admin = newStaff(Role.ADMIN);
+        String id = read(call(post("/api/kanji/mnemonics"), author, Map.of("kanji", "畑", "mnemonicVi", "Ruộng khô có lửa: ĐIỀN"))
+                .andExpect(status().isCreated())).get("id").asText();
+        JsonNode upstream = node("""
+                {"items":[
+                  {"kanji":"畑","hanViet":null,"radical":{"no":102,"char":"田","nameVi":"điền","meaningVi":"ruộng"},
+                   "meaningEn":"field","mnemonicVi":null,"mnemonicSource":null},
+                  {"kanji":"海","hanViet":"HẢI","radical":{"no":85,"char":"水","nameVi":"thủy","meaningVi":"nước, sông"},
+                   "meaningEn":"sea; ocean","mnemonicVi":null,"mnemonicSource":null},
+                  {"kanji":"湖","hanViet":"HỒ","radical":null,"mnemonicVi":"Mẫu của ai-service","mnemonicSource":"template"},
+                  {"kanji":"池","hanViet":"TRÌ","radical":null,"mnemonicVi":"Gemini chưa duyệt","mnemonicSource":"gemini"}
+                ],"groups":[{"radical":null,"kanji":["湖"]}],"reason":null}""");
+        JsonNode original = upstream.deepCopy();
+        Mockito.when(ai.radicalCards(List.of("畑", "海", "湖", "池"), false)).thenReturn(upstream);
+        Map<String, Object> body = Map.of("kanji", List.of("畑", "海", "湖", "池"));
+
+        // Mẹo còn PENDING không lộ ra thẻ công khai
+        JsonNode pending = read(call(post("/api/nlp/radicals/cards"), learner, body).andExpect(status().isOk()));
+        assertEquals("template", pending.at("/items/0/mnemonicSource").asText());
+        assertEquals("Chữ 畑 có bộ Điền (ruộng), nghĩa tiếng Anh \"field\": thấy ruộng là nhớ chữ 畑.",
+                pending.at("/items/0/mnemonicVi").asText());
+
+        call(post("/api/admin/mnemonics/" + id + "/approve"), admin, null).andExpect(status().isOk());
+        JsonNode res = read(call(post("/api/nlp/radicals/cards"), learner, body).andExpect(status().isOk()));
+        assertEquals("Ruộng khô có lửa: ĐIỀN", res.at("/items/0/mnemonicVi").asText());
+        assertEquals("approved", res.at("/items/0/mnemonicSource").asText());
+        assertEquals("Chữ 海 có bộ Thủy (nước), âm Hán-Việt HẢI, nghĩa tiếng Anh \"sea\": thấy nước là nhớ HẢI.",
+                res.at("/items/1/mnemonicVi").asText());
+        assertEquals("template", res.at("/items/1/mnemonicSource").asText());
+        // Câu mẫu ai-service tự điền thì giữ; mẹo Gemini chưa duyệt (không bao giờ được hỏi) thì thay bằng câu mẫu
+        assertEquals("Mẫu của ai-service", res.at("/items/2/mnemonicVi").asText());
+        assertEquals("TRÌ là âm của chữ 池 — gắn TRÌ với hình chữ để nhớ.", res.at("/items/3/mnemonicVi").asText());
+        assertEquals("template", res.at("/items/3/mnemonicSource").asText());
+        // Phần còn lại nguyên văn; JSON gốc (có thể nằm trong cache / mock) không bị sửa
+        assertEquals(original.get("groups"), res.get("groups"));
+        assertEquals(102, res.at("/items/0/radical/no").asInt());
+        assertEquals(original, upstream);
         Mockito.verify(ai, Mockito.never()).radicalCards(anyList(), eq(true));
     }
 

@@ -1,13 +1,19 @@
 package com.pbl6.flashcard.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pbl6.flashcard.model.KanjiMnemonic;
+import com.pbl6.flashcard.repository.KanjiMnemonicRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -15,6 +21,7 @@ import java.util.function.Supplier;
  * Proxy tra cứu NLP (/api/nlp, USER) sang ai-service: bản đồ Hán-Việt (F1), thẻ chữ Hán (C5), bộ thủ (C4). Trả nguyên JSON của
  * ai-service (frontend tự parse như dữ liệu không đáng tin); việc của backend là kiểm tham số trước khi gọi, đổi lỗi ai-service
  * thành mã HTTP và cache các GET. Dữ liệu là từ điển tĩnh, giống nhau cho mọi người nên cache dùng chung, không theo user.
+ * Ngoại lệ duy nhất: thẻ bộ thủ được điền mẹo nhớ đã duyệt / câu mẫu (xem {@link #radicalCards}).
  */
 @Service
 public class NlpService {
@@ -30,11 +37,13 @@ public class NlpService {
     static final int CACHE_MAX_ENTRIES = 500;
 
     private final AiServiceClient ai;
+    private final KanjiMnemonicRepository mnemonics;
     private final TtlCache<String, JsonNode> cache =
             new TtlCache<>(CACHE_TTL.toMillis(), CACHE_MAX_ENTRIES, System::currentTimeMillis);
 
-    public NlpService(AiServiceClient ai) {
+    public NlpService(AiServiceClient ai, KanjiMnemonicRepository mnemonics) {
         this.ai = ai;
+        this.mnemonics = mnemonics;
     }
 
     public JsonNode hanVietGraph(String reading, String level, Integer limit) {
@@ -69,11 +78,51 @@ public class NlpService {
     }
 
     /**
-     * Mẹo nhớ (withMnemonic) luôn tắt: mẹo do Gemini viết phải qua kiểm duyệt trước khi hiện (gói C4/G2 làm sau), và tắt thì
-     * ai-service không gọi Gemini nên không tốn quota.
+     * Thẻ bộ thủ công khai (hợp đồng đợt 2 §4). ai-service luôn gọi với withMnemonic=false: mẹo Gemini phải qua kiểm duyệt
+     * trước khi hiện, và tắt thì ai-service không gọi Gemini cho mỗi lượt xem (không tốn quota). mnemonicVi của từng thẻ là mẹo
+     * APPROVED của chữ đó nếu có (mnemonicSource "approved"), không thì câu mẫu dựng từ chính thẻ ("template", xem
+     * {@link MnemonicTemplate}). Sinh / gửi mẹo mới đi qua /api/kanji/mnemonics (MnemonicService), không qua đây.
      */
     public JsonNode radicalCards(List<String> kanji) {
-        return upstream(() -> ai.radicalCards(kanji, false));
+        return withPublicMnemonics(upstream(() -> ai.radicalCards(kanji, false)));
+    }
+
+    /** Chép JSON của ai-service rồi điền mẹo; response không đúng dạng {items: [...]} thì trả nguyên văn như mọi proxy khác. */
+    private JsonNode withPublicMnemonics(JsonNode res) {
+        if (!(res instanceof ObjectNode obj) || !res.path("items").isArray() || res.path("items").isEmpty()) return res;
+        ObjectNode out = obj.deepCopy();
+        Set<String> chars = new HashSet<>();
+        for (JsonNode card : out.path("items")) {
+            String ch = text(card.get("kanji"));
+            if (ch != null) chars.add(ch);
+        }
+        Map<String, String> approved = new HashMap<>();
+        if (!chars.isEmpty()) {
+            for (KanjiMnemonic m : mnemonics.findByKanjiInAndStatus(chars, KanjiMnemonic.APPROVED)) {
+                approved.put(m.getKanji(), m.getMnemonicVi());
+            }
+        }
+        for (JsonNode node : out.path("items")) {
+            String ch = text(node.get("kanji"));
+            if (!(node instanceof ObjectNode card) || ch == null) continue;
+            String approvedText = approved.get(ch);
+            if (approvedText != null) {
+                card.put("mnemonicVi", approvedText);
+                card.put("mnemonicSource", "approved");
+                continue;
+            }
+            if (text(card.get("mnemonicVi")) != null && "template".equals(text(card.get("mnemonicSource")))) continue;
+            JsonNode radical = card.path("radical");
+            card.put("mnemonicVi", MnemonicTemplate.of(ch, text(radical.get("nameVi")), text(radical.get("meaningVi")),
+                    text(card.get("hanViet")), text(card.get("meaningEn"))));
+            card.put("mnemonicSource", "template");
+        }
+        return out;
+    }
+
+    /** Chuỗi khác rỗng của một nút JSON; null / không phải chuỗi / rỗng -> null. */
+    private static String text(JsonNode node) {
+        return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText() : null;
     }
 
     // ---------- kiểm tham số ----------
@@ -126,8 +175,9 @@ public class NlpService {
     /**
      * Lỗi tham số từ ai-service (400 / 422) -> 400, không có dữ liệu (404) -> 404; còn lại (không kết nối được, timeout, 5xx, sai
      * X-Internal-Key) -> 503. Không bao giờ chuyển 401 / 403 của ai-service ra ngoài: frontend coi 401 là hết phiên đăng nhập.
+     * Dùng chung cho service khác gọi ai-service khi người dùng đang chờ trên trang (MnemonicService).
      */
-    private static JsonNode upstream(Supplier<JsonNode> call) {
+    static JsonNode upstream(Supplier<JsonNode> call) {
         try {
             return call.get();
         } catch (AiServiceClient.AiServiceException e) {
