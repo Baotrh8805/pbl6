@@ -83,7 +83,10 @@ export const RecentDecksSection: React.FC<RecentDecksSectionProps> = ({ decks, r
           </span>
         </div>
 
-        <div role="group" aria-label="Lọc bộ thẻ" className="flex items-center gap-1 p-1 bg-surface-container rounded-lg self-start sm:self-auto">
+        {/* flex-wrap chỉ dưới 640 px: ba nút liền nhau rộng ~327 px, ở 320 px (nội dung còn 272 px) không xuống dòng thì đẩy cả
+            trang tràn ngang. Từ sm hàng tiêu đề thành flex-row: nhóm nút mà wrap được thì min-content tụt về một nút, bị co cùng
+            tiêu đề và gãy thành 2 dòng ở 640–900 px -> sm:flex-nowrap giữ nguyên một khối như trước. */}
+        <div role="group" aria-label="Lọc bộ thẻ" className="flex flex-wrap sm:flex-nowrap items-center gap-1 p-1 bg-surface-container rounded-lg self-start sm:self-auto">
           {FILTERS.map((f) => (
             <button
               key={f.id}

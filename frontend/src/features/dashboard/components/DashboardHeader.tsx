@@ -65,7 +65,9 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           {/* Logo */}
           <div className="flex items-center gap-space-sm shrink-0 select-none">
             <img alt="NihonGen AI Logo" className="h-8 w-auto object-contain shrink-0" src="/favicon.svg" />
-            <span className="font-headline-sm text-headline-sm text-primary tracking-tight font-bold whitespace-nowrap">
+            {/* < 360 px (vd. 320): nút menu + logo + tên + chuông + avatar rộng ~351 px, avatar và menu tài khoản tràn khỏi
+                mép phải -> chỉ giữ logo (alt vẫn đọc tên app), như header quản trị. */}
+            <span className="hidden min-[360px]:inline font-headline-sm text-headline-sm text-primary tracking-tight font-bold whitespace-nowrap">
               NihonGen AI
             </span>
           </div>

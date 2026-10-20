@@ -92,11 +92,20 @@ export const NotificationBell: React.FC = () => {
         )}
       </button>
 
+      {/*
+        < 640 px: neo panel theo mép PHẢI màn hình (fixed, cách mép 16 px, ngay dưới header 64 px) chứ không theo chuông —
+        chuông nằm ở x≈300, panel rộng 92vw neo right-0 thì tràn khỏi mép trái (~46 px ở 375 px), cắt mất đầu mỗi dòng.
+        Rộng min(màn hình − 2·16 px, 360 px): màn hẹp thì cách đều hai mép, từ ~392 px giữ đúng 360 px như dropdown cũ (không
+        thành tấm trải ngang 600 px ở tablet dọc / điện thoại xoay ngang) nên sang sm chỉ đổi chỗ neo, không nhảy bề rộng.
+        Header có backdrop-blur nên nó là containing block của fixed; header phủ trọn chiều ngang từ top 0 nên toạ độ vẫn
+        trùng viewport. Từ 640 px chuông đã cách mép trái > 360 px nên neo lại dưới chuông như cũ.
+        Panel vẫn là con của `box` nên bấm-ra-ngoài / Esc không đổi.
+      */}
       {open && (
         <div
           role="dialog"
           aria-label="Thông báo"
-          className="absolute right-0 mt-2 w-[min(92vw,360px)] max-h-[70vh] overflow-y-auto rounded-2xl border border-surface-container-high bg-surface-container-lowest shadow-lg z-50"
+          className="fixed right-gutter-mobile top-[4.5rem] w-[calc(100%-2rem)] max-w-[360px] sm:absolute sm:right-0 sm:top-auto sm:mt-2 sm:w-[360px] max-h-[70vh] overflow-y-auto rounded-2xl border border-surface-container-high bg-surface-container-lowest shadow-lg z-50"
         >
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-surface-container-high">
             <span className="font-semibold text-on-surface">Thông báo</span>
