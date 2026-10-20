@@ -91,7 +91,7 @@ def test_gemini_fallback_when_low_confidence(fake_tesseract, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
     seen = {}
 
-    def fake_vision(image_bytes, mime, mode):
+    def fake_vision(image_bytes, mime, mode, model=None):
         seen.update(mime=mime, mode=mode)
         return "日本語の勉強は面白い。\n\n漢字を練習する。"
 
@@ -106,14 +106,14 @@ def test_gemini_fallback_when_low_confidence(fake_tesseract, monkeypatch):
 
 def test_gemini_output_far_longer_than_tesseract_is_flagged(fake_tesseract, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
-    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a: "日本語" * 20)   # 60 ký tự so với 6 của Tesseract
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a, **k: "日本語" * 20)   # 60 ký tự so với 6 của Tesseract
     r = image_reader.read_image(_png(), "horizontal")
     assert r.engine == "gemini" and r.low_confidence is True
 
 
 def test_gemini_output_without_japanese_keeps_tesseract(fake_tesseract, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
-    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a: "I cannot see any text.")
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a, **k: "I cannot see any text.")
     r = image_reader.read_image(_png(), "horizontal")
     assert r.engine == "tesseract" and r.text == "日本語の勉強" and r.low_confidence is True
 
@@ -129,7 +129,7 @@ def test_gemini_failure_keeps_tesseract_result(fake_tesseract, monkeypatch):
 
 
 def test_ocr_pages_reports_first_gemini_error(monkeypatch):
-    def fake_read(data, mode, page=1, fallback_confidence=None):
+    def fake_read(data, mode, page=1, fallback_confidence=None, gemini_model=None):
         return TextResult(text="ページ", source_type="image", engine="tesseract", pages=1,
                           gemini_error="quota" if page == 2 else None)
     monkeypatch.setattr(image_reader, "read_image", fake_read)
@@ -150,12 +150,12 @@ def test_gemini_only_when_tesseract_missing(monkeypatch):
     monkeypatch.setattr(image_reader, "available", lambda: False)
     monkeypatch.setattr(image_reader.gemini, "available", lambda: True)
     two_paras = "日本語の文" + chr(10) * 2 + "二段目"
-    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", lambda data, mime, mode: two_paras)
+    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", lambda data, mime, mode, model=None: two_paras)
     r = image_reader.read_image(_png(), "vertical")
     assert r.engine == "gemini" and r.low_confidence is False and r.is_vertical is True
     assert r.text == two_paras and len(r.blocks) == 2
     # Gemini lỗi (quota) -> 503 có lý do
-    def boom(data, mime, mode):
+    def boom(data, mime, mode, model=None):
         raise image_reader.gemini.GeminiError("quota")
     monkeypatch.setattr(image_reader.gemini, "vision_transcribe", boom)
     with pytest.raises(OcrUnavailable, match="quota"):
@@ -172,7 +172,7 @@ def test_corrupt_image_is_reader_error(monkeypatch):
 def test_ocr_pages_merges(monkeypatch):
     seen_thresholds = []
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
         seen_thresholds.append(fallback_confidence)
         if page == 1:
             return TextResult(text="一ページ", source_type="image", engine="tesseract", pages=1,
@@ -375,7 +375,7 @@ def test_gemini_output_absurdly_long_is_rejected(fake_tesseract, monkeypatch):
     # Gemini suy thoái sinh hàng chục nghìn ký tự cho một trang (thấy thật 14/10): giữ bản Tesseract, không để
     # một trang rác chiếm hết giới hạn 50 000 ký tự của cả tài liệu
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
-    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a: "日本語の勉強。" * 1000)   # 7 000 ký tự so với 6
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a, **k: "日本語の勉強。" * 1000)   # 7 000 ký tự so với 6
     r = image_reader.read_image(_png(), "horizontal")
     assert r.engine == "tesseract" and r.gemini_error == "implausible"
     assert len(r.text) < 100
@@ -473,7 +473,7 @@ def test_furigana_line_over_okurigana_word_gives_ruby_hint():
 def test_read_image_uses_request_fallback_confidence(fake_tesseract, monkeypatch):
     # HORIZONTAL có conf 0.7: ngưỡng mặc định 0.85 → low; ngưỡng request 0.6 → không low, không gọi Gemini
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
-    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a: pytest.fail("không được nhờ Gemini"))
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a, **k: pytest.fail("không được nhờ Gemini"))
     r = image_reader.read_image(_png(), "horizontal", fallback_confidence=0.6)
     assert r.engine == "tesseract" and r.low_confidence is False
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "")

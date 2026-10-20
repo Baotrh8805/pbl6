@@ -108,7 +108,7 @@ def test_real_data_radical_card_mnemonic_uses_character_meaning(real, monkeypatc
     # thẻ bộ thủ #39 子: 字 / 存 — mẹo nhớ mẫu không còn ghép "section of village", 存 có nghĩa
     from app.api import radical_router
     from app.extract import gemini, kanjidata
-    monkeypatch.setattr(gemini, "generate_mnemonics", lambda items: {"items": [], "reason": "no_key"})
+    monkeypatch.setattr(gemini, "generate_mnemonics", lambda items, model=None: {"items": [], "reason": "no_key", "model": None})
     kanjidata.reset()
     radicals.reset()
     cards = {c["kanji"]: c for c in radical_router.build_cards(["字", "存"])}

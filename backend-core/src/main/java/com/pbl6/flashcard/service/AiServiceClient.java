@@ -8,6 +8,7 @@ import com.pbl6.flashcard.dto.extraction.AiDtos.TextResult;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
@@ -64,11 +65,21 @@ public class AiServiceClient {
     /** Kiểm tra sức khoẻ cho dashboard admin: timeout ngắn, không dùng chung client đọc 3 phút. */
     private final RestClient healthHttp;
     private final RestClient nlpHttp;
+    /** Nguồn ai_model_primary (Admin > Cấu hình); null = không đọc cấu hình, không bao giờ gửi model. */
+    private final SettingsService settings;
 
+    /** Client không đọc cấu hình Admin (test HTTP thuần): không gửi model, ai-service dùng GEMINI_MODEL. */
+    public AiServiceClient(RestClient.Builder builder, String baseUrl, String internalKey, Duration readTimeout) {
+        this(builder, baseUrl, internalKey, readTimeout, null);
+    }
+
+    @Autowired
     public AiServiceClient(RestClient.Builder builder,
                            @Value("${app.ai-service.url}") String baseUrl,
                            @Value("${app.ai-service.key:}") String internalKey,
-                           @Value("${app.ai-service.read-timeout:PT3M}") Duration readTimeout) {
+                           @Value("${app.ai-service.read-timeout:PT3M}") Duration readTimeout,
+                           SettingsService settings) {
+        this.settings = settings;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(5));
         factory.setReadTimeout(readTimeout); // OCR + phân tích tài liệu dài có thể mất vài phút
@@ -146,8 +157,18 @@ public class AiServiceClient {
     }
 
     /**
+     * Model Gemini chính (Admin > Cấu hình > ai_model_primary) đọc lúc gọi; null = chưa cấu hình / không đọc được -> không gửi.
+     * Đọc ở client thay vì từng caller: mọi lượt gọi có Gemini (bóc tách của người học, nguồn tri thức chuẩn, dịch lại nghĩa của lộ
+     * trình, mẹo nhớ) cùng theo một cấu hình, caller mới không thể quên. ai-service tự kiểm danh sách cho phép (tên lạ -> GEMINI_MODEL).
+     */
+    public String geminiModel() {
+        return settings != null ? settings.aiModelPrimary() : null;
+    }
+
+    /**
      * Văn bản dán / file -> văn bản thuần + meta (OCR, ruby...). Đúng một trong data/text khác null. ocrFallbackConfidence (0..1,
      * cấu hình Admin) gửi thành field "ocr_fallback_confidence"; null = không gửi, ai-service dùng OCR_FALLBACK_CONFIDENCE của nó.
+     * Model Admin chọn ({@link #geminiModel()}) đi cùng thành field "gemini_model" cho lượt Gemini chép lại OCR.
      */
     public TextResult extractText(byte[] data, String filename, String text, String ocrMode, Double ocrFallbackConfidence) {
         MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
@@ -162,6 +183,8 @@ public class AiServiceClient {
         }
         form.add("ocr_mode", ocrMode != null ? ocrMode : "auto");
         if (ocrFallbackConfidence != null) form.add("ocr_fallback_confidence", String.valueOf(ocrFallbackConfidence));
+        String model = geminiModel();
+        if (model != null) form.add("gemini_model", model);
         return call("trích văn bản", () -> http.post().uri("/api/extract/text")
                 .contentType(MediaType.MULTIPART_FORM_DATA).body(form)
                 .retrieve().body(TextResult.class));
@@ -177,9 +200,12 @@ public class AiServiceClient {
                 .retrieve().body(AnalyzeResult.class));
     }
 
+    /** Dịch nghĩa VI bằng Gemini; request không tự chọn model thì gửi model Admin chọn ({@link #geminiModel()}). */
     public EnrichResult enrich(EnrichRequest request) {
+        EnrichRequest body = request.geminiModel() != null ? request
+                : new EnrichRequest(request.targetLang(), request.items(), geminiModel());
         return call("dịch nghĩa", () -> http.post().uri("/api/extract/enrich")
-                .contentType(MediaType.APPLICATION_JSON).body(request)
+                .contentType(MediaType.APPLICATION_JSON).body(body)
                 .retrieve().body(EnrichResult.class));
     }
 
@@ -233,14 +259,21 @@ public class AiServiceClient {
         }).retrieve().body(JsonNode.class));
     }
 
-    /** POST /api/radicals/cards {kanji, withMnemonic}: {items, groups, reason}. */
+    /** POST /api/radicals/cards {kanji, withMnemonic, geminiModel?}: {items, groups, reason, model}. */
     public JsonNode radicalCards(List<String> kanji, boolean withMnemonic) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("kanji", kanji);
         body.put("withMnemonic", withMnemonic);
+        putGeminiModel(body, withMnemonic);
         return call("tra thẻ bộ thủ", () -> nlpHttp.post().uri("/api/radicals/cards")
                 .contentType(MediaType.APPLICATION_JSON).body(body)
                 .retrieve().body(JsonNode.class));
+    }
+
+    /** Thêm "geminiModel" (model Admin chọn) vào body JSON khi lượt gọi có hỏi Gemini và đã cấu hình model. */
+    private void putGeminiModel(Map<String, Object> body, boolean usesGemini) {
+        String model = usesGemini ? geminiModel() : null;
+        if (model != null) body.put("geminiModel", model);
     }
 
     // ---------- dùng chung cho các nhóm tính năng gọi ai-service (quiz, luyện tập, nội dung) ----------

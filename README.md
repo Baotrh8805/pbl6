@@ -247,6 +247,12 @@ Cả hai khoá đều tuỳ chọn:
 
 Model Gemini: Google đổi model khá thường xuyên. Nếu log ai-service báo `Gemini 404 NOT_FOUND`, đổi `GEMINI_MODEL`
 sang model mà key của bạn thấy (ví dụ `gemini-3.7-flash`); `503 UNAVAILABLE` là model đang quá tải, thử lại sau.
+SUPER_ADMIN đổi được model chính lúc chạy ở Admin > Cấu hình > Model AI chính (backend gửi kèm mỗi lượt OCR / dịch nghĩa /
+mẹo nhớ); chỉ nhận model trong `geminiModels` của `/api/extract/health` (mặc định `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL`
+và hai model đã đo `gemini-3.8-flash` / `gemini-3.7-flash`; model khác thêm bằng `GEMINI_ALLOWED_MODELS` sau khi tự gọi
+thử với key), tên khác bị bỏ qua và ai-service dùng `GEMINI_MODEL` — trang cấu hình gợi ý danh sách này và cảnh báo tên
+bị bỏ qua. Model đã chọn mà quá tải / hết quota thì lượt đó thử `GEMINI_MODEL` rồi mới tới model dự phòng; Google trả 404
+(model đã ngừng) thì ai-service dùng `GEMINI_MODEL` và bỏ qua model đó 30 phút.
 
 **2.4. Cài Tesseract 5** (chỉ cần khi muốn OCR ảnh / PDF scan không qua Gemini)
 

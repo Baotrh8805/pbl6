@@ -1,5 +1,7 @@
 package com.pbl6.flashcard.dto.extraction;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.Map;
 
@@ -38,8 +40,17 @@ public final class AiDtos {
         }
     }
 
-    /** POST /api/extract/enrich */
-    public record EnrichRequest(String targetLang, List<EnrichInput> items) {}
+    /**
+     * POST /api/extract/enrich. geminiModel = model Gemini chính (Admin > Cấu hình > ai_model_primary); null thì AiServiceClient
+     * điền giá trị cấu hình lúc gọi, vẫn null (chưa cấu hình) thì không gửi khoá để ai-service dùng GEMINI_MODEL.
+     */
+    public record EnrichRequest(String targetLang, List<EnrichInput> items,
+                                @JsonInclude(JsonInclude.Include.NON_NULL) String geminiModel) {
+
+        public EnrichRequest(String targetLang, List<EnrichInput> items) {
+            this(targetLang, items, null);
+        }
+    }
 
     public record EnrichInput(String ref, String term, String reading, String pos, String meaningEn, String example) {}
 

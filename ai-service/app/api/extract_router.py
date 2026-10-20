@@ -76,6 +76,8 @@ class EnrichItem(BaseModel):
 class EnrichRequest(BaseModel):
     targetLang: str = "vi"
     items: list[EnrichItem] = Field(default_factory=list)
+    # Model Gemini chính backend chọn (Admin > Cấu hình > ai_model_primary); ngoài danh sách cho phép / rỗng → GEMINI_MODEL
+    geminiModel: Optional[str] = None
 
 
 class DistractorItem(BaseModel):
@@ -142,6 +144,9 @@ async def extract_text(
     # Ngưỡng mean conf Tesseract (0..1) dưới đó nhờ Gemini chép lại (ảnh + PDF scan); backend chỉnh theo từng request.
     # Ngoài [0, 1] (hay NaN / không phải số) → 422; không gửi → settings.OCR_FALLBACK_CONFIDENCE
     ocr_fallback_confidence: Optional[float] = Form(default=None, ge=0.0, le=1.0, allow_inf_nan=False),
+    # Model Gemini chính cho lượt chép lại OCR, gửi theo từng request như ngưỡng trên. Tên ngoài danh sách cho phép
+    # (gemini.allowed_models) không 422: bị bỏ qua, dùng GEMINI_MODEL — cấu hình gõ sai không được làm hỏng lượt bóc tách
+    gemini_model: Optional[str] = Form(default=None),
 ) -> dict:
     data = await file.read() if file is not None else None
     filename = file.filename if file is not None else None
@@ -149,7 +154,8 @@ async def extract_text(
         raise HTTPException(status_code=400, detail="Cần gửi file hoặc text")
     threshold = settings.OCR_FALLBACK_CONFIDENCE if ocr_fallback_confidence is None else ocr_fallback_confidence
     try:
-        result = read_source(filename, data or None, text, ocr_mode, ocr_fallback_confidence=threshold)
+        result = read_source(filename, data or None, text, ocr_mode, ocr_fallback_confidence=threshold,
+                             gemini_model=gemini_model)
     except FileTooLarge as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except ReaderError as exc:
@@ -193,7 +199,7 @@ def extract_enrich(req: EnrichRequest) -> dict:
     if not req.items:
         return {"enriched": True, "items": [], "reason": None}
     try:
-        raw = gemini.translate_items([it.model_dump() for it in req.items], req.targetLang)
+        raw = gemini.translate_items([it.model_dump() for it in req.items], req.targetLang, model=req.geminiModel)
     except gemini.GeminiError as exc:
         return {"enriched": False, "items": [], "reason": exc.reason}
     items = filter_enriched(raw, {it.ref for it in req.items})
@@ -243,6 +249,10 @@ def extract_health() -> dict:
         "grammar": grammar_available(),
         "tesseract": image_reader.available(),
         "gemini": gemini.available(),
+        # model Gemini mặc định + các model backend được chọn theo request (Admin > Cấu hình > Model AI chính); không phải
+        # cờ boolean nên dashboard admin (chỉ giữ cờ boolean) bỏ qua, để soát cấu hình bằng tay
+        "geminiModel": gemini.MODEL,
+        "geminiModels": gemini.allowed_models(),
         # dữ liệu chữ Hán cho lộ trình (LP-17): radicals / kradfile / kanjivg / pitch
         **kanji_data,
         # distractors C2/C3 sinh được khi có JMdict hoặc danh sách JLPT (kradfile chỉ nâng chất lượng giống hình)

@@ -37,6 +37,16 @@ class ContentAiClientTest {
     }
 
     @Test
+    void radical_cards_forward_admin_model() {
+        // Admin > Cấu hình > Model AI chính: mẹo nhớ do model đó viết (ai-service kiểm danh sách cho phép)
+        Mockito.when(ai.geminiModel()).thenReturn("gemini-2.5-pro");
+        Mockito.when(ai.postJsonLong(anyString(), eq("/api/radicals/cards"), Mockito.any())).thenReturn(ok);
+        client.radicalCardsWithMnemonic(List.of("海"));
+        assertEquals(Map.of("kanji", List.of("海"), "withMnemonic", true, "geminiModel", "gemini-2.5-pro"),
+                bodyOf("/api/radicals/cards"));
+    }
+
+    @Test
     void conflicts_send_items_references_and_threshold() {
         Mockito.when(ai.postJsonLong(anyString(), eq("/api/extract/conflicts"), Mockito.any())).thenReturn(ok);
         List<Map<String, Object>> items = List.of(Map.of("ref", "1", "term", "水"));

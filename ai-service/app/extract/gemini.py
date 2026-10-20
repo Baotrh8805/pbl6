@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 40
 TIMEOUT_MS = 60_000
 MODEL = settings.GEMINI_MODEL
+# Model chính đổi được theo từng request (backend gửi Admin > Cấu hình > ai_model_primary kèm mỗi lượt OCR / dịch nghĩa / mẹo
+# nhớ) nhưng chỉ trong danh sách cho phép: GEMINI_MODEL, GEMINI_FALLBACK_MODEL, GEMINI_ALLOWED_MODELS và các model dưới đây.
+# Tên gõ sai mà gửi thẳng lên Google thì MỌI lượt gọi 404 -> bỏ qua, dùng GEMINI_MODEL. Chỉ ghi model đã ĐO với key của dự án
+# (12/10/2026); model khác (họ 2.5 đã có lịch ngừng, bản -lite chưa thử) thêm qua GEMINI_ALLOWED_MODELS sau khi tự gọi thử.
+KNOWN_MODELS = ("gemini-3.8-flash", "gemini-3.7-flash")
+_MAX_WARNED = 100           # tên lạ đã ghi log (mỗi tên một lần); trần SỐ tên để request lạ không làm phình bộ nhớ
+_WARN_KEY_CHARS = 60        # ... và trần ĐỘ DÀI mỗi tên lưu lại: form / JSON không giới hạn độ dài (tên lạ không được 422)
+_warned_models: set[str] = set()
 # 429 / 503: thử lại với giãn cách rồi mới sang GEMINI_FALLBACK_MODEL (spec §2.7). Giãn cách chỉ 14 s nhưng mỗi lượt gọi
 # có thể treo tới TIMEOUT_MS (504 DEADLINE_EXCEEDED) -> giới hạn tổng thời gian dưới AI_SERVICE_READ_TIMEOUT (3 phút)
 # của backend, nếu không backend timeout và cả job FAILED dù dịch nghĩa chỉ là bước làm giàu.
@@ -28,7 +36,13 @@ TOTAL_BUDGET_S = 150
 # dịch nghĩa) để một tài liệu 18 trang scan không chờ 14 s x 18 trang vô ích.
 COOLDOWN_S = 120
 _cooldown_until = 0.0        # cả model chính lẫn dự phòng đều hỏng -> không gọi Gemini
-_primary_quota_until = 0.0   # chỉ model chính hết quota -> đi thẳng model dự phòng, không thử lại model chính
+# model chính -> hạn: chỉ model chính đó hết quota -> đi thẳng model dự phòng, không thử lại nó. Theo từng model vì model chính
+# đổi theo request: model Admin chọn hết quota không được đẩy lượt gọi dùng GEMINI_MODEL sang dự phòng
+_primary_quota_until: dict[str, float] = {}
+# Model Admin chọn mà Google trả 404 (đã ngừng / key không thấy) -> quay về GEMINI_MODEL ngay trong lượt đó và các lượt sau
+# bỏ qua model này UNUSABLE_S giây (404 không tự khỏi sau vài phút như quá tải; chờ Admin đổi lại cấu hình)
+UNUSABLE_S = 30 * 60
+_unusable_until: dict[str, float] = {}
 _sleep = time.sleep   # tách ra để test thay bằng no-op
 _now = time.monotonic  # tách ra để test giả lập lượt gọi treo lâu
 
@@ -36,14 +50,48 @@ _client: Any = None
 
 
 class GeminiError(RuntimeError):
-    def __init__(self, reason: str, message: str = "", retryable: bool = False):
+    def __init__(self, reason: str, message: str = "", retryable: bool = False, code: Optional[int] = None):
         super().__init__(message or reason)
         self.reason = reason  # no_api_key | quota | error
         self.retryable = retryable  # 429 / 503: đáng thử lại hoặc chuyển model dự phòng
+        self.code = code  # mã HTTP của Google (404 = model không dùng được với key); None khi không rõ
 
 
 def available() -> bool:
     return bool(settings.GEMINI_API_KEY)
+
+
+def allowed_models() -> list[str]:
+    """Model backend được chọn theo request, model cấu hình đứng trước; đọc settings mỗi lần (test / .env đổi không cần
+    nạp lại module)."""
+    extra = settings.GEMINI_ALLOWED_MODELS.split(",")
+    out: list[str] = []
+    for name in (MODEL, settings.GEMINI_FALLBACK_MODEL, *extra, *KNOWN_MODELS):
+        name = (name or "").strip().lower()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _norm(name: Optional[str]) -> str:
+    return (name or "").strip().lower()
+
+
+def resolve_model(requested: Optional[str]) -> str:
+    """Model chính cho một lượt gọi: ``requested`` (không phân biệt hoa thường, bỏ khoảng trắng) khi nằm trong
+    allowed_models(); rỗng / trùng GEMINI_MODEL → GEMINI_MODEL; tên lạ → GEMINI_MODEL và ghi log một lần cho tên đó (backend
+    gửi lại cùng giá trị ở mọi request, log mỗi lần thì ngập log)."""
+    name = _norm(requested)
+    if not name or name == _norm(MODEL):
+        return MODEL
+    if name in allowed_models():
+        return name
+    key = name[:_WARN_KEY_CHARS]
+    if key not in _warned_models and len(_warned_models) < _MAX_WARNED:
+        _warned_models.add(key)
+        logger.warning("gemini: model %r không nằm trong danh sách cho phép, dùng %s (thêm vào GEMINI_ALLOWED_MODELS "
+                       "nếu đúng là model của key)", key, MODEL)
+    return MODEL
 
 
 def _get_client():
@@ -59,7 +107,7 @@ def _get_client():
     return _client
 
 
-def _map_error(exc: Exception) -> GeminiError:
+def _map_error(exc: Exception, model: str = MODEL) -> GeminiError:
     """429 / RESOURCE_EXHAUSTED → quota; còn lại → error. Message chỉ mang mã HTTP + status của Google (không có
     body / key) để log và thông điệp lỗi cho người dùng đủ chẩn đoán (model sai, model quá tải...)."""
     code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
@@ -70,53 +118,77 @@ def _map_error(exc: Exception) -> GeminiError:
     label = f"{code or ''} {status.group(1) if status else type(exc).__name__}".strip()
     hint = ""
     if code == 404:
-        hint = f" (model {MODEL} không dùng được với key này, đổi GEMINI_MODEL)"
+        hint = f" (model {model} không dùng được với key này, đổi GEMINI_MODEL / Model AI chính ở Admin)"
     elif code in (503, 504):
         hint = " (model đang quá tải, thử lại sau)"
     # 503 UNAVAILABLE và 504 DEADLINE_EXCEEDED đều là model quá tải (đo 12/10/2026 với gemini-3.7/3.8-flash) → thử lại / đổi model
     retryable = code in (503, 504) or "UNAVAILABLE" in text or "DEADLINE_EXCEEDED" in text
-    return GeminiError("error", f"Gemini {label}{hint}", retryable=retryable)
+    return GeminiError("error", f"Gemini {label}{hint}", retryable=retryable,
+                       code=code if isinstance(code, int) else None)
 
 
-def _generate(contents: Any, config: Optional[dict] = None) -> str:
-    """Gọi model chính, thử lại theo RETRY_DELAYS khi 429/503, rồi một lần ở model dự phòng (nếu đặt).
-    Lỗi cuối cùng được raise nguyên `reason` để router/backend ghi `quota` / `error`."""
-    global _cooldown_until, _primary_quota_until
+def _generate(contents: Any, config: Optional[dict] = None, model: Optional[str] = None) -> str:
+    return _generate_with_model(contents, config, model)[0]
+
+
+def _generate_with_model(contents: Any, config: Optional[dict] = None,
+                         model: Optional[str] = None) -> tuple[str, str]:
+    """Gọi model chính (``model`` qua resolve_model, mặc định GEMINI_MODEL), thử lại theo RETRY_DELAYS khi 429/503, rồi
+    mỗi model sau một lần → (văn bản, model đã trả lời). Chuỗi model: model chính → GEMINI_MODEL (khi model chính là model
+    Admin chọn) → GEMINI_FALLBACK_MODEL (nếu đặt). Lỗi cuối cùng được raise nguyên `reason` để router/backend ghi
+    `quota` / `error`."""
+    global _cooldown_until
     if _now() < _cooldown_until:
         raise GeminiError("quota", "Gemini quota exceeded (đang tạm ngưng gọi)", retryable=True)
     client = _get_client()
     from google.genai import types
     cfg = types.GenerateContentConfig(**(config or {}))
-    fallback = settings.GEMINI_FALLBACK_MODEL
-    if fallback and fallback != MODEL and _now() < _primary_quota_until:
-        plans: list[tuple[str, tuple[int, ...]]] = [(fallback, ())]  # model chính vừa hết quota -> dự phòng ngay
-    else:
-        plans = [(MODEL, RETRY_DELAYS)]
-        if fallback and fallback != MODEL:
-            plans.append((fallback, ()))
+    primary = resolve_model(model)
+    if primary != MODEL and _now() < max(_unusable_until.get(primary, 0.0), _primary_quota_until.get(primary, 0.0)):
+        primary = MODEL  # model Admin chọn vừa 404 / hết quota -> lượt này như chưa chọn (chuỗi mặc định, có thử lại)
+    # Model Admin chọn hỏng thì về GEMINI_MODEL trước rồi mới tới dự phòng: GEMINI_MODEL có quota riêng và chạy được; bỏ nó
+    # khỏi chuỗi thì chọn trùng model dự phòng / không đặt dự phòng = chỉ còn một model, một sự cố là tạm ngưng cả Gemini.
+    chain = [primary]
+    for name in (MODEL, (settings.GEMINI_FALLBACK_MODEL or "").strip()):
+        if name and _norm(name) not in {_norm(n) for n in chain}:
+            chain.append(name)
+    if len(chain) > 1 and _now() < _primary_quota_until.get(primary, 0.0):
+        chain = chain[1:]  # model chính vừa hết quota -> model sau ngay, không thử lại model chính
     last: Optional[GeminiError] = None
     started = _now()
-    for model, delays in plans:
-        if model != MODEL and last is not None and last.retryable:
-            _primary_quota_until = _now() + COOLDOWN_S  # chuyển sang dự phòng: các lượt sau bỏ qua model chính
-            logger.warning("gemini: model chính %s, dùng model dự phòng %s trong %ss", last, model, COOLDOWN_S)
+    prev: Optional[tuple[str, tuple[int, ...]]] = None
+    gave_up_primary = False  # model Admin chọn trả 404 -> GEMINI_MODEL được thử lại đủ như khi chưa chọn
+    for name in chain:
+        delays = RETRY_DELAYS if name == chain[0] == primary or (gave_up_primary and name == MODEL) else ()
+        if prev is not None and prev[1] and last is not None and last.retryable:
+            # đã thử lại đủ mà vẫn 429/503 -> các lượt sau bỏ qua model đó (đi thẳng model sau) trong COOLDOWN_S
+            _primary_quota_until[prev[0]] = _now() + COOLDOWN_S
+            logger.warning("gemini: model %s %s, dùng model %s trong %ss", prev[0], last, name, COOLDOWN_S)
+        prev = (name, delays)
         for attempt in range(len(delays) + 1):
             if last is not None and _now() - started + TIMEOUT_MS / 1000 > TOTAL_BUDGET_S:
                 logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, TOTAL_BUDGET_S)
                 _cooldown_until = _now() + COOLDOWN_S
                 raise last from None
             try:
-                resp = client.models.generate_content(model=model, contents=contents, config=cfg)
-                return (getattr(resp, "text", None) or "").strip()
+                resp = client.models.generate_content(model=name, contents=contents, config=cfg)
+                return (getattr(resp, "text", None) or "").strip(), name
             except GeminiError:
                 raise
             except Exception as exc:  # noqa: BLE001 — mọi lỗi SDK/mạng đều gói lại
-                last = _map_error(exc)
+                last = _map_error(exc, name)
+                if last.code == 404 and name == primary != MODEL:
+                    # model Admin chọn không dùng được với key (Google đã ngừng / chưa mở): không để một ô cấu hình tắt Gemini
+                    # của mọi lượt gọi -> về GEMINI_MODEL ngay, nhớ UNUSABLE_S để các lượt sau không tốn thêm một lần 404
+                    _unusable_until[primary] = _now() + UNUSABLE_S
+                    gave_up_primary = True
+                    logger.warning("gemini: %s — dùng %s, bỏ qua model này %ss", last, MODEL, UNUSABLE_S)
+                    break
                 if not last.retryable:
                     logger.warning("gemini: %s", last)
                     raise last from None
                 if attempt < len(delays):
-                    logger.warning("gemini: %s — thử lại sau %ss (model %s)", last, delays[attempt], model)
+                    logger.warning("gemini: %s — thử lại sau %ss (model %s)", last, delays[attempt], name)
                     _sleep(delays[attempt])
     assert last is not None
     _cooldown_until = _now() + COOLDOWN_S
@@ -157,12 +229,14 @@ def _collapse_repeats(text: str) -> str:
     return _REPEAT_RE.sub(lambda m: m.group(1) * 3, text)
 
 
-def vision_transcribe(image_bytes: bytes, mime: str = "image/png", mode: str = "auto") -> str:
-    """Chép lại nguyên văn tiếng Nhật trong ảnh. Trả "" khi model không thấy chữ."""
+def vision_transcribe(image_bytes: bytes, mime: str = "image/png", mode: str = "auto",
+                      model: Optional[str] = None) -> str:
+    """Chép lại nguyên văn tiếng Nhật trong ảnh. Trả "" khi model không thấy chữ. ``model``: model chính backend chọn
+    (qua resolve_model; None = GEMINI_MODEL)."""
     from google.genai import types
     prompt = _TRANSCRIBE_PROMPT.format(orientation=_ORIENTATION.get(mode, _ORIENTATION["auto"]))
     contents = [types.Part.from_bytes(data=image_bytes, mime_type=mime), prompt]
-    return _collapse_repeats(_generate(contents, {"temperature": 0.0}))
+    return _collapse_repeats(_generate(contents, {"temperature": 0.0}, model))
 
 
 # --- Dịch nghĩa --------------------------------------------------------------
@@ -212,8 +286,8 @@ def _parse_json_list(raw: str) -> list[dict]:
     return [d for d in data if isinstance(d, dict)]
 
 
-def translate_items(items: list[dict], target_lang: str = "vi") -> list[dict]:
-    """Dịch theo batch 40 → [{ref, meaningVi, exampleVi}] (chưa lọc; router lọc sau)."""
+def translate_items(items: list[dict], target_lang: str = "vi", model: Optional[str] = None) -> list[dict]:
+    """Dịch theo batch 40 → [{ref, meaningVi, exampleVi}] (chưa lọc; router lọc sau). ``model`` như vision_transcribe."""
     if not available():
         raise GeminiError("no_api_key")
     lang = _LANG_NAME.get(target_lang, "Vietnamese")
@@ -225,7 +299,7 @@ def translate_items(items: list[dict], target_lang: str = "vi") -> list[dict]:
             "temperature": 0.2,
             "response_mime_type": "application/json",
             "response_schema": _TRANSLATE_SCHEMA,
-        })
+        }, model)
         for d in _parse_json_list(raw):
             out.append({
                 "ref": str(d.get("ref", "")),
@@ -316,9 +390,11 @@ def _mnemonic_input(item: dict) -> dict:
     return out
 
 
-def generate_mnemonics(items: list[dict]) -> dict:
+def generate_mnemonics(items: list[dict], model: Optional[str] = None) -> dict:
     """Mẹo nhớ tiếng Việt cho thẻ bộ thủ (C4): ``items`` = [{kanji, hanViet, radicalName, radicalChar?, meaningEn,
-    examples}] → {"items": [{kanji, mnemonicVi}], "reason": None | "no_key" | "quota" | "error"}.
+    examples}] → {"items": [{kanji, mnemonicVi}], "reason": None | "no_key" | "quota" | "error", "model": str | None}.
+    ``model`` như vision_transcribe; ``model`` trả về là model THẬT SỰ viết các mẹo đã nhận (có thể là model dự phòng;
+    lô nhiều batch thì lấy batch đầu có mẹo), None khi không mẹo nào từ Gemini — backend ghi vào generated_model.
 
     Khác translate_items, hàm này không raise: mẹo chỉ là bước làm giàu nên lỗi Gemini trả về ``reason`` kèm các mẹo
     đã sinh được ở batch trước để router điền template cho phần còn lại thay vì làm hỏng cả bộ thẻ. Mẹo không qua
@@ -326,19 +402,20 @@ def generate_mnemonics(items: list[dict]) -> dict:
     phải "no_api_key" của /extract/enrich) theo hợp đồng /radicals/cards; thử lại / model dự phòng / tạm ngưng khi hết
     quota theo _generate như mọi lượt gọi khác."""
     if not available():
-        return {"items": [], "reason": "no_key"}
+        return {"items": [], "reason": "no_key", "model": None}
     by_kanji = {it["kanji"]: it for it in items if it.get("kanji")}
     out: list[dict] = []
     seen: set[str] = set()
+    used: Optional[str] = None
     try:
         for i in range(0, len(items), BATCH_SIZE):
             batch = [_mnemonic_input(it) for it in items[i:i + BATCH_SIZE]]
             prompt = _MNEMONIC_PROMPT.format(items=json.dumps(batch, ensure_ascii=False))
-            raw = _generate(prompt, {
+            raw, name = _generate_with_model(prompt, {
                 "temperature": 0.7,   # mẹo nhớ cần chút sáng tạo; 0.2 của dịch nghĩa cho câu khô và giống nhau
                 "response_mime_type": "application/json",
                 "response_schema": _MNEMONIC_SCHEMA,
-            })
+            }, model)
             for d in _parse_json_list(raw):
                 kanji = str(d.get("kanji") or "").strip()
                 text = (d.get("mnemonicVi") or "").strip()
@@ -347,6 +424,7 @@ def generate_mnemonics(items: list[dict]) -> dict:
                     continue
                 seen.add(kanji)
                 out.append({"kanji": kanji, "mnemonicVi": text})
+                used = used or name
     except GeminiError as exc:
-        return {"items": out, "reason": "no_key" if exc.reason == "no_api_key" else exc.reason}
-    return {"items": out, "reason": None}
+        return {"items": out, "reason": "no_key" if exc.reason == "no_api_key" else exc.reason, "model": used}
+    return {"items": out, "reason": None, "model": used}

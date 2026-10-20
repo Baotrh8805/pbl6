@@ -460,15 +460,16 @@ def _gemini_blocks(text: str, vertical: Optional[bool], page: int) -> list[Block
 
 
 def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1,
-               fallback_confidence: Optional[float] = None) -> TextResult:
+               fallback_confidence: Optional[float] = None, gemini_model: Optional[str] = None) -> TextResult:
     """``fallback_confidence``: mean conf Tesseract (0..1) dưới mức này → nhờ Gemini chép lại; None →
-    settings.OCR_FALLBACK_CONFIDENCE. Backend gửi theo từng request để chỉnh ngưỡng mà không phải khởi động lại service."""
+    settings.OCR_FALLBACK_CONFIDENCE. Backend gửi theo từng request để chỉnh ngưỡng mà không phải khởi động lại service;
+    ``gemini_model`` (model Admin chọn) cũng vậy, None → GEMINI_MODEL."""
     threshold = settings.OCR_FALLBACK_CONFIDENCE if fallback_confidence is None else fallback_confidence
     mode = ocr_mode if ocr_mode in ("auto", "vertical", "horizontal") else "auto"
     if not available():
         # Chưa cài Tesseract nhưng có Gemini: chép bằng Gemini Vision luôn, không bắt người dùng cài thêm
         if gemini.available():
-            return _gemini_only(data, mode, page)
+            return _gemini_only(data, mode, page, gemini_model)
         raise OcrUnavailable("OCR engine unavailable: chưa cài Tesseract (jpn, jpn_vert) và không có GEMINI_API_KEY")
     img, mime = _preprocess(data)
 
@@ -504,7 +505,8 @@ def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1,
         img.save(buf, format="PNG")
         try:
             g_text = normalize(gemini.vision_transcribe(buf.getvalue(), "image/png",
-                                                       "vertical" if vertical else "horizontal")).strip()
+                                                       "vertical" if vertical else "horizontal",
+                                                       model=gemini_model)).strip()
         except gemini.GeminiError as e:
             g_text = ""
             result.gemini_error = e.reason
@@ -536,11 +538,11 @@ def _gemini_plausible(g_text: str, tess_text: str) -> bool:
     return 1 / GEMINI_LEN_RATIO <= n_g / n_t <= GEMINI_LEN_RATIO
 
 
-def _gemini_only(data: bytes, mode: str, page: int) -> TextResult:
+def _gemini_only(data: bytes, mode: str, page: int, gemini_model: Optional[str] = None) -> TextResult:
     _, mime = _preprocess(data)
     vertical = None if mode == "auto" else mode == "vertical"
     try:
-        g_text = gemini.vision_transcribe(data, mime, mode)
+        g_text = gemini.vision_transcribe(data, mime, mode, model=gemini_model)
     except gemini.GeminiError as e:
         raise OcrUnavailable(f"OCR engine unavailable: Gemini lỗi ({e.reason})") from e
     if not g_text.strip():
@@ -550,13 +552,15 @@ def _gemini_only(data: bytes, mode: str, page: int) -> TextResult:
                       mean_confidence=None, is_vertical=vertical, low_confidence=False)
 
 
-def ocr_pages(result: TextResult, ocr_mode: str = "auto", fallback_confidence: Optional[float] = None) -> TextResult:
+def ocr_pages(result: TextResult, ocr_mode: str = "auto", fallback_confidence: Optional[float] = None,
+              gemini_model: Optional[str] = None) -> TextResult:
     """OCR từng trang PDF scan (result.page_images) và gộp thành một TextResult source_type=pdf."""
     if not result.page_images:
         raise ReaderError("PDF không có trang nào để OCR")
     with ThreadPoolExecutor(max_workers=PAGE_WORKERS) as pool:
         pages: list[TextResult] = list(pool.map(
-            lambda ip: read_image(ip[1], ocr_mode, page=ip[0] + 1, fallback_confidence=fallback_confidence),
+            lambda ip: read_image(ip[1], ocr_mode, page=ip[0] + 1, fallback_confidence=fallback_confidence,
+                                  gemini_model=gemini_model),
             enumerate(result.page_images)))
     blocks: list[Block] = []
     for i, pg in enumerate(pages):

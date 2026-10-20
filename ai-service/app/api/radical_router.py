@@ -39,6 +39,7 @@ class RadicalCardsRequest(BaseModel):
     kanji: list[str] = Field(default_factory=list, max_length=MAX_KANJI)
     levels: Optional[list[str]] = None   # N5…N1: ví dụ đúng cấp xếp trước (không lọc bỏ — chữ hiếm vẫn có ví dụ)
     withMnemonic: bool = True            # false: không gọi Gemini, mnemonicVi None (tiết kiệm quota khi chỉ cần bộ)
+    geminiModel: Optional[str] = None    # model Gemini chính backend chọn (Admin); ngoài danh sách cho phép → GEMINI_MODEL
 
 
 def _check_levels(levels: Optional[list[str]]) -> Optional[list[str]]:
@@ -136,18 +137,23 @@ def _mnemonic_item(card: dict) -> dict:
             "meaningEn": card["meaningEn"], "examples": [ex["term"] for ex in card["examples"]]}
 
 
-def fill_mnemonics(cards: list[dict], with_mnemonic: bool = True) -> Optional[str]:
-    """Điền mnemonicVi / mnemonicSource tại chỗ; trả ``reason`` của Gemini (None khi mọi chữ đều có mẹo Gemini hoặc
-    không gọi). Chỉ hỏi Gemini những chữ có âm Hán-Việt hoặc bộ (bộ lọc gemini.mnemonic_ok đòi mẹo nhắc một trong
-    hai, chữ không có cả hai thì hỏi cũng bị bỏ); phần còn lại và mọi chữ khi Gemini hỏng → template."""
+def fill_mnemonics(cards: list[dict], with_mnemonic: bool = True,
+                   model: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+    """Điền mnemonicVi / mnemonicSource tại chỗ; trả (``reason`` của Gemini, model đã viết mẹo). ``reason`` None khi
+    mọi chữ đều có mẹo Gemini hoặc không gọi. Chỉ hỏi Gemini những chữ có âm Hán-Việt hoặc bộ (bộ lọc gemini.mnemonic_ok
+    đòi mẹo nhắc một trong hai, chữ không có cả hai thì hỏi cũng bị bỏ); phần còn lại và mọi chữ khi Gemini hỏng →
+    template. ``model``: model Gemini chính backend chọn (gemini.resolve_model); model trả về là model THẬT SỰ viết các
+    mẹo mnemonicSource="gemini" (có thể là model dự phòng), None khi không mẹo nào từ Gemini."""
     if not with_mnemonic:
-        return None
+        return None, None
     got: dict[str, str] = {}
     reason: Optional[str] = None
+    used: Optional[str] = None
     ask = [c for c in cards if c["hanViet"] or c["radical"]]
     if ask:
-        result = gemini.generate_mnemonics([_mnemonic_item(c) for c in ask])
+        result = gemini.generate_mnemonics([_mnemonic_item(c) for c in ask], model=model)
         reason = result.get("reason")
+        used = result.get("model")
         got = {m["kanji"]: m["mnemonicVi"] for m in result.get("items", []) if m.get("mnemonicVi")}
     for c in cards:
         text = got.get(c["kanji"])
@@ -156,20 +162,21 @@ def fill_mnemonics(cards: list[dict], with_mnemonic: bool = True) -> Optional[st
         else:
             c["mnemonicVi"] = radicals.template_mnemonic(c["kanji"], c["radical"], c["hanViet"], c["meaningEn"])
             c["mnemonicSource"] = "template"
-    return reason
+    return reason, (used if got else None)
 
 
 @router.post("/cards")
 def post_radical_cards(req: RadicalCardsRequest) -> dict:
     """Thẻ bộ thủ cho một lô chữ (≤ MAX_KANJI; quá → 422): {items: [{kanji, hanViet, meaningEn, strokeCount,
     radical: {no, char, nameVi, meaningVi, hanViet} | null, mnemonicVi, mnemonicSource: "gemini" | "template" | null,
-    examples: [{term, reading, meaning, level}]}], groups: [{radical, kanji: [...]}], reason}."""
+    examples: [{term, reading, meaning, level}]}], groups: [{radical, kanji: [...]}], reason, model}. ``model`` = model
+    Gemini đã viết các mẹo "gemini" (backend ghi generated_model), None khi không có mẹo nào từ Gemini."""
     levels = _check_levels(req.levels)
     cards = build_cards(req.kanji, levels)
-    reason = fill_mnemonics(cards, req.withMnemonic)
+    reason, model = fill_mnemonics(cards, req.withMnemonic, req.geminiModel)
     groups = [{"radical": _radical_view(g["radical"]), "kanji": g["kanji"]}
               for g in radicals.group_kanji([c["kanji"] for c in cards])]
-    return {"items": cards, "groups": groups, "reason": reason}
+    return {"items": cards, "groups": groups, "reason": reason, "model": model}
 
 
 @router.get("")

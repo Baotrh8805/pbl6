@@ -1,6 +1,6 @@
 // Cấu hình hệ thống (G5): mô tả các khoá app_settings mới, đọc response, kiểm tra khoảng giá trị, dựng body PUT.
 // Hàm thuần (import tương đối + đuôi .ts) -> kiểm được bằng scripts/selfCheck.ts.
-import type { AdminSettings } from "../../types/api.types.ts";
+import type { AdminAiModels, AdminSettings } from "../../types/api.types.ts";
 
 export type SettingsNumberKey =
     | "learning_path_daily_cap_default"
@@ -98,6 +98,36 @@ export const AI_THRESHOLD_FIELDS: readonly SettingsNumberField[] = [
 export const SETTINGS_NUMBER_FIELDS: readonly SettingsNumberField[] = [...LEARNING_PATH_FIELDS, ...AI_THRESHOLD_FIELDS];
 
 export const AI_MODEL_MAX = 40;
+
+export interface AiModelHint {
+  tone: "muted" | "warn";
+  text: string;
+}
+
+/**
+ * Dòng nhắc dưới ô "Model AI chính". ai-service thay tên ngoài danh sách cho phép bằng model mặc định mà không báo lỗi (một ô
+ * cấu hình không được làm hỏng lượt bóc tách) -> trang phải nói ra, nếu không Admin lưu xong tưởng model đã gõ đang chạy.
+ * options: undefined = đang tải (chưa nói gì); null = không kiểm tra được (ai-service tắt / bản cũ).
+ */
+export function aiModelHint(value: string | null | undefined, options: AdminAiModels | null | undefined): AiModelHint | null {
+  if (options === undefined) return null;
+  const typed = (value ?? "").trim();
+  const allowed = (options?.allowed ?? []).map((m) => m.trim().toLowerCase()).filter(Boolean);
+  const def = options?.default?.trim() || null;
+  if (allowed.length === 0) {
+    return typed
+      ? { tone: "muted", text: "Chưa kiểm tra được với ai-service: tên ngoài danh sách cho phép sẽ bị bỏ qua (dùng model mặc định)." }
+      : null;
+  }
+  if (!typed) return def ? { tone: "muted", text: `Đang dùng model mặc định của ai-service: ${def}.` } : null;
+  if (allowed.includes(typed.toLowerCase())) {
+    return { tone: "muted", text: `ai-service nhận model này; Google báo model đã ngừng thì tự quay về ${def ?? "model mặc định"}.` };
+  }
+  return {
+    tone: "warn",
+    text: `ai-service không nhận "${typed}" — mọi lượt gọi vẫn dùng ${def ?? "model mặc định"}. Chọn một tên trong danh sách gợi ý.`,
+  };
+}
 /** Hạn mức bóc tách / ngày (khoá cũ), cùng @Min(0) @Max(1000) của SettingsResponse. */
 export const EXTRACTION_LIMIT_MAX = 1000;
 

@@ -136,7 +136,7 @@ public class AdminStatsService {
     /**
      * db / aiService / version / backup + engines (hợp đồng đợt 2 §8 "health.engines"): cờ từng thành phần ai-service lấy từ body
      * GET /api/extract/health trong cùng một lời gọi (timeout 2 giây, hạn chót cả lời gọi kể cả phân giải DNS 3 giây —
-     * AiServiceClient.HEALTH_DEADLINE); ai-service tắt -> aiService "down" và engines rỗng.
+     * AiServiceClient.HEALTH_DEADLINE); ai-service tắt -> aiService "down" và engines rỗng. aiModels: xem {@link #aiModels}.
      */
     public Map<String, Object> health() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -148,6 +148,33 @@ public class AdminStatsService {
         m.put("backup", backupStatus(marker, Instant.now()));
         m.put("lastBackupAt", marker != null && java.nio.file.Files.exists(marker) ? lastModified(marker).toString() : null);
         m.put("engines", engineFlags(body.orElse(null)));
+        m.put("aiModels", aiModels(body.orElse(null)));
+        return m;
+    }
+
+    static final int MAX_AI_MODELS = 50;
+    static final int MAX_AI_MODEL_CHARS = 64;
+
+    /**
+     * Model Gemini ai-service nhận cho "Model AI chính" (Admin > Cấu hình): {default, allowed} từ geminiModel / geminiModels của
+     * body health. ai-service lặng lẽ thay tên ngoài danh sách bằng model mặc định (một ô cấu hình không được làm hỏng lượt bóc
+     * tách) -> trang cấu hình cần danh sách này để gợi ý và cảnh báo, nếu không Admin tưởng model đã gõ đang chạy. ai-service tắt
+     * / bản cũ chưa trả geminiModels -> null. Chỉ giữ chuỗi ngắn, tối đa MAX_AI_MODELS tên (body do ai-service gửi, không tin hẳn).
+     */
+    static Map<String, Object> aiModels(JsonNode body) {
+        if (body == null || !body.path("geminiModels").isArray()) return null;
+        List<String> allowed = new ArrayList<>();
+        for (JsonNode n : body.get("geminiModels")) {
+            String name = n.isTextual() ? n.asText().strip() : "";
+            if (!name.isEmpty() && name.length() <= MAX_AI_MODEL_CHARS && !allowed.contains(name) && allowed.size() < MAX_AI_MODELS) {
+                allowed.add(name);
+            }
+        }
+        JsonNode def = body.path("geminiModel");
+        String defName = def.isTextual() ? def.asText().strip() : "";
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("default", defName.isEmpty() || defName.length() > MAX_AI_MODEL_CHARS ? null : defName);
+        m.put("allowed", allowed);
         return m;
     }
 

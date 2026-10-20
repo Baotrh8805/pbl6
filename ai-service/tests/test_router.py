@@ -85,7 +85,7 @@ def test_image_returns_503_when_tesseract_unavailable(monkeypatch):
 def test_image_upload_uses_image_reader(monkeypatch):
     from app.extract.readers import Block, TextResult, image_reader
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
         return TextResult(text="日本語", source_type="image", engine="tesseract", pages=1,
                           blocks=[Block(text="日本語", is_vertical=True)], mean_confidence=0.9,
                           is_vertical=True)
@@ -113,7 +113,7 @@ def test_scanned_pdf_goes_through_ocr_pages(monkeypatch):
     buf = io.BytesIO()
     w.write(buf)
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
         assert data.startswith(b"\x89PNG") and ocr_mode == "auto"
         assert fallback_confidence == settings.OCR_FALLBACK_CONFIDENCE   # không gửi → ngưỡng mặc định
         return TextResult(text=f"trang{page}", source_type="image", engine="tesseract", pages=1,
@@ -139,7 +139,7 @@ def test_ocr_fallback_confidence_reaches_ocr_and_is_echoed(monkeypatch):
     from app.extract.readers import Block, TextResult, image_reader
     seen = []
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
         seen.append(fallback_confidence)
         return TextResult(text="日本語", source_type="image", engine="tesseract", pages=1,
                           blocks=[Block(text="日本語")], mean_confidence=0.5, is_vertical=False)
@@ -161,6 +161,34 @@ def test_ocr_fallback_confidence_reaches_ocr_and_is_echoed(monkeypatch):
     # nguồn không qua OCR vẫn trả lại ngưỡng đã nhận
     r = client.post("/api/extract/text", data={"text": "日本語", "ocr_fallback_confidence": "1"})
     assert r.json()["meta"]["ocrFallbackConfidence"] == 1.0
+
+
+def test_gemini_model_reaches_ocr(monkeypatch):
+    # Admin > Cấu hình > Model AI chính: backend gửi field gemini_model như ngưỡng OCR, tới cả ảnh lẫn trang PDF scan
+    from pypdf import PdfWriter
+    from app.extract.readers import Block, TextResult, image_reader
+    seen = []
+
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
+        seen.append(gemini_model)
+        return TextResult(text="日本語", source_type="image", engine="tesseract", pages=1,
+                          blocks=[Block(text="日本語")], mean_confidence=0.5, is_vertical=False)
+    monkeypatch.setattr(image_reader, "read_image", fake_read)
+    r = client.post("/api/extract/text", files={"file": ("scan.png", _png(), "image/png")},
+                    data={"gemini_model": "gemini-2.5-pro"})
+    assert r.status_code == 200, r.text
+    w = PdfWriter()
+    w.add_blank_page(width=200, height=200)
+    buf = io.BytesIO()
+    w.write(buf)
+    r = client.post("/api/extract/text", files={"file": ("scan.pdf", buf.getvalue(), "application/pdf")},
+                    data={"gemini_model": "gemini-2.5-flash"})
+    assert r.status_code == 200, r.text
+    client.post("/api/extract/text", files={"file": ("scan.png", _png(), "image/png")})
+    assert seen == ["gemini-2.5-pro", "gemini-2.5-flash", None]
+    # tên lạ / quá dài không 422: gemini.resolve_model bỏ qua, lượt bóc tách vẫn chạy
+    r = client.post("/api/extract/text", data={"text": "日本語", "gemini_model": "x" * 500})
+    assert r.status_code == 200, r.text
 
 
 def test_analyze():
@@ -205,7 +233,7 @@ def test_health():
     r = client.get("/api/extract/health")
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"sudachi", "jmdict", "jlpt", "unihan", "grammar", "tesseract", "gemini",
+    assert set(body) == {"sudachi", "jmdict", "jlpt", "unihan", "grammar", "tesseract", "gemini", "geminiModel", "geminiModels",
                          "radicals", "kradfile", "kanjivg", "pitch", "distractors",
                          "kanjiStrokes", "hanVietGraph", "kanjiCards", "conjugation", "conflicts",
                          "radicalCards", "mining"}

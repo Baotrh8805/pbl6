@@ -56,8 +56,13 @@ public class MnemonicService {
      * lặp làm ngập hàng chờ duyệt của admin. 50 đủ cho người học thật (lô sinh mẹo ≤ 30 chữ) chờ admin duyệt.
      */
     static final int MAX_PENDING_PER_USER = 50;
-    /** ai-service không trả tên model đã viết mẹo (có thể là model dự phòng) nên chỉ ghi họ model. */
+    /**
+     * generated_model khi ai-service không trả "model" (bản cũ) hoặc tên quá cột: chỉ ghi họ model. Bản mới trả model THẬT SỰ viết
+     * mẹo (Admin > Cấu hình > Model AI chính, hoặc model dự phòng khi model chính quá tải) để admin duyệt biết mẹo do model nào viết.
+     */
     private static final String GEMINI = "gemini";
+    /** Độ dài cột kanji_mnemonics.generated_model. */
+    private static final int MAX_MODEL_CHARS = 40;
     private static final int MAX_STORED_CHARS = 500;
     private static final String NOT_FOUND = "Không tìm thấy mẹo nhớ.";
     private static final String ALREADY_REVIEWED = "Mẹo nhớ đã được xử lý.";
@@ -112,6 +117,8 @@ public class MnemonicService {
         limiter.check(userId);
 
         JsonNode res = NlpService.upstream(() -> ai.radicalCardsWithMnemonic(chars));
+        String model = text(res.get("model"));
+        String generatedModel = model != null && model.strip().length() <= MAX_MODEL_CHARS ? model.strip() : GEMINI;
         List<KanjiMnemonic> rows = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (JsonNode card : res.path("items")) {
@@ -122,7 +129,7 @@ public class MnemonicService {
             JsonNode no = card.path("radical").path("no");
             Integer radicalNo = no.canConvertToInt() && no.asInt() >= 1 && no.asInt() <= NlpService.RADICAL_COUNT ? no.asInt() : null;
             rows.add(new KanjiMnemonic(ch, radicalNo, clip(mnemonic.strip()),
-                    gemini ? KanjiMnemonic.SOURCE_AI : KanjiMnemonic.SOURCE_TEMPLATE, gemini ? GEMINI : null, userId));
+                    gemini ? KanjiMnemonic.SOURCE_AI : KanjiMnemonic.SOURCE_TEMPLATE, gemini ? generatedModel : null, userId));
         }
         List<Generated> items = repo.saveAll(rows).stream().map(Generated::of).toList();
         return new GenerateResponse(items, text(res.get("reason")));

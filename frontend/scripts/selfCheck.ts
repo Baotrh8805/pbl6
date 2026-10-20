@@ -190,6 +190,7 @@ import {
 } from "../src/lib/kanjiUtils.ts";
 import {
   SETTINGS_NUMBER_FIELDS,
+  aiModelHint,
   buildSettingsPayload,
   hasAllExtras,
   isValidExtractionLimit,
@@ -1186,6 +1187,18 @@ async function runSelfCheck() {
   assertStrictEqual([parseSettingNumber(ocrF, "0,85"), parseSettingNumber(ocrF, "1.2"), parseSettingNumber(ocrF, ""), parseSettingNumber(passF, "79.5"), parseSettingNumber(passF, "50"), parseSettingNumber(passF, "49")].join(), "0.85,,,,50,", "Ô số: nhận dấu phẩy; ngoài khoảng / số lẻ ở khoá nguyên -> null");
   assertStrictEqual(`${settingNumberError(fieldOf("learning_path_daily_cap_default"), "4")}|${settingNumberError(ocrF, "0.5")}`, "Nhập số nguyên từ 5 đến 200.|null", "Câu lỗi theo khoảng của khoá");
   assertStrictEqual([1000, 1001, 1.5, 0].map(isValidExtractionLimit).join(), "true,false,false,true", "Hạn mức bóc tách: số nguyên 0..1000");
+  // Model AI chính: ai-service lặng lẽ bỏ tên ngoài danh sách -> trang phải cảnh báo, không để Admin tưởng model đã gõ đang chạy
+  const models = { default: "gemini-3.8-flash", allowed: ["gemini-3.8-flash", "gemini-3.7-flash"] };
+  const hintOf = (v: string, m: Parameters<typeof aiModelHint>[1]) => {
+    const h = aiModelHint(v, m);
+    return h ? `${h.tone}:${h.text}` : "null";
+  };
+  assertStrictEqual(hintOf("Gemini 2.5 Pro", models), 'warn:ai-service không nhận "Gemini 2.5 Pro" — mọi lượt gọi vẫn dùng gemini-3.8-flash. Chọn một tên trong danh sách gợi ý.', "Model AI chính: tên ngoài danh sách -> cảnh báo nói rõ model thật đang chạy");
+  assertStrictEqual(aiModelHint(" Gemini-3.7-Flash ", models)?.tone, "muted", "Model AI chính: cùng tên khác hoa thường / khoảng trắng -> ai-service nhận (như resolve_model)");
+  assertStrictEqual(hintOf("", models), "muted:Đang dùng model mặc định của ai-service: gemini-3.8-flash.", "Model AI chính: để trống -> nói model mặc định");
+  assertStrictEqual(`${hintOf("gemini-2.5-pro", undefined)}|${hintOf("", null)}`, "null|null", "Model AI chính: đang tải danh sách / ô trống mà không kiểm tra được -> không nhắc");
+  assertStrictEqual(aiModelHint("gemini-2.5-pro", null)?.text.startsWith("Chưa kiểm tra được với ai-service"), true, "Model AI chính: ai-service tắt -> nói chưa kiểm tra được, không khẳng định model chạy");
+  assertStrictEqual(aiModelHint("x", { default: null, allowed: [] })?.tone, "muted", "Model AI chính: danh sách rỗng = chưa kiểm tra được");
 
   // Hợp đồng API đợt 2 (scripts/selfcheck/*.ts): mỗi hàm nhận assert(cond, msg) và tự chạy phần của lane mình.
   const assertTrue = (cond: boolean, msg: string) => assertStrictEqual(cond, true, msg);

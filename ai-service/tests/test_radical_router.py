@@ -53,8 +53,9 @@ def fake_gemini(monkeypatch):
     """Thay gemini.generate_mnemonics: ghi lại items gửi lên, trả theo kịch bản đặt trước."""
     box = {"calls": [], "result": {"items": [], "reason": None}}
 
-    def generate(items):
+    def generate(items, model=None):
         box["calls"].append(items)
+        box.setdefault("models", []).append(model)
         return box["result"]
     monkeypatch.setattr(gemini, "generate_mnemonics", generate)
     return box
@@ -109,6 +110,18 @@ def test_cards_fall_back_to_template_with_reason(data, fake_gemini, reason):
     assert [g["kanji"] for g in body["groups"]] == [["海", "湖"], ["花"]]
 
 
+def test_cards_forward_gemini_model_and_report_writer(data, fake_gemini):
+    # Admin > Cấu hình > Model AI chính: geminiModel tới Gemini; "model" trả về là model đã viết mẹo (backend ghi
+    # generated_model), None khi mọi mẹo là mẫu dù Gemini có được gọi
+    fake_gemini["result"] = {"items": [{"kanji": "海", "mnemonicVi": "Bộ Thủy là nước, biển HẢI mênh mông."}],
+                             "reason": None, "model": "gemini-2.5-pro"}
+    body = _post(kanji=["海"], geminiModel="gemini-2.5-pro")
+    assert fake_gemini["models"] == ["gemini-2.5-pro"] and body["model"] == "gemini-2.5-pro"
+    fake_gemini["result"] = {"items": [], "reason": "quota", "model": "gemini-2.5-pro"}
+    body = _post(kanji=["海"])
+    assert fake_gemini["models"][-1] is None and body["model"] is None
+
+
 def test_cards_without_mnemonic_skip_gemini(data, fake_gemini):
     body = _post(kanji=["海"], withMnemonic=False)
     assert fake_gemini["calls"] == []
@@ -124,7 +137,7 @@ def test_cards_examples_default_easiest_first_and_dedupe(data, fake_gemini):
 
 
 def test_cards_empty_and_limits(data, fake_gemini):
-    assert _post(kanji=[]) == {"items": [], "groups": [], "reason": None}
+    assert _post(kanji=[]) == {"items": [], "groups": [], "reason": None, "model": None}
     assert fake_gemini["calls"] == []
     assert client.post(URL, json={"kanji": ["海"] * (radical_router.MAX_KANJI + 1)}).status_code == 422
     assert client.post(URL, json={"kanji": ["海"], "levels": ["N9"]}).status_code == 400
@@ -208,7 +221,7 @@ needs_real = pytest.mark.skipif(not (kanjidata.RS_FILE.exists() and (classifier.
 
 @needs_real
 def test_real_data_umi(monkeypatch):
-    monkeypatch.setattr(gemini, "generate_mnemonics", lambda items: {"items": [], "reason": "no_key"})
+    monkeypatch.setattr(gemini, "generate_mnemonics", lambda items, model=None: {"items": [], "reason": "no_key", "model": None})
     kanjidata.reset()
     radicals.reset()
     body = _post(kanji=["海", "火"])
@@ -226,7 +239,7 @@ def test_real_data_umi(monkeypatch):
 def test_real_data_hito_meaning_skips_counter_entries(monkeypatch):
     # 人: nghĩa của chữ (Unihan kDefinition) đứng trước JMdict — JMdict chỉ có mục phụ tố (じん "-ian…") và mục JLPT đầu
     # là じん / にん "counter for people" (nhánh lọc phụ tố của hai nguồn đó có test riêng ở trên)
-    monkeypatch.setattr(gemini, "generate_mnemonics", lambda items: {"items": [], "reason": "no_key"})
+    monkeypatch.setattr(gemini, "generate_mnemonics", lambda items, model=None: {"items": [], "reason": "no_key", "model": None})
     kanjidata.reset()
     radicals.reset()
     (hito,) = _post(kanji=["人"])["items"]

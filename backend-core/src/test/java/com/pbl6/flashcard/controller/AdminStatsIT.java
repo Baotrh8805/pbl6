@@ -116,6 +116,8 @@ class AdminStatsIT extends IntegrationTest {
         // §8 health.engines: ai-service tắt -> object rỗng (không null, không lỗi)
         assertTrue(h.get("engines").isObject(), h.toString());
         assertEquals(0, h.get("engines").size());
+        // Model AI chính: không kiểm tra được -> không có danh sách (trang cấu hình ghi "chưa kiểm tra được"), không lỗi
+        assertTrue(h.path("aiModels").isMissingNode() || h.get("aiModels").isNull(), h.toString());
     }
 
     @Test

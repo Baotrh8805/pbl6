@@ -27,12 +27,15 @@ public class ContentAiClient {
     /**
      * POST /api/radicals/cards {kanji, withMnemonic: true}: {items: [{kanji, hanViet, meaningEn, strokeCount, radical: {no, char,
      * nameVi, meaningVi, hanViet} | null, mnemonicVi, mnemonicSource: "gemini" | "template", examples}], groups, reason}. ai-service
-     * luôn điền mẹo (Gemini lỗi / hết quota thì dùng mẫu, ghi lý do vào reason) và tự bỏ mục không phải một chữ Hán.
+     * luôn điền mẹo (Gemini lỗi / hết quota thì dùng mẫu, ghi lý do vào reason) và tự bỏ mục không phải một chữ Hán. Gửi kèm
+     * geminiModel = model Admin chọn ({@link AiServiceClient#geminiModel()}); "model" trả về là model đã viết các mẹo "gemini".
      */
     public JsonNode radicalCardsWithMnemonic(List<String> kanji) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("kanji", kanji);
         body.put("withMnemonic", true);
+        String model = ai.geminiModel();
+        if (model != null) body.put("geminiModel", model);
         return ai.postJsonLong("sinh mẹo nhớ bộ thủ", "/api/radicals/cards", body);
     }
 

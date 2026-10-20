@@ -33,6 +33,25 @@ class AdminStatsServiceTest {
     }
 
     @Test
+    void ai_models_expose_what_ai_service_accepts_for_the_primary_model_setting() throws Exception { // G5 Model AI chính
+        var mapper = new ObjectMapper();
+        var body = mapper.readTree("{\"gemini\":true,\"geminiModel\":\" gemini-3.8-flash \","
+                + "\"geminiModels\":[\"gemini-3.8-flash\",\"gemini-3.7-flash\",\"gemini-3.7-flash\",\"\",5,null,\""
+                + "x".repeat(AdminStatsService.MAX_AI_MODEL_CHARS + 1) + "\"]}");
+        Map<String, Object> m = AdminStatsService.aiModels(body);
+        assertEquals("gemini-3.8-flash", m.get("default"));
+        assertEquals(java.util.List.of("gemini-3.8-flash", "gemini-3.7-flash"), m.get("allowed"), "bỏ trùng / rỗng / không phải chuỗi / quá dài");
+        assertNull(AdminStatsService.aiModels(null), "ai-service tắt -> trang cấu hình ghi 'chưa kiểm tra được'");
+        assertNull(AdminStatsService.aiModels(mapper.readTree("{\"gemini\":true}")), "ai-service bản cũ chưa trả geminiModels");
+        var many = mapper.createObjectNode();
+        var arr = many.putArray("geminiModels");
+        for (int i = 0; i < 80; i++) arr.add("m-" + i);
+        Map<String, Object> capped = AdminStatsService.aiModels(many);
+        assertNull(capped.get("default"));
+        assertEquals(AdminStatsService.MAX_AI_MODELS, ((java.util.List<?>) capped.get("allowed")).size());
+    }
+
+    @Test
     void ocr_point_error_rate_is_a_fraction_and_null_without_jobs() { // §8 ocrSeries
         LocalDate d = LocalDate.of(2026, 10, 19);
         assertEquals(0.3333, AdminStatsService.ocrPoint(d, 3, 1, 0, 0).errorRate());

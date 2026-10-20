@@ -4,7 +4,7 @@ import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
 import { atLeast } from "@/lib/roles";
 import { extractErrorMessage } from "@/services/apiClient";
-import { fetchSettings, updateSettings } from "@/services/adminService";
+import { fetchAdminHealth, fetchSettings, updateSettings } from "@/services/adminService";
 import type { AdminSettings } from "@/types/api.types";
 import { formatShort } from "@/features/admin/adminUtils";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
@@ -16,6 +16,7 @@ import {
   EXTRACTION_LIMIT_MAX,
   LEARNING_PATH_FIELDS,
   SETTINGS_NUMBER_FIELDS,
+  aiModelHint,
   buildSettingsPayload,
   hasAllExtras,
   isValidExtractionLimit,
@@ -37,6 +38,10 @@ export const AdminSettingsPage: React.FC = () => {
   const [numText, setNumText] = useState<Partial<Record<SettingsNumberKey, string>>>({});
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  // Danh sách model ai-service nhận (GET /admin/health): gợi ý cho ô "Model AI chính" và cảnh báo tên bị bỏ qua. Tải riêng,
+  // không chặn trang (ai-service tắt thì health chờ tới 3 giây).
+  const health = useAsync(fetchAdminHealth, []);
+  const modelListId = useId();
 
   if (loading) return <p className="text-on-surface-variant p-space-md">Đang tải cấu hình...</p>;
   if (error || !data) {
@@ -66,6 +71,8 @@ export const AdminSettingsPage: React.FC = () => {
       ? `Hạn mức phải là số nguyên từ 0 đến ${EXTRACTION_LIMIT_MAX}.`
       : null;
   const modelError = (s.ai_model_primary ?? "").trim().length > AI_MODEL_MAX ? `Tối đa ${AI_MODEL_MAX} ký tự.` : null;
+  const aiModels = health.loading ? undefined : (health.data?.aiModels ?? null);
+  const modelHint = modelError ? null : aiModelHint(s.ai_model_primary, aiModels);
   const invalid = !!limitError || !!modelError || Object.keys(numErrors).length > 0;
   const merged: AdminSettings = { ...s, ...numValues };
   const dirty =
@@ -312,10 +319,12 @@ export const AdminSettingsPage: React.FC = () => {
             <label className="flex flex-col gap-1.5 p-3 rounded-xl bg-surface-container-low border border-surface-container-high sm:col-span-2">
               <span className="font-semibold text-body-sm">Model AI chính</span>
               <span className="text-label-sm text-on-surface-variant">
-                Tên model Gemini dùng cho bóc tách / dịch nghĩa (vd. gemini-2.5-flash). Để trống = dùng cấu hình mặc định của ai-service.
+                Tên model Gemini cho OCR dự phòng, dịch nghĩa và mẹo nhớ bộ thủ (vd. gemini-3.7-flash). Để trống = dùng cấu hình mặc
+                định của ai-service.
               </span>
               <input
                 type="text"
+                list={aiModels?.allowed.length ? modelListId : undefined}
                 maxLength={AI_MODEL_MAX}
                 disabled={!canEdit || !extrasReady}
                 value={s.ai_model_primary ?? ""}
@@ -324,7 +333,19 @@ export const AdminSettingsPage: React.FC = () => {
                 aria-invalid={modelError ? true : undefined}
                 className={`${adminFieldClass} w-full sm:max-w-xs font-mono mt-1`}
               />
+              {aiModels && aiModels.allowed.length > 0 && (
+                <datalist id={modelListId}>
+                  {aiModels.allowed.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              )}
               {modelError && <span className="text-label-sm text-error">{modelError}</span>}
+              {modelHint && (
+                <span className={`text-label-sm ${modelHint.tone === "warn" ? "text-error" : "text-on-surface-variant"}`}>
+                  {modelHint.text}
+                </span>
+              )}
             </label>
           </div>
         </AdminDetailCard>

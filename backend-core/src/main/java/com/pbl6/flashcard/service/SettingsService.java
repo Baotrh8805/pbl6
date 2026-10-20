@@ -37,7 +37,10 @@ public class SettingsService {
     public static final String KEY_OCR_LOW_LINE = "ocr_low_line_confidence";
     public static final String KEY_DISTRACTOR_MIN = "distractor_min_confidence";
     public static final String KEY_CONTRADICTION_ALERT = "contradiction_alert_threshold";
-    /** Tên model AI chính (≤ 40 ký tự); rỗng = để ai-service tự chọn. */
+    /**
+     * Tên model AI chính (≤ 40 ký tự); rỗng = để ai-service tự chọn. Có hiệu lực qua {@link #aiModelPrimary()}: AiServiceClient gửi
+     * kèm OCR dự phòng / dịch nghĩa / mẹo nhớ, ai-service chỉ nhận model trong danh sách cho phép của nó.
+     */
     public static final String KEY_AI_MODEL_PRIMARY = "ai_model_primary";
     /** Quyết định D2: chặn đăng nhập tới khi xác thực email. Gói xác thực email (V24) đọc khoá này. */
     public static final String KEY_EMAIL_VERIFICATION = "email_verification_required";
@@ -97,6 +100,21 @@ public class SettingsService {
             return Double.isFinite(v) ? v : fallback;
         } catch (RuntimeException e) {
             return fallback;
+        }
+    }
+
+    /**
+     * ai_model_primary đã cắt khoảng trắng; null khi rỗng / thiếu dòng / không đọc được. {@link AiServiceClient} gửi kèm mỗi lượt gọi
+     * có Gemini (OCR dự phòng, dịch nghĩa, mẹo nhớ), đọc lúc gọi như các ngưỡng AI. Không ném như {@link #getDouble(String, double)}:
+     * cấu hình hỏng không được làm hỏng lượt bóc tách — null thì ai-service dùng GEMINI_MODEL của nó, tên ngoài danh sách cho phép
+     * (geminiModels ở /api/extract/health) ai-service cũng tự bỏ qua.
+     */
+    public String aiModelPrimary() {
+        try {
+            String v = raw(KEY_AI_MODEL_PRIMARY);
+            return v == null || v.isBlank() ? null : v.strip();
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 

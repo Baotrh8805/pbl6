@@ -14,6 +14,9 @@ class Settings(BaseModel):
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     # Model dự phòng khi model chính trả 429/503 sau các lần thử lại (quota tính riêng theo model); rỗng = không dùng
     GEMINI_FALLBACK_MODEL: str = os.getenv("GEMINI_FALLBACK_MODEL", "")
+    # Model thêm (phân tách dấu phẩy) mà backend được phép chọn theo từng request (Admin > Cấu hình > Model AI chính), ngoài
+    # GEMINI_MODEL / GEMINI_FALLBACK_MODEL và các model đã đo trong gemini.KNOWN_MODELS; rỗng = chỉ các model đó
+    GEMINI_ALLOWED_MODELS: str = os.getenv("GEMINI_ALLOWED_MODELS", "")
     NEO4J_URI: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER: str = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "password123")

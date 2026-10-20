@@ -19,6 +19,7 @@ import java.util.Map;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -192,6 +193,7 @@ class AdminSettingsIT extends IntegrationTest {
                 .andExpect(jsonPath("$.message", containsString("ocr_low_line_confidence")))
                 .andExpect(jsonPath("$.message", containsString("phải từ")));
 
+        assertNull(settingsService.aiModelPrimary(), "seed rỗng -> không gửi model, ai-service dùng GEMINI_MODEL");
         Map<String, Object> edge = defaults();
         edge.put("learning_path_daily_cap_default", 200);
         edge.put("learning_path_quiz_pass_pct", 50);
@@ -207,6 +209,7 @@ class AdminSettingsIT extends IntegrationTest {
         assertEquals(1.0, s.get("ocr_fallback_confidence").asDouble(), 1e-9);
         assertEquals(0.0, s.get("ocr_low_line_confidence").asDouble(), 1e-9);
         assertEquals("gemini-2.5-flash", s.get("ai_model_primary").asText(), "cắt khoảng trắng");
+        assertEquals("gemini-2.5-flash", settingsService.aiModelPrimary(), "giá trị AiServiceClient gửi cho ai-service");
         assertFalse(s.get("email_verification_required").asBoolean());
         // Lưu dạng chuỗi gọn (không "1.0" / "0.0"); đọc lại qua SettingsService.getDouble được
         assertEquals("1", settings.findById("ocr_fallback_confidence").orElseThrow().getValue());

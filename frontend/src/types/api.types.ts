@@ -727,6 +727,14 @@ export interface AdminHealth {
     lastBackupAt: string | null;
     /** §8: cờ thành phần ai-service; thiếu khi backend chưa trả. */
     engines?: AdminEngineFlags;
+    /** Model Gemini ai-service nhận cho "Model AI chính"; null / thiếu = ai-service tắt hoặc bản cũ chưa trả. */
+    aiModels?: AdminAiModels | null;
+}
+
+export interface AdminAiModels {
+    /** GEMINI_MODEL của ai-service (dùng khi ô cấu hình trống hoặc tên không được nhận). */
+    default: string | null;
+    allowed: string[];
 }
 
 export interface AdminUserRow {

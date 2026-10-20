@@ -102,9 +102,11 @@ def _sniff(filename: Optional[str], data: bytes) -> str:
 
 
 def read_source(filename: Optional[str], data: Optional[bytes], text: Optional[str],
-                ocr_mode: str = "auto", ocr_fallback_confidence: Optional[float] = None) -> TextResult:
+                ocr_mode: str = "auto", ocr_fallback_confidence: Optional[float] = None,
+                gemini_model: Optional[str] = None) -> TextResult:
     """``ocr_fallback_confidence``: ngưỡng conf Tesseract (0..1) dưới đó nhờ Gemini chép lại, cho ảnh và PDF scan;
-    None → settings.OCR_FALLBACK_CONFIDENCE."""
+    None → settings.OCR_FALLBACK_CONFIDENCE. ``gemini_model``: model Gemini chính cho lượt chép lại đó (gemini.resolve_model;
+    None → GEMINI_MODEL)."""
     from app.extract.readers import docx_reader, image_reader, pdf_reader, text_reader
 
     if data is not None and len(data) > MAX_FILE_BYTES:
@@ -119,9 +121,11 @@ def read_source(filename: Optional[str], data: Optional[bytes], text: Optional[s
             result = pdf_reader.read_pdf(data, ocr_mode)
             if result.needs_ocr:
                 # Điểm cắm OCR giai đoạn 2: image_reader.ocr_pages(result.page_images, ocr_mode)
-                result = image_reader.ocr_pages(result, ocr_mode, fallback_confidence=ocr_fallback_confidence)
+                result = image_reader.ocr_pages(result, ocr_mode, fallback_confidence=ocr_fallback_confidence,
+                                                gemini_model=gemini_model)
         elif kind == "image":
-            result = image_reader.read_image(data, ocr_mode, fallback_confidence=ocr_fallback_confidence)
+            result = image_reader.read_image(data, ocr_mode, fallback_confidence=ocr_fallback_confidence,
+                                             gemini_model=gemini_model)
         else:  # pragma: no cover
             raise ReaderError("Định dạng không hỗ trợ")
     elif text is not None and text.strip():

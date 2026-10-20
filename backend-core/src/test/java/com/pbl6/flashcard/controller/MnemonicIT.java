@@ -122,12 +122,15 @@ class MnemonicIT extends IntegrationTest {
         assertEquals(u.id, stored.getCreatedBy());
         assertNull(repo.findById(UUID.fromString(res.get("items").get(1).get("id").asText())).orElseThrow().getGeneratedModel());
 
-        // 海 đã có mẹo PENDING của mình -> chỉ hỏi 湖
+        // 海 đã có mẹo PENDING của mình -> chỉ hỏi 湖. ai-service mới trả model đã viết mẹo (Admin > Cấu hình > Model AI chính)
         Mockito.when(contentAi.radicalCardsWithMnemonic(List.of("湖"))).thenReturn(cards("""
-                {"items":[{"kanji":"湖","radical":{"no":85},"mnemonicVi":"Hồ nước: HỒ","mnemonicSource":"gemini"}],"reason":null}"""));
+                {"items":[{"kanji":"湖","radical":{"no":85},"mnemonicVi":"Hồ nước: HỒ","mnemonicSource":"gemini"}],"reason":null,
+                 "model":"gemini-2.5-pro"}"""));
         JsonNode second = read(call(post("/api/kanji/mnemonics/generate"), u.token, Map.of("kanji", List.of("海", "湖")))
                 .andExpect(status().isOk()));
         assertEquals(1, second.get("items").size());
+        assertEquals("gemini-2.5-pro", repo.findById(UUID.fromString(second.get("items").get(0).get("id").asText()))
+                .orElseThrow().getGeneratedModel());
         assertFalse(second.has("reason"), "reason null bị bỏ (NON_NULL)");
         // Mọi chữ đều đang chờ duyệt -> không gọi ai-service, không tạo gì
         Mockito.clearInvocations(contentAi);
