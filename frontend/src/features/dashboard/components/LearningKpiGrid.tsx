@@ -45,8 +45,10 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
 
   return (
     <section className="flex flex-col gap-space-md">
-      {/* Greeting Header */}
-      <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+      {/* Greeting Header: lời chào và cụm "Mục tiêu học tập" + ngày cùng hàng khi đủ chỗ (màn rộng), không thì cụm nút xuống
+          dòng dưới lời chào (flex-wrap) chứ không co cả hai — trước đây flex-row từ sm ép nút còn ~75 px (một chữ một dòng) và
+          lời chào còn ~160 px ở 640–900 px. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-label-sm text-label-sm uppercase tracking-widest text-outline font-semibold">
@@ -67,12 +69,13 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Nút và nhãn ngày mỗi thứ giữ một dòng; ở 320–375 px không đủ chỗ cho cả hai thì nhãn ngày xuống dòng dưới nút. */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* Quick Edit Metrics button */}
           <button
             type="button"
             onClick={onOpenEditMetrics}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-lowest text-primary hover:bg-surface-container font-label-md text-label-md border border-surface-container-high/60 shadow-xs cursor-pointer transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-lowest text-primary hover:bg-surface-container font-label-md text-label-md border border-surface-container-high/60 shadow-xs cursor-pointer transition-colors shrink-0 whitespace-nowrap"
             title="Đặt trình độ và mục tiêu học mỗi ngày"
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-secondary">tune</span>

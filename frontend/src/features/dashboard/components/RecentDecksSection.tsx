@@ -73,20 +73,26 @@ export const RecentDecksSection: React.FC<RecentDecksSectionProps> = ({ decks, r
 
   return (
     <section className="flex flex-col gap-space-md" aria-labelledby="recent-decks-title">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
-        <div className="flex items-center gap-space-sm">
-          <h2 id="recent-decks-title" className="font-headline-md text-headline-md text-primary tracking-tight font-bold">
+      {/* Tiêu đề (~300 px) và nhóm lọc (~325 px) cùng hàng khi đủ chỗ (từ ~960 px), không thì nhóm lọc xuống dòng dưới
+          tiêu đề (flex-wrap) chứ không co cả hai: trước đây flex-row từ sm ép tiêu đề gãy 2–4 dòng (một chữ một dòng ở 768 px
+          vì sidebar 256 px) và nhãn số bộ gãy 2–3 dòng ở 640–900 px. Tiêu đề và nhãn mỗi thứ giữ một dòng (whitespace-nowrap);
+          ở 320 px không đủ chỗ cho cả hai thì nhãn xuống dòng dưới tiêu đề. */}
+      <div className="flex flex-wrap items-center justify-between gap-space-sm">
+        <div className="flex flex-wrap items-center gap-x-space-sm gap-y-1">
+          <h2
+            id="recent-decks-title"
+            className="font-headline-md text-headline-md text-primary tracking-tight font-bold whitespace-nowrap"
+          >
             Bộ thẻ đang học
           </h2>
-          <span className="font-label-sm text-label-sm bg-surface-container text-on-surface-variant px-2 py-0.5 rounded-full font-semibold">
+          <span className="font-label-sm text-label-sm bg-surface-container text-on-surface-variant px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
             {counts.in_progress} bộ đang học
           </span>
         </div>
 
-        {/* flex-wrap chỉ dưới 640 px: ba nút liền nhau rộng ~327 px, ở 320 px (nội dung còn 272 px) không xuống dòng thì đẩy cả
-            trang tràn ngang. Từ sm hàng tiêu đề thành flex-row: nhóm nút mà wrap được thì min-content tụt về một nút, bị co cùng
-            tiêu đề và gãy thành 2 dòng ở 640–900 px -> sm:flex-nowrap giữ nguyên một khối như trước. */}
-        <div role="group" aria-label="Lọc bộ thẻ" className="flex flex-wrap sm:flex-nowrap items-center gap-1 p-1 bg-surface-container rounded-lg self-start sm:self-auto">
+        {/* flex-wrap chỉ dưới 640 px: ba nút liền nhau rộng ~325 px, ở 320 px (nội dung còn 272 px) không xuống dòng thì đẩy cả
+            trang tràn ngang. Từ sm giữ một khối (sm:flex-nowrap) như trước — nội dung từ 640 px luôn rộng hơn 325 px. */}
+        <div role="group" aria-label="Lọc bộ thẻ" className="flex flex-wrap sm:flex-nowrap items-center gap-1 p-1 bg-surface-container rounded-lg">
           {FILTERS.map((f) => (
             <button
               key={f.id}
