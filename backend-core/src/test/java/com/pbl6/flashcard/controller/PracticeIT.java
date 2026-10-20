@@ -257,13 +257,17 @@ class PracticeIT extends IntegrationTest {
         String stranger = newUser();
         String theirs = cardOf(stranger, "Bộ riêng của người khác", "橋");
 
-        call(post("/api/practice/pronunciation"), token, Map.of("cardId", mine, "term", "箸", "target", "はし",
-                "transcript", "はし", "score", 92))
+        JsonNode logged = read(call(post("/api/practice/pronunciation"), token, Map.of("cardId", mine, "term", "箸",
+                "target", "はし", "transcript", "はし", "score", 92))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.kind").value("speak"))
                 .andExpect(jsonPath("$.target").value("はし"))
                 .andExpect(jsonPath("$.score").value(92))
-                .andExpect(jsonPath("$.createdAt").exists());
+                .andExpect(jsonPath("$.createdAt").exists()));
+        // 201 mang mốc trong RAM, thống kê đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi ghi
+        JsonNode recent = read(call(get("/api/practice/stats"), token, null).andExpect(status().isOk())).get("recent");
+        assertEquals(1, recent.size());
+        assertEquals(logged.get("createdAt").asText(), recent.get(0).get("createdAt").asText());
         // Thẻ trong bộ riêng của người khác / id không tồn tại: vẫn ghi lượt luyện, không gắn thẻ (không lộ, không vỡ FK)
         call(post("/api/practice/pronunciation"), token, Map.of("cardId", theirs, "term", "橋", "target", "はし",
                 "transcript", "", "score", 0)).andExpect(status().isCreated());

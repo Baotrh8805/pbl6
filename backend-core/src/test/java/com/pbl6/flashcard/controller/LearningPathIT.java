@@ -151,6 +151,8 @@ class LearningPathIT extends IntegrationTest {
 
         JsonNode draft = awaitDraft(token, id);
         assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        // 202 mang mốc trong RAM, GET đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi tạo
+        assertEquals(created.get("createdAt").asText(), draft.get("createdAt").asText());
         assertTrue(draft.get("chaptersDetected").asBoolean());
         assertEquals("DONE", draft.get("job").get("status").asText());
         assertTrue(draft.get("job").get("stats").get("chaptersDetected").asBoolean());
@@ -1137,6 +1139,8 @@ class LearningPathIT extends IntegrationTest {
         assertEquals("ACTIVE", active.get("status").asText());
         assertEquals("2026-11-01", active.get("startDate").asText());
         assertTrue(active.has("activatedAt"));
+        // như completedAt: mốc kích hoạt làm tròn xuống micro giây nên response = mọi lần đọc sau từ DB
+        assertEquals(active.get("activatedAt").asText(), pathOn(token, id, "2026-11-01").get("activatedAt").asText());
         String folderId = active.get("folderId").asText();
         JsonNode ch = active.get("chapters");
         assertEquals(2, ch.size());
@@ -1791,6 +1795,7 @@ class LearningPathIT extends IntegrationTest {
         JsonNode r = read(call(post(BASE + id + "/rebalance").param("date", "2026-11-05"), token, Map.of("extend", false))
                 .andExpect(status().isOk()));
         assertTrue(r.has("lastRebalancedAt"));
+        assertEquals(r.get("lastRebalancedAt").asText(), pathOn(token, id, "2026-11-05").get("lastRebalancedAt").asText());
         assertEquals(10, r.get("totalDays").asInt());
         assertEquals(0, r.get("today").get("behindCount").asInt());
         assertTrue(r.get("today").get("newCount").asInt() > 0);
@@ -3481,6 +3486,9 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(50, path.get("dailyCap").asInt()); // learning_path_daily_cap_default
         assertEquals("1111111", path.get("studyDays").asText());
         assertTrue(path.has("activatedAt"));
+        JsonNode stored = pathOn(token, id, day); // đọc từ DB: cùng mốc tạo / kích hoạt tới micro giây
+        assertEquals(path.get("createdAt").asText(), stored.get("createdAt").asText());
+        assertEquals(path.get("activatedAt").asText(), stored.get("activatedAt").asText());
         assertFalse(path.has("jobId"), "bổ khuyết không có job bóc tách");
         assertFalse(path.has("job"));
 

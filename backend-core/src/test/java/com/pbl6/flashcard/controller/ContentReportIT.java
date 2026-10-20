@@ -134,6 +134,11 @@ class ContentReportIT extends IntegrationTest {
         assertEquals("UNPUBLISH_DECK", res.get("action").asText());
         assertEquals(admin.email, res.get("resolvedByEmail").asText());
         assertFalse(res.get("resolvedAt").isNull());
+        // response xử lý đọc lại từ DB sau câu UPDATE: cùng mốc với danh sách tới micro giây
+        JsonNode listed = read(call(get("/api/admin/reports").param("status", "RESOLVED").param("deckId", id), admin.token, null)
+                .andExpect(status().isOk())).get("items").get(0);
+        assertEquals(res.get("resolvedAt").asText(), listed.get("resolvedAt").asText());
+        assertEquals(res.get("createdAt").asText(), listed.get("createdAt").asText());
         call(get("/api/decks/" + id), other.token, null).andExpect(status().isNotFound());
         assertEquals(1, auditCount(admin.token, "REPORT", String.valueOf(rid)));
         assertEquals(1, auditCount(admin.token, "DECK", id));

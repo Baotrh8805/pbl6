@@ -29,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -128,7 +129,7 @@ public class ExtractionService {
         stored.put(ConflictSupport.OPTION_MIN_CONFIDENCE, ConflictSupport.minConfidence(settings));
         job.setOptions(stored);
         job.setPurpose(purpose);
-        job.setCreatedAt(Instant.now());
+        job.setCreatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS)); // = timestamptz: 202 trả đúng mốc GET đọc lại
         jobs.save(job);
         return job;
     }

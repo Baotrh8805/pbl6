@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -71,7 +72,8 @@ public class ReviewService {
     }
 
     private ReviewResponse apply(Long uid, String cardId, String grade, String source, Integer reactionMs, UUID pathId) {
-        Instant now = Instant.now();
+        // micro giây = timestamptz: dueAt (= now + n ngày) trả trong response đúng bằng bản GET /api/reviews đọc lại
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         reviewRepository.log(uid, cardId, grade, source, reactionMs, pathId);
         if ("cram".equals(source)) {
             // Học nhanh chỉ ghi nhật ký: không đổi lịch/ease nên không làm phồng mastery sau một đêm nhồi

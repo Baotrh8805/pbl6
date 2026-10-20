@@ -10,6 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -187,7 +188,8 @@ public class SettingsService {
         wanted.put(KEY_EMAIL_VERIFICATION, String.valueOf(req.emailVerificationRequired()));
 
         Map<String, Object> changes = new HashMap<>();
-        Instant now = Instant.now();
+        // micro giây = timestamptz: current() dưới đây đọc lại chính các entity này, nên updatedAt của response = mọi lần GET sau
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         for (Map.Entry<String, String> e : wanted.entrySet()) {
             // Dòng thiếu (DB sửa tay) được tạo lại thay vì 500: CHECK khoá của V21 vẫn chặn khoá lạ
             AppSetting s = settings.findById(e.getKey()).orElseGet(() -> {

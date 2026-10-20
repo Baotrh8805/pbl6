@@ -12,8 +12,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +109,10 @@ class AdminUserIT extends IntegrationTest {
                 .andExpect(status().isOk()));
         assertEquals("Spam bình luận", locked.get("lockedReason").asText());
         String lockedAt = locked.get("lockedAt").asText();
+        // Lần khoá trả mốc trong RAM, mọi lần đọc sau trả mốc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi
+        // đặt nên hai chuỗi giống hệt (trước đây …23.222907500Z rồi …23.222908Z)
+        assertEquals(lockedAt, read(call(get("/api/admin/users/" + u.id), admin.token, null).andExpect(status().isOk()))
+                .get("lockedAt").asText());
         // khiếu nại gửi khi đang khoá với lý do cũ
         String ip = "10.78." + ThreadLocalRandom.current().nextInt(256) + "." + (1 + ThreadLocalRandom.current().nextInt(254));
         call(post("/api/auth/appeals").with(req -> { // IP riêng: giới hạn khiếu nại 5/giờ/IP dùng chung cả bộ test
@@ -121,10 +123,7 @@ class AdminUserIT extends IntegrationTest {
         JsonNode changed = read(patchUser(admin.token, u.id, Map.of("locked", true, "lockedReason", "  Lừa đảo  "))
                 .andExpect(status().isOk()));
         assertEquals("Lừa đảo", changed.get("lockedReason").asText(), "lý do mới (đã trim) thay lý do cũ");
-        // So trong 1 µs: response lần khoá mang Instant trong bộ nhớ (Windows: bước 100 ns), còn lần này đọc lại từ DB
-        // (timestamptz làm tròn tới µs) — so nguyên chuỗi thì trượt ~9/10 lần dù mốc khoá không đổi
-        Duration drift = Duration.between(Instant.parse(lockedAt), Instant.parse(changed.get("lockedAt").asText())).abs();
-        assertTrue(drift.toNanos() < 1_000, "đổi lý do không đổi mốc khoá: " + lockedAt + " -> " + changed.get("lockedAt"));
+        assertEquals(lockedAt, changed.get("lockedAt").asText(), "đổi lý do không đổi mốc khoá");
         assertEquals("Lừa đảo", userRepository.findById(u.id).orElseThrow().getLockedReason());
         assertEquals(2, auditCount(admin.token, u.id), "USER_LOCK + USER_LOCK_REASON");
         JsonNode audit = null;
@@ -209,6 +208,24 @@ class AdminUserIT extends IntegrationTest {
         Account u = user();
         patchUser(admin.token, u.id, body("premium", true)).andExpect(status().isOk());
         assertTrue(read(call(get("/api/auth/me"), u.token, null)).get("isPremium").asBoolean());
+    }
+
+    /**
+     * Hạn Premium gửi kèm phần dưới micro giây: lưu (timestamptz, micro giây) và trả về đúng giá trị DB giữ được, cắt xuống chứ không
+     * làm tròn sang giây sau; gửi lại cùng hạn là no-op (trước đây response mang …59.999999999Z, DB lưu 17:00:00Z, nên gửi lại
+     * thành "đổi hạn" với audit + thông báo thừa).
+     */
+    @Test
+    void premium_until_round_trips_at_microsecond_precision() throws Exception {
+        Account admin = staff(Role.ADMIN);
+        Account u = user();
+        Map<String, Object> b = Map.of("premium", true, "premiumUntil", "2027-01-31T16:59:59.999999999Z");
+        JsonNode res = read(patchUser(admin.token, u.id, b).andExpect(status().isOk()));
+        assertEquals("2027-01-31T16:59:59.999999Z", res.get("premiumUntil").asText());
+        assertEquals(res.get("premiumUntil").asText(), read(call(get("/api/admin/users/" + u.id), admin.token, null)
+                .andExpect(status().isOk())).get("premiumUntil").asText());
+        patchUser(admin.token, u.id, b).andExpect(status().isOk());
+        assertEquals(1, auditCount(admin.token, u.id), "gửi lại cùng hạn: không đổi gì, không audit");
     }
 
     @Test

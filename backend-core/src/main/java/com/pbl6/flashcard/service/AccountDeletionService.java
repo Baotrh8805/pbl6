@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
 
@@ -105,7 +106,7 @@ public class AccountDeletionService {
         u.setFullName(DELETED_NAME);
         u.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
         u.setPasswordChangedAt(Instant.now());
-        u.setLockedAt(Instant.now());
+        u.setLockedAt(Instant.now().truncatedTo(ChronoUnit.MICROS)); // micro giây = timestamptz, như khoá của admin
         u.setLockedReason("Tài khoản đã được xoá theo yêu cầu của chủ tài khoản.");
         u.setIsPremium(false);
         u.setExtractionDailyLimit(null);

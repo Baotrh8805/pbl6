@@ -195,7 +195,7 @@ public class LearningPathService {
         path.setTotalDays(days);
         path.setDailyCap(cap);
         path.setStudyDays(mask);
-        path.setCreatedAt(Instant.now());
+        path.setCreatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS)); // như completedAt: 202 = mọi lần đọc sau từ DB
         ExtractionJob job = tx.execute(s -> {
             ExtractionJob j = extraction.prepareJob(user, data, filename, text, options, ExtractionJob.PURPOSE_LEARNING_PATH);
             path.setJobId(j.getId());
@@ -1119,7 +1119,7 @@ public class LearningPathService {
         PlanResult r = writeSchedule(path, kept, plan);
         path.setFolderId(folderId);
         path.setStatus(LearningPath.ACTIVE);
-        path.setActivatedAt(Instant.now());
+        path.setActivatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         return toResponse(path, date, true, r.overflow() ? Boolean.TRUE : null);
     }
 
@@ -1211,7 +1211,7 @@ public class LearningPathService {
         String label = DateTimeFormatter.ofPattern("dd/MM/yyyy").format(date);
         String title = ExtractionWorker.cut(req.title(), MAX_TITLE);
         if (title == null) title = "Bổ khuyết " + label;
-        Instant now = Instant.now();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         LearningPath draft = new LearningPath();
         draft.setId(UUID.randomUUID());
         draft.setUserId(uid);
@@ -1353,7 +1353,7 @@ public class LearningPathService {
         PlanResult r = LearningPathScheduler.rebalance(cardIns(path), placeFrom(path, date), path.getTotalDays(),
                 path.getDailyCap(), extend);
         applyPlan(path, r);
-        path.setLastRebalancedAt(Instant.now());
+        path.setLastRebalancedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         return activeResult(path, date, r.overflow() ? Boolean.TRUE : null);
     }
 

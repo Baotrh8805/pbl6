@@ -243,7 +243,12 @@ class AdminSettingsIT extends IntegrationTest {
         String email = newEmail();
         String root = newStaff(Role.SUPER_ADMIN, email);
         Long rootId = userId(email);
-        call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", 7)).andExpect(status().isOk());
+        JsonNode saved = read(call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", 7))
+                .andExpect(status().isOk()));
+        // PUT trả mốc trong RAM, GET đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi ghi nên cùng một chuỗi
+        String updatedAt = saved.get("updatedAt").asText();
+        assertEquals(updatedAt, read(call(get("/api/admin/settings"), root, null).andExpect(status().isOk()))
+                .get("updatedAt").asText());
         JsonNode logs = read(call(get("/api/admin/audit-logs").param("actorId", rootId.toString())
                 .param("targetType", "SETTINGS"), root, null));
         assertEquals(1, logs.get("total").asLong());
@@ -252,7 +257,9 @@ class AdminSettingsIT extends IntegrationTest {
         assertEquals("5", detail.get("extraction_daily_limit_free").get("before").asText());
         assertEquals("7", detail.get("extraction_daily_limit_free").get("after").asText());
 
-        call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", 7)).andExpect(status().isOk());
+        JsonNode noop = read(call(put("/api/admin/settings"), root, with("extraction_daily_limit_free", 7))
+                .andExpect(status().isOk()));
+        assertEquals(updatedAt, noop.get("updatedAt").asText(), "không đổi gì -> giữ mốc cập nhật");
         assertEquals(1, read(call(get("/api/admin/audit-logs").param("actorId", rootId.toString()), root, null))
                 .get("total").asLong(), "không đổi gì -> không audit");
     }

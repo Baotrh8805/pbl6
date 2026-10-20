@@ -32,6 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.sql.Types;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -323,7 +324,7 @@ public class QuestionBankService {
         q.setOptions(options);
         q.setCorrect(correct);
         q.setEditedBy(actor.getId());
-        q.setUpdatedAt(Instant.now());
+        q.setUpdatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS)); // = timestamptz: response trả đúng mốc GET đọc lại
         try {
             questions.saveAndFlush(q);
         } catch (DataIntegrityViolationException e) {
@@ -360,7 +361,7 @@ public class QuestionBankService {
         if (!target.equals(q.getStatus())) {
             String before = q.getStatus();
             q.setStatus(target);
-            q.setUpdatedAt(Instant.now());
+            q.setUpdatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
             questions.saveAndFlush(q);
             audit.log(actor.getId(), hidden ? "QUESTION_HIDE" : "QUESTION_UNHIDE", AUDIT_TARGET, id.toString(),
                     AuditService.diff("status", before, target));

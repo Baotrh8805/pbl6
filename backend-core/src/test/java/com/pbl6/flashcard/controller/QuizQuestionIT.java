@@ -123,6 +123,12 @@ class QuizQuestionIT extends IntegrationTest {
         return out;
     }
 
+    /** updatedAt của câu đọc lại qua GET chi tiết (từ DB). */
+    private String updatedAt(String adminToken, String questionId) throws Exception {
+        return read(call(get(ADMIN_QUESTIONS + "/" + questionId), adminToken, null).andExpect(status().isOk()))
+                .get("updatedAt").asText();
+    }
+
     @Test
     void learner_flags_a_question_once_and_admin_sees_the_open_flag() throws Exception {
         Account learner = user();
@@ -222,13 +228,16 @@ class QuizQuestionIT extends IntegrationTest {
                 .andExpect(status().isOk()));
         assertEquals("やま、さん", edited.get("correct").asText());
         assertEquals(0, edited.get("options").size());
+        // Response mang mốc trong RAM, GET đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi ghi
+        assertEquals(edited.get("updatedAt").asText(), updatedAt(admin, mountainQ));
         assertEquals(1, audits("QUESTION_EDIT", mountainQ));
         call(patch(ADMIN_QUESTIONS + "/" + mountainQ), admin, Map.of("correct", "やま、さん")).andExpect(status().isOk());
         assertEquals(1, audits("QUESTION_EDIT", mountainQ), "không đổi gì: không ghi, không audit");
 
         // Ẩn câu của 川 (gọi lại không ghi thêm)
-        assertEquals("HIDDEN", read(call(post(ADMIN_QUESTIONS + "/" + riverQ + "/hide"), admin, null)
-                .andExpect(status().isOk())).get("status").asText());
+        JsonNode hidden = read(call(post(ADMIN_QUESTIONS + "/" + riverQ + "/hide"), admin, null).andExpect(status().isOk()));
+        assertEquals("HIDDEN", hidden.get("status").asText());
+        assertEquals(hidden.get("updatedAt").asText(), updatedAt(admin, riverQ));
         call(post(ADMIN_QUESTIONS + "/" + riverQ + "/hide"), admin, null).andExpect(status().isOk());
         assertEquals(1, audits("QUESTION_HIDE", riverQ));
         JsonNode hiddenList = read(call(get(ADMIN_QUESTIONS).param("deckId", deckId).param("status", "HIDDEN"), admin, null));
@@ -261,8 +270,9 @@ class QuizQuestionIT extends IntegrationTest {
         assertEquals(1, audits("QUESTION_EDIT", riverMeaningQ));
 
         // Hiện lại
-        assertEquals("ACTIVE", read(call(post(ADMIN_QUESTIONS + "/" + riverQ + "/unhide"), admin, null)
-                .andExpect(status().isOk())).get("status").asText());
+        JsonNode shown = read(call(post(ADMIN_QUESTIONS + "/" + riverQ + "/unhide"), admin, null).andExpect(status().isOk()));
+        assertEquals("ACTIVE", shown.get("status").asText());
+        assertEquals(shown.get("updatedAt").asText(), updatedAt(admin, riverQ));
         assertEquals(1, audits("QUESTION_UNHIDE", riverQ));
 
         // Lọc theo loại / trạng thái / từ khoá

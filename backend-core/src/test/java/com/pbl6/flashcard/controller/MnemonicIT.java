@@ -168,12 +168,16 @@ class MnemonicIT extends IntegrationTest {
         Account author = user();
         Account other = user();
         Account admin = admin();
-        String id = create(author.token, "森", "  Ba cây thành rừng: SÂM  ");
+        JsonNode created = read(call(post("/api/kanji/mnemonics"), author.token,
+                Map.of("kanji", "森", "mnemonicVi", "  Ba cây thành rừng: SÂM  ")).andExpect(status().isCreated()));
+        String id = created.get("id").asText();
 
         JsonNode mine = mnemonics(author.token, "森");
         assertEquals("森", mine.get("kanji").asText());
         assertTrue(mine.get("approved").isNull(), "approved luôn có mặt, null khi chưa có mẹo công khai");
         assertEquals(1, mine.get("mine").size());
+        // 201 mang mốc trong RAM, GET đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi tạo
+        assertEquals(created.get("createdAt").asText(), mine.get("mine").get(0).get("createdAt").asText());
         assertEquals("Ba cây thành rừng: SÂM", mine.get("mine").get(0).get("mnemonicVi").asText());
         assertEquals("USER", mine.get("mine").get(0).get("source").asText());
         assertEquals("PENDING", mine.get("mine").get(0).get("status").asText());
@@ -394,11 +398,14 @@ class MnemonicIT extends IntegrationTest {
         assertEquals(2, read(call(get("/api/admin/mnemonics").param("q", author.email.toUpperCase()), admin.token, null))
                 .get("total").asLong());
         assertEquals(1, read(call(get("/api/admin/mnemonics").param("q", "bơi trong"), admin.token, null)).get("total").asLong());
-        approve(admin.token, own, null).andExpect(status().isOk());
+        JsonNode reviewed = read(approve(admin.token, own, null).andExpect(status().isOk()));
         assertEquals(pendingBefore - 1, service.countPending());
         JsonNode approved = read(call(get("/api/admin/mnemonics").param("status", "APPROVED").param("q", "泳"), admin.token, null));
         assertEquals(1, approved.get("total").asLong());
         assertEquals(admin.email, approved.get("items").get(0).get("reviewedByEmail").asText());
+        // response duyệt đọc lại từ DB sau câu UPDATE: cùng reviewedAt / createdAt với danh sách
+        assertEquals(reviewed.get("reviewedAt").asText(), approved.get("items").get(0).get("reviewedAt").asText());
+        assertEquals(reviewed.get("createdAt").asText(), approved.get("items").get(0).get("createdAt").asText());
         call(get("/api/admin/mnemonics").param("status", "ALL"), admin.token, null).andExpect(status().isBadRequest());
         call(get("/api/admin/mnemonics").param("size", "101"), admin.token, null).andExpect(status().isBadRequest());
     }

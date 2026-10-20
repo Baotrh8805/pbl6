@@ -64,7 +64,10 @@ class ReviewSrsIT extends IntegrationTest {
         JsonNode lapsed = review(token, card, "again", false);
         assertEquals(1, lapsed.get("intervalDays").asInt(), "quên: giữ 30% khoảng ôn, không về 0");
         assertEquals(2, lapsed.get("reps").asInt(), "quên không xoá chuỗi ôn");
-        assertEquals(1, read(call(get("/api/reviews"), token, null)).size());
+        JsonNode stored = read(call(get("/api/reviews"), token, null));
+        assertEquals(1, stored.size());
+        // Response lúc chấm mang dueAt trong RAM, GET đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây
+        assertEquals(lapsed.get("dueAt").asText(), stored.get(0).get("dueAt").asText());
     }
 
     @Test
@@ -78,8 +81,7 @@ class ReviewSrsIT extends IntegrationTest {
         assertEquals(0, read(call(get("/api/reviews"), token, null)).size());
 
         // Thẻ đã có lịch: cram nhiều lần không đổi interval / ease / reps / dueAt
-        review(token, card, "good", false);
-        JsonNode normal = read(call(get("/api/reviews"), token, null)).get(0); // đọc từ DB: dueAt đã làm tròn micro giây
+        JsonNode normal = review(token, card, "good", false); // dueAt đã làm tròn micro giây như bản lưu trong DB
         review(token, card, "easy", true);
         review(token, card, "again", true);
         JsonNode after = read(call(get("/api/reviews"), token, null)).get(0);

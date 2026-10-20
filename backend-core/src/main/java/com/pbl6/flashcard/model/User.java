@@ -99,7 +99,14 @@ public class User {
     public void setRole(Role role) { this.role = role; }
 
     public java.time.Instant getPasswordChangedAt() { return passwordChangedAt; }
-    public void setPasswordChangedAt(java.time.Instant passwordChangedAt) { this.passwordChangedAt = passwordChangedAt; }
+    /**
+     * Cắt về micro giây (độ chính xác Postgres lưu): token cấp ngay từ user trong bộ nhớ (đổi mật khẩu) mang pcv = mốc này
+     * tính bằng ms, phải khớp mốc JwtAuthenticationFilter đọc lại từ DB ở request sau (DB tự làm tròn có thể lên 1 ms).
+     */
+    public void setPasswordChangedAt(java.time.Instant passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt == null ? null
+                : passwordChangedAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
 
     public java.time.Instant getLockedAt() { return lockedAt; }
     public void setLockedAt(java.time.Instant lockedAt) { this.lockedAt = lockedAt; }

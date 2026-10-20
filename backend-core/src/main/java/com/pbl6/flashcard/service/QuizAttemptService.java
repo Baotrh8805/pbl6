@@ -29,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -167,7 +168,8 @@ public class QuizAttemptService {
                                       Integer chapterSize) {
         Deck deck = deckService.readable(uid, deckId);
         attemptRepository.lockCreate(Objects.hash(uid, deckId));
-        Instant now = Instant.now();
+        // micro giây = timestamptz: expiresAt (= now + thời gian làm bài) của lượt mới = bản nối lại / GET đọc từ DB
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         closeExpiredAttempts(uid, now);
 
         // Bài kiểm tra chương có thể phải đóng lượt đang mở -> đọc nó dưới khoá dòng (xem findOpenForUpdate)

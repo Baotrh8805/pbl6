@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -119,7 +120,8 @@ public class AdminUserService {
         String givenReason = req.lockedReason() != null && !req.lockedReason().isBlank() ? req.lockedReason().trim() : null;
         if (req.locked() != null && req.locked() != (target.getLockedAt() != null)) {
             changes.putAll(AuditService.diff("locked", !req.locked(), req.locked()));
-            target.setLockedAt(req.locked() ? Instant.now() : null);
+            // Làm tròn xuống micro giây (= timestamptz) để response lúc khoá và mọi lần đọc sau từ DB cùng một chuỗi
+            target.setLockedAt(req.locked() ? Instant.now().truncatedTo(ChronoUnit.MICROS) : null);
             String reason = req.locked() ? givenReason : null;
             target.setLockedReason(reason);
             if (reason != null) changes.put("reason", reason);
@@ -135,7 +137,9 @@ public class AdminUserService {
         }
         if (req.premium() != null) {
             // premiumUntil chỉ có nghĩa khi premium = true; null = vĩnh viễn. Gửi premium=true lần nữa với hạn khác = đổi hạn.
-            Instant until = req.premium() ? req.premiumUntil() : null;
+            // Cắt xuống micro giây như timestamptz lưu được (DB làm tròn: …59.999999999Z thành giây sau): response = bản đọc lại,
+            // và gửi lại cùng hạn so khớp giá trị đã lưu nên không thành "đổi hạn" với audit + thông báo thừa
+            Instant until = req.premium() && req.premiumUntil() != null ? req.premiumUntil().truncatedTo(ChronoUnit.MICROS) : null;
             boolean was = Boolean.TRUE.equals(target.getIsPremium());
             if (was != req.premium() || !Objects.equals(until, target.getPremiumUntil())) {
                 changes.putAll(AuditService.diff("premium", target.getIsPremium(), req.premium()));

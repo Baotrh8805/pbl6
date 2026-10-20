@@ -139,6 +139,15 @@ class ExtractionIT extends IntegrationTest {
     }
 
     @Test
+    void created_at_of_the_create_response_matches_later_reads() throws Exception {
+        String token = newUser();
+        JsonNode job = read(postText(token, TEXT, null).andExpect(status().isAccepted()));
+        // 202 mang mốc trong RAM, GET đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi tạo job
+        JsonNode stored = read(call(get("/api/extractions/" + job.get("id").asText()), token, null).andExpect(status().isOk()));
+        assertEquals(job.get("createdAt").asText(), stored.get("createdAt").asText());
+    }
+
+    @Test
     void text_job_runs_to_done_then_builds_decks_in_level_order() throws Exception {
         String token = newUser();
         JsonNode job = read(postText(token, TEXT, "{\"userLevel\":\"N4\",\"levelFilter\":\"all\"}")

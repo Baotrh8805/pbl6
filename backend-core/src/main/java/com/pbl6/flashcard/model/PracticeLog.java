@@ -5,6 +5,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 /**
@@ -45,8 +46,9 @@ public class PracticeLog {
     @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> detail = Map.of();
 
+    /** Micro giây = timestamptz: response 201 (LogEntry) trả đúng mốc thống kê đọc lại từ DB. */
     @Column(name = "created_at", nullable = false)
-    private Instant createdAt = Instant.now();
+    private Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
     public PracticeLog() {}
 

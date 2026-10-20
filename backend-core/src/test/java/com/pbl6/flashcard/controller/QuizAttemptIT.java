@@ -164,9 +164,12 @@ class QuizAttemptIT extends IntegrationTest {
         assertEquals(first.get("attemptId"), second.get("attemptId"));
         assertEquals("exam", second.get("mode").asText(), "chế độ không đổi giữa chừng");
         assertEquals(first.get("questions"), second.get("questions"), "đúng đề và thứ tự lựa chọn cũ");
+        // Lần mở trả hạn tính trong RAM, lần nối lại đọc từ DB (timestamptz, micro giây): server làm tròn xuống micro giây khi mở
+        assertEquals(first.get("expiresAt").asText(), second.get("expiresAt").asText(), "hạn nộp không đổi");
 
         JsonNode open = read(call(get(ATTEMPTS + "/open").param("deckId", DECK), token, null).andExpect(status().isOk()));
         assertEquals(first.get("attemptId"), open.get("attemptId"));
+        assertEquals(first.get("expiresAt").asText(), open.get("expiresAt").asText());
         call(get(ATTEMPTS + "/open").param("deckId", "n4-society"), token, null).andExpect(status().isNoContent());
     }
 

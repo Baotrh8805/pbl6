@@ -223,7 +223,11 @@ class AppealIT extends IntegrationTest {
         assertEquals(1, audits("APPEAL_RESOLVE", adminId));
         assertEquals(1, audits("USER_UNLOCK", adminId), "mở khoá đi qua AdminUserService.patch");
         assertNull(findAppeal(admin, "OPEN", email));
-        assertNotNull(findAppeal(admin, "RESOLVED", email));
+        JsonNode listed = findAppeal(admin, "RESOLVED", email);
+        assertNotNull(listed);
+        // response xử lý đọc lại từ DB sau câu UPDATE: cùng mốc với danh sách tới micro giây
+        assertEquals(r.get("resolvedAt").asText(), listed.get("resolvedAt").asText());
+        assertEquals(r.get("createdAt").asText(), listed.get("createdAt").asText());
 
         // Tự xoá tài khoản xoá luôn khiếu nại (dữ liệu cá nhân)
         call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());

@@ -3,6 +3,7 @@ package com.pbl6.flashcard.model;
 import jakarta.persistence.*;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
@@ -55,8 +56,9 @@ public class KanjiMnemonic {
     @Column(name = "review_note", length = 500)
     private String reviewNote;
 
+    /** Micro giây = timestamptz: response 201 (Mine) trả đúng mốc các lần GET sau đọc từ DB. */
     @Column(name = "created_at", nullable = false)
-    private Instant createdAt = Instant.now();
+    private Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
     public KanjiMnemonic() {}
 
