@@ -436,10 +436,11 @@ export interface LearningPathChapter {
 }
 
 /**
- * locked = chưa tới ngày; current = đang trong dải ngày; open = qua dải mà còn thẻ chưa học (hoặc hết thẻ);
- * review = học hết nhưng chưa qua kiểm tra; passed = đã qua kiểm tra chương.
+ * locked = chưa tới ngày; current = đang trong dải ngày; open = qua dải mà còn thẻ chưa học (nợ); review = học hết nhưng chưa
+ * qua kiểm tra; passed = đã qua kiểm tra chương; empty = không còn thẻ nào trong lịch (thẻ / bộ thẻ bị xoá) mà chưa qua (spec §7
+ * "trống" — không có gì để học hay kiểm tra).
  */
-export type LearningPathChapterState = "locked" | "current" | "open" | "review" | "passed";
+export type LearningPathChapterState = "locked" | "current" | "open" | "review" | "passed" | "empty";
 
 export interface LearningPathTask {
     chapterId: string;
@@ -501,6 +502,8 @@ export interface LearningPath {
     lastRebalancedAt?: string | null;
     /** ACTIVE: hai thước đo tiến độ (đã học / đã thuộc) + chương đã qua kiểm tra. */
     completion?: LearningPathCompletion | null;
+    /** GET /{id} khi ACTIVE: ngưỡng % qua bài kiểm tra chương (Admin > Cấu hình, mặc định 80) cho nhãn "Chưa đạt N%". */
+    quizPassPct?: number;
     /** GET /{id} khi ACTIVE: dự báo tải từng ngày (biểu đồ khối lượng). */
     forecast?: LearningPathForecastDay[];
     /** DRAFT: số ngày gợi ý từ số thẻ & trần; overCap = lịch với totalDays hiện tại vượt trần. */

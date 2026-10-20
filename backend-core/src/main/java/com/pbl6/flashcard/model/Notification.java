@@ -23,6 +23,11 @@ public class Notification {
     public static final String LEARNING_PATH_REMINDER = "LEARNING_PATH_REMINDER";
     public static final String LEARNING_PATH_CHAPTER_PASSED = "LEARNING_PATH_CHAPTER_PASSED";
     public static final String LEARNING_PATH_COMPLETED = "LEARNING_PATH_COMPLETED";
+    /**
+     * D4 "nhắc làm lại nếu chưa đạt": lượt kiểm tra chương ĐẦU TIÊN dưới ngưỡng (một lần mỗi chương, không theo từng lần trượt);
+     * payload {pathId, pathTitle, chapterId, chapterTitle, pct, passPct}. Cột type không có CHECK (V17) nên không cần migration.
+     */
+    public static final String LEARNING_PATH_CHAPTER_RETRY = "LEARNING_PATH_CHAPTER_RETRY";
     /** Đợt 2 §4 (G2): mẹo nhớ bộ thủ của người dùng đã được duyệt / từ chối; payload {kanji, status, note}. */
     public static final String MNEMONIC_REVIEWED = "MNEMONIC_REVIEWED";
 

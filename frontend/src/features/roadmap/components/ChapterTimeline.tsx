@@ -11,6 +11,7 @@ import {
   formatDayRange,
   formatShortDate,
   quizBestLabel,
+  quizRetryLabel,
   sessionUrl,
 } from "@/features/roadmap/roadmapUtils";
 import { ProgressBar } from "./ProgressBar";
@@ -35,10 +36,13 @@ const STATE_TONE: Record<LearningPathChapterState, string> = {
   open: "bg-primary-fixed text-on-primary-fixed",
   review: "bg-[#FEF3C7] text-[#92400E]",
   passed: "bg-secondary-container/60 text-on-secondary-container",
+  empty: "bg-surface-container text-on-surface-variant",
 };
 
 // Chương có trạng thái (spec §4.1): học theo phiên chương (/session?session=chapter) thay vì học cả bộ không có ?path=
 // (LP-14); "Kiểm tra chương" mở quiz exam trên bộ của chương — đạt ngưỡng mới tính "Đã qua", nhưng không chặn học (D4).
+// Đã làm mà chưa đạt: dải "Chưa đạt N% — Làm lại" thay cho nút "Kiểm tra chương" (cùng luồng onStartQuiz, cùng ?path=), để
+// lời nhắc làm lại nằm ngay ở chương — chương sau vẫn học / kiểm tra bình thường.
 export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
   path,
   dayIndex,
@@ -84,6 +88,8 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
           const best = quizBestLabel(ch.quizBestPct);
           const canStudy = !!ch.deckId && total > 0;
           const canQuiz = canStudy && state !== "locked";
+          // Chỉ khi còn mở được lượt mới (canQuiz): chương rỗng / chưa tới ngày không có nút nào để "làm lại".
+          const retry = canQuiz ? quizRetryLabel(ch, path.quizPassPct) : null;
 
           return (
             <li key={ch.id} className="relative pl-10" aria-current={current ? "step" : undefined}>
@@ -122,6 +128,23 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
 
                 {learnedPct != null && <ProgressBar pct={learnedPct} label={`Đã học ${ch.title}`} tone="primary" />}
 
+                {retry && !missing && (
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-2.5 rounded-lg bg-[#FEF3C7] border border-[#F59E0B]/40 text-[#92400E] text-body-sm">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">replay</span>
+                    <span className="min-w-0 break-words font-semibold">{retry} —</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onStartQuiz(ch.id)}
+                      isLoading={quizBusy === ch.id}
+                      disabled={quizBusy !== null}
+                      aria-label={`Làm lại kiểm tra chương ${ch.title}`}
+                    >
+                      Làm lại
+                    </Button>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-surface-container-high/60">
                   <span className="text-label-sm text-outline">
                     {total} thẻ
@@ -133,6 +156,9 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
                     <span className="text-label-sm text-on-surface-variant italic">{missing}</span>
                   ) : (
                     <div className="flex flex-wrap items-center gap-2">
+                      {state === "empty" && (
+                        <span className="text-label-sm text-on-surface-variant italic">Không còn thẻ nào trong lịch</span>
+                      )}
                       {ch.deckId && (
                         <Link
                           to={`/decks/${encodeURIComponent(ch.deckId)}`}
@@ -141,7 +167,7 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
                           Xem bộ thẻ
                         </Link>
                       )}
-                      {canQuiz && (
+                      {canQuiz && !retry && (
                         <Button
                           variant="outline"
                           size="sm"

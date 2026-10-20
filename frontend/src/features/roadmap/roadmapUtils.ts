@@ -472,16 +472,20 @@ export const CHAPTER_STATE_LABELS: Record<LearningPathChapterState, string> = {
     open: "Mở",
     review: "Ôn lại",
     passed: "Đã qua",
+    empty: "Trống",
 };
 
-/** Trạng thái chương: ưu tiên server; response 1.0 thiếu -> suy từ dải ngày (đã qua kiểm tra -> passed; hết thẻ -> open). */
+/**
+ * Trạng thái chương: ưu tiên server; response 1.0 thiếu -> suy từ dải ngày (đã qua kiểm tra -> passed; hết thẻ -> empty, cùng
+ * quy tắc LearningPathService.chapterState — không để chương rỗng hiện "Mở" như chương còn nợ thẻ).
+ */
 export function chapterStateOf(
     ch: Pick<LearningPathChapter, "state" | "quizPassedAt" | "dayFrom" | "dayTo" | "cardCount">,
     dayIndex: number
 ): LearningPathChapterState {
     if (ch.state) return ch.state;
     if (ch.quizPassedAt) return "passed";
-    if (ch.cardCount <= 0) return "open";
+    if (ch.cardCount <= 0) return "empty";
     if (ch.dayFrom > dayIndex) return "locked";
     return dayIndex <= ch.dayTo ? "current" : "open";
 }
@@ -489,6 +493,23 @@ export function chapterStateOf(
 /** "Điểm cao nhất 85%"; chưa làm kiểm tra -> null. */
 export const quizBestLabel = (pct: number | null | undefined): string | null =>
     pct == null || !Number.isFinite(pct) ? null : `Điểm cao nhất ${Math.round(pct)}%`;
+
+/** Trùng mặc định server (app_settings learning_path_quiz_pass_pct, V20): response thiếu `quizPassPct` thì dùng số này. */
+export const DEFAULT_QUIZ_PASS_PCT = 80;
+
+/**
+ * D4 "nhắc làm lại nếu chưa đạt": chương đã làm kiểm tra mà chưa qua -> "Chưa đạt 80%" (đi cùng nút "Làm lại", cùng luồng
+ * "Kiểm tra chương"); chưa làm / đã qua -> null. Chỉ là nhãn, không khoá chương nào. Điểm cao nhất đã ≥ ngưỡng mà vẫn chưa qua
+ * (admin hạ ngưỡng sau lần làm — server chỉ chấm "qua" lúc nộp) -> "Chưa qua kiểm tra" thay vì nói "chưa đạt N%" sai sự thật.
+ */
+export function quizRetryLabel(
+    ch: Pick<LearningPathChapter, "quizBestPct" | "quizPassedAt">,
+    passPct: number | null | undefined
+): string | null {
+    if (ch.quizPassedAt || ch.quizBestPct == null || !Number.isFinite(ch.quizBestPct)) return null;
+    const pass = passPct != null && Number.isFinite(passPct) ? Math.round(passPct) : DEFAULT_QUIZ_PASS_PCT;
+    return ch.quizBestPct < pass ? `Chưa đạt ${pass}%` : "Chưa qua kiểm tra";
+}
 
 // ----- Tiến độ dự phòng (response 1.0 không có `completion`) -----
 

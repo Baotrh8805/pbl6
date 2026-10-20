@@ -12,6 +12,7 @@ export type NotificationType =
     | "LEARNING_PATH_FAILED"
     | "LEARNING_PATH_REMINDER"
     | "LEARNING_PATH_CHAPTER_PASSED"
+    | "LEARNING_PATH_CHAPTER_RETRY"
     | "LEARNING_PATH_COMPLETED"
     | "MNEMONIC_REVIEWED"
     | (string & {});
@@ -48,7 +49,7 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
     const p = n.payload;
     const title = str(p.deckTitle) ? `"${str(p.deckTitle)}"` : "một bộ thẻ";
     const deckLink = str(p.deckId) ? `/decks/${str(p.deckId)}` : undefined;
-    // Lộ trình: READY/FAILED/REMINDER/COMPLETED gửi `title`, CHAPTER_PASSED gửi `pathTitle`.
+    // Lộ trình: READY/FAILED/REMINDER/COMPLETED gửi `title`, CHAPTER_PASSED / CHAPTER_RETRY gửi `pathTitle`.
     const pathName = str(p.title) || str(p.pathTitle) ? `"${str(p.title) || str(p.pathTitle)}"` : "học tập";
     const pathLink = str(p.pathId) ? `/roadmap/${encodeURIComponent(str(p.pathId))}` : "/roadmap";
     switch (n.type) {
@@ -88,6 +89,14 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
         }
         case "LEARNING_PATH_CHAPTER_PASSED":
             return { text: `Bạn đã qua chương${str(p.chapterTitle) ? ` "${str(p.chapterTitle)}"` : ""} của lộ trình ${pathName} (${num(p.pct)}%).`, to: pathLink };
+        case "LEARNING_PATH_CHAPTER_RETRY": {
+            // Chỉ gửi ở lượt trượt đầu tiên của chương (D4: nhắc làm lại, không chặn chương sau); nút "Làm lại" ở trang lộ trình.
+            const pass = num(p.passPct) > 0 ? ` ${num(p.passPct)}%` : "";
+            return {
+                text: `Chương${str(p.chapterTitle) ? ` "${str(p.chapterTitle)}"` : ""} của lộ trình ${pathName} chưa đạt${pass} (lần này ${num(p.pct)}%). Bạn vẫn học tiếp được, làm lại bài kiểm tra khi sẵn sàng.`,
+                to: pathLink,
+            };
+        }
         case "LEARNING_PATH_COMPLETED":
             return { text: `Chúc mừng! Bạn đã hoàn thành lộ trình ${pathName}.`, to: pathLink };
         case "MNEMONIC_REVIEWED": {

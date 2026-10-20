@@ -12,6 +12,8 @@ import java.util.UUID;
  * Lộ trình học tập. Danh sách không kèm chapters/days/forecast; today + completion chỉ có khi ACTIVE; suggestedDays / overCap chỉ
  * ở GET /{id} của bản nháp; overflow chỉ có (= true) trên response của thao tác vừa xếp lịch mà không giữ được trần (kích hoạt,
  * PATCH đổi khung, cân lại). Mọi tên trường 1.0 giữ nguyên; trường 2.0 null bị bỏ (NON_NULL) để client 1.0 không vỡ.
+ * quizPassPct: ngưỡng qua bài kiểm tra chương (app_settings learning_path_quiz_pass_pct) — chỉ ở GET /{id} của ACTIVE (đi cùng
+ * chapters), để client hiện "Chưa đạt N% — Làm lại" cho chương đã làm quiz mà chưa qua (D4: chỉ gắn nhãn, không chặn).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record LearningPathResponse(UUID id, String title, String status, String sourceType, String sourceName,
@@ -20,7 +22,8 @@ public record LearningPathResponse(UUID id, String title, String status, String 
                                    JobSummary job, List<LearningPathChapterResponse> chapters, Today today,
                                    List<Day> days,
                                    int dailyCap, String studyDays, boolean reminder, Instant completedAt,
-                                   Instant lastRebalancedAt, Completion completion, List<Forecast> forecast,
+                                   Instant lastRebalancedAt, Completion completion, Integer quizPassPct,
+                                   List<Forecast> forecast,
                                    Integer suggestedDays, Boolean overCap, Boolean overflow) {
 
     /** Tiến độ job bóc tách bên dưới (client poll khi PROCESSING). */

@@ -760,7 +760,7 @@ public class LearningPathService {
             JobSummary job = jobSummary(p.getJobId() == null ? null : jobMap.get(p.getJobId()));
             ActiveData d = active.get(p.getId());
             out.add(d != null ? activeResponse(p, job, d, date, false, null)
-                    : response(p, job, null, null, null, null, null, null, null, null));
+                    : response(p, job, null, null, null, null, null, null, null, null, null));
         }
         return out;
     }
@@ -1595,7 +1595,9 @@ public class LearningPathService {
      * → quizPassedAt + thông báo LEARNING_PATH_CHAPTER_PASSED. Chỉ tính chế độ exam (lượt do {@link #chapterQuiz} mở): practice trên
      * cùng bộ thẻ lộ đáp án từng câu nên không được coi là "qua chương"; và chỉ tính đề đủ cỡ — POST /api/quiz-attempts cũng mở
      * được exam trên bộ của chương với size 1..50, một đề 1 câu đúng 1/1 = 100 % không phải bài kiểm tra chương (spec §4.1:
-     * size = min(10, số thẻ)). Không ném: lỗi ở đây không được làm hỏng việc nộp bài.
+     * size = min(10, số thẻ)). Lượt đầu tiên của chương mà dưới ngưỡng → thông báo LEARNING_PATH_CHAPTER_RETRY (D4 "nhắc làm lại
+     * nếu chưa đạt"); các lần trượt sau không nhắc lại — trang lộ trình đã hiện "Chưa đạt N% — Làm lại" tới khi qua. Không ném: lỗi
+     * ở đây không được làm hỏng việc nộp bài.
      */
     @EventListener
     @Transactional
@@ -1609,13 +1611,19 @@ public class LearningPathService {
                 if (p == null || !p.getUserId().equals(e.uid()) || !LearningPath.ACTIVE.equals(p.getStatus())) continue;
                 long n = cards.countByPathIdAndChapterId(p.getId(), c.getId());
                 if (n == 0 || e.total() < Math.min(CHAPTER_QUIZ_SIZE, n)) continue; // chương hết thẻ không có bài kiểm tra
-                if (c.getQuizBestPct() == null || pct > c.getQuizBestPct()) c.setQuizBestPct(pct);
+                boolean firstTry = c.getQuizBestPct() == null;
+                if (firstTry || pct > c.getQuizBestPct()) c.setQuizBestPct(pct);
                 if (pass == null) pass = settings.getInt(SettingsService.KEY_LP_QUIZ_PASS);
-                if (c.getQuizPassedAt() == null && pct >= pass) {
+                if (c.getQuizPassedAt() != null) continue;
+                if (pct >= pass) {
                     c.setQuizPassedAt(Instant.now());
                     notifications.notify(e.uid(), Notification.LEARNING_PATH_CHAPTER_PASSED, Map.of(
                             "pathId", p.getId().toString(), "pathTitle", p.getTitle(),
                             "chapterId", c.getId().toString(), "chapterTitle", c.getTitle(), "pct", pct));
+                } else if (firstTry) {
+                    notifications.notify(e.uid(), Notification.LEARNING_PATH_CHAPTER_RETRY, Map.of(
+                            "pathId", p.getId().toString(), "pathTitle", p.getTitle(),
+                            "chapterId", c.getId().toString(), "chapterTitle", c.getTitle(), "pct", pct, "passPct", pass));
                 }
             }
         } catch (RuntimeException ex) {
@@ -1804,14 +1812,17 @@ public class LearningPathService {
     }
 
     /**
-     * Trạng thái chương (ACTIVE), xét theo thứ tự: passed — đã qua bài kiểm tra chương (quizPassedAt); review — còn thẻ và mọi thẻ
-     * đều đã học (chỉ còn ôn, chưa qua / chưa làm quiz); current — hôm nay nằm trong dải ngày [dayFrom, dayTo] của chương và còn
-     * thẻ chưa học; locked — chương chưa tới ngày (dayFrom &gt; hôm nay); open — còn lại: dải ngày đã qua mà vẫn còn thẻ chưa học
-     * (nợ), hoặc chương không còn thẻ nào (bộ thẻ bị xoá) và chưa qua quiz.
+     * Trạng thái chương (ACTIVE), xét theo thứ tự: passed — đã qua bài kiểm tra chương (quizPassedAt); empty — chương không còn
+     * thẻ nào trong lịch (bộ thẻ bị xoá, hoặc từng thẻ bị xoá khỏi bộ — CASCADE) mà chưa qua quiz (spec §7 "trống"): không còn gì
+     * để học hay kiểm tra, nên tách khỏi open để client không mời "học nợ" một chương rỗng; review — mọi thẻ đều đã học (chỉ còn
+     * ôn, chưa qua / chưa làm quiz); current — hôm nay nằm trong dải ngày [dayFrom, dayTo] của chương và còn thẻ chưa học; locked
+     * — chương chưa tới ngày (dayFrom &gt; hôm nay); open — còn lại: dải ngày đã qua mà vẫn còn thẻ chưa học (nợ). Điểm quiz dưới
+     * ngưỡng không đổi trạng thái (D4: chỉ gắn nhãn) — client tự hiện "Chưa đạt N% — Làm lại" từ quizBestPct / quizPassPct.
      */
     static String chapterState(LearningPathChapter c, int count, int learned, Integer from, Integer to, int dayIndex) {
         if (c.getQuizPassedAt() != null) return "passed";
-        if (count > 0 && learned == count) return "review";
+        if (count == 0) return "empty";
+        if (learned == count) return "review";
         if (from != null && dayIndex >= from && dayIndex <= to) return "current";
         if (from != null && from > dayIndex) return "locked";
         return "open";
@@ -1907,7 +1918,9 @@ public class LearningPathService {
             }
             forecast = forecast(p, d.cards(), byDay, date);
         }
-        return response(p, job, full ? dtos : null, today, days, completion, forecast, null, null, overflow);
+        // Ngưỡng qua chương chỉ đi cùng danh sách chương (full): danh sách / today-summary không tốn thêm một lần đọc cấu hình.
+        Integer passPct = full ? settings.getInt(SettingsService.KEY_LP_QUIZ_PASS) : null;
+        return response(p, job, full ? dtos : null, today, days, completion, passPct, forecast, null, null, overflow);
     }
 
     /**
@@ -1986,7 +1999,7 @@ public class LearningPathService {
         }
         int suggested = LearningPathScheduler.suggestDays(s.cards(), p.getDailyCap());
         boolean overCap = s.result() != null && s.result().overflow();
-        return response(p, job, dtos, null, days, null, null, suggested, overCap, null);
+        return response(p, job, dtos, null, days, null, null, null, suggested, overCap, null);
     }
 
     /**
@@ -2078,16 +2091,17 @@ public class LearningPathService {
             return activeResponse(p, job, loadActive(p, date), date, full, overflow);
         }
         if (LearningPath.DRAFT.equals(p.getStatus()) && full) return draftResponse(p, job);
-        return response(p, job, null, null, null, null, null, null, null, overflow);
+        return response(p, job, null, null, null, null, null, null, null, null, overflow);
     }
 
     private static LearningPathResponse response(LearningPath p, JobSummary job, List<LearningPathChapterResponse> chapters,
-                                                 Today today, List<Day> days, Completion completion, List<Forecast> forecast,
-                                                 Integer suggestedDays, Boolean overCap, Boolean overflow) {
+                                                 Today today, List<Day> days, Completion completion, Integer quizPassPct,
+                                                 List<Forecast> forecast, Integer suggestedDays, Boolean overCap,
+                                                 Boolean overflow) {
         return new LearningPathResponse(p.getId(), p.getTitle(), p.getStatus(), p.getSourceType(), p.getSourceName(),
                 p.getTotalDays(), p.getStartDate(), p.getChaptersDetected(), p.getJobId(), p.getFolderId(),
                 p.getCreatedAt(), p.getActivatedAt(), p.getErrorMessage(), job, chapters, today, days,
                 p.getDailyCap(), p.getStudyDays(), p.isReminder(), p.getCompletedAt(), p.getLastRebalancedAt(),
-                completion, forecast, suggestedDays, overCap, overflow);
+                completion, quizPassPct, forecast, suggestedDays, overCap, overflow);
     }
 }

@@ -123,6 +123,8 @@ import {
   isValidDailyCap,
   pathDayLabel,
   quizBestLabel,
+  quizRetryLabel,
+  DEFAULT_QUIZ_PASS_PCT,
   settingsPatch,
   todayCountsLabel,
   todayHeading,
@@ -132,6 +134,8 @@ import {
 
 // Lộ trình 2.0 — sửa sau review (mục 24) — import riêng, không chạm các khối trên.
 import { MAX_REACTION_MS, replanFromDay, sessionDoneHeading } from "../src/features/roadmap/roadmapUtils.ts";
+// D4 nhắc làm lại bài kiểm tra chương (thông báo LEARNING_PATH_CHAPTER_RETRY) — import riêng, không chạm các khối trên.
+import { describeNotification } from "../src/services/notificationService.ts";
 // E5 chế độ chỉ nghe + F1 bản đồ Hán–Việt — import riêng, không chạm các khối trên.
 import { cardSpeechItems, meaningSpeechItems, parseAudioMode, readingDiffers, shouldHideTerm } from "../src/lib/audioOnly.ts";
 import {
@@ -919,9 +923,21 @@ async function runSelfCheck() {
   assertStrictEqual(`${forecastTick(1, null)},${forecastTick(2, null)},${forecastTick(5, null)},${forecastTick(7, 7)},${forecastTick(10, 7)}`, "1,,5,7,10", "Trục ngày: chỉ 1, bội số 5 và hôm nay");
   const chBase = { state: undefined, quizPassedAt: null, dayFrom: 3, dayTo: 5, cardCount: 10 };
   assertStrictEqual(`${chapterStateOf(chBase, 2)},${chapterStateOf(chBase, 3)},${chapterStateOf(chBase, 5)},${chapterStateOf(chBase, 6)}`, "locked,current,current,open", "Thiếu state (1.0): suy từ dải ngày");
-  assertStrictEqual(`${chapterStateOf({ ...chBase, quizPassedAt: "2026-10-20T00:00:00Z" }, 2)},${chapterStateOf({ ...chBase, cardCount: 0 }, 2)},${chapterStateOf({ ...chBase, state: "review" as const }, 2)}`, "passed,open,review", "Qua kiểm tra -> passed; hết thẻ -> open; có state server thì dùng nguyên");
-  assertStrictEqual(Object.keys(CHAPTER_STATE_LABELS).join(","), "locked,current,open,review,passed", "Đủ nhãn 5 trạng thái chương");
+  assertStrictEqual(`${chapterStateOf({ ...chBase, quizPassedAt: "2026-10-20T00:00:00Z" }, 2)},${chapterStateOf({ ...chBase, cardCount: 0 }, 2)},${chapterStateOf({ ...chBase, state: "review" as const }, 2)}`, "passed,empty,review", "Qua kiểm tra -> passed; hết thẻ -> empty (spec §7 \"trống\"); có state server thì dùng nguyên");
+  assertStrictEqual(`${chapterStateOf({ ...chBase, cardCount: 0, quizPassedAt: "2026-10-20T00:00:00Z" }, 9)},${chapterStateOf({ ...chBase, cardCount: 0 }, 9)},${chapterStateOf({ ...chBase, state: "empty" as const }, 4)}`, "passed,empty,empty", "Hết thẻ mà đã qua -> passed; sau dải ngày vẫn empty (không thành open/nợ); state server empty giữ nguyên");
+  assertStrictEqual(Object.keys(CHAPTER_STATE_LABELS).join(","), "locked,current,open,review,passed,empty", "Đủ nhãn 6 trạng thái chương");
+  assertStrictEqual(CHAPTER_STATE_LABELS.empty, "Trống", "Nhãn chương rỗng");
   assertStrictEqual(`${quizBestLabel(85.4)}|${quizBestLabel(null)}|${quizBestLabel(undefined)}`, "Điểm cao nhất 85%|null|null", "Điểm quiz cao nhất; chưa làm -> null");
+  // D4: "Chưa đạt N% — Làm lại" chỉ khi đã làm mà chưa qua; ngưỡng từ server (quizPassPct), thiếu -> 80 như mặc định V20
+  assertStrictEqual(DEFAULT_QUIZ_PASS_PCT, 80, "Ngưỡng dự phòng trùng mặc định server");
+  assertStrictEqual(`${quizRetryLabel({ quizBestPct: 50, quizPassedAt: null }, 80)}|${quizRetryLabel({ quizBestPct: 90, quizPassedAt: null }, 95)}|${quizRetryLabel({ quizBestPct: 50, quizPassedAt: null }, undefined)}`, "Chưa đạt 80%|Chưa đạt 95%|Chưa đạt 80%", "Dưới ngưỡng -> Chưa đạt N% (N = ngưỡng server, thiếu -> 80)");
+  assertStrictEqual(`${quizRetryLabel({ quizBestPct: null, quizPassedAt: null }, 80)}|${quizRetryLabel({ quizBestPct: undefined }, 80)}|${quizRetryLabel({ quizBestPct: 60, quizPassedAt: "2026-10-20T00:00:00Z" }, 80)}`, "null|null|null", "Chưa làm hoặc đã qua (kể cả qua rồi làm lại điểm thấp) -> không nhắc");
+  assertStrictEqual(`${quizRetryLabel({ quizBestPct: 75, quizPassedAt: null }, 70)}|${quizRetryLabel({ quizBestPct: 79.6, quizPassedAt: null }, 80)}|${quizRetryLabel({ quizBestPct: Number.NaN, quizPassedAt: null }, 80)}`, "Chưa qua kiểm tra|Chưa đạt 80%|null", "Admin hạ ngưỡng sau lần làm -> không nói \"chưa đạt\" sai; điểm hỏng -> null");
+  const retryNote = (payload: Record<string, unknown>) =>
+    describeNotification({ id: 1, type: "LEARNING_PATH_CHAPTER_RETRY", payload, readAt: null, createdAt: "2026-10-20T00:00:00Z" });
+  const rn = retryNote({ pathId: "p 1", pathTitle: "N5", chapterId: "c1", chapterTitle: "Bài 1", pct: 50, passPct: 80 });
+  assertStrictEqual(`${rn.text}|${rn.to}`, 'Chương "Bài 1" của lộ trình "N5" chưa đạt 80% (lần này 50%). Bạn vẫn học tiếp được, làm lại bài kiểm tra khi sẵn sàng.|/roadmap/p%201', "Thông báo nhắc làm lại: ngưỡng + điểm lượt này, link về đúng lộ trình");
+  assertStrictEqual(retryNote({ pct: 40 }).text, "Chương của lộ trình học tập chưa đạt (lần này 40%). Bạn vẫn học tiếp được, làm lại bài kiểm tra khi sẵn sàng.", "Payload thiếu tên / ngưỡng vẫn ra câu đọc được");
   const cfDecks = [
     { id: "d1", cards: [{ id: "a" }, { id: "b" }, { id: "c" }] },
     { id: "d2", cards: [{ id: "e" }] },
