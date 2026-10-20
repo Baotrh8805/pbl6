@@ -663,6 +663,7 @@ export interface AdminStats {
     cards: number;
     extractions: { total: number; done: number; failed: number; running: number };
     quizAttempts: number;
+    /** Tổng số lộ trình (mọi trạng thái); phân rã theo trạng thái ở learningPathBreakdown. */
     learningPaths: number;
     openReports: number;
     series: { date: string; newUsers: number; extractions: number; quizzes: number }[];
@@ -679,6 +680,21 @@ export interface AdminStats {
     ocrSeries?: AdminOcrPoint[];
     /** Cờ dữ liệu / thành phần của ai-service (có thể nằm ở đây hoặc ở GET /admin/health). */
     health?: { engines?: AdminEngineFlags };
+    /** Lộ trình 2.0 theo trạng thái (spec §4.5); backend bỏ trường khi null (NON_NULL) -> thẻ "Lộ trình học tập" tự ẩn. */
+    learningPathBreakdown?: AdminLearningPathBreakdown;
+}
+
+/**
+ * AdminStatsResponse.LearningPathBreakdown: active = ACTIVE chưa chốt hoàn thành; completed = đã chốt (completed_at, vẫn ACTIVE);
+ * failed / draft theo status; PROCESSING không đếm riêng (tổng các mục có thể nhỏ hơn learningPaths); remedial = lộ trình bổ khuyết,
+ * đếm chéo (cũng nằm trong active / completed).
+ */
+export interface AdminLearningPathBreakdown {
+    active: number;
+    completed: number;
+    failed: number;
+    remedial: number;
+    draft: number;
 }
 
 /** Một engine đọc văn bản (tesseract | gemini | pdf-text | docx | text …); avg* = null khi chưa có mẫu. */

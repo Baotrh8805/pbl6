@@ -22,6 +22,9 @@ type Pending =
 export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [pending, setPending] = useState<Pending | null>(null);
     const [busy, setBusy] = useState(false);
+    // Cờ đồng bộ bên cạnh `busy` (LP-13): bấm đúp nút xác nhận trước khi `busy` kịp render chạy `action` hai lần
+    // (cân lại lịch / hoàn thành / xoá gửi hai request).
+    const actionRunning = useRef(false);
     const [error, setError] = useState("");
     const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -58,9 +61,10 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const handleConfirm = async () => {
-        if (!pending || pending.kind !== "confirm" || busy) return;
+        if (!pending || pending.kind !== "confirm" || busy || actionRunning.current) return;
         const { action } = pending.options;
         if (!action) return close(true);
+        actionRunning.current = true;
         setBusy(true);
         setError("");
         try {
@@ -70,6 +74,7 @@ export const DialogProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         } catch (err) {
             setError(extractErrorMessage(err));
         } finally {
+            actionRunning.current = false;
             setBusy(false);
         }
     };

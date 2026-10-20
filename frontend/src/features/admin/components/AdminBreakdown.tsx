@@ -1,6 +1,7 @@
 import React from "react";
 import type { AdminStats } from "@/types/api.types";
-import { extractionBreakdown } from "../adminUtils.ts";
+import { extractionBreakdown, learningPathBreakdown } from "../adminUtils.ts";
+import { AdminPathBreakdown } from "./AdminPathBreakdown";
 
 interface AdminBreakdownProps {
   stats: AdminStats;
@@ -37,6 +38,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
   const deckTotal = decks.total || 0;
   const deckPublicPct = toPct(decks.public, deckTotal);
   const deckOfficialPct = toPct(decks.official, deckTotal);
+
+  // 4. Lộ trình học tập theo trạng thái (thiếu ở backend cũ -> không có thẻ)
+  const paths = learningPathBreakdown(stats.learningPaths, stats.learningPathBreakdown);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -245,6 +249,9 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
           Bộ thẻ Official do ban biên tập phát hành hoặc chứng thực.
         </div>
       </div>
+
+      {/* Hàng riêng từ lg (3 thẻ trên đã chia đủ 1/3): 5 nhóm cần bề ngang để nhãn không bị cắt */}
+      {paths && <AdminPathBreakdown view={paths} className="lg:col-span-3" />}
     </div>
   );
 };

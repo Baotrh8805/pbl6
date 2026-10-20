@@ -694,3 +694,64 @@ export const todayNewTasksLine = (parts: readonly string[], newCount: number): s
         : newCount > 0
           ? `Thẻ mới hôm nay: ${parts.join(" · ")}`
           : `Thẻ mới hôm nay (đã học xong): ${parts.join(" · ")}`;
+
+// ---------- LP-13: chống bấm đúp ----------
+
+/**
+ * Khoá runOnce của "Gộp vào chương trước" theo TỪNG chương: bấm đúp cùng chương = request thứ hai gộp tiếp chương kề trên nên
+ * phải chặn; gộp chương khác trong lúc chương này đang chạy thì vẫn gửi (backend khoá bi quan theo lộ trình, xếp thứ tự đúng).
+ * Một khoá chung cho mọi chương sẽ nuốt mất cú bấm ở chương khác mà không báo gì.
+ */
+export const mergeLockKey = (chapterId: string): string => `merge:${chapterId}`;
+
+// ---------- LP-15: bộ thẻ thuộc lộ trình ----------
+
+/**
+ * Thư mục lộ trình tạo lúc kích hoạt (cả lộ trình bổ khuyết) mang metadata `{"learningPathId":"<id>"}`. metadata là chuỗi JSON
+ * tuỳ ý của thư mục (màu, icon...) nên đọc phòng thủ: không phải JSON / thiếu khoá / không phải chuỗi -> null.
+ */
+export function folderLearningPathId(metadata: string | null | undefined): string | null {
+    if (!metadata) return null;
+    try {
+        const parsed: unknown = JSON.parse(metadata);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+        const id = (parsed as Record<string, unknown>).learningPathId;
+        return typeof id === "string" && id.trim() !== "" ? id.trim() : null;
+    } catch {
+        return null;
+    }
+}
+
+export interface DeckPathLink {
+    pathId: string;
+    pathTitle: string;
+}
+
+/**
+ * Bộ thẻ là bộ của một chương trong lộ trình ACTIVE -> liên kết cho dải nhắc ở trang sửa bộ thẻ (LP-15). Thư mục của lộ trình có
+ * thể chứa bộ người dùng tự tạo thêm (không nằm trong lịch) nên phải khớp `chapters[].deckId`, không suy từ thư mục.
+ */
+export function deckPathLink(path: LearningPath | null | undefined, deckId: string): DeckPathLink | null {
+    if (!path || path.status !== "ACTIVE" || !deckId) return null;
+    if (!path.chapters?.some((c) => c.deckId === deckId)) return null;
+    return { pathId: path.id, pathTitle: path.title.trim() || "không tên" };
+}
+
+/**
+ * Lịch lộ trình 2.0 theo id thẻ (learning_path_cards, LP-5): thẻ chốt lúc kích hoạt; thẻ thêm sau không có dòng lịch, thẻ xoá
+ * thì dòng lịch mất theo (CASCADE). Sửa nội dung thẻ cũ giữ nguyên id nên không đổi lịch.
+ */
+export const DECK_PATH_NOTICE = "Thẻ thêm mới sẽ không có trong lịch của lộ trình; xoá thẻ thì thẻ đó rời lịch.";
+
+/** Câu xác nhận xoá một thẻ ở trang bộ thẻ: thẻ thuộc lộ trình thì nói rõ thẻ rời lịch của lộ trình đó. */
+export const deleteCardMessage = (term: string, link: DeckPathLink | null): string =>
+    `Thẻ "${term}" sẽ bị xoá khỏi bộ thẻ, kèm lịch sử ôn tập của thẻ này` +
+    (link ? ` và rời lịch của lộ trình «${link.pathTitle}».` : ".");
+
+/**
+ * Câu xác nhận xoá cả bộ thẻ: bộ của một chương mất thì mọi dòng lịch của chương mất theo (CASCADE) -> chương không còn thẻ nào
+ * trong lịch. Nặng hơn nhiều so với xoá một thẻ nên phải nói rõ như câu xoá thẻ; bộ thường giữ câu cũ.
+ */
+export const deleteDeckMessage = (title: string, link: DeckPathLink | null): string =>
+    `Bộ thẻ "${title}" và toàn bộ thẻ từ vựng bên trong sẽ bị xoá vĩnh viễn` +
+    (link ? `; mọi thẻ của chương này rời lịch của lộ trình «${link.pathTitle}».` : ".");

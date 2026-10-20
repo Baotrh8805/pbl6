@@ -205,6 +205,8 @@ import { runPracticeChecks } from "./selfcheck/practice.ts";
 import { runQuizChecks } from "./selfcheck/quiz.ts";
 // Lỗi phát hiện khi kiểm tay trên trình duyệt (LC-*, LP-*, STAFF-*): file riêng, không chạm các khối trên.
 import { runManualChecks } from "./selfcheck/manual.ts";
+// Lộ trình 2.0 đợt cuối (LP-13 chống gửi trùng, LP-15 bộ thẻ thuộc lộ trình, thẻ lộ trình ở Tổng quan admin): async, file riêng.
+import { runLearningPathChecks } from "./selfcheck/learningPath.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -1207,6 +1209,7 @@ async function runSelfCheck() {
   runPracticeChecks(assertTrue);
   runLearnerChecks(assertTrue);
   runManualChecks(assertTrue);
+  await runLearningPathChecks(assertTrue);
   assertStrictEqual(parseProfileTab("practice"), "practice", "Tab Luyện tập hợp lệ từ URL");
 
   console.log(" All self-check assertions passed successfully!");

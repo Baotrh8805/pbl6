@@ -368,6 +368,66 @@ export function extractionBreakdown(total: number, done: number, running: number
   return { other, donePct, runningPct, failedPct, otherPct };
 }
 
+export type PathBreakdownKey = "active" | "completed" | "draft" | "failed" | "processing";
+
+export interface PathBreakdownSegment {
+  key: PathBreakdownKey;
+  label: string;
+  value: number;
+  pct: number;
+}
+
+export interface PathBreakdownView {
+  total: number;
+  /** Bốn nhóm loại trừ nhau theo thứ tự vẽ + "Đang xử lý" (luôn đủ 5 mục để chú giải không nhảy chỗ giữa các lần tải). */
+  segments: PathBreakdownSegment[];
+  remedial: number;
+  remedialPct: number;
+}
+
+const PATH_SEGMENT_LABELS: Record<PathBreakdownKey, string> = {
+  active: "Đang học",
+  completed: "Hoàn thành",
+  draft: "Bản nháp",
+  failed: "Thất bại",
+  processing: "Đang xử lý",
+};
+
+/**
+ * Thẻ "Lộ trình học tập" của Tổng quan admin (stats.learningPathBreakdown, spec §4.5). Đang học / hoàn thành / bản nháp / thất bại
+ * loại trừ nhau; "Đang xử lý" = phần còn lại của tổng `learningPaths` vì server không đếm riêng PROCESSING (trạng thái thoáng qua).
+ * Các số đếm bằng truy vấn riêng nên tổng lấy max(learningPaths, tổng bốn nhóm) để % không vượt 100. Bổ khuyết đếm chéo (cũng nằm
+ * trong đang học / hoàn thành) nên trả riêng, không vào thanh xếp chồng. % như Cơ cấu Bóc tách: "Đang xử lý" nhận phần còn lại
+ * của 100 % chỉ khi thật có lộ trình đang xử lý. Thiếu breakdown (backend cũ) -> null để thẻ tự ẩn.
+ */
+export function learningPathBreakdown(
+  totalPaths: number | null | undefined,
+  b: { active: number; completed: number; failed: number; remedial: number; draft: number } | null | undefined
+): PathBreakdownView | null {
+  if (!b) return null;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+  const counted = { active: n(b.active), completed: n(b.completed), draft: n(b.draft), failed: n(b.failed) };
+  const sum = counted.active + counted.completed + counted.draft + counted.failed;
+  const total = Math.max(n(totalPaths), sum);
+  const pct = (v: number) => (total > 0 && v > 0 ? Math.min(100, Math.round((v / total) * 100)) : 0);
+  const segments: PathBreakdownSegment[] = (["active", "completed", "draft", "failed"] as const).map((key) => ({
+    key,
+    label: PATH_SEGMENT_LABELS[key],
+    value: counted[key],
+    pct: pct(counted[key]),
+  }));
+  const processing = total - sum;
+  const usedPct = segments.reduce((acc, s) => acc + s.pct, 0);
+  segments.push({
+    key: "processing",
+    label: PATH_SEGMENT_LABELS.processing,
+    value: processing,
+    pct: processing > 0 ? Math.max(0, 100 - usedPct) : 0,
+  });
+  const remedial = Math.min(n(b.remedial), total);
+  return { total, segments, remedial, remedialPct: pct(remedial) };
+}
+
 /**
  * Bề rộng vẽ của biểu đồ xu hướng (đơn vị viewBox) theo bề rộng khung đo được: bằng đúng số px (1 đơn vị ≈ 1 px, chữ
  * trục 11 px đọc được trên điện thoại), kẹp [240, max] — khung rộng hơn max thì phóng to như trước.

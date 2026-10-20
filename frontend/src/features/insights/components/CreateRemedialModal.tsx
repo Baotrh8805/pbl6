@@ -1,5 +1,6 @@
-import React, { useId, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { runOnce } from "@/lib/inFlight";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -70,14 +71,15 @@ const RemedialForm: React.FC<{
   const [title, setTitle] = useState("");
   const [daysError, setDaysError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const daysId = useId();
   const titleId = useId();
   const groupName = useId();
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (saving) return;
+  // LP-13 (thay cờ `saving` riêng của form): bấm đúp / Enter lặp trước khi nút kịp khoá = hai lộ trình bổ khuyết (hai thư
+  // mục, hai bộ bộ thẻ clone).
+  const inFlight = useRef(new Set<string>());
+
+  const submit = async () => {
     const n = days.trim() === "" ? NaN : Number(days);
     if (!isValidRemedialDays(n)) {
       setDaysError(DAYS_ERROR);
@@ -85,7 +87,6 @@ const RemedialForm: React.FC<{
     }
     setDaysError(null);
     setError(null);
-    setSaving(true);
     onSavingChange(true);
     try {
       const path = await createRemedialPath({ days: n, groupBy, title: title.trim() || undefined });
@@ -95,9 +96,13 @@ const RemedialForm: React.FC<{
       navigate(`/roadmap/${encodeURIComponent(path.id)}`);
     } catch (err) {
       setError(extractErrorMessage(err));
-      setSaving(false);
       onSavingChange(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void runOnce(inFlight.current, "create", submit);
   };
 
   return (

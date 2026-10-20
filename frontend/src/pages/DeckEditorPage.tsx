@@ -17,6 +17,8 @@ import {
   type EditorCard,
 } from "@/features/decks/editor/editorCards";
 import { flattenFolders } from "@/features/folders/components/folderTree";
+import { useDeckLearningPath } from "@/features/roadmap/useDeckLearningPath";
+import { DeckPathNotice } from "@/features/roadmap/components/DeckPathNotice";
 import { extractErrorMessage } from "@/services/apiClient";
 import { useDialog } from "@/components/ui/dialogContext";
 
@@ -130,6 +132,8 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  // LP-15: bộ của một chương lộ trình -> nhắc thêm / xoá thẻ đổi lịch của lộ trình (theo thư mục đã lưu, không theo ô đang chọn).
+  const pathLink = useDeckLearningPath(deck);
 
   // Thao tác trên hàng thẻ
   const handleCardChange = (index: number, field: "term" | "reading" | "meaning", value: string) => {
@@ -314,6 +318,8 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
           <div className="flex-1">{errorMessage}</div>
         </div>
       )}
+
+      {pathLink && <DeckPathNotice link={pathLink} />}
 
       {/* Thông tin chung */}
       <DeckInfoFields

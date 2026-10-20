@@ -21,6 +21,9 @@ import { PronunciationPanel } from "@/features/practice/components/Pronunciation
 import { KanjiWritePanel } from "@/features/practice/components/KanjiWritePanel";
 import { extractKanji, hasCjkIdeograph } from "@/lib/textUtils";
 import { HanVietBadge } from "@/features/hanviet/components/HanVietBadge";
+import { useDeckLearningPath } from "@/features/roadmap/useDeckLearningPath";
+import { DeckPathNotice } from "@/features/roadmap/components/DeckPathNotice";
+import { deleteCardMessage, deleteDeckMessage } from "@/features/roadmap/roadmapUtils";
 
 export const DeckDetailPage: React.FC = () => {
     const { deckId = "" } = useParams();
@@ -47,6 +50,8 @@ export const DeckDetailPage: React.FC = () => {
     const [writeCard, setWriteCard] = useState<Card | null>(null);
     const [writeKanji, setWriteKanji] = useState("");
     const writeKanjiList = writeCard ? extractKanji(writeCard.term) : [];
+    // LP-15: thêm / sửa / xoá thẻ ngay tại trang này -> cùng lời nhắc lịch lộ trình như trang sửa bộ thẻ.
+    const pathLink = useDeckLearningPath(data?.deck);
 
     if (loading) return <p className="text-on-surface-variant py-space-lg">Đang tải bộ thẻ...</p>;
     if (error || !data)
@@ -73,7 +78,7 @@ export const DeckDetailPage: React.FC = () => {
     const handleDeleteDeck = async () => {
         const ok = await dialog.confirm({
             title: "Xoá bộ thẻ?",
-            message: `Bộ thẻ "${deck.title}" và toàn bộ thẻ từ vựng bên trong sẽ bị xoá vĩnh viễn.`,
+            message: deleteDeckMessage(deck.title, pathLink),
             confirmLabel: "Xoá bộ thẻ",
             tone: "danger",
             action: () => deleteDeck(deck.id),
@@ -93,7 +98,7 @@ export const DeckDetailPage: React.FC = () => {
     const handleDeleteCard = async (card: Card) => {
         const ok = await dialog.confirm({
             title: "Xoá thẻ?",
-            message: `Thẻ "${card.term}" sẽ bị xoá khỏi bộ thẻ, kèm lịch sử ôn tập của thẻ này.`,
+            message: deleteCardMessage(card.term, pathLink),
             confirmLabel: "Xoá thẻ",
             tone: "danger",
             action: () => deleteCard(deck.id, card.id),
@@ -246,6 +251,8 @@ export const DeckDetailPage: React.FC = () => {
                     )}
                 </div>
             </header>
+
+            {pathLink && canEdit && <DeckPathNotice link={pathLink} />}
 
             {/* Flashcards List Section */}
             <div className="flex flex-col gap-3">

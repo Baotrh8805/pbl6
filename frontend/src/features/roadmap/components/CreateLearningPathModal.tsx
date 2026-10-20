@@ -1,4 +1,4 @@
-import React, { useId, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -7,6 +7,7 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { createLearningPath } from "@/services/learningPathService";
 import { useAuth } from "@/context/useAuth";
 import { dayKey } from "@/lib/learningStats";
+import { runOnce } from "@/lib/inFlight";
 import type { ExtractionOptions } from "@/types/api.types";
 import { loadSavedOptions, saveOptions } from "@/features/extraction/extractionUtils";
 import { SourceFields, type UploadSource } from "@/features/extraction/components/SourceFields";
@@ -95,9 +96,10 @@ const PathForm: React.FC<{
   const set = <K extends keyof ExtractionOptions>(key: K, value: ExtractionOptions[K]) =>
     setOptions((o) => ({ ...o, [key]: value }));
 
-  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (saving) return;
+  // LP-13: Enter lặp / bấm đúp "Tạo lộ trình" trước khi `saving` kịp render = hai job bóc tách, tốn hai lượt hạn mức.
+  const inFlight = useRef(new Set<string>());
+
+  const submit = async () => {
     const daysNum = days.trim() === "" ? NaN : Number(days);
     const capNum = dailyCap.trim() === "" ? undefined : Number(dailyCap);
     const badDays = !isValidDays(daysNum);
@@ -141,6 +143,11 @@ const PathForm: React.FC<{
       setSaving(false);
       onSavingChange(false);
     }
+  };
+
+  const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void runOnce(inFlight.current, "create", submit);
   };
 
   return (

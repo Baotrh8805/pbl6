@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useDialog } from "@/components/ui/dialogContext";
 import { dayKey } from "@/lib/learningStats";
+import { runOnce } from "@/lib/inFlight";
 import { extractErrorMessage } from "@/services/apiClient";
 import {
   activateLearningPath,
@@ -26,7 +27,7 @@ import { CreateLearningPathModal } from "@/features/roadmap/components/CreateLea
 import { PathDraftEditor, type ActivateValues } from "@/features/roadmap/components/PathDraftEditor";
 import { PathActiveView } from "@/features/roadmap/components/PathActiveView";
 import { PathSettingsDrawer } from "@/features/roadmap/components/PathSettingsDrawer";
-import { OVERFLOW_WARNING, isPathBusy, isPathProcessing } from "@/features/roadmap/roadmapUtils";
+import { OVERFLOW_WARNING, isPathBusy, isPathProcessing, mergeLockKey } from "@/features/roadmap/roadmapUtils";
 
 const POLL_MS = 2000;
 /** Sau khi kích hoạt: chờ danh sách bộ thẻ của shell có đủ bộ mới, tối đa chừng này. */
@@ -70,6 +71,9 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Mốc (ms) tới đó vòng poll vẫn chạy dù lộ trình không "bận" — dùng sau "Dịch lại nghĩa".
   const pollExtraUntil = useRef(0);
+  // LP-13: thao tác ghi đang chạy theo loại (kích hoạt, gộp chương, cân lại...). Nút có disabled theo state, nhưng state chỉ
+  // đổi ở lần render sau -> bấm đúp vẫn gửi hai request; khoá đồng bộ này chặn lần thứ hai ngay trong handler.
+  const inFlight = useRef(new Set<string>());
 
   // Bộ đếm chung cho MỌI lần tải lộ trình (poll lẫn tải lại sau thao tác ghi): chỉ lần mới nhất được ghi vào state.
   // Lưu-khi-blur và kích hoạt có thể chạy chồng nhau, phản hồi cũ về muộn không được đè bản ACTIVE bằng bản DRAFT; poll
@@ -161,11 +165,12 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     void runAction(() => renameChapter(id, cid, title));
   };
 
+  // Gộp lặp cùng một chương (bấm đúp) = request thứ hai gộp tiếp chương kề trên: khoá theo từng chương (mergeLockKey).
   const handleMergeUp = async (cid: string) => {
-    await runAction(() => mergeChapterUp(id, cid));
+    await runOnce(inFlight.current, mergeLockKey(cid), () => runAction(() => mergeChapterUp(id, cid)));
   };
 
-  const handleActivate = async ({ title, startDate, totalDays, dailyCap, studyDays }: ActivateValues) => {
+  const activate = async ({ title, startDate, totalDays, dailyCap, studyDays }: ActivateValues) => {
     if (!path) return;
     setActivating(true);
     try {
@@ -194,6 +199,8 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     }
   };
 
+  const handleActivate = (values: ActivateValues) => runOnce(inFlight.current, "activate", () => activate(values));
+
   const handleDelete = async () => {
     const ok = await dialog.confirm({
       title: "Xoá lộ trình?",
@@ -205,8 +212,9 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     if (ok) navigate("/roadmap");
   };
 
-  // Cân lại lịch (LP-4): hỏi trước vì server xếp lại mọi thẻ chưa học; lỗi hiện ngay trong hộp thoại.
-  const handleRebalance = async (extend: boolean) => {
+  // Cân lại lịch (LP-4): hỏi trước vì server xếp lại mọi thẻ chưa học; lỗi hiện ngay trong hộp thoại. Khoá giữ suốt lúc hộp
+  // thoại mở: bấm đúp nút không mở hộp thứ hai đè hộp đang chờ.
+  const rebalance = async (extend: boolean) => {
     // Kết quả gom qua object vì gán trong closure `action` (TS không theo dõi gán trong hàm con).
     const done: { path?: LearningPath } = {};
     const ok = await dialog.confirm({
@@ -240,7 +248,9 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     void refreshPath(); // forecast[] chỉ có ở GET /{id}
   };
 
-  const handleComplete = async () => {
+  const handleRebalance = (extend: boolean) => runOnce(inFlight.current, "rebalance", () => rebalance(extend));
+
+  const complete = async () => {
     const ok = await dialog.confirm({
       title: "Hoàn thành lộ trình?",
       message: "Bạn đã học hết thẻ của lộ trình. Chốt hoàn thành để ghi nhận; bộ thẻ và lịch ôn vẫn hoạt động bình thường.",
@@ -261,8 +271,10 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     await refreshPath();
   };
 
+  const handleComplete = () => runOnce(inFlight.current, "complete", complete);
+
   // FAILED -> chạy lại từ bước phân tích (không tốn lượt). Server từ chối (400: job mất văn bản) -> hiện lý do trong panel.
-  const handleRetry = async () => {
+  const retry = async () => {
     setBusyAction("retry");
     try {
       const next = await retryLearningPath(id);
@@ -277,11 +289,13 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     }
   };
 
+  const handleRetry = () => runOnce(inFlight.current, "retry", retry);
+
   // Dịch lại nghĩa: 202 + lộ trình (trạng thái không đổi), job chuyển sang chạy bước ENRICH -> poll tới khi job DONE.
   // Lỗi: tải lại (qua vòng poll, để tiếp tục poll nếu job hoá ra đang chạy). Cooldown 5 phút chỉ tính từ
   // `job.stats.enrichedAt` server trả — 429 của server luôn kèm mốc đó, còn 429 "hàng đợi đầy" (job thành FAILED) thì
   // không có cooldown và nút phải bấm lại được ngay, nên không đặt mốc chờ ở máy khách.
-  const handleEnrich = async () => {
+  const enrich = async () => {
     setBusyAction("enrich");
     try {
       const next = await enrichLearningPath(id);
@@ -298,9 +312,11 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     }
   };
 
+  const handleEnrich = () => runOnce(inFlight.current, "enrich", enrich);
+
   // Kiểm tra chương: server mở (hoặc nối lại) lượt quiz exam trên bộ của chương; QuizPage khôi phục đúng lượt qua ?attempt=.
   // ?path= để màn kết quả quiz có nút "Về lộ trình" (chương hiện "Đã qua" ngay khi đạt ngưỡng).
-  const handleStartQuiz = async (cid: string) => {
+  const startQuiz = async (cid: string) => {
     setQuizBusy(cid);
     setQuizError(null);
     try {
@@ -321,6 +337,8 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
       setQuizBusy(null);
     }
   };
+
+  const handleStartQuiz = (cid: string) => runOnce(inFlight.current, "quiz", () => startQuiz(cid));
 
   // Cài đặt (trần / ngày học / nhắc / số ngày / ngày bắt đầu): PATCH ?date= trả lộ trình đã xếp lại; ném lỗi cho hộp thoại.
   const handleSaveSettings = async (patch: LearningPathPatch) => {
