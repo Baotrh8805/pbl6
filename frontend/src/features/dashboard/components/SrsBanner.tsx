@@ -37,20 +37,23 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
       <div className="absolute -right-8 -bottom-10 w-44 h-44 rounded-full bg-on-tertiary-container/10 blur-2xl pointer-events-none" />
       <div className="absolute left-1/3 top-0 w-32 h-32 rounded-full bg-secondary-container/10 blur-xl pointer-events-none" />
 
-      <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-space-md">
-        <div className="flex items-center gap-space-md">
+      {/* Cột chữ và cụm nút cùng hàng khi chính banner đủ rộng (cột chữ ≥ 20rem), không thì cụm nút xuống dòng dưới và giãn
+          hết bề ngang — tính theo bề rộng banner chứ không theo breakpoint màn hình: trước đây md:flex-row ở 768 px (sidebar
+          chiếm 256 px) ép cột chữ còn ~96 px, "Hôm nay: … thẻ đến hạn · … thẻ mới" xuống dòng từng chữ. */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-space-md">
+        <div className="flex flex-[999_1_20rem] min-w-0 items-center gap-space-md">
           <div className="w-12 h-12 rounded-xl bg-surface-container-lowest/15 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
             <span aria-hidden="true" className="material-symbols-outlined text-secondary-fixed text-[28px] animate-pulse">
               notifications_active
             </span>
           </div>
 
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <span className="font-label-sm text-label-sm uppercase tracking-wider px-2 py-0.5 rounded-full bg-surface-container-lowest/20 text-tertiary-fixed-dim font-bold">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-label-sm text-label-sm uppercase tracking-wider px-2 py-0.5 rounded-full bg-surface-container-lowest/20 text-tertiary-fixed-dim font-bold whitespace-nowrap">
                 SRS Real-time Due
               </span>
-              <span className="text-xs text-on-tertiary/70 font-mono">
+              <span className="text-xs text-on-tertiary/70 font-mono whitespace-nowrap">
                 Cập nhật {new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
               </span>
             </div>
@@ -83,14 +86,18 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-space-sm w-full md:w-auto shrink-0 pt-2 md:pt-0">
+        {/* Dưới sm bỏ biểu tượng trang trí và bớt lề ngang của nút: ở 320 px khung banner còn 240 px, nút đủ cả biểu tượng
+            (~215 px) cộng nút đóng thì tràn và bị overflow-hidden cắt mất nút đóng. */}
+        <div className="flex grow items-center gap-space-sm">
           <button
             type="button"
             onClick={onStartSrs}
-            className="w-full md:w-auto flex items-center justify-center gap-2 px-space-lg py-2.5 rounded-lg bg-surface-container-lowest text-tertiary font-label-md text-label-md hover:bg-surface-bright transition-all shadow-md active:scale-95 group font-bold cursor-pointer whitespace-nowrap"
+            className="flex-1 flex items-center justify-center gap-2 min-h-11 px-space-md sm:px-space-lg py-2.5 rounded-lg bg-surface-container-lowest text-tertiary font-label-md text-label-md hover:bg-surface-bright transition-all shadow-md active:scale-95 group font-bold cursor-pointer whitespace-nowrap"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-tertiary-container group-hover:rotate-12 transition-transform">
-              history_edu
+            <span aria-hidden="true" className="hidden sm:inline-flex">
+              <span className="material-symbols-outlined text-tertiary-container group-hover:rotate-12 transition-transform">
+                history_edu
+              </span>
             </span>
             <span>{buttonLabel}</span>
             {buttonCount > 0 && (
@@ -103,7 +110,7 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
           <button
             type="button"
             onClick={onDismiss}
-            className="p-2 rounded-lg bg-surface-container-lowest/10 hover:bg-surface-container-lowest/20 text-on-tertiary transition-colors cursor-pointer"
+            className="shrink-0 p-2 rounded-lg bg-surface-container-lowest/10 hover:bg-surface-container-lowest/20 text-on-tertiary transition-colors cursor-pointer"
             title="Ẩn tạm thời"
             aria-label="Đóng banner"
           >

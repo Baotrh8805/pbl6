@@ -50,12 +50,16 @@ export const LearningKpiGrid: React.FC<LearningKpiGridProps> = ({
           lời chào còn ~160 px ở 640–900 px. */}
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-label-sm text-label-sm uppercase tracking-widest text-outline font-semibold">
+          {/* Dưới sm giãn chữ vừa phải (tracking-wider) để nhãn và "Trực tuyến" cùng một dòng ở 320 px; nếu vẫn hẹp thì cả cụm
+              "Trực tuyến" xuống dòng chứ nhãn không gãy giữa chữ. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="font-label-sm text-label-sm uppercase tracking-wider sm:tracking-widest text-outline font-semibold whitespace-nowrap">
               Bảng Điều Khiển Học Viên
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-            <span className="font-label-sm text-label-sm text-secondary font-medium">Trực tuyến</span>
+            <span className="inline-flex items-center gap-2">
+              <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-secondary shrink-0"></span>
+              <span className="font-label-sm text-label-sm text-secondary font-medium whitespace-nowrap">Trực tuyến</span>
+            </span>
           </div>
           <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight mt-0.5 font-bold">
             {greeting}, {displayName}!
