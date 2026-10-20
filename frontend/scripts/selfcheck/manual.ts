@@ -53,8 +53,10 @@ import {
 } from "../../src/features/admin/adminUtils.ts";
 import { userExtractionLimitError } from "../../src/features/admin/settingsUtils.ts";
 import {
-  appealLockReason,
-  appealLockReasonPlaceholder,
+  APPEAL_LEGACY_REASON_NOTE,
+  appealActionState,
+  appealReasonView,
+  appealWithAccount,
   reportActionLabel,
   reportDoneMessage,
 } from "../../src/features/admin/moderationUtils.ts";
@@ -279,13 +281,54 @@ export function runManualChecks(assert: (cond: boolean, msg: string) => void): v
   assert(extractionBreakdown(3, 1, 1, 1).otherPct === 0, "STAFF-06: không có lượt khác -> 0 % dù làm tròn lệch");
 
   // ---------- STAFF-07/08: khiếu nại, báo cáo ----------
-  assert(appealLockReason({ userId: 5, userLocked: false, lockedReason: null }) === null, "STAFF-07: đã mở khoá -> không có lý do hiện tại");
-  assert(appealLockReasonPlaceholder({ userId: 5, userLocked: false }) === "— (không còn khoá)", "STAFF-07: không ghi 'Không ghi lý do' cho tài khoản đã mở");
+  // Lý do lúc gửi (lockedReasonAtSubmit) thắng lý do hiện tại: mở khoá / khoá lại không làm mất. "[x]" = chữ mờ, sau "|" là ghi chú.
+  const reasonView = (a: Parameters<typeof appealReasonView>[0]): string => {
+    const v = appealReasonView(a);
+    return `${v.text ?? `[${v.placeholder}]`}|${v.note ?? ""}`;
+  };
   assert(
-    appealLockReason({ userId: 5, userLocked: true, lockedReason: " spam " }) === "spam" &&
-      appealLockReasonPlaceholder({ userId: 5, userLocked: true }) === "Không ghi lý do" &&
-      appealLockReasonPlaceholder({ userId: null, userLocked: null }) === "—",
-    "STAFF-07: đang khoá -> lý do / 'Không ghi lý do'; mất tài khoản -> —"
+    reasonView({ userId: 5, userLocked: false, lockedReason: null, lockedReasonAtSubmit: " spam " }) === "spam|" &&
+      reasonView({ userId: 5, userLocked: true, lockedReason: "spam", lockedReasonAtSubmit: "spam" }) === "spam|" &&
+      reasonView({ userId: null, userLocked: null, lockedReason: null, lockedReasonAtSubmit: "spam" }) === "spam|",
+    "STAFF-07: đã mở khoá / còn khoá cùng lý do / mất tài khoản -> lý do lúc gửi, không ghi chú"
+  );
+  assert(
+    reasonView({ userId: 5, userLocked: true, lockedReason: "Lý do mới", lockedReasonAtSubmit: "spam" }) === "spam|Hiện tại: “Lý do mới”" &&
+      reasonView({ userId: 5, userLocked: true, lockedReason: null, lockedReasonAtSubmit: "spam" }) === "spam|Hiện tại: không ghi lý do",
+    "STAFF-07: bị khoá lại với lý do khác -> ghi chú lý do hiện tại"
+  );
+  assert(
+    reasonView({ userId: 5, userLocked: false, lockedReason: null, lockedReasonAtSubmit: "" }) === "[Không ghi lý do]|" &&
+      reasonView({ userId: 5, userLocked: true, lockedReason: null, lockedReasonAtSubmit: "" }) === "[Không ghi lý do]|",
+    "STAFF-07: \"\" = lúc gửi bị khoá không ghi lý do (khác khiếu nại cũ)"
+  );
+  // Khiếu nại cũ (null / vắng trường): lý do hiện tại kèm nhãn; đã mở khoá thì không ghi "Không ghi lý do"
+  assert(
+    reasonView({ userId: 5, userLocked: true, lockedReason: " spam ", lockedReasonAtSubmit: null }) === `spam|${APPEAL_LEGACY_REASON_NOTE}` &&
+      reasonView({ userId: 5, userLocked: true, lockedReason: null }) === `[Không ghi lý do]|${APPEAL_LEGACY_REASON_NOTE}`,
+    "STAFF-07: khiếu nại cũ còn khoá -> lý do hiện tại có nhãn"
+  );
+  assert(
+    reasonView({ userId: 5, userLocked: false, lockedReason: null, lockedReasonAtSubmit: null }) ===
+      `[— (không còn khoá)]|${APPEAL_LEGACY_REASON_NOTE}` &&
+      reasonView({ userId: null, userLocked: null, lockedReason: null, lockedReasonAtSubmit: null }) === "[—]|",
+    "STAFF-07: khiếu nại cũ đã mở khoá -> '— (không còn khoá)'; mất tài khoản -> —"
+  );
+  // Modal xử lý: dòng danh sách cũ (snapshot "Spam", lúc tải còn khoá "Gian lận"); admin khác vừa mở khoá / khoá lại không lý do.
+  const staleRow = { id: 9, status: "OPEN", userId: 5, userLocked: true, lockedReason: "Gian lận", lockedReasonAtSubmit: "Spam" };
+  const unlockedNow = appealWithAccount(staleRow, { lockedAt: null, lockedReason: null });
+  assert(
+    unlockedNow.userLocked === false && reasonView(unlockedNow) === "Spam|" &&
+      appealActionState(unlockedNow, "USER", "ADMIN").unlockHint === "Tài khoản đã được mở khoá.",
+    "STAFF-07: chi tiết vừa tra = đã mở khoá -> không hiện lại 'Hiện tại: Gian lận', Mở khoá tắt"
+  );
+  assert(
+    reasonView(appealWithAccount(staleRow, { lockedAt: "2026-10-20T01:00:00Z", lockedReason: null })) === "Spam|Hiện tại: không ghi lý do",
+    "STAFF-07: chi tiết vừa tra = khoá lại không ghi lý do -> ghi chú đúng, không lấy lý do cũ của dòng danh sách"
+  );
+  assert(
+    appealWithAccount(staleRow, null) === staleRow && appealWithAccount(staleRow, undefined) === staleRow,
+    "STAFF-07: chưa tra / tra lỗi -> giữ dòng danh sách"
   );
   assert(
     reportActionLabel("NONE") === "Không làm gì" && reportActionLabel("UNPUBLISH_DECK") === "Gỡ bộ thẻ" && reportActionLabel("CLEAR_COMMENT") === "Xoá bình luận",

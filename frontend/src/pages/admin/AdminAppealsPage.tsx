@@ -9,8 +9,6 @@ import { formatShort } from "@/features/admin/adminUtils";
 import {
   APPEAL_STATUS_LABELS,
   appealLockLabel,
-  appealLockReason,
-  appealLockReasonPlaceholder,
   isPendingError,
   parseAppealStatus,
   type AppealStatusKey,
@@ -23,6 +21,7 @@ import { AdminStatusTabs } from "@/features/admin/components/AdminStatusTabs";
 import { AdminPendingNotice } from "@/features/admin/components/AdminPendingNotice";
 import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
 import { ResolveAppealModal } from "@/features/admin/components/ResolveAppealModal";
+import { AppealReason } from "@/features/admin/components/AppealReason";
 import { Pager } from "@/features/admin/components/Pager";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
 import { useAdminQueues } from "@/features/admin/useAdminQueues";
@@ -97,8 +96,11 @@ export const AdminAppealsPage: React.FC = () => {
               <th scope="col" className="w-36">Gửi lúc</th>
               <th scope="col">Email</th>
               <th scope="col">Tài khoản</th>
-              <th scope="col" title="Lý do của lần khoá đang còn hiệu lực; tài khoản đã mở khoá thì không còn lý do">
-                Lý do khoá hiện tại
+              <th
+                scope="col"
+                title="Lý do khoá lúc người dùng gửi khiếu nại, không đổi khi tài khoản được mở / khoá lại. Khiếu nại cũ không lưu lý do này: hiện lý do hiện tại kèm ghi chú."
+              >
+                Lý do khoá (lúc gửi)
               </th>
               <th scope="col" className="min-w-[240px]">Nội dung khiếu nại</th>
               {status === "OPEN" ? (
@@ -131,7 +133,7 @@ export const AdminAppealsPage: React.FC = () => {
                   />
                 </td>
                 <td className="text-on-surface-variant break-words max-w-[220px]">
-                  {appealLockReason(a) ?? <span className="italic text-outline">{appealLockReasonPlaceholder(a)}</span>}
+                  <AppealReason appeal={a} />
                 </td>
                 <td>
                   <p className="whitespace-pre-line break-words line-clamp-4 max-w-md" title={a.message}>

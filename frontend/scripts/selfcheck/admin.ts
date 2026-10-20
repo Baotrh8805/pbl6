@@ -202,7 +202,8 @@ export function runAdminChecks(assert: (cond: boolean, msg: string) => void): vo
     createdAt: "2026-10-19T00:00:00Z",
   } as unknown as AccountAppeal);
   assert(
-    deleted.userId === null && deleted.userLocked === null && deleted.resolvedAt === null && deleted.email === "x@y.z",
+    deleted.userId === null && deleted.userLocked === null && deleted.resolvedAt === null && deleted.email === "x@y.z" &&
+      deleted.lockedReasonAtSubmit === null,
     "normalizeAppeal: trường vắng (NON_NULL) -> null"
   );
   assert(

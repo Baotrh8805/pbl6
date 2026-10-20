@@ -84,7 +84,13 @@ export interface AccountAppeal {
     /** null = tài khoản không còn (đã xoá). */
     userId: number | null;
     userLocked: boolean | null;
+    /** Lý do khoá HIỆN TẠI (null khi tài khoản không còn khoá); đổi theo mở / khoá lại. */
     lockedReason: string | null;
+    /**
+     * Lý do khoá chụp lúc gửi (STAFF-07), không đổi khi tài khoản được mở / khoá lại. "" = lúc gửi bị khoá không ghi lý do;
+     * null = khiếu nại gửi trước khi backend lưu trường này (trang hiện lý do hiện tại kèm nhãn, xem appealReasonView).
+     */
+    lockedReasonAtSubmit: string | null;
     message: string;
     status: AppealStatus;
     action: AppealAction | null;

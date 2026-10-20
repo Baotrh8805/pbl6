@@ -103,6 +103,7 @@ class AppealIT extends IntegrationTest {
         assertEquals(uid, a.get("userId").asLong());
         assertTrue(a.get("userLocked").asBoolean());
         assertEquals("Spam bình luận", a.get("lockedReason").asText());
+        assertEquals("Spam bình luận", a.get("lockedReasonAtSubmit").asText(), "STAFF-07: chụp lý do khoá lúc gửi");
         assertEquals(MESSAGE, a.get("message").asText());
         assertEquals("OPEN", a.get("status").asText());
         assertTrue(a.hasNonNull("createdAt"));
@@ -216,6 +217,7 @@ class AppealIT extends IntegrationTest {
         assertTrue(r.hasNonNull("resolvedAt"));
         assertFalse(r.get("userLocked").asBoolean());
         assertFalse(r.has("lockedReason"));
+        assertEquals("Nghi ngờ gian lận", r.get("lockedReasonAtSubmit").asText(), "mở khoá không xoá lý do đã chụp lúc gửi");
 
         String token = read(login(email).andExpect(status().isOk())).get("accessToken").asText();
         assertEquals(1, audits("APPEAL_RESOLVE", adminId));
@@ -226,6 +228,45 @@ class AppealIT extends IntegrationTest {
         // Tự xoá tài khoản xoá luôn khiếu nại (dữ liệu cá nhân)
         call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
         assertEquals(0, appealRows(email));
+    }
+
+    /**
+     * STAFF-07: lockedReasonAtSubmit là lý do lúc gửi, không theo users.locked_reason (mở khoá -> null, khoá lại -> lý do mới);
+     * lockedReason vẫn là trạng thái hiện tại. Khiếu nại gửi trước V29 (cột NULL) không có trường -> trang admin dùng lý do
+     * hiện tại.
+     */
+    @Test
+    void locked_reason_at_submit_is_kept_after_unlock_and_old_rows_fall_back_to_the_current_reason() throws Exception {
+        String email = newEmail();
+        Long uid = lockedUser(email, "Spam bình luận");
+        appeal(email, MESSAGE).andExpect(status().isAccepted());
+        String admin = newStaff(Role.ADMIN);
+
+        // Khoá lại với lý do khác khi khiếu nại còn chờ; gửi lặp bị bỏ qua nên không chụp đè lý do mới
+        call(patch("/api/admin/users/" + uid), admin, Map.of("locked", false)).andExpect(status().isOk());
+        call(patch("/api/admin/users/" + uid), admin, Map.of("locked", true, "lockedReason", "Lý do mới"))
+                .andExpect(status().isOk());
+        appeal(email, "Gửi thêm lần nữa cho chắc.").andExpect(status().isAccepted());
+        JsonNode open = findAppeal(admin, "OPEN", email);
+        assertEquals("Spam bình luận", open.get("lockedReasonAtSubmit").asText());
+        assertEquals("Lý do mới", open.get("lockedReason").asText(), "lockedReason vẫn là trạng thái hiện tại");
+
+        JsonNode r = read(call(post("/api/admin/appeals/" + open.get("id").asLong() + "/resolve"), admin,
+                Map.of("action", "UNLOCK")).andExpect(status().isOk()));
+        assertFalse(r.get("userLocked").asBoolean());
+        assertFalse(r.has("lockedReason"));
+        assertEquals("Spam bình luận", r.get("lockedReasonAtSubmit").asText());
+        assertEquals("Spam bình luận", findAppeal(admin, "RESOLVED", email).get("lockedReasonAtSubmit").asText());
+        assertNull(userRepository.findById(uid).orElseThrow().getLockedReason(), "mở khoá xoá lý do ở users, không ở khiếu nại");
+
+        // Hàng có trước V29: cột NULL -> vắng trường (NON_NULL), lockedReason hiện tại vẫn trả để trang admin hiện kèm nhãn
+        String old = newEmail();
+        Long oldUid = lockedUser(old, "Lý do hiện tại");
+        jdbc.update("INSERT INTO account_appeals (email, user_id, message) VALUES (?, ?, ?)", old, oldUid, MESSAGE);
+        JsonNode legacy = findAppeal(admin, "OPEN", old);
+        assertFalse(legacy.has("lockedReasonAtSubmit"), "khiếu nại cũ không có lý do lúc gửi: " + legacy);
+        assertTrue(legacy.get("userLocked").asBoolean());
+        assertEquals("Lý do hiện tại", legacy.get("lockedReason").asText());
     }
 
     @Test
@@ -266,6 +307,8 @@ class AppealIT extends IntegrationTest {
         assertEquals("Vi phạm nhiều lần", d.get("resolutionNote").asText());
         assertFalse(d.has("action"));
         assertTrue(d.get("userLocked").asBoolean());
+        assertEquals("", d.get("lockedReasonAtSubmit").asText(), "khoá không ghi lý do -> \"\" (khác khiếu nại cũ: vắng trường)");
+        assertFalse(d.has("lockedReason"));
         assertEquals(1, audits("APPEAL_DISMISS", userId(adminEmail)));
 
         call(post("/api/admin/appeals/" + id + "/resolve"), admin, Map.of("action", "UNLOCK")).andExpect(status().isConflict());

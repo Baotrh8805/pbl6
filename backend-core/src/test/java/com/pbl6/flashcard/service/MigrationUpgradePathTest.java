@@ -59,6 +59,29 @@ class MigrationUpgradePathTest {
         }
     }
 
+    /**
+     * D7: migration trên Supabase dùng chung phải chạy được khi cột đã có sẵn (thêm tay lúc thử STAFF-07, hay nhánh khác thêm dưới
+     * số phiên bản khác). Thiếu IF NOT EXISTS thì V29 thất bại, Flyway ghi lỗi và mọi backend trỏ vào DB đó không khởi động được.
+     */
+    @Test
+    void v29_runs_when_the_snapshot_column_already_exists() throws Exception {
+        try (EmbeddedPostgres pg = EmbeddedPostgres.builder().start()) {
+            DataSource ds = pg.getPostgresDatabase();
+            Flyway.configure().dataSource(ds).locations("classpath:db/migration").target("28").load().migrate();
+            try (Connection c = ds.getConnection(); Statement s = c.createStatement()) {
+                s.execute("ALTER TABLE account_appeals ADD COLUMN locked_reason_at_submit text");
+            }
+
+            Flyway.configure().dataSource(ds).locations("classpath:db/migration").load().migrate();
+
+            try (Connection c = ds.getConnection(); Statement s = c.createStatement()) {
+                assertEquals("true", one(s, "SELECT success::text FROM flyway_schema_history WHERE version = '29'"), "V29 ghi thành công");
+                assertEquals("text", one(s, "SELECT data_type FROM information_schema.columns "
+                        + "WHERE table_name = 'account_appeals' AND column_name = 'locked_reason_at_submit'"), "cột giữ nguyên, nullable text");
+            }
+        }
+    }
+
     private static String one(Statement s, String sql) throws Exception {
         try (ResultSet rs = s.executeQuery(sql)) {
             assertTrue(rs.next(), sql);

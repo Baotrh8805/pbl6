@@ -7,9 +7,10 @@ import { ROLE_LABELS, type Role } from "@/lib/roles";
 import { extractErrorMessage } from "@/services/apiClient";
 import { dismissAppeal, fetchAdminUser, resolveAppeal } from "@/services/adminService";
 import type { AccountAppeal, AppealAction } from "@/types/adminModeration.types";
-import { REVIEW_NOTE_MAX, appealActionState } from "../moderationUtils.ts";
+import { REVIEW_NOTE_MAX, appealActionState, appealWithAccount } from "../moderationUtils.ts";
 import { formatShort } from "../adminUtils.ts";
 import { adminFieldClass } from "./AdminFilterBar.tsx";
+import { AppealReason } from "./AppealReason.tsx";
 
 interface ResolveAppealModalProps {
   appeal: AccountAppeal | null;
@@ -42,10 +43,12 @@ export const ResolveAppealModal: React.FC<ResolveAppealModalProps> = ({ appeal, 
   // undefined = đang tra; null = tra không được (lỗi / không có tài khoản) -> appealActionState xử lý thận trọng.
   const targetRole: string | null | undefined =
     appeal.userRole !== undefined ? appeal.userRole : !needLookup ? null : target.loading ? undefined : (target.data?.role ?? null);
-  const state = appealActionState(appeal, targetRole, viewerRole);
+  // Chi tiết người dùng vừa tra mới hơn dòng danh sách (admin khác có thể vừa mở khoá / khoá lại): khoá + lý do hiện tại lấy từ
+  // đó cho cả lựa chọn "Mở khoá" lẫn ghi chú "Hiện tại: …"; chưa tra / tra lỗi -> dòng danh sách.
+  const current = appealWithAccount(appeal, target.data);
+  const state = appealActionState(current, targetRole, viewerRole);
   // Không chọn sẵn: mở khoá hay giữ khoá đều phải là quyết định có chủ ý của admin (như nút xác nhận ghi rõ hành động).
   const effective: AppealAction | null = choice === "UNLOCK" && !state.canUnlock ? null : choice;
-  const lockedReason = target.data?.lockedReason ?? appeal.lockedReason;
 
   const run = async (kind: "resolve" | "dismiss") => {
     setBusy(kind);
@@ -114,8 +117,10 @@ export const ResolveAppealModal: React.FC<ResolveAppealModalProps> = ({ appeal, 
             )}
             {roleLabel && <span className="ml-1.5 text-outline">· {roleLabel}</span>}
           </dd>
-          <dt className="text-outline font-semibold">Lý do khoá</dt>
-          <dd className="break-words">{lockedReason || <span className="italic text-outline">Không ghi lý do</span>}</dd>
+          <dt className="text-outline font-semibold">Lý do khoá (lúc gửi)</dt>
+          <dd className="break-words">
+            <AppealReason appeal={current} />
+          </dd>
           <dt className="text-outline font-semibold">Gửi lúc</dt>
           <dd>{formatShort(appeal.createdAt)}</dd>
         </dl>

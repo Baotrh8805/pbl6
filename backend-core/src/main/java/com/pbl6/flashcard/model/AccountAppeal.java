@@ -26,6 +26,13 @@ public class AccountAppeal {
     @Column(nullable = false, length = 1000)
     private String message;
 
+    /**
+     * Lý do khoá lúc gửi (V29, STAFF-07): users.locked_reason đổi theo mở / khoá lại nên phải chụp lại tại đây.
+     * "" = lúc gửi bị khoá không ghi lý do; null = khiếu nại gửi trước V29 (không biết lý do lúc gửi).
+     */
+    @Column(name = "locked_reason_at_submit", columnDefinition = "text")
+    private String lockedReasonAtSubmit;
+
     @Column(nullable = false, length = 10)
     private String status = OPEN;
 
@@ -51,6 +58,8 @@ public class AccountAppeal {
     public void setUserId(Long userId) { this.userId = userId; }
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+    public String getLockedReasonAtSubmit() { return lockedReasonAtSubmit; }
+    public void setLockedReasonAtSubmit(String lockedReasonAtSubmit) { this.lockedReasonAtSubmit = lockedReasonAtSubmit; }
     public String getStatus() { return status; }
     public String getAction() { return action; }
     public String getResolutionNote() { return resolutionNote; }

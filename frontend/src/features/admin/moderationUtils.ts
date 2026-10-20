@@ -376,6 +376,7 @@ export const normalizeAppeal = (raw: AccountAppeal): AccountAppeal => ({
   userId: raw.userId ?? null,
   userLocked: raw.userLocked ?? null,
   lockedReason: raw.lockedReason ?? null,
+  lockedReasonAtSubmit: raw.lockedReasonAtSubmit ?? null,
   action: raw.action ?? null,
   resolutionNote: raw.resolutionNote ?? null,
   resolvedByEmail: raw.resolvedByEmail ?? null,
@@ -433,16 +434,51 @@ export const appealActionState = (
 
 // ---------- Sửa sau kiểm tay trên trình duyệt (STAFF-07/08) ----------
 
-/**
- * Lý do khoá để hiện trong bảng khiếu nại. `lockedReason` của AppealResponse là trạng thái HIỆN TẠI (null khi tài khoản
- * không còn khoá), không phải lý do lúc gửi khiếu nại -> chỉ hiện khi tài khoản còn khoá; còn lại null (xem placeholder).
- */
-export const appealLockReason = (a: AppealAccount & { lockedReason?: string | null }): string | null =>
-  a.userLocked === true && a.lockedReason?.trim() ? a.lockedReason.trim() : null;
+/** Lý do khoá trong bảng / modal khiếu nại: text null -> hiện `placeholder` bằng chữ mờ; `note` là dòng nhỏ bên dưới. */
+export interface AppealReasonView {
+  text: string | null;
+  placeholder: string;
+  note: string | null;
+}
 
-/** Chữ mờ thay cho lý do khi không có: đang khoá mà không ghi lý do / đã mở khoá (lý do cũ không lưu) / mất tài khoản. */
-export const appealLockReasonPlaceholder = (a: AppealAccount): string =>
-  a.userId == null ? "—" : a.userLocked === true ? "Không ghi lý do" : "— (không còn khoá)";
+export const APPEAL_LEGACY_REASON_NOTE = "Lý do hiện tại · khiếu nại cũ không lưu lý do lúc gửi";
+
+/**
+ * Lý do khoá LÚC GỬI khiếu nại. Backend chụp `lockedReasonAtSubmit` khi nhận khiếu nại ("" = khoá không ghi lý do) vì
+ * `lockedReason` chỉ là trạng thái HIỆN TẠI: mở khoá thì mất, khoá lại thì thành lý do mới. Khiếu nại gửi trước khi có
+ * trường này (null) chỉ còn lý do hiện tại -> hiện lý do đó kèm nhãn để admin không tưởng là lý do lúc gửi. Tài khoản vẫn
+ * khoá nhưng lý do đã khác lúc gửi (bị khoá lại) -> ghi thêm lý do hiện tại.
+ */
+export const appealReasonView = (
+  a: AppealAccount & { lockedReason?: string | null; lockedReasonAtSubmit?: string | null }
+): AppealReasonView => {
+  // null = không còn khoá / không còn tài khoản; "" = đang khoá không ghi lý do
+  const current = a.userLocked === true ? (a.lockedReason?.trim() ?? "") : null;
+  if (a.lockedReasonAtSubmit != null) {
+    const atSubmit = a.lockedReasonAtSubmit.trim();
+    return {
+      text: atSubmit || null,
+      placeholder: "Không ghi lý do",
+      note: current !== null && current !== atSubmit ? `Hiện tại: ${current ? `“${current}”` : "không ghi lý do"}` : null,
+    };
+  }
+  if (a.userId == null) return { text: null, placeholder: "—", note: null };
+  return {
+    text: current || null,
+    placeholder: current === null ? "— (không còn khoá)" : "Không ghi lý do",
+    note: APPEAL_LEGACY_REASON_NOTE,
+  };
+};
+
+/**
+ * Trạng thái khoá HIỆN TẠI cho modal xử lý khiếu nại. Dòng trong danh sách có thể đã cũ (admin khác vừa mở khoá, hay khoá lại
+ * không ghi lý do) -> đã tra được chi tiết người dùng thì lấy CẢ userLocked lẫn lockedReason từ đó, kể cả khi lockedReason null
+ * (không còn khoá / khoá không ghi lý do: `?? appeal.lockedReason` sẽ hiện lại lý do cũ). Chưa tra / tra lỗi -> giữ dòng danh sách.
+ */
+export const appealWithAccount = <T extends AppealAccount & { lockedReason?: string | null }>(
+  appeal: T,
+  account: { lockedAt: string | null; lockedReason: string | null } | null | undefined
+): T => (account ? { ...appeal, userLocked: account.lockedAt != null, lockedReason: account.lockedReason } : appeal);
 
 /** Nhãn kết quả xử lý báo cáo; NONE là "Không làm gì" (đã xử lý), khác với trạng thái "Đã bỏ qua" (DISMISSED). */
 export const reportActionLabel = (action: string | null | undefined): string =>

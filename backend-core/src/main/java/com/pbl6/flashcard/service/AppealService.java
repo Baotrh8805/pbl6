@@ -79,14 +79,20 @@ public class AppealService {
         String normalized = User.normalizeEmail(email);
         users.findByEmail(normalized)
                 .filter(u -> u.getLockedAt() != null && !AccountDeletionService.isDeleted(u))
-                .ifPresent(u -> store(normalized, u.getId(), text));
+                .ifPresent(u -> store(normalized, u, text));
     }
 
-    private void store(String email, Long userId, String message) {
+    /**
+     * Chụp lý do khoá lúc gửi (STAFF-07): users.locked_reason là trạng thái hiện tại, mở khoá / khoá lại sẽ ghi đè. Khoá không
+     * ghi lý do lưu "" để phân biệt với NULL của khiếu nại gửi trước V29. Gửi lặp khi đang có khiếu nại OPEN bị bỏ qua nên lý do
+     * đã chụp của khiếu nại đó giữ nguyên.
+     */
+    private void store(String email, User user, String message) {
         AccountAppeal a = new AccountAppeal();
         a.setEmail(email);
-        a.setUserId(userId);
+        a.setUserId(user.getId());
         a.setMessage(message);
+        a.setLockedReasonAtSubmit(user.getLockedReason() == null ? "" : user.getLockedReason().trim());
         try {
             appeals.save(a);
         } catch (DataIntegrityViolationException e) {
