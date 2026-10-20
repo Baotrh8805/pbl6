@@ -224,12 +224,99 @@ export function mergeStaffPage<T extends { id: number; createdAt: string | null 
   return { items: sorted.slice(page * size, (page + 1) * size), total: sorted.length, page, size };
 }
 
+export const AUDIT_RANGE_ERROR = "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.";
+
 /** Bộ lọc Nhật ký sai thì báo ngay ở máy khách thay vì gửi lên server (400) hoặc lặng lẽ ra 0 dòng; hợp lệ -> null. */
 export function auditFilterError(f: { actorId: string; from: string; to: string }): string | null {
   const actor = f.actorId.trim();
   if (actor && !/^[1-9]\d{0,17}$/.test(actor)) return "ID người thao tác phải là số nguyên dương (vd. 1).";
-  if (f.from && f.to && f.from > f.to) return "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.";
+  // Link gõ tay / lưu từ trước (?to=0002-10-01): ô ngày giờ chỉ ghi URL khi đã gõ xong, nhưng URL vẫn phải tự kiểm.
+  const fromError = auditDateError(f.from);
+  if (fromError) return `Từ ngày — ${fromError}`;
+  const toError = auditDateError(f.to);
+  if (toError) return `Đến ngày — ${toError}`;
+  if (f.from && f.to && f.from > f.to) return AUDIT_RANGE_ERROR;
   return null;
+}
+
+/** Khoảng ngày nhận ở bộ lọc Nhật ký (min / max của ô và auditDateError); max 4 chữ số năm như hạn Pro. */
+export const AUDIT_DATE_MIN = "2000-01-01";
+export const AUDIT_DATE_MAX = "9999-12-31";
+
+/**
+ * Ngày của bộ lọc Nhật ký đã gõ xong và có thật; "" = không lọc -> null. Ô type=date của Chrome có value ngay khi ô năm mới
+ * có một chữ số: gõ "2026" lần lượt ra 0002-…, 0020-…, 0202-… rồi mới 2026-… — mọi bước gõ dở của năm 20xx đều trước năm
+ * 2000, nên mốc 2000 tách được "đang gõ" khỏi "đã xong" (nhật ký không có thao tác nào trước đó).
+ */
+export function auditDateError(value: string): string | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return "Ngày không hợp lệ, nhập theo dd/mm/yyyy.";
+  if (value < AUDIT_DATE_MIN) return "Năm phải đủ 4 chữ số, từ 2000 trở đi.";
+  // 2026-02-30 (chỉ gặp ở link gõ tay): Date tự lăn sang tháng sau -> so lại từng phần.
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) {
+    return "Ngày không hợp lệ, nhập theo dd/mm/yyyy.";
+  }
+  return null;
+}
+
+/** Ô ngày (hoặc thứ có cùng hình dạng): value + validity.badInput. */
+type DateInputLike = { value: string; validity: { badInput: boolean } } | null | undefined;
+export type AuditDateErrors = { from: string | null; to: string | null };
+
+/** Lỗi riêng của một ô ngày: gõ dở (badInput) hoặc năm chưa gõ xong / ngày không có thật; null = ô dùng được (kể cả trống). */
+const dateFieldError = (el: DateInputLike): string | null => incompleteDateError(el) ?? auditDateError(el?.value ?? "");
+
+/**
+ * Lỗi từng ô ngày của bộ lọc Nhật ký, kiểm trước khi đưa lên URL: gõ dở (badInput), năm chưa gõ xong / ngày không có thật,
+ * rồi khoảng ngược — báo ở ô "Đến ngày" (ô bị "Từ ngày" giới hạn). Không có ô -> coi như trống.
+ */
+export function auditDateErrors(from: DateInputLike, to: DateInputLike): AuditDateErrors {
+  const errors = { from: dateFieldError(from), to: dateFieldError(to) };
+  if (!errors.from && !errors.to && from?.value && to?.value && from.value > to.value) errors.to = AUDIT_RANGE_ERROR;
+  return errors;
+}
+
+/**
+ * Rời một ô ngày của bộ lọc Nhật ký (gõ từng phím không ghi URL nữa: mỗi phím một request và banner "Bộ lọc chưa hợp lệ"
+ * nháy theo năm gõ dở). applied = from / to đang ở URL.
+ * - apply: các mốc đưa lên URL ngay ("" = bỏ lọc theo ngày đó), null = không ghi. Chỉ ghi khi ô vừa rời đã đủ ngày, hợp lý
+ *   và khoảng ngày SẼ nằm trên URL không ngược: ô kia đã gõ xong thì lấy ô kia, còn gõ dở thì URL giữ mốc cũ của nó — so
+ *   với mốc cũ ấy, không thì banner "Bộ lọc chưa hợp lệ" hiện lại trong khi ô kia trông như trống. Ô kia đã gõ xong mà
+ *   khác URL (từng bị giữ lại vì khoảng ngược, nay sửa ở ô này) thì ghi cùng lúc: ô hiện ngày nào, bảng lọc đúng ngày đó.
+ *   Mốc trùng URL không ghi lại (ghi trùng sẽ đưa về trang đầu).
+ * - errors: đang có lời báo (đã bấm Lọc) thì kiểm lại cả hai ô; chưa có thì chỉ báo ô vừa rời khi đã đủ ngày mà sai (năm
+ *   chưa gõ xong, khoảng ngược — báo ở "Đến ngày"). Ô gõ dở chờ bấm Lọc mới nhắc: chỉ chuyển ô thì không bị làm phiền —
+ *   trừ khi chính nó chặn ngày vừa rời (khoảng ngược với mốc cũ còn trên URL): báo ô ấy chưa xong để biết vì sao chưa lọc.
+ */
+export function auditDateBlur(
+  key: "from" | "to",
+  inputs: { from: DateInputLike; to: DateInputLike },
+  shown: AuditDateErrors,
+  applied: { from: string; to: string }
+): { errors: AuditDateErrors; apply: Partial<Record<"from" | "to", string>> | null } {
+  const other = key === "from" ? "to" : "from";
+  const value = inputs[key]?.value ?? "";
+  const own = dateFieldError(inputs[key]);
+  const otherError = dateFieldError(inputs[other]);
+  const otherValue = otherError ? applied[other] : inputs[other]?.value ?? "";
+  const range = key === "from" ? { from: value, to: otherValue } : { from: otherValue, to: value };
+  const reversed = !own && !!range.from && !!range.to && range.from > range.to;
+  let errors = shown;
+  if (shown.from || shown.to) errors = auditDateErrors(inputs.from, inputs.to);
+  else if (value) {
+    errors = { from: null, to: null };
+    errors[key] = own;
+    if (reversed && otherError) errors[other] = otherError;
+    else if (reversed) errors.to = AUDIT_RANGE_ERROR;
+  }
+  if (!inputs[key] || own || reversed) return { errors, apply: null };
+  const apply: Partial<Record<"from" | "to", string>> = {};
+  if (value !== applied[key]) apply[key] = value;
+  if (!otherError && otherValue !== applied[other]) apply[other] = otherValue;
+  return { errors, apply: Object.keys(apply).length ? apply : null };
 }
 
 export const INCOMPLETE_DATE_ERROR = "Ngày chưa nhập đủ (dd/mm/yyyy).";

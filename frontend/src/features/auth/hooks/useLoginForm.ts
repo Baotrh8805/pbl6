@@ -4,7 +4,7 @@ import { authService } from "../services/authService";
 import { useAuth } from "@/context/useAuth";
 import { extractErrorMessage } from "@/services/apiClient";
 import { isStaff, setupPending } from "@/lib/roles";
-import { loginErrorKind, type LoginErrorKind } from "../authUtils";
+import { loginErrorKind, postLoginPath, type LoginErrorKind } from "../authUtils";
 
 export const useLoginForm = () => {
   const navigate = useNavigate();
@@ -54,10 +54,11 @@ export const useLoginForm = () => {
     try {
       const response = await authService.login({ email: email.trim(), password });
       login(response.accessToken, response.refreshToken, email.trim(), rememberMe);
-      // ProtectedRoute lưu trang đang mở vào state.from -> đăng nhập xong quay lại đúng trang đó.
-      const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+      // ProtectedRoute lưu trang đang mở vào state.from -> đăng nhập xong quay lại đúng trang đó; trang của phiên hết hạn
+      // chỉ mở lại cho đúng người đó (đăng nhập tài khoản khác thì về trang chủ, không 404 trang riêng của người trước).
+      const from = postLoginPath(location.state, email.trim());
       // Staff không có trang học: vào thẳng Admin Panel (hoặc /setup nếu chưa đổi mật khẩu seed)
-      navigate(setupPending(response) ? "/setup" : isStaff(response.role) ? "/admin" : from && from !== "/login" ? from : "/", {
+      navigate(setupPending(response) ? "/setup" : isStaff(response.role) ? "/admin" : from ?? "/", {
         replace: true,
       });
     } catch (err: unknown) {

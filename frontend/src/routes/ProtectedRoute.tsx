@@ -2,6 +2,7 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
 import { atLeast, homeFor, isStaff, setupPending, staffRedirectFor, type Role } from "@/lib/roles";
+import { loginRedirectState } from "@/features/auth/authUtils";
 import { Loader2 } from "lucide-react";
 
 interface ProtectedRouteProps {
@@ -14,7 +15,7 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, minRole }) => {
-  const { isAuthenticated, isLoading, userProfile } = useAuth();
+  const { isAuthenticated, isLoading, userProfile, sessionMark } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -29,7 +30,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, minRol
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Nhớ trang đang chặn để đăng nhập xong quay lại — trừ khi vừa chủ động đăng xuất, và chỉ cho đúng chủ phiên vừa hết
+    // hạn (loginRedirectState): không thì người đăng nhập sau bị đưa vào trang riêng của người trước (404).
+    return <Navigate to="/login" state={loginRedirectState(location, sessionMark)} replace />;
   }
 
   // Hồ sơ chưa về (ngay sau đăng nhập): render tạm, hồ sơ về sẽ điều hướng lại nếu sai nơi.

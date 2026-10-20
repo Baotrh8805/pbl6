@@ -35,9 +35,13 @@ import {
 import { passwordChangeError } from "../../src/lib/passwordRules.ts";
 import { STAFF_ACCOUNT_PATH, staffRedirectFor } from "../../src/lib/roles.ts";
 import {
+  AUDIT_RANGE_ERROR,
   INCOMPLETE_DATE_ERROR,
   PREMIUM_UNTIL_MAX,
   STAFF_ROLE_FILTER,
+  auditDateBlur,
+  auditDateError,
+  auditDateErrors,
   auditFilterError,
   chartWidthFor,
   extractionBreakdown,
@@ -55,6 +59,13 @@ import {
   reportDoneMessage,
 } from "../../src/features/admin/moderationUtils.ts";
 import { ratingFormKey } from "../../src/lib/ratingUtils.ts";
+import {
+  endSessionMark,
+  loginRedirectState,
+  parseSessionMark,
+  postLoginPath,
+  startupSessionMark,
+} from "../../src/features/auth/authUtils.ts";
 
 export function runManualChecks(assert: (cond: boolean, msg: string) => void): void {
   // ---------- LC-04: thêm từ Hán–Việt vào bộ đã có từ đó ----------
@@ -346,4 +357,146 @@ export function runManualChecks(assert: (cond: boolean, msg: string) => void): v
       reportDoneMessage({ id: 8, deckId: "d-2", deckTitle: "  " }, "NONE").includes("“d-2”"),
     "NEW-12: bộ thẻ mất tiêu đề -> dùng id"
   );
+
+  // ---------- Đăng xuất rồi đăng nhập tài khoản khác: không bị đưa vào trang riêng của người trước (404) ----------
+  const deckPage = { pathname: "/decks/abc", search: "?tab=cards" };
+  const fresh = loginRedirectState(deckPage, null);
+  assert(
+    postLoginPath(fresh, "ai-cung-duoc@example.test") === "/decks/abc?tab=cards",
+    "Tab chưa ai đăng nhập (link chia sẻ / gõ URL): ai đăng nhập cũng quay về đúng trang, giữ cả ?query"
+  );
+  const loggedOut = endSessionMark({ reason: "active", owner: "a@example.test" }, "logout");
+  assert(loginRedirectState(deckPage, loggedOut) === undefined, "Chủ động đăng xuất: /login không nhớ trang của người cũ");
+  const expired = loginRedirectState(deckPage, endSessionMark({ reason: "active", owner: "a@example.test" }, "expired"));
+  assert(postLoginPath(expired, " A@Example.test ") === "/decks/abc?tab=cards", "Hết phiên: đúng người đó (khác hoa thường) quay lại trang cũ");
+  assert(postLoginPath(expired, "b@example.test") === null, "Hết phiên: tài khoản khác đăng nhập về trang chủ, không vào trang của A");
+  assert(
+    postLoginPath(loginRedirectState(deckPage, endSessionMark(null, "expired")), "") === null,
+    "Hết phiên mà không rõ chủ: không ai được quay lại (email rỗng không khớp chủ rỗng)"
+  );
+  assert(
+    endSessionMark(loggedOut, "expired").reason === "logout",
+    "Request bay về 401 ngay sau khi bấm Đăng xuất không biến lần đăng xuất thành hết phiên"
+  );
+  assert(
+    postLoginPath({ from: { pathname: "/decks/abc" }, fromOwner: 42 }, "a@example.test") === null &&
+      postLoginPath({ from: { pathname: "//evil.example" } }, "a") === null &&
+      postLoginPath({ from: { pathname: "/\\evil.example" } }, "a") === null &&
+      postLoginPath({ from: { pathname: "/login" } }, "a") === null &&
+      postLoginPath({ from: "/decks" }, "a") === null &&
+      postLoginPath(null, "a") === null &&
+      postLoginPath({ from: { pathname: "/decks", search: "javascript:1" } }, "a") === "/decks",
+    "state lịch sử là dữ liệu không tin: chủ sai kiểu, //host, /\\host, /login, from không phải object đều bị bỏ"
+  );
+  assert(
+    postLoginPath({ from: { pathname: "/folders", search: "?folderId=1", hash: "", state: null, key: "k" } }, "a") === "/folders?folderId=1",
+    "Mục lịch sử kiểu cũ (cả object location, không có chủ) vẫn quay lại được"
+  );
+  assert(
+    parseSessionMark(JSON.stringify({ reason: "expired", owner: "a@example.test" }))?.owner === "a@example.test" &&
+      parseSessionMark("{hỏng") === null &&
+      parseSessionMark(JSON.stringify({ reason: "khác", owner: "a" })) === null &&
+      parseSessionMark(null) === null,
+    "Dấu phiên trong sessionStorage hỏng / sai dạng -> coi như tab chưa ai đăng nhập"
+  );
+  // Review: dấu "đã đăng xuất" sống suốt đời tab -> dán link chia sẻ vào tab ấy (tải trang mới) mất luôn trang quay lại
+  const noSession = { token: null, email: null };
+  const storedLogout = endSessionMark({ reason: "active", owner: "a@example.test" }, "logout");
+  assert(
+    postLoginPath(loginRedirectState(deckPage, startupSessionMark(noSession, storedLogout, "navigate")), "b@example.test") ===
+      "/decks/abc?tab=cards",
+    "Sau khi A đăng xuất, B dán link chia sẻ vào cùng tab (tải trang mới): B đăng nhập xong về đúng trang đó"
+  );
+  const storedExpired = endSessionMark({ reason: "active", owner: "a@example.test" }, "expired");
+  assert(
+    postLoginPath(loginRedirectState(deckPage, startupSessionMark(noSession, storedExpired, "navigate")), "b@example.test") ===
+      "/decks/abc?tab=cards",
+    "Hết phiên của A rồi mở link mới trong tab: trang không còn gắn chủ A"
+  );
+  assert(
+    loginRedirectState(deckPage, startupSessionMark(noSession, storedLogout, "reload")) === undefined &&
+      loginRedirectState(deckPage, startupSessionMark(noSession, storedLogout, "back_forward")) === undefined &&
+      postLoginPath(
+        loginRedirectState(deckPage, startupSessionMark(noSession, storedExpired, "reload")),
+        "b@example.test"
+      ) === null,
+    "Tải lại / Back-Forward sau khi đăng xuất / hết phiên: vẫn giữ dấu (trang là của người trước)"
+  );
+  assert(
+    loginRedirectState(deckPage, startupSessionMark(noSession, storedLogout, null)) === undefined,
+    "Không đọc được loại điều hướng: giữ dấu như trước"
+  );
+  assert(
+    startupSessionMark({ token: "t", email: " A@Example.test " }, storedLogout, "navigate")?.reason === "active" &&
+      startupSessionMark({ token: "t", email: " A@Example.test " }, storedLogout, "navigate")?.owner === "a@example.test",
+    "Còn phiên: dấu là 'active' của email đã lưu, bất kể loại điều hướng"
+  );
+
+  // ---------- Nhật ký: ô ngày không ghi URL theo từng phím khi đang gõ năm ----------
+  assert(
+    ["0002-10-01", "0020-10-01", "0202-10-01", "1205-12-05", "1999-12-31"].every((v) => auditDateError(v)?.includes("từ 2000") === true),
+    "Năm đang gõ dở (0002 → 0020 → 0202) / năm vô lý bị chặn"
+  );
+  assert(
+    auditDateError("") === null && auditDateError("2026-10-01") === null && auditDateError("2000-01-01") === null,
+    "Ô trống / ngày đã gõ xong hợp lệ"
+  );
+  assert(
+    auditDateError("2026-02-30")?.includes("dd/mm/yyyy") === true && auditDateError("2026-1-5")?.includes("dd/mm/yyyy") === true,
+    "Link gõ tay: ngày không có thật / sai dạng"
+  );
+  assert(auditFilterError({ actorId: "", from: "", to: "0002-10-01" })?.startsWith("Đến ngày") === true, "URL ?to=0002-10-01 báo rõ ô nào");
+  const dateEl = (value: string, badInput = false) => ({ value, validity: { badInput } });
+  const noErrors = { from: null, to: null };
+  assert(
+    auditDateErrors(dateEl(""), dateEl("", true)).to === INCOMPLETE_DATE_ERROR,
+    "Bấm Lọc khi ô gõ dở: vẫn báo 'Ngày chưa nhập đủ' như faf028b"
+  );
+  assert(
+    auditDateErrors(dateEl("2026-10-20"), dateEl("2026-10-01")).to === AUDIT_RANGE_ERROR &&
+      auditDateErrors(dateEl("2026-10-20"), dateEl("2026-10-01")).from === null,
+    "Khoảng ngược báo ở ô Đến ngày"
+  );
+  const url = (from = "", to = "") => ({ from, to });
+  const typingYear = auditDateBlur("to", { from: dateEl(""), to: dateEl("0202-10-01") }, noErrors, url());
+  assert(typingYear.apply === null && typingYear.errors.to?.includes("từ 2000") === true, "Rời ô khi năm chưa xong: không ghi URL, báo cạnh ô");
+  const done = auditDateBlur("from", { from: dateEl("2026-10-01"), to: dateEl("", true) }, noErrors, url());
+  assert(done.apply?.from === "2026-10-01" && done.apply.to === undefined && done.errors.to === null,
+    "Rời ô với ngày đã xong: lọc ngay; ô kia gõ dở chưa bị nhắc, mốc của nó trên URL giữ nguyên");
+  assert(
+    auditDateBlur("from", { from: dateEl("2026-10-01"), to: dateEl("") }, noErrors, url("2026-10-01")).apply === null,
+    "Rời ô mà ngày không đổi: không ghi lại URL (khỏi về trang đầu)"
+  );
+  const reversedBlur = auditDateBlur("from", { from: dateEl("2026-10-20"), to: dateEl("2026-10-01") }, noErrors, url());
+  assert(reversedBlur.apply === null && reversedBlur.errors.to === AUDIT_RANGE_ERROR, "Rời ô tạo khoảng ngược: không ghi, báo ở Đến ngày");
+  assert(
+    auditDateBlur("to", { from: dateEl(""), to: dateEl("") }, noErrors, url("", "2026-10-01")).apply?.to === "",
+    "Xoá hẳn ô rồi rời ô: bỏ lọc theo ngày đó"
+  );
+  assert(
+    auditDateBlur("to", { from: dateEl(""), to: dateEl("", true) }, noErrors, url()).errors.to === null &&
+      auditDateBlur("to", { from: dateEl(""), to: dateEl("", true) }, { from: null, to: INCOMPLETE_DATE_ERROR }, url()).errors.to ===
+        INCOMPLETE_DATE_ERROR,
+    "Ô gõ dở: chỉ chuyển ô thì không nhắc; đã bấm Lọc thì lời báo còn tới khi sửa"
+  );
+  // Review: ngày bị giữ lại vì khoảng ngược rồi sửa khoảng ở ô KIA -> phải ghi cả hai mốc, không chỉ ô vừa rời
+  const applied = url("2026-10-01", "2026-10-10");
+  const step1 = auditDateBlur("from", { from: dateEl("2026-10-15"), to: dateEl("2026-10-10") }, noErrors, applied);
+  assert(step1.apply === null && step1.errors.to === AUDIT_RANGE_ERROR, "Bước 1: Từ ngày 15/10 > Đến ngày 10/10 -> giữ lại, báo");
+  const step2 = auditDateBlur("to", { from: dateEl("2026-10-15"), to: dateEl("2026-10-20") }, noErrors, applied);
+  assert(
+    step2.apply?.from === "2026-10-15" && step2.apply.to === "2026-10-20" && !step2.errors.from && !step2.errors.to,
+    "Bước 2: sửa Đến ngày 20/10 -> ghi cả from=15/10 lẫn to=20/10 (ô hiện ngày nào, bảng lọc đúng ngày đó)"
+  );
+  // Review: ô kia đang gõ dở (badInput, value "") / năm chưa xong -> URL giữ mốc cũ của nó: so khoảng với mốc ấy
+  for (const half of [dateEl("", true), dateEl("0202-10-10")]) {
+    const blocked = auditDateBlur("from", { from: dateEl("2026-10-15"), to: half }, noErrors, applied);
+    assert(
+      blocked.apply === null && blocked.errors.to !== null && blocked.errors.to !== AUDIT_RANGE_ERROR && blocked.errors.from === null,
+      "Từ ngày 15/10 khi Đến ngày gõ dở mà URL còn to=10/10: không ghi (banner khoảng ngược), báo Đến ngày chưa xong"
+    );
+  }
+  const okWithHalf = auditDateBlur("from", { from: dateEl("2026-10-05"), to: dateEl("", true) }, noErrors, applied);
+  assert(okWithHalf.apply?.from === "2026-10-05" && okWithHalf.apply.to === undefined && okWithHalf.errors.to === null,
+    "Đến ngày gõ dở nhưng khoảng với mốc cũ vẫn đúng: ghi Từ ngày, giữ to=10/10 trên URL, không nhắc ô đang gõ");
 }

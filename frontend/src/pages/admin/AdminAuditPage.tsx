@@ -10,11 +10,17 @@ import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { AdminJsonViewer } from "@/features/admin/components/AdminJsonViewer";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
 import {
+  AUDIT_DATE_MAX,
+  AUDIT_DATE_MIN,
+  AUDIT_RANGE_ERROR,
   AUDIT_TARGET_LABELS,
+  auditDateBlur,
+  auditDateError,
+  auditDateErrors,
   auditFilterError,
   formatShort,
-  incompleteDateError,
   lastDaysRange,
+  type AuditDateErrors,
 } from "@/features/admin/adminUtils";
 import { BreakableEmail } from "@/features/admin/components/BreakableEmail";
 
@@ -27,7 +33,27 @@ export const AdminAuditPage: React.FC = () => {
   // Ô ngày gõ dở: value "" nên chỉ đọc được qua validity của chính ô (ref), kiểm khi bấm Lọc.
   const fromRef = useRef<HTMLInputElement>(null);
   const toRef = useRef<HTMLInputElement>(null);
-  const [dateErrors, setDateErrors] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [dateErrors, setDateErrors] = useState<AuditDateErrors>({ from: null, to: null });
+  // Ngày đang gõ chỉ nằm trong ô: Chrome ghi value ngay khi ô năm mới có một chữ số (0002-10-01…), ghi thẳng lên URL thì
+  // mỗi phím một request và banner "Bộ lọc chưa hợp lệ" nháy. Lên URL khi bấm Lọc, hoặc khi rời ô với ngày đã gõ xong.
+  const [fromDraft, setFromDraft] = useState(q.get("from"));
+  const [toDraft, setToDraft] = useState(q.get("to"));
+  // URL đổi từ nơi khác (Back / Forward, link): đưa ô về đúng bộ lọc đang áp — chỉnh state ngay lúc render khi URL đổi,
+  // không cần effect. Chỉ ô có mốc vừa đổi: rời "Từ ngày" ghi URL không được xoá ngày đang gõ dở ở "Đến ngày". Lời báo của
+  // ô vừa đổi (và lời báo khoảng ngược, nói về cả hai ô) cũng hết: không để "Ngày bắt đầu phải trước…" treo cạnh hai ngày
+  // đã hợp lệ sau khi bấm Back.
+  const [appliedRange, setAppliedRange] = useState({ from: q.get("from"), to: q.get("to") });
+  if (appliedRange.from !== q.get("from") || appliedRange.to !== q.get("to")) {
+    const fromChanged = appliedRange.from !== q.get("from");
+    const toChanged = appliedRange.to !== q.get("to");
+    if (fromChanged) setFromDraft(q.get("from"));
+    if (toChanged) setToDraft(q.get("to"));
+    setDateErrors((e) => ({
+      from: fromChanged ? null : e.from,
+      to: toChanged || e.to === AUDIT_RANGE_ERROR ? null : e.to,
+    }));
+    setAppliedRange({ from: q.get("from"), to: q.get("to") });
+  }
   const [retry, setRetry] = useState(0);
   // Bộ lọc trên URL sai (ID không phải số, từ ngày > đến ngày — kể cả link gõ tay): không gửi lên server (400 / 0 dòng
   // không rõ lý do), báo ngay câu sửa thế nào.
@@ -49,7 +75,32 @@ export const AdminAuditPage: React.FC = () => {
   const rows = data?.items ?? [];
 
   // Ngày lịch theo giờ máy (lastDaysRange), không cắt từ toISOString: sáng sớm ở Việt Nam ngày UTC vẫn là hôm qua.
-  const handleLast7Days = () => q.set(lastDaysRange(7));
+  const handleLast7Days = () => {
+    const range = lastDaysRange(7);
+    setFromDraft(range.from);
+    setToDraft(range.to);
+    q.set(range);
+  };
+
+  // Đã báo lỗi (sau khi bấm Lọc / rời ô): gõ tiếp thì kiểm lại cả hai ô để lời báo không treo khi đã sửa đúng.
+  const recheckDates = () => {
+    if (dateErrors.from || dateErrors.to) setDateErrors(auditDateErrors(fromRef.current, toRef.current));
+  };
+
+  const handleDateBlur = (key: "from" | "to") => {
+    const inputs = { from: fromRef.current, to: toRef.current };
+    const { errors, apply } = auditDateBlur(key, inputs, dateErrors, { from: q.get("from"), to: q.get("to") });
+    setDateErrors(errors);
+    if (apply) q.set(apply);
+  };
+
+  // Bấm chuột vào Lọc / 7 ngày / Đặt lại khi đang ở ô ngày: mousedown kéo focus khỏi ô -> blur ghi URL một lần, rồi click ghi
+  // lần nữa (hai mục lịch sử, mục giữa là bộ lọc nửa vời: ngày mới + ID cũ). Giữ focus ở ô: chỉ click ghi, một lần.
+  const keepFieldFocus = (e: React.MouseEvent) => e.preventDefault();
+
+  // Picker của ô chỉ giới hạn theo ngày bên kia khi ngày đó đã gõ xong (min="0002-10-01" làm lịch nhảy về năm 2).
+  const fromMax = toDraft && !auditDateError(toDraft) ? toDraft : AUDIT_DATE_MAX;
+  const toMin = fromDraft && !auditDateError(fromDraft) ? fromDraft : AUDIT_DATE_MIN;
 
   // Nút đặt ngày (7 ngày / Đặt lại): ô gõ dở có value "" — nếu giá trị mới cũng là "" React không ghi lại DOM và phần gõ
   // dở còn nguyên, nên xoá tay trước; lời báo ngày chưa đủ cũng hết đúng.
@@ -71,11 +122,12 @@ export const AdminAuditPage: React.FC = () => {
         onSubmit={(e) => {
           e.preventDefault();
           const invalid = auditFilterError({ actorId: actor, from: "", to: "" });
-          // Ô ngày gõ dở: không chặn thì lọc "thành công" mà bỏ điều kiện ngày, người xem tưởng đã lọc theo ngày.
-          const dates = { from: incompleteDateError(fromRef.current), to: incompleteDateError(toRef.current) };
+          // Ô ngày gõ dở: không chặn thì lọc "thành công" mà bỏ điều kiện ngày, người xem tưởng đã lọc theo ngày. Năm chưa gõ
+          // xong / khoảng ngược cũng báo ngay cạnh ô thay vì đưa lên URL rồi hiện banner.
+          const dates = auditDateErrors(fromRef.current, toRef.current);
           setActorError(invalid);
           setDateErrors(dates);
-          if (!invalid && !dates.from && !dates.to) q.set({ actorId: actor.trim() });
+          if (!invalid && !dates.from && !dates.to) q.set({ actorId: actor.trim(), from: fromDraft, to: toDraft });
         }}
       >
         <label className={adminLabelClass}>
@@ -119,16 +171,15 @@ export const AdminAuditPage: React.FC = () => {
           <input
             ref={fromRef}
             type="date"
-            value={q.get("from")}
-            max={q.get("to") || undefined}
+            value={fromDraft}
+            min={AUDIT_DATE_MIN}
+            max={fromMax}
             onChange={(e) => {
-              if (dateErrors.from) setDateErrors((d) => ({ ...d, from: incompleteDateError(e.target) }));
-              q.set({ from: e.target.value });
+              setFromDraft(e.target.value);
+              recheckDates();
             }}
             // Xoá hết các phần đang gõ không phát sự kiện change (value vẫn ""): rời ô thì kiểm lại để lời báo không treo.
-            onBlur={(e) => {
-              if (dateErrors.from) setDateErrors((d) => ({ ...d, from: incompleteDateError(e.target) }));
-            }}
+            onBlur={() => handleDateBlur("from")}
             aria-invalid={!!dateErrors.from}
             aria-describedby={dateErrors.from ? "audit-from-error" : undefined}
             className={adminFieldClass}
@@ -144,15 +195,14 @@ export const AdminAuditPage: React.FC = () => {
           <input
             ref={toRef}
             type="date"
-            value={q.get("to")}
-            min={q.get("from") || undefined}
+            value={toDraft}
+            min={toMin}
+            max={AUDIT_DATE_MAX}
             onChange={(e) => {
-              if (dateErrors.to) setDateErrors((d) => ({ ...d, to: incompleteDateError(e.target) }));
-              q.set({ to: e.target.value });
+              setToDraft(e.target.value);
+              recheckDates();
             }}
-            onBlur={(e) => {
-              if (dateErrors.to) setDateErrors((d) => ({ ...d, to: incompleteDateError(e.target) }));
-            }}
+            onBlur={() => handleDateBlur("to")}
             aria-invalid={!!dateErrors.to}
             aria-describedby={dateErrors.to ? "audit-to-error" : undefined}
             className={adminFieldClass}
@@ -164,13 +214,14 @@ export const AdminAuditPage: React.FC = () => {
           )}
         </label>
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" size="sm">
+          <Button type="submit" variant="primary" size="sm" onMouseDown={keepFieldFocus}>
             Lọc
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
+            onMouseDown={keepFieldFocus}
             onClick={() => {
               clearPartialDates();
               handleLast7Days();
@@ -183,10 +234,13 @@ export const AdminAuditPage: React.FC = () => {
               type="button"
               variant="ghost"
               size="sm"
+              onMouseDown={keepFieldFocus}
               onClick={() => {
                 setActor("");
                 setActorError(null);
                 clearPartialDates();
+                setFromDraft("");
+                setToDraft("");
                 q.set({ actorId: undefined, targetType: undefined, from: undefined, to: undefined });
               }}
             >

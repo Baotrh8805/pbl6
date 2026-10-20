@@ -84,3 +84,95 @@ export const validateAppeal = (email: string, message: string): AppealErrors => 
 
 /** Số giây còn phải chờ trước khi được bấm gửi lại (làm tròn lên; 0 = bấm được). */
 export const cooldownSecondsLeft = (until: number, now: number): number => Math.max(0, Math.ceil((until - now) / 1000));
+
+// ---------- Quay lại trang bị chặn sau khi đăng nhập (state.from của ProtectedRoute) ----------
+
+/**
+ * Người gần nhất dùng tab này và phiên đó đang ở đâu: "active" = còn đăng nhập, "logout" = chủ động đăng xuất,
+ * "expired" = hết phiên (401 / refresh hỏng). owner: email đã chuẩn hoá, "" = không rõ là ai. AuthContext giữ dấu này ở
+ * sessionStorage (mỗi tab một người) để cả sau khi tải lại trang vẫn biết trang đang bị chặn là của ai.
+ */
+export interface SessionMark {
+    reason: "active" | "logout" | "expired";
+    owner: string;
+}
+
+/** state ProtectedRoute gắn khi đẩy về /login. */
+export interface LoginRedirectState {
+    from: { pathname: string; search: string };
+    /** Có = trang của phiên vừa hết hạn: chỉ đúng email này đăng nhập lại mới quay về. Không có = tab chưa ai đăng nhập. */
+    fromOwner?: string;
+}
+
+/** So email không phân biệt hoa thường / khoảng trắng: email gõ ở form đăng nhập vs email hồ sơ server trả. */
+export const normalizeEmail = (email: string | null | undefined): string => (email ?? "").trim().toLowerCase();
+
+/** Đọc dấu đã lưu; chuỗi hỏng / sai dạng -> null (coi như tab chưa ai đăng nhập). */
+export const parseSessionMark = (raw: string | null): SessionMark | null => {
+    if (!raw) return null;
+    try {
+        const v = JSON.parse(raw) as Partial<SessionMark> | null;
+        if (v && (v.reason === "active" || v.reason === "logout" || v.reason === "expired") && typeof v.owner === "string") {
+            return { reason: v.reason, owner: v.owner };
+        }
+    } catch {
+        // không phải JSON: bỏ qua
+    }
+    return null;
+};
+
+/**
+ * Phiên kết thúc: giữ chủ phiên, ghi lý do. Dấu đã là logout/expired thì giữ nguyên — lần xoá phiên thứ hai (vd. request
+ * còn bay về 401 ngay sau khi bấm Đăng xuất) không biến một lần chủ động đăng xuất thành "hết phiên".
+ */
+export const endSessionMark = (mark: SessionMark | null, reason: "logout" | "expired"): SessionMark =>
+    mark && mark.reason !== "active" ? mark : { reason, owner: mark?.owner ?? "" };
+
+/**
+ * Dấu phiên lúc mở app (AuthProvider khởi tạo). Còn phiên -> "active" của email đã lưu. Hết phiên thì dấu cũ trong
+ * sessionStorage chỉ đúng khi trang này là trang của người trước: tải lại (reload) hay Back / Forward về sau khi đăng xuất.
+ * Trang được MỞ MỚI trong tab (dán link chia sẻ, bookmark, gõ URL, link từ email — navigation type "navigate") là ý của
+ * người đang ngồi trước máy, không phải trang cũ của ai -> bỏ dấu, coi như tab chưa ai đăng nhập: ai đăng nhập cũng quay
+ * về đúng trang đó. Không đọc được loại điều hướng (trình duyệt cũ / chặn API) -> giữ dấu như trước.
+ */
+export const startupSessionMark = (
+    session: { token: string | null; email: string | null },
+    stored: SessionMark | null,
+    navigationType: string | null | undefined
+): SessionMark | null => {
+    if (session.token && session.email) return { reason: "active", owner: normalizeEmail(session.email) };
+    return navigationType === "navigate" ? null : stored;
+};
+
+/**
+ * state cho <Navigate to="/login"> của ProtectedRoute; undefined = không nhớ trang nào.
+ * - Tab chưa ai đăng nhập (mở link chia sẻ / gõ URL): ai đăng nhập cũng quay về đúng trang đó.
+ * - Chủ động đăng xuất: trang đang mở (hay trang Back tới) là của người cũ — người sau đăng nhập mà bị đưa vào đó thì 404,
+ *   nên bỏ hẳn.
+ * - Hết phiên / token biến mất (tab khác đăng xuất rồi tải lại): giữ trang nhưng gắn chủ, chỉ đúng người đó quay lại.
+ */
+export const loginRedirectState = (
+    location: { pathname: string; search?: string },
+    mark: SessionMark | null
+): LoginRedirectState | undefined => {
+    const from = { pathname: location.pathname, search: location.search ?? "" };
+    if (!mark) return { from };
+    if (mark.reason === "logout") return undefined;
+    return { from, fromOwner: mark.owner };
+};
+
+/**
+ * Trang quay lại sau khi `email` đăng nhập, null = về trang chủ theo vai trò. state là location.state (dữ liệu lịch sử
+ * trình duyệt, không tin): chỉ nhận đường dẫn trong app ("/..." — không "//host" hay "/\host"), không vòng lại /login,
+ * và trang có chủ thì phải đúng người đó (chủ rỗng = không rõ ai -> không ai được quay lại).
+ */
+export const postLoginPath = (state: unknown, email: string | null | undefined): string | null => {
+    if (typeof state !== "object" || state === null) return null;
+    const { from, fromOwner } = state as { from?: unknown; fromOwner?: unknown };
+    if (typeof from !== "object" || from === null) return null;
+    const { pathname, search } = from as { pathname?: unknown; search?: unknown };
+    if (typeof pathname !== "string" || !pathname.startsWith("/") || pathname.startsWith("//") || pathname.includes("\\")) return null;
+    if (pathname === "/login") return null;
+    if (fromOwner !== undefined && (typeof fromOwner !== "string" || !fromOwner || fromOwner !== normalizeEmail(email))) return null;
+    return pathname + (typeof search === "string" && search.startsWith("?") ? search : "");
+};

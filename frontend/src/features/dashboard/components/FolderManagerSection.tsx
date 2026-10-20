@@ -145,8 +145,9 @@ export const FolderManagerSection: React.FC<FolderManagerSectionProps> = ({
         </div>
       )}
 
-      {/* Folder Cards Grid */}
-      <ul className="grid grid-cols-1 lg:grid-cols-3 gap-space-md">
+      {/* Folder Cards Grid — 3 cột chỉ từ xl: ở 1024 px khung nội dung (đã trừ sidebar) chia 3 chỉ còn ~224 px/thẻ, hai nút
+          "Chia sẻ folder" + "Thêm bộ thẻ" cần ~248 px nên tràn ra ngoài và cả trang cuộn ngang. */}
+      <ul className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-space-md">
         {filteredFolders.map((folder) => (
           <li
             key={folder.id}
@@ -209,8 +210,8 @@ export const FolderManagerSection: React.FC<FolderManagerSectionProps> = ({
               </dl>
             </div>
 
-            {/* Folder Actions */}
-            <div className="pt-space-md flex items-center justify-between gap-2 border-t border-surface-container-low mt-3">
+            {/* Folder Actions — flex-wrap: thẻ hẹp hơn hai nút (cỡ chữ lớn, khung lạ) thì nút thứ hai xuống dòng thay vì tràn thẻ */}
+            <div className="pt-space-md flex flex-wrap items-center justify-between gap-2 border-t border-surface-container-low mt-3">
               <button
                 type="button"
                 onClick={() => onOpenShareModal(folder)}
