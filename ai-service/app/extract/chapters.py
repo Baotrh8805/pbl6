@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
+from app.extract import tokenizer
 from app.extract.jachars import has_japanese
 
 MAX_HEADING_LEN = 80
@@ -28,10 +30,40 @@ _PARTICLE_START = tuple("でにのはがを目")
 # một dòng riêng lẻ không phân biệt được với câu "第1課はあいさつの課です", "第2課 はどうでしたか" (khoảng trắng / dấu ngăn
 # cũng không chứng minh được) -> chỉ là ứng viên, nhận khi khớp dãy số bài (_fill_particle_gaps). を / 目,
 # trợ từ + kanji / khoảng trắng ("第1課の復習", "1日目 は休みです", "第1課 は あいさつです") và trợ từ kép (では, には...)
-# không mở đầu tên bài -> bỏ hẳn như trước.
+# không mở đầu tên bài -> bỏ hẳn. Dòng đọc như câu / lời dặn (_sentence_like) vẫn là ứng viên — tên bài thật cũng có dạng
+# đó (でんしゃで, にほんへ, はじめてあったひ, はじめてのかいわ) và giữa dãy 第1課 → 第3課 thì vị trí đã đủ chứng minh — nhưng
+# nhường số bài cho dòng đặt tên bài và không đứng được như bài cuối dãy không dấu ngăn (_fill_particle_gaps).
+# "にも" không nằm trong trợ từ kép: tên bài にもつ / にもの mở đầu bằng nó, câu "第1課にも…" để dãy số bài lọc như mọi
+# ứng viên khác.
 _CANDIDATE_START = tuple("はにがので")
-_PARTICLE_PAIRS = ("では", "には", "でも", "にも", "での")
+_PARTICLE_PAIRS = ("では", "には", "でも", "での")
 _HEAD_SEP = ":：.．-－~〜)"  # dấu ngăn giữa từ khoá+số và tên bài mà _RE_JA / _RE_LATIN chấp nhận
+# Đuôi câu / lời dặn: câu hỏi (か: …どうでしたか, …ますか), vị ngữ lịch sự / quá khứ (です, ます, でした, ました, ません),
+# rủ / dặn (ましょう, ください, よう: おぼえよう, って: にもどって), điều kiện (たら), đuôi thân mật (だ, よ, ね), tính từ
+# (しい: はたのしい, はむずかしい), danh từ hoá (こと: でならったこと), động từ thể từ điển hay gặp trong câu báo / lời dặn
+# (…にいく, …がはじまる, …する), phỏng đoán (でしょう, だろう: はなんでしょう) và cụm dừng ở trợ từ (のまえに, のあとで,
+# …から, …まで). Tên bài mở đầu bằng chữ trùng trợ từ hiếm khi kết thúc như thế (はじめまして, にほんのくらし, がっこう,
+# はるやすみ, にもつ); danh sách chỉ phân xử hai dòng cùng số bài và chặn bài cuối dãy, không loại dòng nào khỏi dãy.
+_SENTENCE_END = ("か", "です", "ます", "でした", "ました", "ません", "ましょう", "ください", "よう", "って", "たら",
+                 "でしょう", "だろう", "だ", "よ", "ね", "しい", "こと", "いく", "くる", "する", "はじまる", "おわる",
+                 "つづく", "に", "で", "を", "へ", "から", "まで")
+# Động từ chia ở giữa dòng = mệnh đề bổ nghĩa / câu ("第3課 でならったこと", "第2課 にでてくるひと", "第4課がおわった"),
+# tên bài không chứa; "はじめまして" chỉ có して nên không dính.
+_VERB_INSIDE = ("った", "んだ", "てくる", "てきた", "ている", "ていた")
+# Lời dặn chuyển bài: "第1課にもどる / にもどりましょう", "第4課にすすむ".
+_INSTRUCTION_START = ("にもど", "にすす")
+# Tên phần của một bài ("第4課のよしゅう" báo trước bài sau, "第2課のことば" tên hộp, "第3課 にでてきたことば"): đứng ngay sau
+# の hoặc ở cuối dòng thì dòng nói VỀ một bài chứ không đặt tên bài. Bản kanji (の予習, の復習, の練習, の宿題, の目標) vốn đã
+# bị loại vì trợ từ + kanji; bản hiragana phải loại y như thế, nếu không "第2課のよしゅう" và "第2課の予習" cho hai kết quả
+# khác nhau.
+_LESSON_PART = ("よしゅう", "ふくしゅう", "れんしゅう", "しゅくだい", "おさらい", "まとめ", "もくひょう", "ことば", "かんじ",
+                "たんご", "ぶんぽう", "ぶんけい", "かいわ", "ぶんしょう", "よみもの", "ききとり", "もんだい", "かくにん")
+# Ghi chú lịch học "第4課はらいしゅう" / "第4課はげつようび" (bài 4 học tuần sau / thứ Hai), "第4課はまだ" (chưa học), "第4課は
+# なし" (không có bài 4): は / が + từ chỉ thời điểm / trạng thái — lớp từ đóng mà Sudachi đôi khi tách sai (はげ + つ +
+# ようび, はまだ = họ Hamada, はなし = 話) nên liệt kê thẳng (_particle_led). なし chỉ khi đứng một mình: はなしあい,
+# はなしましょう là tên bài.
+_WHEN = ("あした", "あさって", "きょう", "こんど", "つぎ", "らいしゅう", "らいげつ", "らいねん", "げつようび", "かようび",
+         "すいようび", "もくようび", "きんようび", "どようび", "にちようび", "まだ")
 
 # Phần đầu / cuối sách: dòng ngắn đứng riêng khớp các từ khoá này (không phân biệt hoa thường) đánh dấu phần bị bỏ.
 _FRONT_MATTER = ("はじめに", "まえがき", "序文", "本書の使い方", "この本の使い方", "教科書の使い方", "目次", "凡例",
@@ -41,8 +73,10 @@ _BACK_MATTER = ("付録", "索引", "解答", "別冊", "phụ lục", "đáp á
                 "index", "glossary")
 MAX_MARKER_LEN = 40
 TOC_MIN_RUN = 3        # ≥ 3 dòng mục lục liên tiếp (tiêu đề không có thân, hoặc kết thúc bằng số trang) -> cụm mục lục
-# Dòng mục lục: phần sau từ khoá+số kết thúc bằng số trang (dấu chấm dẫn, hoặc chữ rồi khoảng trắng rồi số)
-_TOC_PAGE_NO = re.compile(r"(?:[.．…・]{2,}\s*|[^\s\d]\s+)[0-9０-９]{1,4}$")
+# Dòng mục lục: phần sau từ khoá+số kết thúc bằng số trang (dấu chấm dẫn, hoặc chữ rồi khoảng trắng rồi số). Chữ đứng
+# trước khoảng trắng chỉ được nhìn (lookbehind), không bị xoá cùng số trang: "第2課にもつ 165" (header đầu trang) phải cùng
+# khoá _norm_title với "第2課にもつ", không thành "第2課にも" rồi tranh số bài với chính tiêu đề ấy.
+_TOC_PAGE_NO = re.compile(r"(?:[.．…・]{2,}\s*|(?<=[^\s\d])\s+)[0-9０-９]{1,4}$")
 
 
 # Một tiêu đề khác nằm trong phần đuôi (mục lục OCR gộp 2 mục một dòng: "1日目アパート…2日目引っ越し…")
@@ -107,10 +141,10 @@ def _basic_ok(line: str) -> bool:
     return bool(line) and len(line) <= MAX_HEADING_LEN and line[-1] not in "。！!"  # tiêu đề dạng câu hỏi (…ますか?) vẫn hợp lệ
 
 
-def _classify(line: str) -> Optional[tuple[int, str, bool, bool]]:
-    """(hạng, từ khoá, chắc chắn, dấu ngăn mạnh) nếu dòng khớp mẫu tiêu đề, ngược lại None. chắc chắn=False: phần đuôi
-    mở đầu bằng chữ trùng trợ từ + hiragana -> chỉ nhận khi khớp dãy số bài (_fill_particle_gaps); dấu ngăn mạnh: xem
-    _strong_sep."""
+def _classify(line: str) -> Optional[tuple[int, str, bool, bool, Optional[str]]]:
+    """(hạng, từ khoá, chắc chắn, dấu ngăn mạnh, kiểu ngăn) nếu dòng khớp mẫu tiêu đề, ngược lại None. chắc chắn=False:
+    phần đuôi mở đầu bằng chữ trùng trợ từ + hiragana -> chỉ nhận khi khớp dãy số bài (_fill_particle_gaps); dấu ngăn
+    mạnh: xem _strong_sep; kiểu ngăn: xem _sep_style."""
     line = line.strip()
     if not _basic_ok(line) or "、" in line or "。" in line:
         return None
@@ -122,12 +156,61 @@ def _classify(line: str) -> Optional[tuple[int, str, bool, bool]]:
                 return None
             rank = 1 if kw.lower() in rank1 else 2
             if not trailing.startswith(_PARTICLE_START):
-                return rank, kw.lower(), True, False
+                return rank, kw.lower(), True, False, _sep_style(m)
             if not (trailing.startswith(_CANDIDATE_START) and "ぁ" <= trailing[1:2] <= "ゖ"
                     and not trailing.startswith(_PARTICLE_PAIRS)):
                 return None
-            return rank, kw.lower(), False, _strong_sep(m, trailing)
+            return rank, kw.lower(), False, _strong_sep(m), _sep_style(m)
     return None
+
+
+def _sentence_like(trailing: str) -> bool:
+    """Phần đuôi dính trợ từ đọc như câu / lời dặn / tên phần của bài. Câu hỏi có dấu ? cũng là câu: tên bài dạng câu
+    hỏi chỉ gặp ở tiêu đề chắc chắn ("…ますか?" của Soumatome)."""
+    if not trailing:
+        return False
+    if trailing[-1] in "?？" or trailing.endswith(_SENTENCE_END) or trailing.endswith(_LESSON_PART):
+        return True
+    return (any(v in trailing for v in _VERB_INSIDE) or trailing.startswith(_INSTRUCTION_START)
+            or (trailing[0] == "の" and trailing[1:].startswith(_LESSON_PART)))
+
+
+@lru_cache(maxsize=4096)
+def _particle_led(trailing: str) -> bool:
+    """Từ điển (Sudachi) đọc chữ đầu của phần đuôi là trợ từ: "はらいしゅう" = は + らいしゅう, "のこたえ" = の + こたえ,
+    "はなんでしょう" = は + なん + でしょう; hoặc phần sau chữ đầu là trọn một từ mà cả cụm thì không ("がさいご" = が +
+    さいご). Khi đó "第N課" + phần đuôi là câu nói VỀ bài N (lịch học, câu hỏi, "… của bài N"), không đặt tên bài.
+    Danh sách _sentence_like không bao giờ liệt kê hết những câu ấy; từ điển thì biết はなみ, がっこう, にもつ, はるやすみ
+    là một từ. Xét riêng phần đuôi (không kèm "第N課"): ngay sau 課 Sudachi ưu tiên tách trợ từ, kể cả "にほんのくらし" ->
+    に + ほんの + くらし. Không có Sudachi -> True: không nhận thêm bài cuối nào ngoài lối có dấu ngăn như trước."""
+    t = "".join(trailing.split())
+    if t[:1] in "はが" and (t[1:].startswith(_WHEN) or t[1:] == "なし"):
+        return True
+    try:
+        if not tokenizer.available():
+            return True
+        whole = tokenizer.tokenize(t, "C")
+        rest = tokenizer.tokenize(t[1:], "C")
+    except Exception:  # noqa: BLE001 — từ điển hỏng giữa chừng: an toàn là không nhận
+        return True
+    if whole and whole[0].surface == t[0] and whole[0].pos1 == "助詞":
+        return True
+    return len(rest) == 1 and not rest[0].oov and len(whole) > 1
+
+
+@lru_cache(maxsize=4096)
+def _particle_after_kw(trailing: str) -> bool:
+    """Ngay sau "第N課" Sudachi đọc chữ đầu của phần đuôi là trợ từ ("第4課でならったことば" = で + ならった…, "第4課は
+    おもしろかったです" = は + …; xét riêng phần đuôi thì で / は thành liên từ / cảm thán). Lối đọc này nghiêng về trợ từ — cả
+    "にほんのことば" cũng thành に + ほんの + ことば — nên chỉ dùng kèm _sentence_like. Không có Sudachi -> True."""
+    t = "".join(trailing.split())
+    try:
+        if not tokenizer.available():
+            return True
+        after = [x for x in tokenizer.tokenize("第1課" + t, "C") if x.begin >= 3]
+    except Exception:  # noqa: BLE001 — như _particle_led
+        return True
+    return bool(after) and after[0].surface == t[:1] and after[0].pos1 == "助詞"
 
 
 def _heading_rank(line: str) -> Optional[int]:
@@ -142,22 +225,44 @@ def _kw_trailing(m: "re.Match[str]") -> tuple[str, str]:
     return groups[0], groups[-1].strip()
 
 
-def _strong_sep(m: "re.Match[str]", trailing: str) -> bool:
-    """Ứng viên có dấu ngăn hoặc khoảng trắng 全角 giữa từ khoá+số và tên bài ("第3課：がっこう", "第3課　がっこう",
-    "Lesson 1: はじめまして"): lối dàn trang tiêu đề, câu văn không viết thế -> dấu hiệu để phân xử hai ứng viên cùng số
-    bài và xác nhận tiêu đề cuối; không bao giờ đủ để nhận một dòng ngoài dãy số bài.
-    Khoảng trắng nửa cỡ không tính: câu văn / tên hộp gõ tay cũng có ("第2課 はどうでしたか", "第1課 にでてきたことば")
-    trong khi tiêu đề thật hay bị trích dính liền (OCR, PDF nối chữ cỡ lớn), nên "第1課 にでてきたことば" không được thắng
-    "第1課はなみ"; chữ Latin cạnh chữ Nhật thì vốn có khoảng trắng ("Lesson 1 の練習"). Câu hỏi ("…ですか?") không tính.
-    Regex đã nuốt khoảng trắng / dấu ngăn nên xét đoạn ngay trước nhóm đuôi."""
-    if trailing[-1] in "?？":
-        return False
-    start = m.start(m.lastindex)
-    gap = ""
+def _title_part(line: str) -> str:
+    """Phần đuôi (tên bài) của một dòng tiêu đề; "" nếu dòng không khớp mẫu."""
+    line = line.strip()
+    m = _RE_JA.match(line) or _RE_LATIN.match(line)
+    return _kw_trailing(m)[1] if m else ""
+
+
+def _gap(m: "re.Match[str]") -> str:
+    """Đoạn giữa từ khoá+số và tên bài (khoảng trắng / dấu ngăn); regex đã nuốt đoạn này nên xét ngược từ nhóm đuôi."""
+    start = end = m.start(m.lastindex)
     while start > 0 and (m.string[start - 1].isspace() or m.string[start - 1] in _HEAD_SEP):
         start -= 1
-        gap = m.string[start] + gap
-    return any(ch in _HEAD_SEP for ch in gap) or "　" in gap
+    return m.string[start:end]
+
+
+def _strong_sep(m: "re.Match[str]") -> bool:
+    """Ứng viên có dấu ngăn giữa từ khoá+số và tên bài ("第3課：がっこう", "Lesson 1: はじめまして"): lối dàn trang tiêu đề,
+    câu văn không viết thế -> dấu hiệu để phân xử hai ứng viên cùng số bài và nhận bài cuối của dãy (bài cuối không dấu
+    ngăn thì xét qua _sep_style, xem _fill_particle_gaps); không bao giờ đủ để nhận một dòng ngoài dãy số bài.
+    Khoảng trắng không tính, kể cả 全角: mọi reader chuẩn hoá NFKC trước khi tách chương nên "　" tới đây đã là " ", mà nửa
+    cỡ thì câu văn / tên hộp gõ tay cũng có ("第1課 にでてきたことば") trong khi tiêu đề thật hay bị trích dính liền (OCR, PDF
+    nối chữ cỡ lớn); chữ Latin cạnh chữ Nhật thì vốn có khoảng trắng ("Lesson 1 の練習")."""
+    return any(ch in _HEAD_SEP for ch in _gap(m))
+
+
+_STYLE_FOLD = str.maketrans("：．－〜", ":.-~")
+_MIXED = "mixed"  # đoạn dãy có tiêu đề dàn lẫn nhiều kiểu ngăn (không trùng kiểu ngăn nào của _sep_style)
+
+
+def _sep_style(m: "re.Match[str]") -> Optional[str]:
+    """Kiểu ngăn sau từ khoá+số: dấu ngăn (":" "." "-" "~" ")", không kể khoảng trắng quanh nó), " " (chỉ cách) hoặc ""
+    (dính liền); None khi dòng không có tên bài ("第1課"). Một tài liệu dàn mọi tiêu đề bài cùng một kiểu; câu báo trước /
+    tên hộp gõ tay thì không theo kiểu đó -> dùng để xác nhận tiêu đề cuối dãy (_fill_particle_gaps)."""
+    if not m.group(m.lastindex).strip():
+        return None
+    gap = _gap(m)
+    seps = [ch for ch in gap if ch in _HEAD_SEP]
+    return seps[0].translate(_STYLE_FOLD) if seps else (" " if gap else "")
 
 
 def _in_gap(n: int, a: Optional[int], b: Optional[int]) -> bool:
@@ -204,15 +309,24 @@ def _fill_particle_gaps(lines: list[str], cls: list, rank: int) -> list[int]:
     "第1課は…", chỉ vị trí trong dãy 第1課 → 第2課 → 第3課 mới cho biết đó là tiêu đề. Nhận ứng viên số n khi:
     - chưa tiêu đề chắc chắn nào cùng từ khoá mang số n ("第1課 はどうでしたか" trong bài 1 không tách bài 1) và n chen
       được giữa các tiêu đề chắc chắn kề bên (_in_gap; "第1課のふくしゅう" giữa bài 6 và 7 không chắn đường ứng viên khác);
-    - chỉ một dòng ứng với số n (một tiêu đề, kể cả bản lặp ở mục lục / đầu trang). Hai dòng khác nhau ("第1課はあいさつの
-      課です" ở phần cách dùng sách, "第2課のよしゅう" cuối bài 1, hộp "第2課のことば") thì không biết dòng nào là tiêu đề
-      -> không nhận dòng nào, trừ khi đúng một dòng có dấu hiệu tiêu đề: dấu ngăn / 全角 (_strong_sep) hoặc có bản trong
-      cụm mục lục và bản ở thân sách phía sau (_toc_cluster). Lặp trong thân bài (header đầu trang, hộp từ vựng hai lần,
-      câu báo trước lặp lại) không tính: câu văn / tên hộp cũng lặp được như thế;
-    - kề trước là bài n-1 (hoặc đầu tài liệu khi n = 1) và kề sau là bài n+1. Tiêu đề cuối (không có bài sau) cần
-      dấu hiệu tiêu đề như trên vì câu báo trước bài sau ("第4課のよしゅう" cuối bài 3, kể cả lặp hai lần) đứng đúng chỗ đó;
-    - ứng viên kề bên mà nó dựa vào không bị loại. Loại lan truyền một chiều (không nhận lại) nên kết quả không phụ
-      thuộc thứ tự xét; mỗi dòng được xét một số lần cố định -> tuyến tính theo số dòng tiêu đề."""
+    - chỉ một dòng ứng với số n (một tiêu đề, kể cả bản lặp ở mục lục / đầu trang). Dòng dạng câu / tên phần bài
+      (_sentence_like: "第1課はあいさつの課です" ở phần cách dùng sách, "第2課のよしゅう" cuối bài 1, hộp "第2課のことば") và
+      trợ từ + câu (_particle_led: "第1課はあいさつ", hộp "第2課のはなし", "第2課はいつ") nhường cho dòng đặt tên bài cùng
+      số. Còn hai dòng đều đọc được là tên bài ("第1課はなび" trong hộp ví dụ, hộp "第2課はるのうた") thì không biết
+      dòng nào là tiêu đề -> không nhận dòng nào, trừ khi đúng một dòng có dấu hiệu tiêu đề: dấu ngăn (_strong_sep) hoặc
+      có bản trong cụm mục lục và bản ở thân sách phía sau (_toc_cluster). Lặp trong thân bài (header đầu trang, hộp từ
+      vựng hai lần, câu báo trước lặp lại) không tính: câu văn / tên hộp cũng lặp được như thế;
+    - kề trước là bài n-1 (hoặc đầu tài liệu khi n = 1) và kề sau là bài n+1 (giữa dãy thì vị trí là đủ, kể cả tên bài
+      dạng câu "第2課 でんしゃで"), hoặc đứng được như bài cuối của dãy (tail_ok). Văn bản dán tay "第1課 はじめまして /
+      第2課 にほんのくらし / 第3課 がっこう" (cách nửa cỡ; 全角 cũng thành nửa cỡ sau NFKC) trước đây mất cả ba tên bài chỉ
+      vì bài 3 không có bài sau: bài cuối không dấu ngăn giờ nhận được khi dãy dàn cùng một kiểu ngăn (_sep_style) và tên
+      bài đọc được là một từ / cụm từ chứ không phải trợ từ + câu. Câu báo trước / ghi chú lịch học đứng đúng chỗ bài cuối
+      không được nhận: "第4課の予習", "Unit 4 の まえに" không là ứng viên, "第4課のよしゅう", "第4課 はどうでしたか" đọc
+      như câu (_sentence_like), "第4課 はらいしゅう", "第4課 はなんでしょう" là trợ từ + câu (_particle_led), "第4課はなみ"
+      dính liền sau "第3課 しゅうまつ" khác kiểu ngăn với dãy;
+    - ứng viên kề bên mà nó dựa vào không bị loại. Bài cuối bị loại thì bài liền trước thành bài cuối và chỉ được xét
+      lại như bài cuối (không kéo đổ cả dãy). Loại lan truyền một chiều (không nhận lại) nên kết quả không phụ thuộc thứ
+      tự xét; mỗi nút bị loại tối đa một lần -> tuyến tính theo số dòng tiêu đề."""
     idx = [i for i, c in enumerate(cls) if c and c[0] == rank]
     num = {i: _head_number(lines[i]) for i in idx}
     heads = [i for i in idx if cls[i][2]]
@@ -235,52 +349,127 @@ def _fill_particle_gaps(lines: list[str], cls: list, rank: int) -> list[int]:
     by_slot: dict[tuple[str, int], dict[str, list[int]]] = {}
     for i, slot in slot_at.items():
         by_slot.setdefault(slot, {}).setdefault(_norm_title(lines[i]), []).append(i)
+
+    def title_of(copies: list[int]) -> str:
+        """Tên bài của một ứng viên, lấy ở bản ngoài mục lục nếu có (bản mục lục mang dấu chấm dẫn / số trang)."""
+        i = next((j for j in copies if j not in in_toc), copies[0])
+        t = _title_part(lines[i])
+        return re.sub(r"[\s.．…・]*[0-9０-９]{1,4}$", "", t) if i in in_toc else t
+
     occ: dict[tuple[str, int], list[int]] = {}
-    strong: dict[tuple[str, int], bool] = {}
     for slot, keys in by_slot.items():
-        # dấu hiệu tiêu đề: dấu ngăn / 全角, hoặc có bản ở mục lục và bản khác ở thân sách phía sau
-        signal = {k: any(cls[i][3] for i in ii) or _toc_and_body(ii, in_toc) for k, ii in keys.items()}
-        top = [k for k, s in signal.items() if s]
+        # dòng dạng câu / tên phần bài / trợ từ + câu nhường dòng đặt tên bài; không còn dòng đặt tên bài nào thì xét như
+        # mọi ứng viên (giữ dấu hiệu tiêu đề của dòng có dấu ngăn: nó vẫn đỡ bài trước, xem prop)
+        if len(keys) > 1:
+            keys = {k: ii for k, ii in keys.items()
+                    if not (_sentence_like(title_of(ii)) or _particle_led(title_of(ii)))} or keys
+        # dấu hiệu tiêu đề: dấu ngăn, hoặc có bản ở mục lục và bản khác ở thân sách phía sau
+        top = [k for k, ii in keys.items() if any(cls[i][3] for i in ii) or _toc_and_body(ii, in_toc)]
         if len(keys) == 1:
-            occ[slot], strong[slot] = next(iter(keys.values())), top != []
+            occ[slot] = next(iter(keys.values()))
         elif len(top) == 1:  # đúng một dòng có dấu hiệu tiêu đề -> dòng đó; còn lại (kể cả hoà) không nhận dòng nào
-            occ[slot], strong[slot] = keys[top[0]], True
+            occ[slot] = keys[top[0]]
     if not occ:
         return heads
     slot_of = {i: slot for slot, ii in occ.items() for i in ii}
-    # Dãy theo thứ tự dòng của từng từ khoá: (số, slot ứng viên | None = chắc chắn); bản lặp liền nhau của cùng ứng viên
-    # (header đầu trang) gộp một để láng giềng luôn là bài khác.
-    seq: dict[str, list[tuple[int, Optional[tuple[str, int]]]]] = {}
+    toc_body = {s: _toc_and_body(ii, in_toc) for s, ii in occ.items()}
+    # Thân bài của ứng viên: có dòng chữ giữa nó và dòng tiêu đề cùng hạng kế tiếp, ở ít nhất một bản
+    filled = [0]  # filled[i] = số dòng có chữ trong lines[:i]
+    for ln in lines:
+        filled.append(filled[-1] + bool(ln.strip()))
+    nxt = dict(zip(idx, idx[1:] + [len(lines)]))
+    body = {s: any(filled[nxt[i]] - filled[i + 1] > 0 for i in ii) for s, ii in occ.items()}
+    title = {s: title_of(ii) for s, ii in occ.items()}  # mọi bản cùng tên bài
+    sentence = {s: _sentence_like(t) for s, t in title.items()}
+    # Dãy theo thứ tự dòng của từng từ khoá: (số, slot ứng viên | None = chắc chắn, kiểu ngăn); bản lặp liền nhau của
+    # cùng ứng viên (header đầu trang) gộp một để láng giềng luôn là bài khác.
+    seq: dict[str, list[tuple[Optional[int], Optional[tuple[str, int]], Optional[str]]]] = {}
     for i in idx:
         s = slot_of.get(i)
         if cls[i][2] or s is not None:
             lst = seq.setdefault(cls[i][1], [])
             if s is None or not lst or lst[-1][1] != s:
-                lst.append((num[i], s))
-    nodes: list[tuple[int, Optional[tuple[str, int]]]] = []
+                lst.append((num[i], s, cls[i][4]))
+    nodes: list[tuple[Optional[int], Optional[tuple[str, int]], Optional[str]]] = []
     nb: list[tuple[int, int]] = []  # chỉ số nút kề trước / kề sau trong cùng từ khoá, -1 = đầu / cuối
     for lst in seq.values():
         base = len(nodes)
         nodes.extend(lst)
         nb.extend((base + k - 1 if k else -1, base + k + 1 if k + 1 < len(lst) else -1) for k in range(len(lst)))
+    # Đoạn dãy liên tiếp (số tăng đúng 1) đứng ngay trước mỗi nút, tính một lượt theo dãy: kiểu ngăn chung của các tiêu
+    # đề có tên bài trong đoạn (None = chưa có tên bài nào, _MIXED = lẫn kiểu), số nút, có tiêu đề chắc chắn không.
+    run_style: list[Optional[str]] = [None] * len(nodes)
+    run_len = [0] * len(nodes)
+    run_sure = [False] * len(nodes)
+    for k, (n, _s, _st) in enumerate(nodes):
+        p = nb[k][0]
+        if p >= 0 and n is not None and nodes[p][0] == n:  # header đầu trang lặp tiêu đề chắc chắn: vẫn là đoạn dãy ấy
+            run_style[k], run_len[k], run_sure[k] = run_style[p], run_len[p], run_sure[p]
+        elif p >= 0 and n is not None and nodes[p][0] == n - 1:
+            pst, prev = nodes[p][2], run_style[p]
+            run_style[k] = prev if pst is None or prev == pst else (pst if prev is None else _MIXED)
+            run_len[k] = run_len[p] + 1
+            run_sure[k] = run_sure[p] or nodes[p][1] is None
+
+    def tail_ok(k: int) -> bool:
+        """Ứng viên đứng được như bài cuối của đoạn dãy kết thúc ở nó (không cần bài n+1 phía sau)."""
+        s, st = nodes[k][1], nodes[k][2]
+        if toc_body[s]:  # có bản ở mục lục và bản ở thân sách: chính tài liệu liệt kê nó là một bài
+            return True
+        # Bài cuối là bài cuối của một dãy: có bài n-1 ngay trước (dòng lẻ "第1課: …" đứng một mình không phải dãy) và có
+        # thân bài.
+        if not run_len[k] or not body[s]:
+            return False
+        if st not in ("", " "):
+            # Dấu ngăn (":" "." "-"…) là lối dàn tiêu đề, câu văn không viết "第2課: は…" -> nhận như trước, không so kiểu
+            # ngăn với dãy: OCR làm rơi dấu ":" ở tiêu đề trước ("第1課かいもの" rồi "第2課. はじめまして") không được làm mất
+            # bài cuối. Trợ từ + câu ("第4課: のよしゅう", "第4課. はおしまい", "第4課: でならったことば") vẫn là câu dù dàn
+            # như tiêu đề; tên bài dạng câu mà từ điển đọc là từ ("第4課: にほんへ", "第4課: でんしゃで") thì vẫn nhận.
+            return not (_particle_led(title[s]) or (sentence[s] and _particle_after_kw(title[s])))
+        # Không dấu ngăn: điều kiện mới (trước đây không bao giờ nhận) nên chặt. "第N課の…" / "第N課 の…" ở chỗ bài cuối hầu
+        # như luôn là "… của bài N" (のつづき, のこたえ…) -> tên bài mở đầu bằng の (のりもの) chỉ nhận khi có bài n-1 và n+1
+        # hai bên. Đoạn dãy phải neo vào tiêu đề chắc chắn hoặc đủ 3 bài: hai dòng "第1課 は…" / "第2課 は…" liền nhau
+        # chưa đủ là một dãy tiêu đề. Kiểu ngăn phải trùng kiểu của mọi tiêu đề có tên bài trước nó trong đoạn (đoạn chỉ
+        # có tiêu đề trơn không có kiểu để so -> không nhận). Tên bài không được đọc như câu (_sentence_like) hay trợ từ +
+        # câu (_particle_led): "第4課 はらいしゅう" cuối bài 3 cùng kiểu cách với dãy vẫn là ghi chú lịch học.
+        if title[s].startswith("の") or not (run_sure[k] or run_len[k] + 1 >= 3) or run_style[k] != st:
+            return False
+        return not sentence[s] and not _particle_led(title[s])
+
+    tail_memo: dict[int, bool] = {}
+
+    def tail(k: int) -> bool:  # tính khi cần, mỗi nút một lần: chỉ tra từ điển khi dãy đã khớp
+        if k not in tail_memo:
+            tail_memo[k] = tail_ok(k)
+        return tail_memo[k]
+
     ok = [False] * len(nodes)
+    # Bài cuối có dấu ngăn / bản mục lục + thân mà nay không nhận (trợ từ + câu: "第5課: はらいげつ" cuối bài 4, không có
+    # thân bài) vẫn là dòng "bài n+1" dàn như tiêu đề ngay sau bài n — trước đây nó được nhận và đỡ bài n như mọi bài sau.
+    # Loại nó không được kéo theo bài n: bài n giữ chỗ dựa như trước, chỉ dòng ghi chú không thành chương.
+    strong = {s: any(cls[i][3] for i in ii) or toc_body[s] for s, ii in occ.items()}
+    prop = [False] * len(nodes)
     fits = dict.fromkeys(occ, 0)  # số nút còn khớp của mỗi ứng viên (mục lục + thân: chỉ cần một chỗ khớp)
     at: dict[tuple[str, int], list[int]] = {}
-    for k, (n, s) in enumerate(nodes):
+    for k, (n, s, _st) in enumerate(nodes):
         if s is None:
             continue
         at.setdefault(s, []).append(k)
         p, q = nb[k]
         before = nodes[p][0] == n - 1 if p >= 0 else n == 1
-        after = nodes[q][0] == n + 1 if q >= 0 else strong[s]
-        if before and after:
+        if before and (q < 0 or nodes[q][0] != n + 1):
+            prop[k] = strong[s]
+        if before and ((q >= 0 and nodes[q][0] == n + 1) or tail(k)):
             ok[k] = True
             fits[s] += 1
     dropped = [s for s, f in fits.items() if f == 0]
     while dropped:
         for k in at[dropped.pop()]:
-            for j in nb[k]:
-                if j >= 0 and ok[j]:  # nút kề dựa vào ứng viên vừa bị loại -> không còn khớp
+            p, q = nb[k]
+            # nút sau dựa vào k làm bài n-1 -> mất chỗ dựa; nút trước dựa vào k làm bài n+1 -> giờ là bài cuối của đoạn
+            # dãy, chỉ còn nhận khi đứng được như bài cuối (trừ khi k là dòng "bài n+1" dàn như tiêu đề, xem prop)
+            for j in (q, p):
+                if j >= 0 and ok[j] and (j == q or not (prop[k] or tail(j))):
                     ok[j] = False
                     sj = nodes[j][1]
                     fits[sj] -= 1
@@ -451,6 +640,15 @@ def _first_unrecognized_lesson(lines: list[str], first: int) -> Optional[int]:
     return found
 
 
+def _continues(a: Optional[str], b: Optional[str]) -> bool:
+    """Tiêu đề `b` là bài ngay sau tiêu đề `a` trong cùng họ (cùng hạng, cùng từ khoá): 第1課 … -> 第2課 …"""
+    if not a or not b or INTRO_TITLE in (a, b):
+        return False
+    ca, cb = _classify(a), _classify(b)
+    na, nb = _head_number(a), _head_number(b)
+    return bool(ca and cb and ca[:2] == cb[:2] and na is not None and nb is not None and na + 1 == nb)
+
+
 def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
     lines = text.split("\n")
     n = len(lines)
@@ -518,8 +716,13 @@ def split_chapters_ex(text: str, blocks: Optional[list[dict]]) -> SplitResult:
     fm = [k for k, c in enumerate(chapters)
           if c.title != INTRO_TITLE and len(chapters) - k - 1 >= 2
           and any(_marker(ln, _FRONT_MATTER) for ln in c.text.split(chr(10)))]
-    if fm:
-        cut = max(fm) + 1
+    cut = max(fm) + 1 if fm else 0
+    # Chương mang số liền trước chương giữ lại đầu tiên (bài n rồi bài n+1, cùng họ tiêu đề) là bài thật của dãy, không phải
+    # mục lục sót: dòng "はじめに" / "Cách sử dụng ～です" trong bài 1 là mục nhỏ / ghi chú ngữ pháp của bài -> chỉ cắt phần
+    # đứng trước dãy số bài ấy (mục nhập cuối mục lục "7日目…" rồi bài "1日目" thật thì vẫn cắt).
+    while cut and _continues(chapters[cut - 1].title, chapters[cut].title):
+        cut -= 1
+    if cut:
         for c in chapters[:cut]:
             skipped.append(c.title)
             skipped.extend(m for ln in c.text.split(chr(10)) if (m := _marker(ln, _FRONT_MATTER)) and m not in skipped)
