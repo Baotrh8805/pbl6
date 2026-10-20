@@ -25,6 +25,19 @@ class QuizCapabilitiesTest {
     }
 
     @Test
+    void meaning_questions_need_two_distinct_headlines() { // lộ trình dùng số này để biết chương có bài kiểm tra đủ cỡ không
+        assertEquals(0, QuizCapabilities.meaningQuestions(List.of()));
+        assertEquals(0, QuizCapabilities.meaningQuestions(List.of("viết")), "1 thẻ: không có phương án sai");
+        assertEquals(0, QuizCapabilities.meaningQuestions(List.of("viết\nví dụ 1", "  \nviết\nví dụ 2")),
+                "chỉ dòng nghĩa chính tính: hai thẻ cùng 'viết' = một nghĩa");
+        assertEquals(3, QuizCapabilities.meaningQuestions(List.of("viết", "viết", "đọc")), "đủ 2 nghĩa: mọi thẻ có nghĩa ra câu");
+        assertEquals(2, QuizCapabilities.meaningQuestions(java.util.Arrays.asList("viết", " \n ", null, "đọc")),
+                "thẻ không có dòng nghĩa nào không ra câu");
+        assertEquals(3, QuizCapabilities.count(List.of(card("書く", "かく", "viết", null), card("読む", "よむ", "đọc", null),
+                card("見る", "みる", "viết", null))).meaning(), "quiz-capabilities đếm cùng một cách");
+    }
+
+    @Test
     void reading_needs_reading_or_kana_only_term() {
         assertTrue(QuizCapabilities.hasReading(card("書く", "かく", "viết", null)));
         assertTrue(QuizCapabilities.hasReading(card("コーヒー", null, "cà phê", null)));

@@ -228,9 +228,10 @@ public class LearningPathController {
     }
 
     /**
-     * Bài kiểm tra cuối chương: mở lượt quiz exam trên bộ thẻ của chương (min(10, số thẻ) câu; đang có lượt mở thì trả lại lượt
-     * đó). Nộp đạt ≥ learning_path_quiz_pass_pct → chương "passed" (qua QuizSubmittedEvent). 409 nếu lộ trình không ACTIVE hoặc bộ
-     * thẻ của chương đã bị xoá; 404 chương của lộ trình khác.
+     * Bài kiểm tra cuối chương: luôn là lượt quiz exam trên bộ thẻ của chương (min(10, số thẻ) câu; đang có bài kiểm tra chương mở
+     * thì trả lại lượt đó, lượt practice / exam ít câu đang mở trên bộ đó bị nộp thay — chấm như hết hạn — để phát đề mới, trừ khi
+     * đề mới cũng thiếu câu thì trả lại lượt đang mở). Nộp đạt ≥ learning_path_quiz_pass_pct → chương "passed" (qua
+     * QuizSubmittedEvent). 409 nếu lộ trình không ACTIVE hoặc bộ thẻ của chương đã bị xoá; 404 chương của lộ trình khác.
      */
     @PostMapping("/{id}/chapters/{cid}/quiz")
     public AttemptState chapterQuiz(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,

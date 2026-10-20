@@ -952,7 +952,16 @@ async function runSelfCheck() {
     cfReviews,
     rcNow
   );
-  assertStrictEqual(`${cf.total},${cf.learned},${cf.mastered},${cf.learnedPct},${cf.masteredPct},${cf.chaptersPassed},${cf.chaptersTotal},${cf.done}`, "4,2,1,50,25,1,3,false", "Tiến độ dự phòng: học = có review, thuộc = khoảng ôn ≥ 21, floor %, chương qua = quizPassedAt; bộ thẻ đã xoá bỏ qua");
+  assertStrictEqual(`${cf.total},${cf.learned},${cf.mastered},${cf.learnedPct},${cf.masteredPct},${cf.chaptersPassed},${cf.chaptersTotal},${cf.done}`, "4,2,1,50,25,1,1,false", "Tiến độ dự phòng: học = có review, thuộc = khoảng ôn ≥ 21, floor %, chương qua = quizPassedAt; bộ thẻ đã xoá bỏ qua (cả trong số chương); bộ 1 thẻ chưa qua không ra được bài kiểm tra -> không vào số chương");
+  // Như server: chương "trống" chưa qua (bộ đã xoá / bộ không còn thẻ) không có bài kiểm tra -> không vào chaptersTotal, để N/M tới được M/M;
+  // chương qua rồi mới mất bộ thẻ vẫn đếm (passed ≤ total)
+  const cfEmpty = completionFallback(
+    [{ deckId: "d1", quizPassedAt: "2026-10-18T00:00:00Z" }, { deckId: "d0", quizPassedAt: null }, { deckId: null, quizPassedAt: "2026-10-19T00:00:00Z" }],
+    [...cfDecks, { id: "d0", cards: [] }] as unknown as Parameters<typeof completionFallback>[1],
+    cfReviews,
+    rcNow
+  );
+  assertStrictEqual(`${cfEmpty.chaptersPassed}/${cfEmpty.chaptersTotal}`, "2/2", "Chương trống chưa qua không đếm; chương đã qua mà mất bộ thẻ vẫn đếm -> 2/2 đạt được");
   assertStrictEqual(`${completionFallback([], [], {}, rcNow).done},${completionFallback([{ deckId: "d2", quizPassedAt: null }], cfDecks, { e: rcReview("2026-10-13T00:00:00Z") }, rcNow).done}`, "false,true", "Không có thẻ -> chưa xong; học hết -> done (UI mời Hoàn thành)");
   const jobOf = (status: "DONE" | "RUNNING" | "FAILED", enriched: boolean, enrichReason: string) => ({
     status,

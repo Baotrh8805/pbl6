@@ -1,4 +1,5 @@
 import { dayKey } from "../../lib/learningStats.ts";
+import { splitContent } from "../../lib/cardContent.ts";
 import { calcDeckProgress, type DeckProgress } from "../../lib/deckUtils.ts";
 import { MAX_REACTION_MS, isDue, type Review } from "../../lib/srs.ts";
 import type {
@@ -14,6 +15,8 @@ import type {
     LearningPathStatus,
     LearningPathTask,
     LearningPathTodayState,
+    QuizAttemptState,
+    QuizQuestionState,
     SessionCard,
     SessionCardMode,
     SessionCounts,
@@ -538,9 +541,76 @@ export function completionFallback(
         learnedPct: pct(learned),
         masteredPct: pct(mastered),
         chaptersPassed: chapters.filter((c) => !!c.quizPassedAt).length,
-        chaptersTotal: chapters.length,
+        // Như server (LearningPathService.inChaptersTotal): chương chưa qua chỉ đếm khi có bài kiểm tra tính được — bộ thẻ còn và ra
+        // đủ min(10, số thẻ) câu nghĩa. Chương "trống" (bộ đã xoá / hết thẻ), chương 1 thẻ, chương mọi thẻ cùng một nghĩa không bao
+        // giờ qua được, đếm vào thì N/M không tới được M/M.
+        chaptersTotal: chapters.filter((c) => {
+            if (c.quizPassedAt) return true;
+            const deck = c.deckId ? decks.find((d) => d.id === c.deckId) : undefined;
+            if (!deck || deck.cards.length === 0) return false;
+            return meaningQuestions(deck.cards) >= Math.min(CHAPTER_QUIZ_SIZE, deck.cards.length);
+        }).length,
         done: total > 0 && learned === total,
     };
+}
+
+/** Cỡ bài kiểm tra chương: min(10, số thẻ) câu (LearningPathService.CHAPTER_QUIZ_SIZE). */
+export const CHAPTER_QUIZ_SIZE = 10;
+
+/**
+ * Số câu nghĩa bộ thẻ ra được (QuizCapabilities.meaningQuestions của server): thẻ có dòng nghĩa chính (dòng không rỗng đầu
+ * tiên) — nhưng cả bộ cần ≥ 2 nghĩa khác nhau mới có phương án sai, không thì 0.
+ */
+export function meaningQuestions(cards: Pick<Card, "meaning">[]): number {
+    const heads = cards.map((c) => splitContent(c.meaning ?? "").head).filter((h) => h.length > 0);
+    return new Set(heads).size >= 2 ? heads.length : 0;
+}
+
+// ----- Kiểm tra chương (POST /chapters/{cid}/quiz) -----
+
+export const CHAPTER_QUIZ_NO_ATTEMPT =
+    "Không mở được lượt kiểm tra: bộ thẻ của chương cần ít nhất 2 thẻ có nghĩa khác nhau.";
+export const CHAPTER_QUIZ_NOT_EXAM =
+    "Không mở được bài kiểm tra chương: bộ thẻ này đang có một lượt luyện tập dở. Hãy nộp lượt đó ở trang Quiz rồi bấm kiểm tra lại.";
+
+/**
+ * Đích của nút "Kiểm tra chương" từ response của server. Chỉ lượt EXAM mới là bài kiểm tra chương — server chỉ chấm "qua
+ * chương" khi nộp lượt exam; server cũ trả lại nguyên lượt practice đang mở trên cùng bộ thẻ (không giới hạn giờ, mở tới 24
+ * giờ), vào đó làm đúng hết mà chương vẫn không qua, không có thông báo nào. Server mới cũng trả lại lượt practice khi đề thay
+ * thế thiếu câu (không tính cho chương). Nên lượt không phải exam -> báo lỗi, không điều hướng. ?path= để màn kết quả quiz có
+ * nút "Về lộ trình".
+ */
+export function chapterQuizTarget(
+    state: Pick<QuizAttemptState, "attemptId" | "deckId" | "mode"> | null,
+    pathId: string
+): { url: string } | { error: string } {
+    if (!state?.attemptId) return { error: CHAPTER_QUIZ_NO_ATTEMPT };
+    if (state.mode !== "exam") return { error: CHAPTER_QUIZ_NOT_EXAM };
+    return {
+        url: `/decks/${encodeURIComponent(state.deckId)}/quiz?attempt=${encodeURIComponent(state.attemptId)}&path=${encodeURIComponent(pathId)}`,
+    };
+}
+
+/**
+ * Lượt đang mở trên bộ của chương mà "Kiểm tra chương" sẽ nộp thay (server chấm nó như khi hết hạn rồi phát đề exam — mỗi bộ
+ * thẻ chỉ mở được một lượt): lượt luyện tập đã trả lời ít nhất một câu, hoặc lượt kiểm tra ít câu hơn bài kiểm tra chương
+ * min(10, số thẻ) — mở từ trang Quiz, nộp ra không tính cho chương. Trả câu nhắc để hỏi trước: không hỏi thì bài đang làm ở tab
+ * khác bỗng thành "đã nộp". null = không mất gì: không có lượt mở, lượt mở chính là bài kiểm tra chương (server nối lại), hoặc
+ * luyện tập chưa làm câu nào (đóng không ghi kết quả).
+ */
+export function chapterQuizReplaceNotice(
+    open: (Pick<QuizAttemptState, "attemptId" | "mode" | "finished"> & { questions: Pick<QuizQuestionState, "chosen">[] }) | null,
+    chapterCards: number
+): string | null {
+    if (!open?.attemptId || open.finished) return null;
+    const total = open.questions.length;
+    const answered = open.questions.filter((q) => q.chosen !== null).length;
+    if (open.mode === "exam") {
+        if (total >= Math.min(CHAPTER_QUIZ_SIZE, chapterCards)) return null;
+        return `Bộ thẻ của chương đang có một bài kiểm tra ${total} câu mở từ trang Quiz (đã trả lời ${answered}/${total} câu) — bài đó không tính cho chương. Bắt đầu kiểm tra chương sẽ nộp bài đó ngay, câu chưa trả lời tính sai.`;
+    }
+    if (answered === 0) return null;
+    return `Bộ thẻ của chương đang có một lượt luyện tập dở (đã trả lời ${answered}/${total} câu). Bắt đầu kiểm tra chương sẽ nộp lượt đó ngay, câu chưa trả lời tính sai.`;
 }
 
 // ----- Dịch lại nghĩa (POST /enrich, cooldown 5 phút) -----

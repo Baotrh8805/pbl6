@@ -551,6 +551,10 @@ export interface LearningPathCompletion {
     learnedPct: number;
     masteredPct: number;
     chaptersPassed: number;
+    /**
+     * Chương đã qua hoặc có bài kiểm tra tính được — không đếm chương "empty" (hết thẻ, chưa qua) và chương mà bộ thẻ không ra đủ
+     * min(10, số thẻ) câu nghĩa (1 thẻ, mọi thẻ cùng một nghĩa), nên chaptersPassed tới được số này.
+     */
     chaptersTotal: number;
     /** completedAt đã đặt, hoặc đã học hết thẻ (UI mời bấm "Hoàn thành"). */
     done: boolean;

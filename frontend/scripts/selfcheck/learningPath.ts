@@ -1,13 +1,21 @@
-// Self-check lộ trình 2.0 đợt cuối: chống gửi trùng (LP-13), bộ thẻ thuộc lộ trình (LP-15), thẻ "Lộ trình học tập" của Tổng quan
-// admin (learningPathBreakdown). scripts/selfCheck.ts gọi: await runLearningPathChecks(assert). Hàm thuần; import tương đối + đuôi
+// Self-check lộ trình 2.0 đợt cuối: chống gửi trùng (LP-13), bộ thẻ thuộc lộ trình (LP-15), nút "Kiểm tra chương" chỉ vào lượt
+// exam (chapterQuizTarget) và hỏi trước khi nộp thay lượt đang làm dở (chapterQuizReplaceNotice), chaptersTotal dự phòng chỉ đếm
+// chương có bài kiểm tra tính được (meaningQuestions), thẻ "Lộ trình học tập" của Tổng quan admin (learningPathBreakdown).
+// scripts/selfCheck.ts gọi: await runLearningPathChecks(assert). Hàm thuần; import tương đối + đuôi
 // .ts để node chạy trực tiếp (--experimental-strip-types). Async vì khoá chống gửi trùng phải kiểm qua Promise thật.
 import { runOnce } from "../../src/lib/inFlight.ts";
 import {
+  CHAPTER_QUIZ_NO_ATTEMPT,
+  CHAPTER_QUIZ_NOT_EXAM,
   DECK_PATH_NOTICE,
+  chapterQuizReplaceNotice,
+  chapterQuizTarget,
+  completionFallback,
   deckPathLink,
   deleteCardMessage,
   deleteDeckMessage,
   folderLearningPathId,
+  meaningQuestions,
   mergeLockKey,
 } from "../../src/features/roadmap/roadmapUtils.ts";
 import { learningPathBreakdown } from "../../src/features/admin/adminUtils.ts";
@@ -118,6 +126,93 @@ export async function runLearningPathChecks(assert: (cond: boolean, msg: string)
       deleteDeckMessage("Bài 1", link) ===
         'Bộ thẻ "Bài 1" và toàn bộ thẻ từ vựng bên trong sẽ bị xoá vĩnh viễn; mọi thẻ của chương này rời lịch của lộ trình «Minna bài 1–5».',
     "LP-15: xác nhận xoá cả bộ của một chương cũng nhắc lộ trình (nặng hơn xoá một thẻ); bộ thường giữ câu cũ"
+  );
+
+  // ---------- Kiểm tra chương chỉ vào lượt exam (lượt practice đang mở không được chiếm chỗ bài kiểm tra) ----------
+  const exam = chapterQuizTarget({ attemptId: "a 1", deckId: "d/1", mode: "exam" }, PATH_ID);
+  assert(
+    "url" in exam && exam.url === `/decks/d%2F1/quiz?attempt=a%201&path=${PATH_ID}`,
+    "Kiểm tra chương: lượt exam -> vào QuizPage đúng lượt, kèm ?path= (id được mã hoá)"
+  );
+  const practice = chapterQuizTarget({ attemptId: "a1", deckId: "d1", mode: "practice" }, PATH_ID);
+  assert(
+    "error" in practice && practice.error === CHAPTER_QUIZ_NOT_EXAM,
+    "Kiểm tra chương: server trả lượt practice (làm đúng hết cũng không qua chương) -> báo lỗi, không điều hướng"
+  );
+  const none = [chapterQuizTarget(null, PATH_ID), chapterQuizTarget({ attemptId: null, deckId: "d1", mode: "exam" }, PATH_ID)];
+  assert(
+    none.every((t) => "error" in t && t.error === CHAPTER_QUIZ_NO_ATTEMPT),
+    "Kiểm tra chương: response hỏng / không phát được đề (attemptId null) -> lời nhắc cần 2 nghĩa khác nhau như cũ"
+  );
+
+  // ---------- Kiểm tra chương nộp thay lượt đang làm dở: hỏi trước ----------
+  const q = (...chosen: (string | null)[]) => chosen.map((c) => ({ chosen: c }));
+  const openOf = (mode: "practice" | "exam", questions: { chosen: string | null }[], finished = false) => ({
+    attemptId: "a1",
+    mode,
+    finished,
+    questions,
+  });
+  const practiceNotice = chapterQuizReplaceNotice(openOf("practice", q("viết", "", null, null)), 12);
+  assert(
+    practiceNotice ===
+      "Bộ thẻ của chương đang có một lượt luyện tập dở (đã trả lời 2/4 câu). Bắt đầu kiểm tra chương sẽ nộp lượt đó ngay, câu chưa trả lời tính sai.",
+    `Nộp thay: luyện tập đã làm (kể cả câu "Bỏ qua" = "") -> hỏi, kèm số câu đã làm: ${practiceNotice}`
+  );
+  const tinyNotice = chapterQuizReplaceNotice(openOf("exam", q("viết", null)), 12);
+  assert(
+    tinyNotice ===
+      "Bộ thẻ của chương đang có một bài kiểm tra 2 câu mở từ trang Quiz (đã trả lời 1/2 câu) — bài đó không tính cho chương. Bắt đầu kiểm tra chương sẽ nộp bài đó ngay, câu chưa trả lời tính sai.",
+    `Nộp thay: bài kiểm tra ít câu hơn min(10, số thẻ) -> hỏi (kể cả chưa làm câu nào: vẫn ghi kết quả): ${tinyNotice}`
+  );
+  assert(
+    chapterQuizReplaceNotice(openOf("exam", q(null, null)), 12) !== null,
+    "Nộp thay: bài kiểm tra ít câu chưa làm câu nào vẫn hỏi (server vẫn chấm 0 điểm)"
+  );
+  const quiet = [
+    chapterQuizReplaceNotice(null, 12),
+    chapterQuizReplaceNotice({ ...openOf("exam", q(null)), attemptId: null }, 12),
+    chapterQuizReplaceNotice(openOf("practice", q(null, null)), 12),
+    chapterQuizReplaceNotice(openOf("practice", q("viết"), true), 12),
+    chapterQuizReplaceNotice(openOf("exam", q(...Array<string | null>(10).fill(null))), 12),
+    chapterQuizReplaceNotice(openOf("exam", q("viết", null, null)), 3),
+  ];
+  assert(
+    quiet.every((n) => n === null),
+    "Không hỏi khi không mất gì: không có lượt mở, luyện tập chưa làm câu nào, lượt đã nộp, lượt chính là bài kiểm tra chương (đủ min(10, số thẻ) câu)"
+  );
+
+  // ---------- chaptersTotal dự phòng: chỉ chương có bài kiểm tra tính được (như LearningPathService.inChaptersTotal) ----------
+  assert(
+    meaningQuestions([{ meaning: "viết\nví dụ" }, { meaning: "  \nđọc" }, { meaning: "viết" }]) === 3 &&
+      meaningQuestions([{ meaning: "ăn\nví dụ 1" }, { meaning: "ăn\nví dụ 2" }]) === 0 &&
+      meaningQuestions([{ meaning: "ăn" }]) === 0 &&
+      meaningQuestions([{ meaning: "ăn" }, { meaning: " \n " }, { meaning: "uống" }]) === 2,
+    "Số câu nghĩa: dòng nghĩa chính, cần ≥ 2 nghĩa khác nhau; thẻ không có dòng nghĩa không ra câu"
+  );
+  const cardsOf = (...meanings: string[]) => meanings.map((meaning, i) => ({ id: `${meanings.length}-${i}`, meaning }));
+  const ten = Array.from({ length: 9 }, (_, i) => `nghĩa ${i}`);
+  const quizDecks = [
+    { id: "q1", cards: cardsOf("viết", "đọc", "nghe") },
+    { id: "q2", cards: cardsOf("ăn\nví dụ 1", "ăn\nví dụ 2") },
+    { id: "q3", cards: cardsOf(...ten, " ", " ", " ") },
+    { id: "q4", cards: cardsOf("một mình") },
+  ] as unknown as Parameters<typeof completionFallback>[1];
+  const total = (passedQ2: boolean) =>
+    completionFallback(
+      [
+        { deckId: "q1", quizPassedAt: null },
+        { deckId: "q2", quizPassedAt: passedQ2 ? "2026-10-20T00:00:00Z" : null },
+        { deckId: "q3", quizPassedAt: null },
+        { deckId: "q4", quizPassedAt: null },
+      ],
+      quizDecks,
+      {},
+      new Date("2026-10-20T00:00:00Z")
+    );
+  assert(
+    total(false).chaptersTotal === 1 && `${total(true).chaptersPassed}/${total(true).chaptersTotal}` === "1/2",
+    "chaptersTotal dự phòng: bỏ chương mọi thẻ cùng nghĩa, chương 9 câu nghĩa / 12 thẻ (< 10), chương 1 thẻ; chương đã qua luôn đếm"
   );
 
   // ---------- Admin: thẻ "Lộ trình học tập" (stats.learningPathBreakdown) ----------

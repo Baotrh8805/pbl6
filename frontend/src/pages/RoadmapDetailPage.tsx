@@ -5,6 +5,7 @@ import { useDialog } from "@/components/ui/dialogContext";
 import { dayKey } from "@/lib/learningStats";
 import { runOnce } from "@/lib/inFlight";
 import { extractErrorMessage } from "@/services/apiClient";
+import { fetchOpenQuizAttempt } from "@/services/studyService";
 import {
   activateLearningPath,
   completeLearningPath,
@@ -27,7 +28,14 @@ import { CreateLearningPathModal } from "@/features/roadmap/components/CreateLea
 import { PathDraftEditor, type ActivateValues } from "@/features/roadmap/components/PathDraftEditor";
 import { PathActiveView } from "@/features/roadmap/components/PathActiveView";
 import { PathSettingsDrawer } from "@/features/roadmap/components/PathSettingsDrawer";
-import { OVERFLOW_WARNING, isPathBusy, isPathProcessing, mergeLockKey } from "@/features/roadmap/roadmapUtils";
+import {
+  OVERFLOW_WARNING,
+  chapterQuizReplaceNotice,
+  chapterQuizTarget,
+  isPathBusy,
+  isPathProcessing,
+  mergeLockKey,
+} from "@/features/roadmap/roadmapUtils";
 
 const POLL_MS = 2000;
 /** Sau khi kích hoạt: chờ danh sách bộ thẻ của shell có đủ bộ mới, tối đa chừng này. */
@@ -315,22 +323,33 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   const handleEnrich = () => runOnce(inFlight.current, "enrich", enrich);
 
   // Kiểm tra chương: server mở (hoặc nối lại) lượt quiz exam trên bộ của chương; QuizPage khôi phục đúng lượt qua ?attempt=.
-  // ?path= để màn kết quả quiz có nút "Về lộ trình" (chương hiện "Đã qua" ngay khi đạt ngưỡng).
+  // ?path= để màn kết quả quiz có nút "Về lộ trình" (chương hiện "Đã qua" ngay khi đạt ngưỡng). Lượt trả về không phải exam
+  // (server cũ trả lại lượt luyện tập đang mở) -> báo lỗi, không vào: làm ở đó chương không bao giờ qua (chapterQuizTarget).
+  // Bộ của chương đang có lượt làm dở mà server sẽ nộp thay (luyện tập đã làm câu nào đó, bài kiểm tra ít câu mở từ trang Quiz)
+  // -> hỏi trước (chapterQuizReplaceNotice); hủy thì không gọi server, lượt đó vẫn làm tiếp được ở trang Quiz.
   const startQuiz = async (cid: string) => {
     setQuizBusy(cid);
     setQuizError(null);
     try {
-      const state = await startChapterQuiz(id, cid);
-      if (!state?.attemptId) {
-        setQuizError({
-          chapterId: cid,
-          message: "Không mở được lượt kiểm tra: bộ thẻ của chương cần ít nhất 2 thẻ có nghĩa khác nhau.",
-        });
+      const chapter = path?.chapters?.find((c) => c.id === cid);
+      if (chapter?.deckId) {
+        const notice = chapterQuizReplaceNotice(await fetchOpenQuizAttempt(chapter.deckId), chapter.cardCount);
+        if (notice) {
+          const ok = await dialog.confirm({
+            title: "Nộp bài đang làm dở?",
+            message: notice,
+            confirmLabel: "Nộp và kiểm tra",
+            tone: "warning",
+          });
+          if (!ok) return;
+        }
+      }
+      const target = chapterQuizTarget(await startChapterQuiz(id, cid), id);
+      if ("error" in target) {
+        setQuizError({ chapterId: cid, message: target.error });
         return;
       }
-      navigate(
-        `/decks/${encodeURIComponent(state.deckId)}/quiz?attempt=${encodeURIComponent(state.attemptId)}&path=${encodeURIComponent(id)}`
-      );
+      navigate(target.url);
     } catch (e) {
       setQuizError({ chapterId: cid, message: extractErrorMessage(e) });
     } finally {

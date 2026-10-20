@@ -101,14 +101,38 @@ public class QuizAttemptService {
 
     // ---------- tạo / khôi phục ----------
 
-    /** Như {@link #create(Long, String, int, String, List)} với loại mặc định ["meaning"] (vd. bài kiểm tra chương của lộ trình). */
+    /** Như {@link #create(Long, String, int, String, List)} với loại mặc định ["meaning"]. */
     public AttemptState create(Long uid, String deckId, int size, String mode) {
         return create(uid, deckId, size, mode, null);
     }
 
     /**
+     * Bài kiểm tra chương của lộ trình (LearningPathService.chapterQuiz): LUÔN trả một lượt exam, loại câu mặc định ["meaning"],
+     * size câu. Lượt đang mở trên bộ thẻ chỉ được nối lại khi nộp nó ra được tính là bài kiểm tra chương — exam có ít nhất size
+     * câu, đúng điều kiện LearningPathService.onQuizSubmitted chấm "qua chương" ({@link #countsAsChapterExam}). Trước đây
+     * {@link #create} trả lại bất kỳ lượt mở nào: một lượt practice (mở 24 giờ) chiếm chỗ bài kiểm tra, người học làm đúng 10/10
+     * mà chương không qua, không có thông báo nào.
+     * <p>
+     * Unique index V9 chỉ cho MỘT lượt mở trên mỗi (user, bộ thẻ), nên lượt không dùng được (practice, exam ít câu mở từ trang
+     * Quiz) bị đóng ngay trước khi ghi lượt mới, cùng giao dịch — phát đề lỗi / 429 thì rollback, lượt cũ vẫn mở. Đóng như hết hạn:
+     * chấm các đáp án đã lưu, ghi quiz_results ({@link #closeForChapterExam}); lượt exam đã mở thì luôn có kết quả, nên không bỏ
+     * được một lượt bất lợi bằng cách bấm "Kiểm tra chương". Trang lộ trình hỏi người học trước khi nộp thay lượt đang làm dở.
+     * Chỉ đóng khi đề mới đủ cỡ: đề mới cũng thiếu câu (nộp ra cũng không tính) thì trả lại lượt đang mở, không đụng gì.
+     */
+    public AttemptState chapterExam(Long uid, String deckId, int size) {
+        List<String> types = QuizService.normalizeTypes(null);
+        return tx.execute(status -> openOrCreate(uid, deckId, size, QuizAttempt.EXAM, types, Map.of(), false, size));
+    }
+
+    /** Nộp lượt này có được tính là bài kiểm tra chương cỡ chapterSize không (LearningPathService.onQuizSubmitted). */
+    static boolean countsAsChapterExam(QuizAttempt attempt, int chapterSize) {
+        return QuizAttempt.EXAM.equals(attempt.getMode()) && attempt.getCardIds().size() >= chapterSize;
+    }
+
+    /**
      * Phát đề và mở lượt làm. Đã có lượt đang mở cho bộ thẻ này thì trả lại lượt đó (resumed = true, giữ nguyên chế độ và loại
-     * câu), không tạo lượt mới để không chọn được lượt có lợi. Bộ thẻ trống: attemptId = null.
+     * câu), không tạo lượt mới để không chọn được lượt có lợi. Bộ thẻ trống: attemptId = null. Bài kiểm tra chương của lộ trình
+     * không đi đường này mà qua {@link #chapterExam} (không nhận lại lượt practice).
      * <p>
      * questionTypes (hợp đồng đợt 2 §1.2): null / rỗng = ["meaning"]. Có "conjugation" thì câu chia động từ do ai-service sinh
      * TRƯỚC, ngoài transaction (như DeckService.generateDistractors): (1) transaction đọc kiểm quyền + lấy động từ, (2) gọi
@@ -131,25 +155,46 @@ public class QuizAttemptService {
         }
         Map<String, List<QuizAiClient.ConjugationItem>> conj = conjugations;
         boolean counted = rateCounted;
-        return tx.execute(status -> openOrCreate(uid, deckId, size, mode, types, conj, counted));
+        return tx.execute(status -> openOrCreate(uid, deckId, size, mode, types, conj, counted, null));
     }
 
+    /**
+     * chapterSize null = lượt thường (trả lại mọi lượt đang mở); khác null = bài kiểm tra chương cỡ đó ({@link #chapterExam}):
+     * nối lại lượt {@link #countsAsChapterExam}; lượt mở khác bị đóng ngay trước khi ghi lượt mới, trừ khi đề mới cũng thiếu câu.
+     */
     private AttemptState openOrCreate(Long uid, String deckId, int size, String mode, List<String> types,
-                                      Map<String, List<QuizAiClient.ConjugationItem>> conjugations, boolean rateCounted) {
+                                      Map<String, List<QuizAiClient.ConjugationItem>> conjugations, boolean rateCounted,
+                                      Integer chapterSize) {
         Deck deck = deckService.readable(uid, deckId);
         attemptRepository.lockCreate(Objects.hash(uid, deckId));
         Instant now = Instant.now();
         closeExpiredAttempts(uid, now);
 
-        Optional<QuizAttempt> open = attemptRepository.findOpen(uid, deckId, now);
-        if (open.isPresent()) return state(open.get(), now, true);
+        // Bài kiểm tra chương có thể phải đóng lượt đang mở -> đọc nó dưới khoá dòng (xem findOpenForUpdate)
+        Optional<QuizAttempt> open = chapterSize == null ? attemptRepository.findOpen(uid, deckId, now)
+                : attemptRepository.findOpenForUpdate(uid, deckId, now);
+        QuizAttempt replaced = null;
+        if (open.isPresent()) {
+            if (chapterSize == null || countsAsChapterExam(open.get(), chapterSize)) return state(open.get(), now, true);
+            replaced = open.get();
+        }
 
-        if (!rateCounted) rateLimiter.checkCreate(uid);
+        if (!rateCounted && replaced == null) rateLimiter.checkCreate(uid);
         QuizService.Sources sources = new QuizService.Sources(conjugations, bank.load(deckId, types));
-        List<QuizService.Item> items = bank.persist(deckId, QuizService.build(deck.getCards(), size, random, types, sources));
+        List<QuizService.Built> built = QuizService.build(deck.getCards(), size, random, types, sources);
+        if (replaced != null) {
+            // Đề mới cũng thiếu câu (bộ ít nghĩa có câu bị admin ẩn, bộ chỉ còn 1 thẻ...): nộp ra cũng không tính cho chương, nên
+            // đóng lượt đang làm chẳng được gì — chấm dở một bài kiểm tra / mất lượt luyện tập rồi phát một đề cũng không qua được,
+            // lặp lại ở mỗi lần bấm. Trả lại lượt đó như trước khi có chapterExam (không tốn lượt tạo, không ghi ngân hàng câu hỏi).
+            if (built.size() < chapterSize) return state(replaced, now, true);
+            if (!rateCounted) rateLimiter.checkCreate(uid);
+        }
+        List<QuizService.Item> items = bank.persist(deckId, built);
         if (items.isEmpty()) {
+            // Không phát được đề: lượt đang mở (nếu có) giữ nguyên — đóng nó mà không có lượt mới thay thì chỉ mất bài đang làm
             return new AttemptState(null, deckId, mode, false, false, false, null, null, 0, null, now, List.of());
         }
+        if (replaced != null) closeForChapterExam(replaced, now);
         boolean practice = QuizAttempt.PRACTICE.equals(mode);
         int limit = practice ? 0 : items.size() * QuizService.SECONDS_PER_QUESTION;
         Instant expiresAt = practice ? now.plusSeconds(PRACTICE_TTL_SECONDS)
@@ -335,6 +380,21 @@ public class QuizAttemptService {
     /** Lượt quá hạn chưa nộp (đóng tab, bỏ dở) -> chấm các đáp án đã lưu, để không chọn được lượt có lợi. */
     private void closeExpiredAttempts(Long uid, Instant now) {
         for (QuizAttempt attempt : attemptRepository.findExpiredOpen(uid, now)) close(attempt, now);
+    }
+
+    /**
+     * Đóng lượt đang mở không phải bài kiểm tra chương (xem {@link #chapterExam}) như khi nó hết hạn: chấm các đáp án đã lưu, câu
+     * chưa làm tính sai; luyện tập chưa trả lời câu nào thì không ghi kết quả ({@link #close}). Không bỏ lượt mà không chấm: tab
+     * khác đang mở lượt đó đồng bộ lại sẽ thấy "đã nộp" kèm điểm (state() chấm mọi lượt đã đóng), nên điểm đó phải có trong lịch
+     * sử như mọi lần nộp — trang Quiz cũng nói "bài dở sẽ được chấm theo các câu đã trả lời", và trang lộ trình hỏi trước khi nộp
+     * thay. flush ngay: Hibernate ghi INSERT trước UPDATE khi flush, không flush ở đây thì lượt mới được ghi lúc lượt cũ còn "mở"
+     * và đụng unique index một-lượt-mở (V9).
+     */
+    private void closeForChapterExam(QuizAttempt attempt, Instant now) {
+        log.info("Nộp thay lượt {} ({}) để mở bài kiểm tra chương trên bộ thẻ {}", attempt.getId(), attempt.getMode(),
+                attempt.getDeckId());
+        close(attempt, now);
+        attemptRepository.flush();
     }
 
     private void close(QuizAttempt attempt, Instant now) {

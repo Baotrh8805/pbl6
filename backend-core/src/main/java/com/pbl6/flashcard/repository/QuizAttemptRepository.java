@@ -39,6 +39,17 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
     Optional<QuizAttempt> findOpen(@Param("uid") Long uid, @Param("deckId") String deckId, @Param("now") Instant now);
 
     /**
+     * Như {@link #findOpen} nhưng khoá dòng (FOR UPDATE) ngay lúc đọc: bài kiểm tra chương có thể phải đóng lượt đang mở
+     * (QuizAttemptService.chapterExam), và phải đọc đáp án mới nhất dưới khoá — đọc trước rồi mới khoá thì một lần trả lời song
+     * song vừa lưu bị bản cũ trong bộ nhớ ghi đè lúc đóng.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.deckId = :deckId AND a.submittedAt IS NULL "
+            + "AND a.expiresAt >= :now")
+    Optional<QuizAttempt> findOpenForUpdate(@Param("uid") Long uid, @Param("deckId") String deckId,
+                                            @Param("now") Instant now);
+
+    /**
      * Lượt đã nộp (hoặc bị đóng vì quá hạn) sau :since của user — InsightService đếm câu sai theo thẻ từ answers / questions
      * (QuizAttemptService.wrongAnswerCounts) để nhận ra "sai quiz" (spec §3.7).
      */

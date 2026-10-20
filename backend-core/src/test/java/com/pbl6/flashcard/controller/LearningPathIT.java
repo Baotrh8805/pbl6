@@ -1449,6 +1449,10 @@ class LearningPathIT extends IntegrationTest {
         JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
         String d1 = active.get("chapters").get(0).get("deckId").asText();
         call(delete("/api/decks/" + d1), token, null).andExpect(status().isNoContent());
+        // stub mặc định cho mọi thẻ cùng một nghĩa "vi" (-> không ra được bài kiểm tra): cho chương 2 nghĩa riêng từng thẻ
+        // để mẫu số chaptersTotal bên dưới chỉ phản ánh việc chương 1 mất bộ thẻ
+        jdbc.update("UPDATE flashcards SET meaning = 'nghĩa ' || id WHERE deck_id = ?",
+                active.get("chapters").get(1).get("deckId").asText());
 
         JsonNode four = read(call(patch(BASE + id).param("date", "2026-11-01"), token, Map.of("totalDays", 4))
                 .andExpect(status().isOk()));
@@ -1470,6 +1474,8 @@ class LearningPathIT extends IntegrationTest {
             assertEquals(c2.get("id").asText(), d.get("tasks").get(0).get("chapterId").asText());
         }
         assertEquals(8, four.get("completion").get("total").asInt());
+        // chương mất bộ thẻ ("empty", không có bài kiểm tra) không vào mẫu số "N/M chương đã qua kiểm tra"
+        assertEquals(1, four.get("completion").get("chaptersTotal").asInt(), four.get("completion").toString());
     }
 
     @Test
@@ -1607,7 +1613,9 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(20, completion.get("total").asInt());
         assertEquals(0, completion.get("learned").asInt());
         assertEquals(0, completion.get("learnedPct").asInt());
-        assertEquals(2, completion.get("chaptersTotal").asInt());
+        // stub mặc định cho mọi thẻ cùng một nghĩa "vi" -> không chương nào phát được bài kiểm tra (cần ≥ 2
+        // nghĩa khác nhau) nên chưa chương nào vào mẫu số "N/M chương đã qua kiểm tra" (xem chapters_total_leaves_out_...)
+        assertEquals(0, completion.get("chaptersTotal").asInt(), completion.toString());
         assertEquals(0, completion.get("chaptersPassed").asInt());
         assertFalse(completion.get("done").asBoolean());
 
@@ -2935,14 +2943,253 @@ class LearningPathIT extends IntegrationTest {
         assertEquals("locked", p.get("chapters").get(1).get("state").asText(), p.toString());
         JsonNode refused = read(call(post(BASE + id + "/chapters/" + c1 + "/quiz"), token, null).andExpect(status().isConflict()));
         assertEquals("Chương không còn thẻ nào để kiểm tra.", refused.get("message").asText());
+        // chương "empty" bị /quiz từ chối nên không vào mẫu số: trước đây 2 -> "0/2 chương đã qua kiểm tra" không bao giờ tới 2/2
+        JsonNode comp = p.get("completion");
+        assertEquals(0, comp.get("chaptersPassed").asInt(), comp.toString());
+        assertEquals(1, comp.get("chaptersTotal").asInt(), comp.toString());
+        assertEquals(8, comp.get("total").asInt());
+        assertFalse(comp.get("done").asBoolean());
 
         // chương đã qua quiz rồi mới hết thẻ: giữ "passed" (không thành "empty")
         submitQuiz(token, openChapterQuiz(token, id, c2), 8);
+        JsonNode afterPass = pathOn(token, id, "2026-11-01").get("completion");
+        assertEquals("1/1", afterPass.get("chaptersPassed").asInt() + "/" + afterPass.get("chaptersTotal").asInt(),
+                "chương còn kiểm tra được đã qua hết -> M/M: " + afterPass);
         String deck2 = p.get("chapters").get(1).get("deckId").asText();
         call(delete("/api/decks/" + deck2), token, null).andExpect(status().isNoContent());
-        JsonNode ch2 = pathOn(token, id, "2026-11-01").get("chapters").get(1);
+        JsonNode gone = pathOn(token, id, "2026-11-01");
+        JsonNode ch2 = gone.get("chapters").get(1);
         assertEquals(0, ch2.get("cardCount").asInt());
         assertEquals("passed", ch2.get("state").asText(), ch2.toString());
+        // chương đã qua vẫn đếm dù hết thẻ (chaptersPassed ≤ chaptersTotal); done tính theo thẻ, không đổi vì số chương: không còn
+        // thẻ nào -> chưa xong, và today-summary nói cùng một điều
+        JsonNode compGone = gone.get("completion");
+        assertEquals(1, compGone.get("chaptersPassed").asInt(), compGone.toString());
+        assertEquals(1, compGone.get("chaptersTotal").asInt(), compGone.toString());
+        assertEquals(0, compGone.get("total").asInt());
+        assertFalse(compGone.get("done").asBoolean());
+        JsonNode summary = null;
+        for (JsonNode s : read(call(get(BASE + "today-summary").param("date", "2026-11-01"), token, null)
+                .andExpect(status().isOk()))) {
+            if (id.equals(s.get("pathId").asText())) summary = s;
+        }
+        assertNotNull(summary);
+        assertEquals(compGone.get("done").asBoolean(), summary.get("done").asBoolean(), summary.toString());
+    }
+
+    /**
+     * Lượt practice đang mở trên bộ của chương (trang Quiz, mở tới 24 giờ) không được chiếm chỗ bài kiểm tra chương. Trước đây
+     * POST /quiz trả lại nguyên lượt đó (mode practice, resumed, timeLimitSeconds 0) — làm đúng 10/10 mà chương không qua, không
+     * thông báo PASSED / RETRY. Giờ: lượt practice bị nộp thay như khi hết hạn (chấm các câu đã làm, có dòng quiz_results — tab
+     * khác đồng bộ lại thấy đúng điểm đó), bài kiểm tra là lượt exam mới; mở lại thì nối lại đúng lượt exam đó; qua ngưỡng -> nhãn
+     * chương + thông báo. Exam ít câu (mở từ trang Quiz) cũng không phải bài kiểm tra: bị đóng có chấm như hết giờ rồi phát đề mới
+     * đủ cỡ.
+     */
+    @Test
+    void open_practice_attempt_does_not_hijack_the_chapter_quiz() throws Exception {
+        String token = newUser();
+        String id = quizDraft(token, "Luyện tập").get("id").asText();
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
+        String c1 = active.get("chapters").get(0).get("id").asText();
+        String deck1 = active.get("chapters").get(0).get("deckId").asText();
+        Map<String, String> correct = correctAnswers(token, deck1);
+
+        JsonNode practice = read(call(post("/api/quiz-attempts"), token,
+                Map.of("deckId", deck1, "size", 10, "mode", "practice")).andExpect(status().isOk()));
+        assertEquals("practice", practice.get("mode").asText());
+        String practiceId = practice.get("attemptId").asText();
+        String answered = practice.get("questions").get(0).get("cardId").asText();
+        String unanswered = practice.get("questions").get(1).get("cardId").asText();
+        call(put("/api/quiz-attempts/" + practiceId + "/answers/" + answered), token, Map.of("option", correct.get(answered)))
+                .andExpect(status().isOk());
+
+        JsonNode paper = openChapterQuiz(token, id, c1);
+        assertEquals("exam", paper.get("mode").asText(), paper.toString());
+        assertFalse(paper.get("resumed").asBoolean());
+        assertNotEquals(practiceId, paper.get("attemptId").asText());
+        assertEquals(deck1, paper.get("deckId").asText());
+        assertEquals(10, paper.get("questions").size());
+        assertTrue(paper.get("timeLimitSeconds").asInt() > 0, paper.toString());
+
+        // lượt practice đã nộp thay như hết hạn: 1 câu đúng / 10 (câu chưa làm tính sai), điểm tab khác thấy khi đồng bộ lại
+        // (GET) chính là dòng quiz_results trong lịch sử; trả lời tiếp -> 409. Chế độ practice nên không gắn nhãn chương.
+        JsonNode old = read(call(get("/api/quiz-attempts/" + practiceId), token, null).andExpect(status().isOk()));
+        assertTrue(old.get("finished").asBoolean(), old.toString());
+        assertFalse(old.get("expired").asBoolean());
+        assertEquals("1/10", old.get("score").asInt() + "/" + old.get("total").asInt(), old.toString());
+        Map<String, Object> result = jdbc.queryForMap("SELECT score, total, mode FROM quiz_results WHERE attempt_id = ?",
+                UUID.fromString(practiceId));
+        assertEquals("1/10/practice", result.get("score") + "/" + result.get("total") + "/" + result.get("mode"));
+        call(put("/api/quiz-attempts/" + practiceId + "/answers/" + unanswered), token,
+                Map.of("option", correct.get(unanswered))).andExpect(status().isConflict());
+        assertFalse(pathOn(token, id, "2026-11-01").get("chapters").get(0).has("quizBestPct"));
+
+        // bấm lại "Kiểm tra chương" (rời trang giữa chừng): nối lại đúng bài kiểm tra, không tạo lượt mới
+        JsonNode same = openChapterQuiz(token, id, c1);
+        assertEquals("exam", same.get("mode").asText());
+        assertTrue(same.get("resumed").asBoolean());
+        assertEquals(paper.get("attemptId"), same.get("attemptId"));
+
+        // 10/10 -> qua chương + thông báo PASSED
+        assertEquals(10, submitQuiz(token, paper, 10).get("score").asInt());
+        JsonNode p = pathOn(token, id, "2026-11-01");
+        JsonNode ch1 = p.get("chapters").get(0);
+        assertEquals(100, ch1.get("quizBestPct").asInt(), ch1.toString());
+        assertTrue(ch1.has("quizPassedAt"), ch1.toString());
+        assertEquals("passed", ch1.get("state").asText());
+        assertEquals(1, p.get("completion").get("chaptersPassed").asInt());
+        List<JsonNode> passed = notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED");
+        assertEquals(1, passed.size());
+        assertEquals(c1, passed.get(0).get("payload").get("chapterId").asText());
+        assertEquals(100, passed.get(0).get("payload").get("pct").asInt());
+
+        // exam 2 câu mở từ trang Quiz rồi bấm "Kiểm tra chương": không nối lại lượt đó (nộp ra không được tính cho chương) mà đóng
+        // có chấm (lượt exam đã mở luôn có kết quả) và phát đề đủ 10 câu
+        JsonNode tiny = read(call(post("/api/quiz-attempts"), token, Map.of("deckId", deck1, "size", 2, "mode", "exam"))
+                .andExpect(status().isOk()));
+        String tinyId = tiny.get("attemptId").asText();
+        String tinyCard = tiny.get("questions").get(0).get("cardId").asText();
+        call(put("/api/quiz-attempts/" + tinyId + "/answers/" + tinyCard), token, Map.of("option", correct.get(tinyCard)))
+                .andExpect(status().isOk());
+        JsonNode next = openChapterQuiz(token, id, c1);
+        assertEquals("exam", next.get("mode").asText());
+        assertFalse(next.get("resumed").asBoolean());
+        assertNotEquals(tinyId, next.get("attemptId").asText());
+        assertEquals(10, next.get("questions").size());
+        JsonNode tinyAfter = read(call(get("/api/quiz-attempts/" + tinyId), token, null).andExpect(status().isOk()));
+        assertTrue(tinyAfter.get("finished").asBoolean());
+        assertEquals(1, tinyAfter.get("score").asInt());
+        assertEquals(2, tinyAfter.get("total").asInt());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM quiz_results WHERE attempt_id = ?", Integer.class,
+                UUID.fromString(tinyId)));
+        assertEquals(1, notificationsOf(token, "LEARNING_PATH_CHAPTER_PASSED").size(), "lượt 2 câu không gắn nhãn chương");
+        assertEquals(0, notificationsOf(token, "LEARNING_PATH_CHAPTER_RETRY").size());
+    }
+
+    /**
+     * completion.chaptersTotal chỉ đếm chương có bài kiểm tra tính được: bộ thẻ phải ra đủ min(10, số thẻ) câu nghĩa. Trước đây
+     * mọi chương không "empty" đều đếm — chương mọi thẻ cùng một nghĩa, chương chỉ còn 1 thẻ (lộ trình ôn điểm yếu gom theo kanji /
+     * bộ / cấp độ) không bao giờ phát được đề (attemptId null) nên "N/M chương đã qua kiểm tra" kẹt dưới M/M dù đã qua mọi chương
+     * còn lại. GET /{id} và danh sách (nạp batch) cùng một số.
+     */
+    @Test
+    void chapters_total_leaves_out_chapters_whose_deck_cannot_build_a_full_quiz() throws Exception {
+        String token = newUser();
+        String id = quizDraft(token, "Không ra đề").get("id").asText();
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
+        String c1 = active.get("chapters").get(0).get("id").asText();
+        String c2 = active.get("chapters").get(1).get("id").asText();
+        String deck2 = active.get("chapters").get(1).get("deckId").asText();
+        assertEquals("0/2", chapterRatio(token, id));
+
+        // mọi thẻ chương 2 cùng một dòng nghĩa chính (dòng sau khác nhau không tính): không có phương án sai -> không phát được đề
+        jdbc.update("UPDATE flashcards SET meaning = 'cùng nghĩa' || chr(10) || 'ghi chú ' || id WHERE deck_id = ?", deck2);
+        JsonNode p = pathOn(token, id, "2026-11-01");
+        JsonNode ch2 = p.get("chapters").get(1);
+        assertEquals("locked", ch2.get("state").asText(), ch2.toString()); // còn đủ 8 thẻ: không phải "empty"
+        assertEquals(8, ch2.get("cardCount").asInt());
+        assertFalse(openChapterQuiz(token, id, c2).hasNonNull("attemptId"));
+        assertEquals("0/1", chapterRatio(token, id));
+
+        // qua chương còn lại -> M/M tới được
+        submitQuiz(token, openChapterQuiz(token, id, c1), 10);
+        assertEquals("1/1", chapterRatio(token, id));
+
+        // nghĩa khác nhau trở lại -> chương 2 lại có bài kiểm tra, lại vào mẫu số
+        jdbc.update("UPDATE flashcards SET meaning = 'nghĩa ' || id WHERE deck_id = ?", deck2);
+        assertEquals("1/2", chapterRatio(token, id));
+
+        // chỉ còn 1 thẻ (như chương 1 thẻ của lộ trình ôn điểm yếu): 1 nghĩa -> không có đề, ra khỏi mẫu số
+        List<String> left = jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ? AND chapter_id = ?",
+                String.class, UUID.fromString(id), UUID.fromString(c2));
+        for (String cardId : left.subList(1, left.size())) {
+            call(delete("/api/decks/" + deck2 + "/cards/" + cardId), token, null).andExpect(status().isNoContent());
+        }
+        assertEquals(1, pathOn(token, id, "2026-11-01").get("chapters").get(1).get("cardCount").asInt());
+        assertFalse(openChapterQuiz(token, id, c2).hasNonNull("attemptId"));
+        assertEquals("1/1", chapterRatio(token, id));
+    }
+
+    /** "chaptersPassed/chaptersTotal" của GET /{id}; danh sách (nạp batch) phải nói cùng một số. */
+    private String chapterRatio(String token, String id) throws Exception {
+        JsonNode comp = pathOn(token, id, "2026-11-01").get("completion");
+        String ratio = comp.get("chaptersPassed").asInt() + "/" + comp.get("chaptersTotal").asInt();
+        boolean listed = false;
+        for (JsonNode row : read(call(get("/api/learning-paths").param("date", "2026-11-01"), token, null)
+                .andExpect(status().isOk()))) {
+            if (!id.equals(row.get("id").asText())) continue;
+            listed = true;
+            JsonNode c = row.get("completion");
+            assertEquals(ratio, c.get("chaptersPassed").asInt() + "/" + c.get("chaptersTotal").asInt(), row.toString());
+        }
+        assertTrue(listed);
+        return ratio;
+    }
+
+    /**
+     * Đề mới cũng thiếu câu thì bài kiểm tra chương không đóng lượt đang mở. Bộ 3 thẻ (3 nghĩa) có câu nghĩa của một thẻ bị admin
+     * ẩn: phương án câu nghĩa luôn là đủ 3 nghĩa nên sinh lại vẫn trùng câu đã ẩn -> đề chỉ 2 câu (< min(10, 3)). Trước đây mỗi lần
+     * bấm "Kiểm tra chương" lại chấm dở bài 2 câu đang làm (thêm một dòng lịch sử) rồi phát một bài 2 câu khác; giờ trả lại đúng
+     * lượt đang làm. Lượt luyện tập đang mở cũng giữ nguyên — không nộp thay khi đề thay thế cũng không tính cho chương.
+     */
+    @Test
+    void chapter_quiz_keeps_the_open_attempt_when_a_new_paper_would_be_short_too() throws Exception {
+        String token = newUser();
+        String id = quizDraft(token, "Đề thiếu câu").get("id").asText();
+        JsonNode active = activate(token, id, Map.of("startDate", "2026-11-01"));
+        String c2 = active.get("chapters").get(1).get("id").asText();
+        String deck2 = active.get("chapters").get(1).get("deckId").asText();
+        List<String> cards2 = jdbc.queryForList("SELECT card_id FROM learning_path_cards WHERE path_id = ? AND chapter_id = ?",
+                String.class, UUID.fromString(id), UUID.fromString(c2));
+        for (String cardId : cards2.subList(3, cards2.size())) {
+            call(delete("/api/decks/" + deck2 + "/cards/" + cardId), token, null).andExpect(status().isNoContent());
+        }
+        JsonNode full = openChapterQuiz(token, id, c2);
+        assertEquals(3, full.get("questions").size(), full.toString());
+        submitQuiz(token, full, 1);
+        String hiddenCard = full.get("questions").get(0).get("cardId").asText();
+        assertTrue(jdbc.update("UPDATE quiz_questions SET status = 'HIDDEN' WHERE card_id = ? AND kind = 'MEANING'",
+                hiddenCard) > 0);
+
+        JsonNode shortPaper = openChapterQuiz(token, id, c2);
+        assertEquals("exam", shortPaper.get("mode").asText());
+        assertEquals(2, shortPaper.get("questions").size(), shortPaper.toString());
+        String shortId = shortPaper.get("attemptId").asText();
+        Map<String, String> correct = correctAnswers(token, deck2);
+        String first = shortPaper.get("questions").get(0).get("cardId").asText();
+        call(put("/api/quiz-attempts/" + shortId + "/answers/" + first), token, Map.of("option", correct.get(first)))
+                .andExpect(status().isOk());
+
+        // bấm lại (hai lần): vẫn đúng lượt đang làm, giữ đáp án, không chấm, không thêm dòng lịch sử
+        for (int i = 0; i < 2; i++) {
+            JsonNode again = openChapterQuiz(token, id, c2);
+            assertTrue(again.get("resumed").asBoolean(), again.toString());
+            assertEquals(shortId, again.get("attemptId").asText());
+            assertFalse(again.get("finished").asBoolean());
+            assertEquals(correct.get(first), again.get("questions").get(0).get("chosen").asText());
+        }
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM quiz_results WHERE attempt_id = ?", Integer.class,
+                UUID.fromString(shortId)));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM quiz_results WHERE deck_id = ?", Integer.class, deck2));
+        submitQuiz(token, shortPaper, 2);
+
+        // lượt luyện tập trên bộ đó: đề thay thế cũng chỉ 2 câu -> không nộp thay, trả lại nguyên lượt luyện tập (trang lộ trình báo
+        // "đang có lượt luyện tập dở"), làm tiếp được
+        JsonNode practice = read(call(post("/api/quiz-attempts"), token,
+                Map.of("deckId", deck2, "size", 10, "mode", "practice")).andExpect(status().isOk()));
+        String practiceId = practice.get("attemptId").asText();
+        String p1 = practice.get("questions").get(0).get("cardId").asText();
+        String p2 = practice.get("questions").get(1).get("cardId").asText();
+        call(put("/api/quiz-attempts/" + practiceId + "/answers/" + p1), token, Map.of("option", correct.get(p1)))
+                .andExpect(status().isOk());
+        JsonNode kept = openChapterQuiz(token, id, c2);
+        assertEquals("practice", kept.get("mode").asText(), kept.toString());
+        assertTrue(kept.get("resumed").asBoolean());
+        assertEquals(practiceId, kept.get("attemptId").asText());
+        call(put("/api/quiz-attempts/" + practiceId + "/answers/" + p2), token, Map.of("option", correct.get(p2)))
+                .andExpect(status().isOk());
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM quiz_results WHERE attempt_id = ?", Integer.class,
+                UUID.fromString(practiceId)));
     }
 
     @Test

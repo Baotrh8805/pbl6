@@ -123,8 +123,10 @@ export const enrichLearningPath = async (id: string): Promise<LearningPath> =>
     (await apiClient.post<LearningPath>(`${pathUrl(id)}/enrich`, undefined, dated())).data;
 
 /**
- * Mở lượt kiểm tra chương (quiz exam trên bộ của chương; đang có lượt mở thì `resumed = true`).
- * Sau đó điều hướng tới `/decks/{state.deckId}/quiz?attempt={state.attemptId}`: QuizPage khôi phục đúng lượt đó.
+ * Mở lượt kiểm tra chương (quiz exam trên bộ của chương; đang có bài kiểm tra chương mở thì `resumed = true`, lượt luyện
+ * tập / bài kiểm tra ít câu đang mở trên bộ đó bị server nộp thay — chấm như hết hạn — để phát đề exam, nên hỏi người học
+ * trước: `chapterQuizReplaceNotice`). Điều hướng qua `chapterQuizTarget` (roadmapUtils): chỉ vào lượt exam,
+ * `/decks/{state.deckId}/quiz?attempt={state.attemptId}` — QuizPage khôi phục đúng lượt đó.
  * null = response hỏng (không dựng được lượt làm).
  */
 export const startChapterQuiz = async (id: string, cid: string): Promise<QuizAttemptState | null> =>

@@ -70,7 +70,9 @@ export const ProgressSummary: React.FC<ProgressSummaryProps> = ({
             <span className="text-primary"> ({c.learnedPct}%)</span>
           </span>
           <span className="text-label-sm text-on-surface-variant">
-            {c.chaptersTotal > 0 ? `${c.chaptersPassed}/${c.chaptersTotal} chương đã qua kiểm tra` : "Chưa có chương"}
+            {/* chaptersTotal chỉ đếm chương có bài kiểm tra tính được (không đếm chương "Trống", chương 1 thẻ, chương mọi thẻ cùng
+                nghĩa) nên 0 vẫn có thể còn chương trong danh sách */}
+            {c.chaptersTotal > 0 ? `${c.chaptersPassed}/${c.chaptersTotal} chương đã qua kiểm tra` : "Chưa có chương để kiểm tra"}
           </span>
         </div>
         {/* Thanh chính đọc cả câu tóm tắt: trình đọc màn hình nhận hai thước đo + chương trong một lần dừng. */}

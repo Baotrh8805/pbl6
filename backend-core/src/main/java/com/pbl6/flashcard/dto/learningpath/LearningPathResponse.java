@@ -53,7 +53,10 @@ public record LearningPathResponse(UUID id, String title, String status, String 
 
     /**
      * Hai thước đo tiến độ (spec §1 mục 5): learned = thẻ đã có ít nhất một lần chấm, mastered = khoảng ôn ≥ 21 ngày; pct làm tròn
-     * xuống nên 100 chỉ khi học hết; chaptersPassed = chương đã qua bài kiểm tra; done = đã chốt hoàn thành hoặc đã học 100 % thẻ.
+     * xuống nên 100 chỉ khi học hết; chaptersPassed = chương đã qua bài kiểm tra; chaptersTotal = chương đã qua hoặc có bài kiểm tra
+     * tính được cho chương — không đếm chương "empty" (hết thẻ mà chưa qua) và chương mà bộ thẻ không ra đủ min(10, số thẻ) câu
+     * nghĩa (vd. 1 thẻ, mọi thẻ cùng một nghĩa), để chaptersPassed tới được chaptersTotal; done =
+     * đã chốt hoàn thành hoặc đã học 100 % thẻ (theo thẻ, không phụ thuộc số chương).
      */
     public record Completion(int total, int learned, int mastered, int learnedPct, int masteredPct,
                              int chaptersPassed, int chaptersTotal, boolean done) {}

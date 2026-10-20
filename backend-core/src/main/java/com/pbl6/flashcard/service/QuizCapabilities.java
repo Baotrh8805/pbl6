@@ -32,24 +32,35 @@ public final class QuizCapabilities {
     static final String KEY_HOMOPHONES = "homophones";
 
     public static QuizCapabilitiesResponse count(List<Flashcard> cards) {
-        int meaning = 0;
         int lookalike = 0;
         int homophone = 0;
         int reading = 0;
         int conjugation = 0;
-        Set<String> headlines = new HashSet<>();
         for (Flashcard c : cards) {
-            String h = QuizService.headline(c.getMeaning());
-            if (!h.isEmpty()) {
-                meaning++;
-                headlines.add(h);
-            }
             if (hasKanjiLookalike(c)) lookalike++;
             if (hasHomophone(c)) homophone++;
             if (hasReading(c)) reading++;
             if (isVerbCandidate(c)) conjugation++;
         }
-        return new QuizCapabilitiesResponse(headlines.size() >= 2 ? meaning : 0, lookalike, homophone, reading, conjugation);
+        return new QuizCapabilitiesResponse(meaningQuestions(cards.stream().map(Flashcard::getMeaning).toList()), lookalike,
+                homophone, reading, conjugation);
+    }
+
+    /**
+     * Số câu nghĩa một bộ thẻ ra được từ nội dung các thẻ: thẻ có dòng nghĩa chính không rỗng, nhưng cả bộ cần ≥ 2 nghĩa khác
+     * nhau mới có phương án sai — không đủ thì 0. Dùng chung cho quiz-capabilities và lộ trình (LearningPathService: chương nào ra
+     * được bài kiểm tra đủ cỡ để vào mẫu số "N/M chương đã qua kiểm tra").
+     */
+    public static int meaningQuestions(Iterable<String> meanings) {
+        int n = 0;
+        Set<String> headlines = new HashSet<>();
+        for (String m : meanings) {
+            String h = QuizService.headline(m);
+            if (h.isEmpty()) continue;
+            n++;
+            headlines.add(h);
+        }
+        return headlines.size() >= 2 ? n : 0;
     }
 
     public static boolean hasKanjiLookalike(Flashcard c) {

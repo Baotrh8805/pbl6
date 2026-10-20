@@ -1570,9 +1570,11 @@ public class LearningPathService {
     }
 
     /**
-     * Bài kiểm tra cuối chương (spec §4.1): lượt quiz exam trên bộ thẻ của chương, min(10, số thẻ còn trong lịch) câu; đang có lượt
-     * mở trên bộ đó thì QuizAttemptService trả lại lượt đó (resumed). Kết quả về qua {@link #onQuizSubmitted}. Không ghi gì vào lộ
-     * trình nên không cần khoá dòng.
+     * Bài kiểm tra cuối chương (spec §4.1): LUÔN là lượt quiz exam trên bộ thẻ của chương, min(10, số thẻ còn trong lịch) câu. Chỉ
+     * nối lại (resumed) lượt exam đang mở mà nộp ra được {@link #onQuizSubmitted} tính cho chương (đủ cỡ đề); lượt mở khác trên
+     * bộ đó — practice của trang Quiz, exam ít câu — bị nộp thay (chấm như hết hạn) để phát đề mới, trừ khi đề mới cũng thiếu câu
+     * (QuizAttemptService.chapterExam). Trước đây lượt practice đang mở được trả lại nguyên vẹn: người học làm đúng hết mà chương
+     * không qua. Kết quả về qua {@link #onQuizSubmitted}. Không ghi gì vào lộ trình nên không cần khoá dòng.
      */
     @Transactional
     public AttemptState chapterQuiz(Long uid, UUID id, UUID cid) {
@@ -1586,7 +1588,7 @@ public class LearningPathService {
         if (n == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Chương không còn thẻ nào để kiểm tra.");
         }
-        return quizAttempts.create(uid, chapter.getDeckId(), (int) Math.min(CHAPTER_QUIZ_SIZE, n), QuizAttempt.EXAM);
+        return quizAttempts.chapterExam(uid, chapter.getDeckId(), (int) Math.min(CHAPTER_QUIZ_SIZE, n));
     }
 
     /**
@@ -1730,8 +1732,13 @@ public class LearningPathService {
         }
     }
 
-    /** Dữ liệu đã nạp của một lộ trình ACTIVE: chương theo position, thẻ theo seq, số thẻ đến hạn tới hết ngày đang xét. */
-    private record ActiveData(List<LearningPathChapter> chapters, List<PathCard> cards, int dueCount) {}
+    /**
+     * Dữ liệu đã nạp của một lộ trình ACTIVE: chương theo position, thẻ theo seq, số thẻ đến hạn tới hết ngày đang xét;
+     * meaningQuestions = bộ thẻ của chương -> số câu nghĩa bộ đó ra được (bài kiểm tra chương chỉ gồm câu nghĩa), để biết chương
+     * nào có bài kiểm tra tính được ({@link #inChaptersTotal}). Chỉ nạp khi có chương (today-summary không dựng completion).
+     */
+    private record ActiveData(List<LearningPathChapter> chapters, List<PathCard> cards, int dueCount,
+                              Map<String, Integer> meaningQuestions) {}
 
     /** Vị trí "hôm nay" trong lộ trình và ba con số của phiên học. */
     private record TodayStats(LocalDate date, DayPos pos, String state, int newCount, int dueCount, int behindCount) {
@@ -1743,7 +1750,24 @@ public class LearningPathService {
         List<PathCard> cs = cards.findRowsWithLearned(p.getId(), p.getUserId()).stream().map(PathCard::of).toList();
         Instant until = endOf(date);
         int due = (int) cs.stream().filter(c -> c.dueAt() != null && c.dueAt().isBefore(until)).count();
-        return new ActiveData(rows, cs, due);
+        return new ActiveData(rows, cs, due, meaningQuestionsByDeck(rows));
+    }
+
+    /**
+     * Bộ thẻ của các chương -> số câu nghĩa bộ đó ra được ({@link QuizCapabilities#meaningQuestions}, cùng điều kiện sinh đề của
+     * QuizService.build trên CẢ bộ thẻ). Một truy vấn chỉ lấy nội dung thẻ, không nạp entity. Bộ không còn thẻ nào: không có khoá.
+     */
+    private Map<String, Integer> meaningQuestionsByDeck(List<LearningPathChapter> rows) {
+        Set<String> deckIds = new HashSet<>();
+        for (LearningPathChapter c : rows) if (c.getDeckId() != null) deckIds.add(c.getDeckId());
+        if (deckIds.isEmpty()) return Map.of();
+        Map<String, List<String>> meanings = new HashMap<>();
+        for (FlashcardRepository.DeckMeaning m : flashcards.findMeaningsByDeckIds(deckIds)) {
+            meanings.computeIfAbsent(m.getDeckId(), k -> new ArrayList<>()).add(m.getMeaning());
+        }
+        Map<String, Integer> out = new HashMap<>();
+        meanings.forEach((deckId, list) -> out.put(deckId, QuizCapabilities.meaningQuestions(list)));
+        return out;
     }
 
     /**
@@ -1783,9 +1807,12 @@ public class LearningPathService {
                 }
             }
         }
+        // Một truy vấn cho bộ thẻ của mọi chương (mỗi chương một bộ riêng nên dùng chung một map được)
+        Map<String, Integer> questions = withTasks
+                ? meaningQuestionsByDeck(chapterMap.values().stream().flatMap(List::stream).toList()) : Map.of();
         for (LearningPath p : active) {
             out.put(p.getId(), new ActiveData(chapterMap.getOrDefault(p.getId(), List.of()),
-                    cardMap.getOrDefault(p.getId(), List.of()), dueMap.getOrDefault(p.getId(), 0)));
+                    cardMap.getOrDefault(p.getId(), List.of()), dueMap.getOrDefault(p.getId(), 0), questions));
         }
         return out;
     }
@@ -1863,6 +1890,19 @@ public class LearningPathService {
     }
 
     /**
+     * Chương có vào mẫu số completion.chaptersTotal không. Đã qua: luôn đếm (chaptersPassed ≤ chaptersTotal, kể cả qua rồi mới
+     * hết thẻ). Chưa qua: chỉ khi bài kiểm tra của nó nộp ra được tính "qua chương" — còn thẻ (chương "empty" bị POST /quiz từ chối
+     * 409) và bộ thẻ ra được ít nhất min(10, số thẻ) câu nghĩa, đúng cỡ đề {@link #onQuizSubmitted} đòi. Chương 1 thẻ của lộ trình
+     * ôn điểm yếu (gom theo kanji / bộ / cấp độ), chương mọi thẻ cùng một nghĩa: không phát được đề (attemptId null) hoặc đề thiếu
+     * câu không bao giờ qua — đếm vào thì "N/M chương đã qua kiểm tra" kẹt dưới M/M mãi dù đã qua mọi chương còn lại.
+     */
+    static boolean inChaptersTotal(LearningPathChapter c, int cards, Map<String, Integer> meaningQuestions) {
+        if (c.getQuizPassedAt() != null) return true;
+        if (cards == 0 || c.getDeckId() == null) return false;
+        return meaningQuestions.getOrDefault(c.getDeckId(), 0) >= Math.min(CHAPTER_QUIZ_SIZE, cards);
+    }
+
+    /**
      * Response của lộ trình ACTIVE, suy hoàn toàn từ learning_path_cards + reviews: chương (số thẻ còn lại, dải ngày, learned /
      * mastered, state), completion, today; full thêm days[] (mọi ngày học 1..totalDays, ngày lịch theo study_days) và forecast.
      */
@@ -1879,6 +1919,7 @@ public class LearningPathService {
         int learnedAll = 0;
         int masteredAll = 0;
         int passed = 0;
+        int quizzable = 0;
         for (LearningPathChapter c : d.chapters()) {
             List<PathCard> cs = byChapter.getOrDefault(c.getId(), List.of());
             int learned = 0;
@@ -1897,14 +1938,16 @@ public class LearningPathService {
             learnedAll += learned;
             masteredAll += mastered;
             if (c.getQuizPassedAt() != null) passed++;
+            String state = chapterState(c, cs.size(), learned, from, to, ts.dayIndex());
+            if (inChaptersTotal(c, cs.size(), d.meaningQuestions())) quizzable++;
             int perDay = from == null ? 0 : LearningPathScheduler.perDay(cs.size(), new DayRange(from, to));
             dtos.add(new LearningPathChapterResponse(c.getId(), c.getPosition(), c.getTitle(), c.getDeckId(),
                     c.getDeckId() == null, cs.size(), vocab, grammar, from, to, perDay, learned, mastered,
-                    chapterState(c, cs.size(), learned, from, to, ts.dayIndex()), c.getQuizBestPct(), c.getQuizPassedAt()));
+                    state, c.getQuizBestPct(), c.getQuizPassedAt()));
         }
         int total = d.cards().size();
         Completion completion = new Completion(total, learnedAll, masteredAll, pct(learnedAll, total),
-                pct(masteredAll, total), passed, d.chapters().size(),
+                pct(masteredAll, total), passed, quizzable,
                 p.getCompletedAt() != null || (total > 0 && learnedAll == total));
         List<Task> todayTasks = "during".equals(ts.state()) ? tasksFor(d.chapters(), byDay.get(ts.dayIndex())) : List.of();
         Today today = new Today(date, ts.dayIndex(), ts.state(), todayTasks, ts.newCount(), ts.dueCount(), ts.behindCount());
