@@ -12,9 +12,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -93,6 +96,69 @@ class AdminUserIT extends IntegrationTest {
         patchUser(admin.token, u.id, body("locked", true)).andExpect(status().isOk());
         patchUser(admin.token, u.id, body("locked", true)).andExpect(status().isOk());
         assertEquals(1, auditCount(admin.token, u.id));
+    }
+
+    /**
+     * Đã khoá + gửi lý do khác: đổi lý do (trước đây 200 mà lặng lẽ giữ lý do cũ), audit USER_LOCK_REASON với before/after, mốc
+     * khoá giữ nguyên. Lý do trùng / rỗng / thiếu = no-op, không audit. Quy tắc bậc vẫn áp dụng. Khiếu nại đã gửi giữ lý do chụp
+     * lúc gửi (STAFF-07), chỉ lockedReason hiện tại đổi.
+     */
+    @Test
+    void relocking_with_a_new_reason_updates_it_and_is_audited() throws Exception {
+        Account admin = staff(Role.ADMIN);
+        Account u = user();
+        JsonNode locked = read(patchUser(admin.token, u.id, Map.of("locked", true, "lockedReason", "Spam bình luận"))
+                .andExpect(status().isOk()));
+        assertEquals("Spam bình luận", locked.get("lockedReason").asText());
+        String lockedAt = locked.get("lockedAt").asText();
+        // khiếu nại gửi khi đang khoá với lý do cũ
+        String ip = "10.78." + ThreadLocalRandom.current().nextInt(256) + "." + (1 + ThreadLocalRandom.current().nextInt(254));
+        call(post("/api/auth/appeals").with(req -> { // IP riêng: giới hạn khiếu nại 5/giờ/IP dùng chung cả bộ test
+            req.setRemoteAddr(ip);
+            return req;
+        }), null, Map.of("email", u.email, "message", "Tôi bị khoá nhầm, xin xem xét lại giúp.")).andExpect(status().isAccepted());
+
+        JsonNode changed = read(patchUser(admin.token, u.id, Map.of("locked", true, "lockedReason", "  Lừa đảo  "))
+                .andExpect(status().isOk()));
+        assertEquals("Lừa đảo", changed.get("lockedReason").asText(), "lý do mới (đã trim) thay lý do cũ");
+        // So trong 1 µs: response lần khoá mang Instant trong bộ nhớ (Windows: bước 100 ns), còn lần này đọc lại từ DB
+        // (timestamptz làm tròn tới µs) — so nguyên chuỗi thì trượt ~9/10 lần dù mốc khoá không đổi
+        Duration drift = Duration.between(Instant.parse(lockedAt), Instant.parse(changed.get("lockedAt").asText())).abs();
+        assertTrue(drift.toNanos() < 1_000, "đổi lý do không đổi mốc khoá: " + lockedAt + " -> " + changed.get("lockedAt"));
+        assertEquals("Lừa đảo", userRepository.findById(u.id).orElseThrow().getLockedReason());
+        assertEquals(2, auditCount(admin.token, u.id), "USER_LOCK + USER_LOCK_REASON");
+        JsonNode audit = null;
+        for (JsonNode r : read(call(get("/api/admin/audit-logs").param("targetType", "USER").param("size", "100"), admin.token, null))
+                .get("items")) {
+            if (r.get("targetId").asText().equals(u.id.toString()) && "USER_LOCK_REASON".equals(r.get("action").asText())) audit = r;
+        }
+        assertNotNull(audit, "đổi lý do được audit riêng");
+        assertEquals("Spam bình luận", audit.get("detail").get("lockedReason").get("before").asText(), audit.toString());
+        assertEquals("Lừa đảo", audit.get("detail").get("lockedReason").get("after").asText(), audit.toString());
+
+        // lý do trùng / rỗng / chỉ locked=true: không đổi gì, không audit thêm
+        patchUser(admin.token, u.id, Map.of("locked", true, "lockedReason", "Lừa đảo")).andExpect(status().isOk());
+        patchUser(admin.token, u.id, Map.of("locked", true, "lockedReason", "   ")).andExpect(status().isOk());
+        patchUser(admin.token, u.id, body("locked", true)).andExpect(status().isOk());
+        assertEquals("Lừa đảo", userRepository.findById(u.id).orElseThrow().getLockedReason());
+        assertEquals(2, auditCount(admin.token, u.id));
+
+        // STAFF-07: khiếu nại đang chờ giữ lý do lúc gửi, lockedReason là trạng thái hiện tại
+        JsonNode appeal = null;
+        for (JsonNode a : read(call(get("/api/admin/appeals").param("status", "OPEN").param("size", "100"), admin.token, null)
+                .andExpect(status().isOk())).get("items")) {
+            if (a.get("email").asText().equals(u.email)) appeal = a;
+        }
+        assertNotNull(appeal);
+        assertEquals("Spam bình luận", appeal.get("lockedReasonAtSubmit").asText(), appeal.toString());
+        assertEquals("Lừa đảo", appeal.get("lockedReason").asText(), appeal.toString());
+
+        // quy tắc bậc: ADMIN không đổi được lý do khoá của ADMIN khác (do SUPER_ADMIN khoá)
+        Account root = staff(Role.SUPER_ADMIN);
+        Account peer = staff(Role.ADMIN);
+        patchUser(root.token, peer.id, Map.of("locked", true, "lockedReason", "Lạm quyền")).andExpect(status().isOk());
+        patchUser(admin.token, peer.id, Map.of("locked", true, "lockedReason", "Khác")).andExpect(status().isForbidden());
+        assertEquals("Lạm quyền", userRepository.findById(peer.id).orElseThrow().getLockedReason());
     }
 
     @Test
@@ -245,6 +311,10 @@ class AdminUserIT extends IntegrationTest {
         patchUser(admin.token, u.id, body("clearLimit", true)).andExpect(status().isConflict());
         call(put("/api/admin/users/" + u.id + "/role"), root.token, Map.of("role", "ADMIN")).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(AccountDeletionService.CANNOT_CHANGE));
+        // lý do của khoá vĩnh viễn không đổi được (khoá lại có lý do mới = thay đổi, không phải no-op)
+        String deletedReason = userRepository.findById(u.id).orElseThrow().getLockedReason();
+        patchUser(admin.token, u.id, Map.of("locked", true, "lockedReason", "Lý do khác")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(AccountDeletionService.CANNOT_CHANGE));
         patchUser(admin.token, u.id, body("locked", true)).andExpect(status().isOk());
 
         User after = userRepository.findById(u.id).orElseThrow();
@@ -253,6 +323,7 @@ class AdminUserIT extends IntegrationTest {
         assertFalse(after.getIsPremium());
         assertNull(after.getExtractionDailyLimit());
         assertEquals(anonymized, after.getEmail());
+        assertEquals(deletedReason, after.getLockedReason());
         assertEquals(1, auditCount(admin.token, u.id), "chỉ có USER_SELF_DELETE, không USER_UNLOCK / USER_PREMIUM / USER_ROLE");
     }
 }

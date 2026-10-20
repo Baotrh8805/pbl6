@@ -116,13 +116,22 @@ public class AdminUserService {
         if (req.premium() != null || limitGiven) requireNotDeleted(target, AccountDeletionService.CANNOT_CHANGE);
         Map<String, Object> changes = new HashMap<>();
 
+        String givenReason = req.lockedReason() != null && !req.lockedReason().isBlank() ? req.lockedReason().trim() : null;
         if (req.locked() != null && req.locked() != (target.getLockedAt() != null)) {
             changes.putAll(AuditService.diff("locked", !req.locked(), req.locked()));
             target.setLockedAt(req.locked() ? Instant.now() : null);
-            String reason = req.locked() && req.lockedReason() != null && !req.lockedReason().isBlank() ? req.lockedReason().trim() : null;
+            String reason = req.locked() ? givenReason : null;
             target.setLockedReason(reason);
             if (reason != null) changes.put("reason", reason);
             if (req.locked()) refreshTokens.revokeAll(target.getId());
+        } else if (Boolean.TRUE.equals(req.locked()) && target.getLockedAt() != null && givenReason != null
+                && !givenReason.equals(target.getLockedReason())) {
+            // Đã khoá + gửi lý do khác: đổi lý do (trước đây 200 mà lặng lẽ giữ lý do cũ). Mốc khoá giữ nguyên, phiên đã bị thu hồi
+            // lúc khoá. Khiếu nại đã gửi giữ lockedReasonAtSubmit đã chụp (STAFF-07), chỉ lockedReason "hiện tại" đổi. Lý do rỗng /
+            // thiếu = giữ nguyên, như "khoá lại" vẫn là no-op. Tài khoản đã tự xoá: lý do khoá vĩnh viễn không đổi được -> 409.
+            requireNotDeleted(target, AccountDeletionService.CANNOT_CHANGE);
+            changes.putAll(AuditService.diff("lockedReason", target.getLockedReason(), givenReason));
+            target.setLockedReason(givenReason);
         }
         if (req.premium() != null) {
             // premiumUntil chỉ có nghĩa khi premium = true; null = vĩnh viễn. Gửi premium=true lần nữa với hạn khác = đổi hạn.
@@ -149,6 +158,7 @@ public class AdminUserService {
         if (!changes.isEmpty()) {
             users.save(target);
             String action = changes.containsKey("locked") ? (Boolean.TRUE.equals(req.locked()) ? "USER_LOCK" : "USER_UNLOCK")
+                    : changes.containsKey("lockedReason") ? "USER_LOCK_REASON"
                     : changes.containsKey("premium") ? "USER_PREMIUM" : "USER_LIMIT";
             audit.log(actor.getId(), action, "USER", String.valueOf(id), changes);
         }
