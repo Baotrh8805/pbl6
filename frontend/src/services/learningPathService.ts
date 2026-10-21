@@ -122,6 +122,14 @@ export const retryLearningPath = async (id: string): Promise<LearningPath> =>
 export const enrichLearningPath = async (id: string): Promise<LearningPath> =>
     (await apiClient.post<LearningPath>(`${pathUrl(id)}/enrich`, undefined, dated())).data;
 
+/** Văn bản gốc đã trích của lộ trình (spec 21/10); 400 khi job không còn văn bản. */
+export const fetchLearningPathText = async (id: string): Promise<string> =>
+    (await apiClient.get<{ text: string }>(`${pathUrl(id)}/text`)).data.text;
+
+/** DRAFT/FAILED: sửa văn bản gốc rồi phân tích lại (202, PROCESSING, không tốn lượt); bản nháp cũ được dựng lại. */
+export const updateLearningPathText = async (id: string, text: string): Promise<LearningPath> =>
+    (await apiClient.put<LearningPath>(`${pathUrl(id)}/text`, { text }, dated())).data;
+
 /**
  * Mở lượt kiểm tra chương (quiz exam trên bộ của chương; đang có bài kiểm tra chương mở thì `resumed = true`, lượt luyện
  * tập / bài kiểm tra ít câu đang mở trên bộ đó bị server nộp thay — chấm như hết hạn — để phát đề exam, nên hỏi người học

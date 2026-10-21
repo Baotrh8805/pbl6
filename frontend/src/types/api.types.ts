@@ -411,6 +411,10 @@ export interface LearningPathJob {
     stage: ExtractionStage;
     errorMessage: string | null;
     stats?: ExtractionStats | null;
+    /** FAILED vì dịch vụ AI quá tải (spec 21/10): lượt không bị tính, không có văn bản để "Chạy lại". */
+    failureKind?: "AI_OVERLOADED" | null;
+    /** Có trang OCR giữ bản Tesseract vì Gemini quá tải -> cảnh báo + cho sửa văn bản gốc. */
+    ocrDegraded?: boolean;
 }
 
 export interface LearningPathChapter {

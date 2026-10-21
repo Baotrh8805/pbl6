@@ -75,7 +75,10 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
         case "ROLE_CHANGED":
             return { text: p.role === "USER" ? "Tài khoản của bạn đã trở lại vai trò người học." : `Tài khoản của bạn được chuyển sang vai trò ${str(p.role)}.` };
         case "LEARNING_PATH_READY":
-            return { text: `Bản nháp lộ trình ${pathName} đã sẵn sàng${num(p.chapters) > 0 ? ` (${num(p.chapters)} chương)` : ""}. Xem lại và kích hoạt để bắt đầu học.`, to: pathLink };
+            return {
+                text: `Bản nháp lộ trình ${pathName} đã sẵn sàng${num(p.chapters) > 0 ? ` (${num(p.chapters)} chương)` : ""}. Xem lại và kích hoạt để bắt đầu học.${p.ocrDegraded ? " Một số trang OCR chất lượng thấp vì dịch vụ AI quá tải, hãy soát lại văn bản gốc." : ""}`,
+                to: pathLink,
+            };
         case "LEARNING_PATH_FAILED":
             return { text: `Không tạo được lộ trình ${pathName}.${str(p.reason) ? ` Lý do: ${str(p.reason)}` : ""}`, to: pathLink };
         case "LEARNING_PATH_REMINDER": {

@@ -18,6 +18,7 @@ import {
   retryLearningPath,
   startChapterQuiz,
   updateLearningPath,
+  updateLearningPathText,
 } from "@/services/learningPathService";
 import type { LearningPath, LearningPathPatch } from "@/types/api.types";
 import { useShell } from "@/components/layout/shellContext";
@@ -45,7 +46,7 @@ const ENRICH_POLL_MS = 30_000;
 /** Thông báo thành công tự ẩn sau chừng này. */
 const NOTICE_MS = 8000;
 
-type BusyAction = "rebalance" | "retry" | "enrich" | "complete" | "settings";
+type BusyAction = "rebalance" | "retry" | "enrich" | "complete" | "settings" | "text";
 
 /**
  * Route giữ nguyên component khi chỉ đổi :id (vd. "Tạo lại" từ lộ trình FAILED sang lộ trình mới) ->
@@ -322,6 +323,33 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
 
   const handleEnrich = () => runOnce(inFlight.current, "enrich", enrich);
 
+  // Spec 21/10: sửa văn bản gốc (OCR hạ cấp) -> hỏi trước vì bản nháp chương hiện tại bị dựng lại; 202 PROCESSING -> poll như
+  // lúc tạo. Lỗi server hiện trong hộp thoại (action), người dùng sửa tiếp hoặc huỷ.
+  const reanalyzeText = async (text: string) => {
+    setBusyAction("text");
+    try {
+      const done: { path?: LearningPath } = {};
+      const ok = await dialog.confirm({
+        title: "Phân tích lại từ văn bản đã sửa?",
+        message: "Bản nháp chương hiện tại sẽ được dựng lại từ văn bản mới. Chương đã đổi tên hoặc gộp sẽ về như ban đầu.",
+        confirmLabel: "Phân tích lại",
+        tone: "warning",
+        action: async () => {
+          done.path = await updateLearningPathText(id, text);
+        },
+      });
+      if (!ok || !done.path) return;
+      refreshSeq.current++;
+      setPath(done.path);
+      setActionError(null);
+      setPollRound((n) => n + 1);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleReanalyzeText = (text: string) => runOnce(inFlight.current, "text", () => reanalyzeText(text));
+
   // Kiểm tra chương: server mở (hoặc nối lại) lượt quiz exam trên bộ của chương; QuizPage khôi phục đúng lượt qua ?attempt=.
   // ?path= để màn kết quả quiz có nút "Về lộ trình" (chương hiện "Đã qua" ngay khi đạt ngưỡng). Lượt trả về không phải exam
   // (server cũ trả lại lượt luyện tập đang mở) -> báo lỗi, không vào: làm ở đó chương không bao giờ qua (chapterQuizTarget).
@@ -475,6 +503,9 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
           onActivate={(values) => void handleActivate(values)}
           onEnrich={() => void handleEnrich()}
           enriching={busyAction === "enrich"}
+          onReanalyzeText={async (text) => {
+            await handleReanalyzeText(text);
+          }}
         />
       )}
 

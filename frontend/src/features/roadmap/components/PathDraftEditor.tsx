@@ -27,6 +27,7 @@ import {
   suggestDaysLabel,
 } from "@/features/roadmap/roadmapUtils";
 import { ChapterDraftCard } from "./ChapterDraftCard";
+import { PathSourceTextPanel } from "./PathSourceTextPanel";
 import { RecheckPathConflictsButton } from "./RecheckPathConflictsButton";
 import { StudyDaysToggles } from "./StudyDaysToggles";
 
@@ -52,6 +53,8 @@ interface PathDraftEditorProps {
   /** "Dịch lại nghĩa" (POST /enrich) khi Gemini hết hạn mức / lỗi ở bước dịch. */
   onEnrich: () => void;
   enriching: boolean;
+  /** Spec 21/10: sửa văn bản gốc (OCR hạ cấp vì Gemini quá tải) rồi phân tích lại (PUT /text); nơi gọi hỏi xác nhận + poll. */
+  onReanalyzeText: (text: string) => Promise<void>;
 }
 
 const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -81,7 +84,9 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
   onActivate,
   onEnrich,
   enriching,
+  onReanalyzeText,
 }) => {
+  const [sourceOpen, setSourceOpen] = useState(false);
   const serverCap = path.dailyCap ?? DEFAULT_DAILY_CAP;
   const serverMask = path.studyDays ?? ALL_WEEK;
   const title = useField(path.title);
@@ -210,6 +215,29 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
             nghĩa từng thẻ khi mở chương bên dưới.
           </span>
         </p>
+      )}
+
+      {path.job?.ocrDegraded && !jobRunning && (
+        <div className="p-3 rounded-lg bg-[#FEF3C7] border border-[#F59E0B]/40 text-[#92400E] text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span className="flex items-start gap-1.5 min-w-0">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">warning</span>
+            <span>Một số trang OCR chất lượng thấp vì dịch vụ AI quá tải; thẻ có thể sai chữ.</span>
+          </span>
+          {!sourceOpen && (
+            <Button variant="outline" size="sm" onClick={() => setSourceOpen(true)} disabled={activating} className="shrink-0">
+              Xem/sửa văn bản gốc
+            </Button>
+          )}
+        </div>
+      )}
+
+      {sourceOpen && (
+        <PathSourceTextPanel
+          pathId={path.id}
+          onReanalyze={onReanalyzeText}
+          onClose={() => setSourceOpen(false)}
+          disabled={activating || jobRunning}
+        />
       )}
 
       {jobRunning && (
