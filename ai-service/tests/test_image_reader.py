@@ -6,7 +6,7 @@ from PIL import Image
 
 from app.core.config import settings
 from app.extract import gemini
-from app.extract.readers import OcrUnavailable, TextResult
+from app.extract.readers import OcrOverloaded, OcrUnavailable, TextResult
 from app.extract.readers import image_reader
 
 KEYS = ("level", "page_num", "block_num", "par_num", "line_num", "word_num",
@@ -91,7 +91,7 @@ def test_gemini_fallback_when_low_confidence(fake_tesseract, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
     seen = {}
 
-    def fake_vision(image_bytes, mime, mode, model=None):
+    def fake_vision(image_bytes, mime, mode, model=None, deadline=None):
         seen.update(mime=mime, mode=mode)
         return "日本語の勉強は面白い。\n\n漢字を練習する。"
 
@@ -129,7 +129,7 @@ def test_gemini_failure_keeps_tesseract_result(fake_tesseract, monkeypatch):
 
 
 def test_ocr_pages_reports_first_gemini_error(monkeypatch):
-    def fake_read(data, mode, page=1, fallback_confidence=None, gemini_model=None):
+    def fake_read(data, mode, page=1, fallback_confidence=None, gemini_model=None, deadline=None):
         return TextResult(text="ページ", source_type="image", engine="tesseract", pages=1,
                           gemini_error="quota" if page == 2 else None)
     monkeypatch.setattr(image_reader, "read_image", fake_read)
@@ -150,12 +150,12 @@ def test_gemini_only_when_tesseract_missing(monkeypatch):
     monkeypatch.setattr(image_reader, "available", lambda: False)
     monkeypatch.setattr(image_reader.gemini, "available", lambda: True)
     two_paras = "日本語の文" + chr(10) * 2 + "二段目"
-    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", lambda data, mime, mode, model=None: two_paras)
+    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", lambda data, mime, mode, model=None, deadline=None: two_paras)
     r = image_reader.read_image(_png(), "vertical")
     assert r.engine == "gemini" and r.low_confidence is False and r.is_vertical is True
     assert r.text == two_paras and len(r.blocks) == 2
     # Gemini lỗi (quota) -> 503 có lý do
-    def boom(data, mime, mode, model=None):
+    def boom(data, mime, mode, model=None, deadline=None):
         raise image_reader.gemini.GeminiError("quota")
     monkeypatch.setattr(image_reader.gemini, "vision_transcribe", boom)
     with pytest.raises(OcrUnavailable, match="quota"):
@@ -172,7 +172,7 @@ def test_corrupt_image_is_reader_error(monkeypatch):
 def test_ocr_pages_merges(monkeypatch):
     seen_thresholds = []
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None, deadline=None):
         seen_thresholds.append(fallback_confidence)
         if page == 1:
             return TextResult(text="一ページ", source_type="image", engine="tesseract", pages=1,
@@ -478,3 +478,85 @@ def test_read_image_uses_request_fallback_confidence(fake_tesseract, monkeypatch
     assert r.engine == "tesseract" and r.low_confidence is False
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
     assert image_reader.read_image(_png(), "horizontal").low_confidence is True
+
+
+# --- Hạ cấp khi Gemini quá tải (spec 21/10) -------------------------------------------------------------------
+
+def test_single_page_gemini_error_is_degraded_not_overloaded(fake_tesseract, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+
+    def boom(*a, **k):
+        raise gemini.GeminiError("error", "503", retryable=True)
+    monkeypatch.setattr(gemini, "vision_transcribe", boom)
+    r = image_reader.read_image(_png(), "horizontal")   # Tesseract conf 0.70 -> thấp -> nhờ Gemini -> lỗi
+    assert r.engine == "tesseract" and r.low_confidence and r.text == "日本語の勉強"
+    assert r.degraded_pages == 1 and r.degraded_reason == "error"
+    meta = r.to_dict()["meta"]
+    assert meta["ocrDegraded"] is True and meta["ocrDegradedPages"] == 1 and meta["ocrDegradedReason"] == "error"
+
+
+def test_budget_error_is_degraded(fake_tesseract, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+
+    def boom(*a, **k):
+        raise gemini.GeminiError("budget", retryable=True)
+    monkeypatch.setattr(gemini, "vision_transcribe", boom)
+    r = image_reader.read_image(_png(), "horizontal")
+    assert r.degraded_pages == 1 and r.degraded_reason == "budget" and r.gemini_error == "budget"
+
+
+def test_implausible_gemini_is_not_degraded(fake_tesseract, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(gemini, "vision_transcribe", lambda *a, **k: "日本語" * 2000)
+    r = image_reader.read_image(_png(), "horizontal")
+    assert r.gemini_error == "implausible" and r.degraded_pages == 0
+    assert "ocrDegraded" not in r.to_dict()["meta"]
+
+
+def test_read_image_passes_deadline_to_gemini(fake_tesseract, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+    seen = {}
+
+    def fake_vision(image_bytes, mime, mode, model=None, deadline=None):
+        seen["deadline"] = deadline
+        return "日本語の勉強は面白い。"
+    monkeypatch.setattr(gemini, "vision_transcribe", fake_vision)
+    image_reader.read_image(_png(), "horizontal", deadline=321.0)
+    assert seen["deadline"] == 321.0
+
+
+def test_ocr_pages_passes_deadline_and_sums_degraded(monkeypatch):
+    seen = []
+
+    def fake_read(data, mode, page=1, fallback_confidence=None, gemini_model=None, deadline=None):
+        seen.append(deadline)
+        return TextResult(text="日本語", source_type="image", engine="tesseract", low_confidence=True,
+                          degraded_pages=1, degraded_reason="budget" if page == 2 else "error")
+    monkeypatch.setattr(image_reader, "read_image", fake_read)
+    src = TextResult(text="", source_type="pdf", engine="pdf-text", pages=2, needs_ocr=True, page_images=[_png(), _png()])
+    r = image_reader.ocr_pages(src, "auto", deadline=123.0)
+    assert seen == [123.0, 123.0]
+    assert r.degraded_pages == 2 and r.degraded_reason == "error"
+
+
+def test_gemini_only_overloaded_raises_ocr_overloaded(monkeypatch):
+    monkeypatch.setattr(image_reader, "available", lambda: False)
+    monkeypatch.setattr(image_reader.gemini, "available", lambda: True)
+
+    def boom(*a, **k):
+        raise gemini.GeminiError("error", "504", retryable=True)
+    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", boom)
+    with pytest.raises(OcrOverloaded):
+        image_reader.read_image(_png(), "auto")
+
+
+def test_gemini_only_no_key_error_is_plain_unavailable(monkeypatch):
+    monkeypatch.setattr(image_reader, "available", lambda: False)
+    monkeypatch.setattr(image_reader.gemini, "available", lambda: True)
+
+    def boom(*a, **k):
+        raise gemini.GeminiError("no_api_key")
+    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", boom)
+    with pytest.raises(OcrUnavailable) as exc:
+        image_reader.read_image(_png(), "auto")
+    assert not isinstance(exc.value, OcrOverloaded)

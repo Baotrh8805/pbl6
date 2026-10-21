@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional, Union
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -16,7 +17,7 @@ from app.extract import (conflicts, distractors, gemini, han_viet, han_viet_grap
 from app.extract.grammar import available as grammar_available
 from app.extract.jlpt import available as jlpt_available
 from app.extract.pipeline import analyze
-from app.extract.readers import FileTooLarge, OcrUnavailable, ReaderError, read_source
+from app.extract.readers import FileTooLarge, OcrOverloaded, OcrUnavailable, ReaderError, read_source
 from app.extract.jachars import has_japanese
 from app.extract.readers import image_reader
 
@@ -160,6 +161,10 @@ async def extract_text(
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except ReaderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OcrOverloaded:
+        # Gemini quá tải và không có bản Tesseract dùng được: backend đọc "code" để FAILED không tính lượt hạn mức
+        return JSONResponse(status_code=503, content={"detail": "Dịch vụ AI đang quá tải, hãy thử lại sau vài phút.",
+                                                      "code": "aiOverloaded"})
     except OcrUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc) or "OCR engine unavailable") from exc
     out = result.to_dict()

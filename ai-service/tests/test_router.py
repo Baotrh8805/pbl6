@@ -76,6 +76,7 @@ def test_image_returns_503_when_tesseract_unavailable(monkeypatch):
     r = client.post("/api/extract/text", files={"file": ("scan.png", _png(), "image/png")})
     assert r.status_code == 503
     assert r.json()["detail"].startswith("OCR engine unavailable")
+    assert "code" not in r.json()   # lỗi cài đặt, không phải AI quá tải -> backend vẫn tính lượt
     # route OCR cũ cũng dùng chung engine
     r = client.post("/api/ocr/process-image", files={"file": ("scan.png", _png(), "image/png")},
                     data={"mode": "vertical"})
@@ -85,7 +86,7 @@ def test_image_returns_503_when_tesseract_unavailable(monkeypatch):
 def test_image_upload_uses_image_reader(monkeypatch):
     from app.extract.readers import Block, TextResult, image_reader
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None, deadline=None):
         return TextResult(text="日本語", source_type="image", engine="tesseract", pages=1,
                           blocks=[Block(text="日本語", is_vertical=True)], mean_confidence=0.9,
                           is_vertical=True)
@@ -113,7 +114,7 @@ def test_scanned_pdf_goes_through_ocr_pages(monkeypatch):
     buf = io.BytesIO()
     w.write(buf)
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None, deadline=None):
         assert data.startswith(b"\x89PNG") and ocr_mode == "auto"
         assert fallback_confidence == settings.OCR_FALLBACK_CONFIDENCE   # không gửi → ngưỡng mặc định
         return TextResult(text=f"trang{page}", source_type="image", engine="tesseract", pages=1,
@@ -139,7 +140,7 @@ def test_ocr_fallback_confidence_reaches_ocr_and_is_echoed(monkeypatch):
     from app.extract.readers import Block, TextResult, image_reader
     seen = []
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None, deadline=None):
         seen.append(fallback_confidence)
         return TextResult(text="日本語", source_type="image", engine="tesseract", pages=1,
                           blocks=[Block(text="日本語")], mean_confidence=0.5, is_vertical=False)
@@ -169,7 +170,7 @@ def test_gemini_model_reaches_ocr(monkeypatch):
     from app.extract.readers import Block, TextResult, image_reader
     seen = []
 
-    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None):
+    def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None, deadline=None):
         seen.append(gemini_model)
         return TextResult(text="日本語", source_type="image", engine="tesseract", pages=1,
                           blocks=[Block(text="日本語")], mean_confidence=0.5, is_vertical=False)
@@ -419,3 +420,40 @@ def test_analyze_items_round_trip_through_conflicts():
     legacy = {k: v for k, v in gakkou.items() if k not in ("docReading", "docMeaningEn", "docLevel")}
     back = client.post("/api/extract/conflicts", json={"items": [{**legacy, "ref": "x"}]}).json()
     assert back["items"][0]["conflicts"] == []
+
+
+# --- Gemini quá tải (spec 21/10) -------------------------------------------------------------------------------
+
+def test_overloaded_returns_503_with_code(monkeypatch):
+    from app.api import extract_router
+    from app.extract.readers import OcrOverloaded
+
+    def boom(*a, **k):
+        raise OcrOverloaded("x")
+    monkeypatch.setattr(extract_router, "read_source", boom)
+    r = client.post("/api/extract/text", files={"file": ("scan.png", _png(), "image/png")})
+    assert r.status_code == 503
+    assert r.json() == {"detail": "Dịch vụ AI đang quá tải, hãy thử lại sau vài phút.", "code": "aiOverloaded"}
+
+
+def test_read_source_raises_overloaded_only_when_no_japanese_and_gemini_failed(monkeypatch):
+    from app.extract import readers
+    from app.extract.readers import OcrOverloaded, TextResult, image_reader
+    monkeypatch.setattr(image_reader, "available", lambda: True)
+    monkeypatch.setattr(readers.settings, "OCR_GEMINI_BUDGET_S", 60, raising=False)
+    seen = {}
+
+    def make(text, degraded):
+        def fake_read(data, ocr_mode="auto", page=1, fallback_confidence=None, gemini_model=None, deadline=None):
+            seen["deadline"] = deadline
+            return TextResult(text=text, source_type="image", engine="tesseract", low_confidence=True,
+                              degraded_pages=degraded, degraded_reason="error" if degraded else None)
+        return fake_read
+    monkeypatch.setattr(image_reader, "read_image", make("....", 1))
+    with pytest.raises(OcrOverloaded):
+        readers.read_source("scan.png", _png(), None)
+    assert isinstance(seen["deadline"], float)   # deadline chung = _now() + OCR_GEMINI_BUDGET_S
+    monkeypatch.setattr(image_reader, "read_image", make("....", 0))
+    assert readers.read_source("scan.png", _png(), None).degraded_pages == 0   # Gemini không lỗi -> như cũ (backend kiểm chữ Nhật)
+    monkeypatch.setattr(image_reader, "read_image", make("日本語", 1))
+    assert readers.read_source("scan.png", _png(), None).degraded_pages == 1

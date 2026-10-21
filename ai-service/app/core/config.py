@@ -26,5 +26,8 @@ class Settings(BaseModel):
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", "")
     # Dưới ngưỡng này OCR chuyển sang Gemini Vision (nếu có key)
     OCR_FALLBACK_CONFIDENCE: float = float(os.getenv("OCR_FALLBACK_CONFIDENCE", "0.85"))
+    # Ngân sách Gemini Vision cho CẢ một tài liệu (mọi trang) khi OCR, giây; hết thì các trang còn lại giữ bản Tesseract
+    # (spec 21/10). Giữ dưới AI_SERVICE_READ_TIMEOUT của backend (3 phút) trừ thời gian Tesseract.
+    OCR_GEMINI_BUDGET_S: int = int(os.getenv("OCR_GEMINI_BUDGET_S", "60"))
 
 settings = Settings()

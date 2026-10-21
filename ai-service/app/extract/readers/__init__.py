@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from app.core.config import settings
+
 MAX_TEXT_CHARS = 50_000
 MAX_FILE_BYTES = 15 * 1024 * 1024
 
@@ -21,6 +23,11 @@ class FileTooLarge(ReaderError):
 
 class OcrUnavailable(RuntimeError):
     """Chưa có engine OCR cho ảnh / PDF scan → router trả 503."""
+
+
+class OcrOverloaded(OcrUnavailable):
+    """Gemini quá tải / hết quota / hết ngân sách VÀ không có bản Tesseract dùng được (spec 21/10) → router trả 503 kèm
+    code "aiOverloaded" để backend không tính lượt hạn mức. Lỗi cài đặt (không có Tesseract lẫn key) vẫn là OcrUnavailable."""
 
 
 @dataclass
@@ -51,6 +58,10 @@ class TextResult:
     truncated_pages: int = 0             # số trang PDF bị bỏ vì vượt giới hạn 20 trang (truncated chỉ nói có/không)
     needs_ocr: bool = False              # PDF scan: page_images chờ OCR
     gemini_error: Optional[str] = None   # quota | error | ...: OCR kém nhưng Gemini không chép lại được
+    # Trang conf thấp mà Gemini KHÔNG chép lại được vì quá tải / quota / hết ngân sách (không tính "implausible": đó là chất
+    # lượng, không phải quá tải) -> giữ bản Tesseract; backend / FE báo "cần soát lại". degraded_reason: lý do trang đầu tiên.
+    degraded_pages: int = 0
+    degraded_reason: Optional[str] = None
     page_images: list[bytes] = field(default_factory=list)  # PNG từng trang (khi needs_ocr)
 
     def to_dict(self) -> dict:
@@ -67,6 +78,8 @@ class TextResult:
                 "truncatedPages": self.truncated_pages,
                 # chỉ có khi Gemini lỗi, để meta của các lượt bình thường không đổi
                 **({"geminiError": self.gemini_error} if self.gemini_error else {}),
+                **({"ocrDegraded": True, "ocrDegradedPages": self.degraded_pages,
+                    "ocrDegradedReason": self.degraded_reason} if self.degraded_pages > 0 else {}),
             },
             "blocks": [b.to_dict() for b in self.blocks],
         }
@@ -107,12 +120,16 @@ def read_source(filename: Optional[str], data: Optional[bytes], text: Optional[s
     """``ocr_fallback_confidence``: ngưỡng conf Tesseract (0..1) dưới đó nhờ Gemini chép lại, cho ảnh và PDF scan;
     None → settings.OCR_FALLBACK_CONFIDENCE. ``gemini_model``: model Gemini chính cho lượt chép lại đó (gemini.resolve_model;
     None → GEMINI_MODEL)."""
+    from app.extract import gemini
+    from app.extract.jachars import has_japanese
     from app.extract.readers import docx_reader, image_reader, pdf_reader, text_reader
 
     if data is not None and len(data) > MAX_FILE_BYTES:
         raise FileTooLarge("File vượt quá 15 MB")
     if data:
         kind = _sniff(filename, data)
+        # Ngân sách Gemini chung cho mọi trang của tài liệu này (gemini.OCR_PROFILE), tính từ lúc bắt đầu đọc
+        deadline = gemini._now() + settings.OCR_GEMINI_BUDGET_S
         if kind == "txt":
             result = text_reader.read_bytes(data, source_type="txt")
         elif kind == "docx":
@@ -122,12 +139,16 @@ def read_source(filename: Optional[str], data: Optional[bytes], text: Optional[s
             if result.needs_ocr:
                 # Điểm cắm OCR giai đoạn 2: image_reader.ocr_pages(result.page_images, ocr_mode)
                 result = image_reader.ocr_pages(result, ocr_mode, fallback_confidence=ocr_fallback_confidence,
-                                                gemini_model=gemini_model)
+                                                gemini_model=gemini_model, deadline=deadline)
         elif kind == "image":
             result = image_reader.read_image(data, ocr_mode, fallback_confidence=ocr_fallback_confidence,
-                                             gemini_model=gemini_model)
+                                             gemini_model=gemini_model, deadline=deadline)
         else:  # pragma: no cover
             raise ReaderError("Định dạng không hỗ trợ")
+        if result.degraded_pages > 0 and not has_japanese(result.text):
+            # Gemini quá tải mà bản Tesseract không có chữ Nhật nào -> không có gì để hạ cấp: báo quá tải (không tính lượt),
+            # thay vì job 0 thẻ khó hiểu. Gemini không lỗi mà vẫn không có chữ Nhật -> lỗi tài liệu (ReaderError) như cũ.
+            raise OcrOverloaded("Gemini quá tải và Tesseract không đọc được chữ Nhật nào")
     elif text is not None and text.strip():
         result = text_reader.read_text(text, source_type="text")
     else:
