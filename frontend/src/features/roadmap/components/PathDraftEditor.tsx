@@ -221,7 +221,7 @@ export const PathDraftEditor: React.FC<PathDraftEditorProps> = ({
         <div className="p-3 rounded-lg bg-[#FEF3C7] border border-[#F59E0B]/40 text-[#92400E] text-body-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="flex items-start gap-1.5 min-w-0">
             <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">warning</span>
-            <span>Một số trang OCR chất lượng thấp vì dịch vụ AI quá tải; thẻ có thể sai chữ.</span>
+            <span>Một số trang OCR chưa được AI soát lại (dịch vụ AI quá tải hoặc tài liệu dài); thẻ có thể sai chữ.</span>
           </span>
           {!sourceOpen && (
             <Button variant="outline" size="sm" onClick={() => setSourceOpen(true)} disabled={activating} className="shrink-0">

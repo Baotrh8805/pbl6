@@ -27,8 +27,8 @@ public final class LearningPathRequests {
 
     public record ChapterPatch(@NotBlank @Size(max = 100) String title) {}
 
-    /** PUT /{id}/text (spec 21/10): văn bản gốc đã sửa, phân tích lại từ đầu (không tốn lượt). */
-    public record TextBody(@NotBlank String text) {}
+    /** PUT /{id}/text (spec 21/10): văn bản gốc đã sửa, phân tích lại từ đầu (không tốn lượt). Cùng giới hạn với bóc tách. */
+    public record TextBody(@NotBlank @Size(max = 50_000) String text) {}
 
     public record Activate(LocalDate startDate, @Min(1) @Max(365) Integer totalDays,
                            @Min(5) @Max(200) Integer dailyCap, @Pattern(regexp = STUDY_DAYS) String studyDays) {}

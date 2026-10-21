@@ -3694,6 +3694,8 @@ class LearningPathIT extends IntegrationTest {
         call(put(BASE + id + "/text"), stranger, Map.of("text", TEXT2)).andExpect(status().isNotFound());
         call(get(BASE + id + "/text"), stranger, null).andExpect(status().isNotFound());
         call(put(BASE + id + "/text"), token, Map.of("text", "   ")).andExpect(status().isBadRequest());
+        call(put(BASE + id + "/text"), token, Map.of("text", "no japanese here")).andExpect(status().isBadRequest());
+        call(put(BASE + id + "/text"), token, Map.of("text", "あ".repeat(50_001))).andExpect(status().isBadRequest());
         activate(token, id, Map.of());
         call(put(BASE + id + "/text"), token, Map.of("text", TEXT2)).andExpect(status().isConflict());
     }

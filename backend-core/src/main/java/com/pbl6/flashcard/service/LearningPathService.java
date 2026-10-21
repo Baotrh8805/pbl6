@@ -92,6 +92,8 @@ public class LearningPathService {
 
     private static final Logger log = LoggerFactory.getLogger(LearningPathService.class);
     private static final String NOT_FOUND = "Không tìm thấy lộ trình học.";
+    /** Kana / kanji (kể cả CJK mở rộng A): văn bản gốc sửa tay phải còn chữ Nhật, nếu không phân tích lại chỉ ra 0 thẻ. */
+    private static final java.util.regex.Pattern JAPANESE = java.util.regex.Pattern.compile("[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff]");
     private static final int MAX_TITLE = 100;
     /** "Đã thuộc" = khoảng ôn SRS ≥ 21 ngày (spec §1 mục 5; cùng ngưỡng với deckUtils.calcDeckProgress ở client). */
     static final int MASTERED_DAYS = 21;
@@ -1575,6 +1577,9 @@ public class LearningPathService {
     public LearningPathResponse updateText(Long uid, UUID id, String text, LocalDate date) {
         if (text == null || text.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Văn bản không được để trống.");
+        }
+        if (!JAPANESE.matcher(text).find()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Văn bản không có chữ tiếng Nhật nào.");
         }
         LearningPath path = tx.execute(s -> {
             LearningPath p = lockedOwned(uid, id);

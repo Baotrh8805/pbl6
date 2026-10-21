@@ -471,7 +471,9 @@ def read_image(data: bytes, ocr_mode: str = "auto", page: int = 1,
     if not available():
         # Chưa cài Tesseract nhưng có Gemini: chép bằng Gemini Vision luôn, không bắt người dùng cài thêm
         if gemini.available():
-            return _gemini_only(data, mode, page, gemini_model, deadline)
+            # Gemini là engine duy nhất (không có bản Tesseract để hạ cấp) -> không áp ngân sách chung của tài liệu: PDF nhiều
+            # trang không được FAILED "quá tải" chỉ vì trang cuối bắt đầu muộn (review 21/10); OCR_PROFILE vẫn 30 s / 1 lần
+            return _gemini_only(data, mode, page, gemini_model)
         raise OcrUnavailable("OCR engine unavailable: chưa cài Tesseract (jpn, jpn_vert) và không có GEMINI_API_KEY")
     img, mime = _preprocess(data)
 

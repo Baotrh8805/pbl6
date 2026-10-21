@@ -560,3 +560,18 @@ def test_gemini_only_no_key_error_is_plain_unavailable(monkeypatch):
     with pytest.raises(OcrUnavailable) as exc:
         image_reader.read_image(_png(), "auto")
     assert not isinstance(exc.value, OcrOverloaded)
+
+
+def test_gemini_only_ignores_document_deadline(monkeypatch):
+    # Review 21/10: không có Tesseract thì Gemini là engine duy nhất -> không áp ngân sách chung (PDF 10 trang không được
+    # FAILED "quá tải" chỉ vì trang cuối bắt đầu muộn)
+    monkeypatch.setattr(image_reader, "available", lambda: False)
+    monkeypatch.setattr(image_reader.gemini, "available", lambda: True)
+    seen = {}
+
+    def fake_vision(data, mime, mode, model=None, deadline=None):
+        seen["deadline"] = deadline
+        return "日本語の文"
+    monkeypatch.setattr(image_reader.gemini, "vision_transcribe", fake_vision)
+    image_reader.read_image(_png(), "auto", deadline=123.0)
+    assert seen["deadline"] is None

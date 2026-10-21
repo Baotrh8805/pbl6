@@ -657,7 +657,7 @@ def test_ocr_profile_budget_does_not_set_cooldown(fake_client, monkeypatch):
     monkeypatch.setattr(gemini, "_now", lambda: clock[0])
     models = fake_client(lambda c, cfg: "ok")
     with pytest.raises(gemini.GeminiError) as exc:
-        gemini.vision_transcribe(b"png", deadline=clock[0] + 10)   # còn 10 s < timeout 30 s -> không gọi
+        gemini.vision_transcribe(b"png", deadline=clock[0] + 5)    # còn 5 s < MIN_TIMEOUT_S -> không gọi
     assert exc.value.reason == "budget" and exc.value.retryable
     assert len(models.calls) == 0
     assert gemini._cooldown_until == 0.0
@@ -675,6 +675,24 @@ def test_ocr_deadline_stops_retry_mid_chain(fake_client, monkeypatch):
         return flaky(contents, cfg)
     models = fake_client(slow)
     with pytest.raises(gemini.GeminiError) as exc:
-        gemini.vision_transcribe(b"png", deadline=40.0)   # lượt 1 lúc t=0 (vừa đủ), thử lại lúc t=18 cần tới 48 > 40
+        gemini.vision_transcribe(b"png", deadline=25.0)   # lượt 1 lúc t=0 (timeout kẹp 25 s), thử lại lúc t=18 chỉ còn 7 s < 8
     assert exc.value.reason == "budget" and len(models.calls) == 1
     assert gemini._cooldown_until == 0.0
+
+
+def test_ocr_timeout_clamped_to_remaining_budget(fake_client, monkeypatch):
+    # Review 21/10: còn 15 s tới deadline -> vẫn gọi, với timeout 15 s (không từ chối chỉ vì không đủ 30 s)
+    clock = [100.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    models = fake_client(lambda c, cfg: "ok")
+    assert gemini.vision_transcribe(b"png", deadline=clock[0] + 15) == "ok"
+    assert models.calls[0]["config"].http_options.timeout == 15_000
+
+
+def test_ocr_budget_refused_below_floor(fake_client, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    models = fake_client(lambda c, cfg: "ok")
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", deadline=clock[0] + gemini.MIN_TIMEOUT_S - 1)
+    assert exc.value.reason == "budget" and len(models.calls) == 0

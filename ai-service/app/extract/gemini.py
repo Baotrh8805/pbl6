@@ -51,6 +51,9 @@ DEFAULT_PROFILE = CallProfile(TIMEOUT_MS, RETRY_DELAYS, TOTAL_BUDGET_S)
 # thử lại 1 lần, và deadline CHUNG cho cả tài liệu do image_reader truyền (OCR_GEMINI_BUDGET_S, mặc định 60 s) — nhiều trang
 # không được cộng dồn tới 3 phút read-timeout của backend như trước.
 OCR_PROFILE = CallProfile(30_000, (3,), None)
+# Sát deadline chung, một lượt OCR vẫn được gọi với timeout = phần còn lại (kẹp dưới profile.timeout_ms) thay vì bị từ chối chỉ
+# vì không đủ 30 s (review 21/10: nếu không, tài liệu dài chỉ có ~30 s đầu được nhờ Gemini). Dưới MIN_TIMEOUT_S thì thôi.
+MIN_TIMEOUT_S = 8
 _cooldown_until = 0.0        # cả model chính lẫn dự phòng đều hỏng -> không gọi Gemini
 # model chính -> hạn: chỉ model chính đó hết quota -> đi thẳng model dự phòng, không thử lại nó. Theo từng model vì model chính
 # đổi theo request: model Admin chọn hết quota không được đẩy lượt gọi dùng GEMINI_MODEL sang dự phòng
@@ -160,9 +163,12 @@ def _generate_with_model(contents: Any, config: Optional[dict] = None, model: Op
     client = _get_client()
     from google.genai import types
     cfg_kw = dict(config or {})
-    if profile.timeout_ms != TIMEOUT_MS:
-        cfg_kw["http_options"] = types.HttpOptions(timeout=profile.timeout_ms)   # client tạo với TIMEOUT_MS, đè theo lượt
-    cfg = types.GenerateContentConfig(**cfg_kw)
+
+    def make_cfg(timeout_ms: int):
+        if timeout_ms != TIMEOUT_MS:
+            return types.GenerateContentConfig(**cfg_kw, http_options=types.HttpOptions(timeout=timeout_ms))
+        return types.GenerateContentConfig(**cfg_kw)   # client tạo với TIMEOUT_MS, không cần đè
+    cfg = make_cfg(profile.timeout_ms)
     primary = resolve_model(model)
     if primary != MODEL and _now() < max(_unusable_until.get(primary, 0.0), _primary_quota_until.get(primary, 0.0)):
         primary = MODEL  # model Admin chọn vừa 404 / hết quota -> lượt này như chưa chọn (chuỗi mặc định, có thử lại)
@@ -186,13 +192,17 @@ def _generate_with_model(contents: Any, config: Optional[dict] = None, model: Op
             logger.warning("gemini: model %s %s, dùng model %s trong %ss", prev[0], last, name, COOLDOWN_S)
         prev = (name, delays)
         for attempt in range(len(delays) + 1):
-            if deadline is not None and _now() + profile.timeout_ms / 1000 > deadline:
-                # Hết ngân sách của MỘT tài liệu (OCR nhiều trang): không phải Gemini hỏng -> không tạm ngưng toàn cục
-                budget = GeminiError("budget", "Gemini: hết ngân sách OCR của tài liệu"
-                                     + (f" (lỗi cuối: {last})" if last is not None else ""), retryable=True)
-                logger.warning("gemini: %s", budget)
-                raise budget from None
-            if profile.budget_s is not None and last is not None                     and _now() - started + profile.timeout_ms / 1000 > profile.budget_s:
+            if deadline is not None:
+                remaining = deadline - _now()
+                if remaining < MIN_TIMEOUT_S:
+                    # Hết ngân sách của MỘT tài liệu (OCR nhiều trang): không phải Gemini hỏng -> không tạm ngưng toàn cục
+                    budget = GeminiError("budget", "Gemini: hết ngân sách OCR của tài liệu"
+                                         + (f" (lỗi cuối: {last})" if last is not None else ""), retryable=True)
+                    logger.warning("gemini: %s", budget)
+                    raise budget from None
+                cfg = make_cfg(min(profile.timeout_ms, int(remaining * 1000)))
+            if (profile.budget_s is not None and last is not None
+                    and _now() - started + profile.timeout_ms / 1000 > profile.budget_s):
                 logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, profile.budget_s)
                 _cooldown_until = _now() + COOLDOWN_S
                 raise last from None
