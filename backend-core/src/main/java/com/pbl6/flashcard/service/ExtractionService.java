@@ -192,7 +192,8 @@ public class ExtractionService {
         Integer own = user.getExtractionDailyLimit();
         int limit = own != null ? own : settings.getInt(Boolean.TRUE.equals(user.getIsPremium())
                 ? SettingsService.KEY_LIMIT_PREMIUM : SettingsService.KEY_LIMIT_FREE);
-        long used = jobs.countByUserIdAndCreatedAtAfter(user.getId(), Instant.now().minus(Duration.ofHours(24)));
+        // Job FAILED vì AI quá tải (failure_kind) không tính: lỗi do hệ thống, người dùng tạo lại không mất lượt (spec 21/10)
+        long used = jobs.countByUserIdAndCreatedAtAfterAndFailureKindIsNull(user.getId(), Instant.now().minus(Duration.ofHours(24)));
         if (used >= limit) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "Bạn đã dùng hết " + limit + " lượt bóc tách trong 24 giờ. Thử lại sau.");
@@ -285,12 +286,30 @@ public class ExtractionService {
 
     /** Người dùng sửa văn bản OCR -> chạy lại từ ANALYZE. Không chạy khi job đang xử lý. */
     public ExtractionJobResponse updateText(Long uid, UUID id, String text) {
-        ExtractionJob job = ownedEditable(uid, id);
+        return updateTextJob(ownedEditable(uid, id), text);
+    }
+
+    /**
+     * Lộ trình DRAFT / FAILED sửa văn bản gốc (spec 21/10): như {@link #updateText} nhưng bỏ ownedEditable (chủ sở hữu và trạng
+     * thái lộ trình đã kiểm dưới khoá dòng, xem {@link #rerunForPath}). Không tạo job mới nên không tốn lượt.
+     */
+    public ExtractionJobResponse updateTextForPath(UUID jobId, String text) {
+        return updateTextJob(pathJob(jobId), text);
+    }
+
+    private ExtractionJobResponse updateTextJob(ExtractionJob job, String text) {
         requireIdle(job);
         job.setExtractedText(text);
+        // blocks (bố cục khối OCR, dùng để tách cụm) không còn khớp văn bản đã sửa -> bỏ, phân tích lại theo văn bản thuần
+        if (job.getTextMeta() != null && job.getTextMeta().containsKey("blocks")) {
+            Map<String, Object> meta = new java.util.LinkedHashMap<>(job.getTextMeta());
+            meta.remove("blocks");
+            job.setTextMeta(meta);
+        }
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
         job.setErrorMessage(null);
+        job.setFailureKind(null);
         jobs.save(job);
         dispatch(job, () -> worker.runFromAnalyze(job.getId()));
         return view(job, false);
@@ -346,6 +365,7 @@ public class ExtractionService {
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
         job.setErrorMessage(null);
+        job.setFailureKind(null);
         jobs.save(job);
         dispatch(job, () -> worker.runFromAnalyze(job.getId()));
         return view(job, false);

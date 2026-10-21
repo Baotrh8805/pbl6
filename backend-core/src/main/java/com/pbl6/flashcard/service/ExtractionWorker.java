@@ -71,6 +71,7 @@ public class ExtractionWorker {
                 j.setStage(ExtractionJob.STAGE_TEXT);
                 j.setStartedAt(Instant.now());
                 j.setErrorMessage(null);
+                j.setFailureKind(null);
             });
             TextResult tr = ai.extractText(data, filename, text, ocrMode, ocrFallbackConfidence);
             if (tr.text() == null || tr.text().isBlank()) {
@@ -100,6 +101,7 @@ public class ExtractionWorker {
                 j.setStartedAt(Instant.now());
                 j.setFinishedAt(null);
                 j.setErrorMessage(null);
+                j.setFailureKind(null);
             });
             analyzeAndFinish(jobId);
         } catch (RuntimeException e) {
@@ -199,6 +201,7 @@ public class ExtractionWorker {
                 j.setStartedAt(Instant.now());
                 j.setFinishedAt(null);
                 j.setErrorMessage(null);
+                j.setFailureKind(null);
             });
             ExtractionJob snapshot = tx.execute(s -> jobs.findById(jobId).orElseThrow());
             Map<String, Object> stats = new LinkedHashMap<>(snapshot.getStats() != null ? snapshot.getStats() : Map.of());
@@ -308,10 +311,13 @@ public class ExtractionWorker {
                 : "Lỗi hệ thống khi xử lý tài liệu.";
         if (!(e instanceof AiServiceClient.AiServiceException)) log.error("Job bóc tách {} lỗi", jobId, e);
         else log.warn("Job bóc tách {} thất bại: {}", jobId, e.getMessage());
+        // Spec 21/10: ai-service 503 aiOverloaded (Gemini quá tải, không có bản Tesseract) -> lỗi do hệ thống, không tính lượt
+        boolean overloaded = e instanceof AiServiceClient.AiServiceException a && a.isOverloaded();
         try {
             update(jobId, j -> {
                 j.setStatus(ExtractionJob.FAILED);
                 j.setErrorMessage(cut(message, 500));
+                j.setFailureKind(overloaded ? ExtractionJob.FAILURE_AI_OVERLOADED : null);
                 j.setFinishedAt(Instant.now());
             });
         } catch (RuntimeException inner) {

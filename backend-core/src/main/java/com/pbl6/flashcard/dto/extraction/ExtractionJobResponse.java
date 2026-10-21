@@ -14,7 +14,7 @@ public record ExtractionJobResponse(UUID id, String sourceType, String sourceNam
                                     Map<String, Object> options, Map<String, Object> textMeta,
                                     Map<String, Object> stats, List<String> deckIds, String errorMessage,
                                     Instant createdAt, Instant startedAt, Instant finishedAt,
-                                    String extractedText) {
+                                    String extractedText, String failureKind) {
 
     /**
      * Dòng OCR có confidence dưới mức này được gửi cho client để người dùng soát trước. Ngưỡng thật là cấu hình
@@ -35,7 +35,7 @@ public record ExtractionJobResponse(UUID id, String sourceType, String sourceNam
         return new ExtractionJobResponse(j.getId(), j.getSourceType(), j.getSourceName(), j.getStatus(),
                 j.getStage(), j.getOptions(), meta, j.getStats(), j.getDeckIds(), j.getErrorMessage(),
                 j.getCreatedAt(), j.getStartedAt(), j.getFinishedAt(),
-                includeText ? j.getExtractedText() : null);
+                includeText ? j.getExtractedText() : null, j.getFailureKind());
     }
 
     /** blocks[].lines[] = {text, conf} từ ai-service (chỉ Tesseract) → giữ lại dòng conf < threshold, giữ thứ tự. */

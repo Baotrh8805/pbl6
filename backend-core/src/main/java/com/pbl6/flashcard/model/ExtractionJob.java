@@ -31,6 +31,9 @@ public class ExtractionJob {
     public static final String STAGE_ANALYZE = "ANALYZE";
     public static final String STAGE_ENRICH = "ENRICH";
 
+    /** failure_kind (V30): FAILED vì ai-service báo AI quá tải (spec 21/10) -> không tính vào hạn mức 24 giờ. */
+    public static final String FAILURE_AI_OVERLOADED = "AI_OVERLOADED";
+
     @Id
     private UUID id;
 
@@ -62,6 +65,10 @@ public class ExtractionJob {
 
     @Column(name = "error_message", length = 500)
     private String errorMessage;
+
+    /** null = không lỗi / lỗi khác (tính lượt); {@link #FAILURE_AI_OVERLOADED} = lỗi do hệ thống AI (không tính lượt). */
+    @Column(name = "failure_kind", length = 32)
+    private String failureKind;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
@@ -110,6 +117,8 @@ public class ExtractionJob {
     public void setTextMeta(Map<String, Object> textMeta) { this.textMeta = textMeta; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+    public String getFailureKind() { return failureKind; }
+    public void setFailureKind(String failureKind) { this.failureKind = failureKind; }
     public Map<String, Object> getStats() { return stats; }
     public void setStats(Map<String, Object> stats) { this.stats = stats; }
     public List<String> getDeckIds() { return deckIds; }

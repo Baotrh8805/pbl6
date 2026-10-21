@@ -24,6 +24,12 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
     /** Giới hạn lượt bóc tách mỗi ngày: đếm theo DB để bền qua restart. */
     long countByUserIdAndCreatedAtAfter(Long userId, Instant since);
 
+    /**
+     * Hạn mức 24 giờ (spec 21/10): job FAILED vì AI quá tải (failure_kind = AI_OVERLOADED) không tính; dòng CANCELLED của lộ
+     * trình đã xoá (LP-10) không có failure_kind nên vẫn tính như cũ.
+     */
+    long countByUserIdAndCreatedAtAfterAndFailureKindIsNull(Long userId, Instant since);
+
     long countByUserId(Long userId);
 
     long countByStatus(String status);

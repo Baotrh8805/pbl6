@@ -394,4 +394,74 @@ class ExtractionIT extends IntegrationTest {
         }
         assertEquals("DONE", awaitTerminal(token, id).get("status").asText());
     }
+
+    // ---------- Spec 21/10: Gemini quá tải khi OCR ----------
+
+    private void setFreeLimit(String value) {
+        com.pbl6.flashcard.model.AppSetting free = appSettings.findById(com.pbl6.flashcard.service.SettingsService.KEY_LIMIT_FREE).orElseThrow();
+        free.setValue(value);
+        appSettings.save(free);
+    }
+
+    @Test
+    void overloaded_failure_is_marked_and_not_counted_in_daily_limit() throws Exception {
+        String token = newUser();
+        Mockito.doThrow(new AiServiceClient.AiServiceException("Dịch vụ AI đang quá tải, hãy thử lại sau vài phút.", 503, null, true))
+                .when(ai).extractText(any(), any(), any(), any(), any());
+        setFreeLimit("2");
+        try {
+            for (int i = 0; i < 2; i++) {
+                String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+                JsonNode failed = awaitTerminal(token, id);
+                assertEquals("FAILED", failed.get("status").asText());
+                assertEquals("AI_OVERLOADED", failed.get("failureKind").asText());
+                assertEquals("Dịch vụ AI đang quá tải, hãy thử lại sau vài phút.", failed.get("errorMessage").asText());
+            }
+            // Hai lượt FAILED vì AI quá tải không tính vào hạn mức -> lượt thứ ba (AI bình thường) vẫn được nhận
+            stubAi();
+            String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+            JsonNode done = awaitTerminal(token, id);
+            assertEquals("DONE", done.get("status").asText());
+            assertTrue(done.get("failureKind") == null || done.get("failureKind").isNull());
+        } finally {
+            setFreeLimit("5");
+        }
+    }
+
+    @Test
+    void plain_503_counts_toward_daily_limit() throws Exception {
+        String token = newUser();
+        Mockito.doThrow(new AiServiceClient.AiServiceException("OCR engine unavailable: chưa cài Tesseract", 503, null))
+                .when(ai).extractText(any(), any(), any(), any(), any());
+        setFreeLimit("2");
+        try {
+            for (int i = 0; i < 2; i++) {
+                String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+                JsonNode failed = awaitTerminal(token, id);
+                assertEquals("FAILED", failed.get("status").asText());
+                assertTrue(failed.get("failureKind") == null || failed.get("failureKind").isNull());
+            }
+            postText(token, TEXT, null).andExpect(status().isTooManyRequests());
+        } finally {
+            setFreeLimit("5");
+        }
+    }
+
+    @Test
+    void edited_text_drops_stale_blocks() throws Exception {
+        String token = newUser();
+        String id = read(postText(token, TEXT, null)).get("id").asText();
+        JsonNode done = awaitTerminal(token, id);
+        assertEquals("DONE", done.get("status").asText());
+        assertTrue(done.get("textMeta").has("lowLines"), "stub trả blocks có dòng conf thấp -> lowLines");
+
+        Mockito.clearInvocations(ai);
+        call(put("/api/extractions/" + id + "/text"), token, Map.of("text", "新しい文章。")).andExpect(status().isAccepted());
+        JsonNode again = awaitTerminal(token, id);
+        assertEquals("DONE", again.get("status").asText());
+        assertFalse(again.get("textMeta").has("lowLines"), "bố cục khối cũ không còn khớp văn bản mới -> phải bỏ");
+        org.mockito.ArgumentCaptor<List<Map<String, Object>>> blocks = org.mockito.ArgumentCaptor.captor();
+        Mockito.verify(ai).analyze(org.mockito.ArgumentMatchers.eq("新しい文章。"), blocks.capture(), any());
+        assertNull(blocks.getValue(), "phân tích lại không được dùng blocks cũ");
+    }
 }
