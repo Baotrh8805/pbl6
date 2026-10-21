@@ -47,15 +47,23 @@ public class AiServiceClient {
     public static class AiServiceException extends RuntimeException {
         /** Mã HTTP ai-service trả về; 0 = không có phản hồi (không kết nối được, timeout, body rỗng). */
         private final int status;
+        /**
+         * ai-service 503 kèm {@code "code":"aiOverloaded"} (spec 21/10): Gemini quá tải / hết quota mà không có bản Tesseract để hạ
+         * cấp. Worker ghi failure_kind = AI_OVERLOADED để lượt đó không tính vào hạn mức 24 giờ; 503 thường (thiếu engine OCR) thì không.
+         */
+        private final boolean overloaded;
 
         public AiServiceException(String message, Throwable cause) { this(message, 0, cause); }
         public AiServiceException(String message) { this(message, 0, null); }
-        public AiServiceException(String message, int status, Throwable cause) {
+        public AiServiceException(String message, int status, Throwable cause) { this(message, status, cause, false); }
+        public AiServiceException(String message, int status, Throwable cause, boolean overloaded) {
             super(message, cause);
             this.status = status;
+            this.overloaded = overloaded;
         }
 
         public int status() { return status; }
+        public boolean isOverloaded() { return overloaded; }
     }
 
     /** Tra cứu NLP có người dùng đang chờ trên trang: không để request treo tới 3 phút như bóc tách tài liệu. */
@@ -316,10 +324,14 @@ public class AiServiceClient {
             if (result == null) throw new AiServiceException("Dịch vụ AI trả về rỗng ở bước " + step + ".");
             return result;
         } catch (RestClientResponseException e) {
-            String detail = detail(e.getResponseBodyAsString());
+            String raw = e.getResponseBodyAsString();
+            String detail = detail(raw);
             log.warn("ai-service {} -> {}: {}", step, e.getStatusCode().value(), detail);
-            // 400/413/503 có "detail" từ FastAPI: lỗi tài liệu (định dạng, quá lớn, OCR chưa sẵn sàng) -> hiện nguyên văn
             int status = e.getStatusCode().value();
+            if (status == 503 && detail != null && raw.contains("\"aiOverloaded\"")) {
+                throw new AiServiceException(detail, status, e, true);
+            }
+            // 400/413/503 có "detail" từ FastAPI: lỗi tài liệu (định dạng, quá lớn, OCR chưa sẵn sàng) -> hiện nguyên văn
             if (detail != null && (e.getStatusCode().is4xxClientError() || status == 503)) {
                 throw new AiServiceException(detail, status, e);
             }
