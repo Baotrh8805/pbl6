@@ -26,8 +26,14 @@ public record LearningPathResponse(UUID id, String title, String status, String 
                                    List<Forecast> forecast,
                                    Integer suggestedDays, Boolean overCap, Boolean overflow) {
 
-    /** Tiến độ job bóc tách bên dưới (client poll khi PROCESSING). */
-    public record JobSummary(String status, String stage, String errorMessage, Map<String, Object> stats) {}
+    /**
+     * Tiến độ job bóc tách bên dưới (client poll khi PROCESSING). Spec 21/10: failureKind = "AI_OVERLOADED" khi FAILED vì AI quá
+     * tải (không tính lượt, client ẩn "Chạy lại"); ocrDegraded = true khi có trang OCR giữ bản Tesseract vì Gemini quá tải
+     * (client hiện cảnh báo + ô sửa văn bản gốc). Cả hai null khi không có để response cũ không đổi (NON_NULL ở lớp ngoài).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record JobSummary(String status, String stage, String errorMessage, Map<String, Object> stats,
+                             String failureKind, Boolean ocrDegraded) {}
 
     /**
      * Hôm nay của lộ trình theo ngày date (?date= của máy khách hoặc múi giờ cấu hình). state: before (chưa tới ngày học 1) |

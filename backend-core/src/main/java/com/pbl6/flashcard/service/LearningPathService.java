@@ -296,8 +296,12 @@ public class LearningPathService {
         path.setStatus(LearningPath.DRAFT);
         path.setErrorMessage(null);
         // Bóc tách mất 2–4 phút nên người dùng thường đã rời trang: báo bản nháp sẵn sàng (spec §4.4), cùng giao dịch với DRAFT
-        notifications.notify(path.getUserId(), Notification.LEARNING_PATH_READY,
-                Map.of("pathId", path.getId().toString(), "title", path.getTitle(), "chapters", built.size()));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("pathId", path.getId().toString());
+        payload.put("title", path.getTitle());
+        payload.put("chapters", built.size());
+        if (ocrDegraded(job)) payload.put("ocrDegraded", true);   // spec 21/10: nhắc soát lại văn bản gốc
+        notifications.notify(path.getUserId(), Notification.LEARNING_PATH_READY, payload);
     }
 
     /** FAILED + thông báo cho người dùng, cùng giao dịch với việc đổi trạng thái (rollback thì không có thông báo "ma"). */
@@ -1550,6 +1554,58 @@ public class LearningPathService {
     }
 
     /**
+     * Spec 21/10: văn bản gốc job đã trích (để người dùng soát / sửa khi OCR hạ cấp). 404 không phải chủ; 400 job không còn văn bản
+     * (FAILED ở bước TEXT, housekeeping) -> "Hãy tạo lại".
+     */
+    public String sourceText(Long uid, UUID id) {
+        return readTx.execute(s -> {
+            LearningPath p = owned(uid, id);
+            ExtractionJob job = p.getJobId() == null ? null : jobs.findById(p.getJobId()).orElse(null);
+            if (job == null || job.getExtractedText() == null || job.getExtractedText().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hãy tạo lại lộ trình với tài liệu mới.");
+            }
+            return job.getExtractedText();
+        });
+    }
+
+    /**
+     * Spec 21/10: người dùng sửa văn bản gốc (OCR hạ cấp vì Gemini quá tải) rồi phân tích lại — như {@link #retry} nhưng nhận cả
+     * DRAFT (bản nháp hiện tại bị dựng lại) và ghi văn bản mới; không tạo job mới nên KHÔNG tốn lượt. ACTIVE / PROCESSING -> 409.
+     */
+    public LearningPathResponse updateText(Long uid, UUID id, String text, LocalDate date) {
+        if (text == null || text.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Văn bản không được để trống.");
+        }
+        LearningPath path = tx.execute(s -> {
+            LearningPath p = lockedOwned(uid, id);
+            if (!LearningPath.DRAFT.equals(p.getStatus()) && !LearningPath.FAILED.equals(p.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Chỉ sửa được văn bản gốc của bản nháp hoặc lộ trình đã lỗi.");
+            }
+            ExtractionJob job = p.getJobId() == null ? null : jobs.findById(p.getJobId()).orElse(null);
+            if (job == null || job.getExtractedText() == null || job.getExtractedText().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hãy tạo lại lộ trình với tài liệu mới.");
+            }
+            if (!job.isTerminal()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt bóc tách đang được xử lý, hãy đợi xong.");
+            }
+            p.setStatus(LearningPath.PROCESSING);
+            p.setErrorMessage(null);
+            return p;
+        });
+        try {
+            extraction.updateTextForPath(path.getJobId(), text);
+        } catch (ResponseStatusException e) {
+            tx.executeWithoutResult(s -> paths.findById(id).ifPresent(p -> {
+                p.setStatus(LearningPath.FAILED);
+                p.setErrorMessage(ExtractionWorker.cut(e.getReason(), 500));
+            }));
+            throw e;
+        }
+        return toResponse(path, date, false, null);
+    }
+
+    /**
      * LP-6: "Dịch lại nghĩa" cho item của lộ trình (Gemini hết quota lúc bóc tách): uỷ quyền {@link ExtractionService#reEnrichForPath}
      * — cùng kiểm tra và cooldown 5 phút (429) như bóc tách thường. Chỉ DRAFT / ACTIVE; trạng thái lộ trình KHÔNG đổi (job chạy
      * nền, client poll job.stats.enrichedAt rồi tải lại item). Ở ACTIVE chỉ item bóc tách được dịch lại, thẻ đã tạo không bị viết
@@ -2120,7 +2176,13 @@ public class LearningPathService {
     }
 
     private static JobSummary jobSummary(ExtractionJob j) {
-        return j == null ? null : new JobSummary(j.getStatus(), j.getStage(), j.getErrorMessage(), j.getStats());
+        return j == null ? null : new JobSummary(j.getStatus(), j.getStage(), j.getErrorMessage(), j.getStats(),
+                j.getFailureKind(), ocrDegraded(j) ? Boolean.TRUE : null);
+    }
+
+    /** text_meta.ocrDegraded của ai-service (spec 21/10): có trang OCR giữ bản Tesseract vì Gemini quá tải. */
+    private static boolean ocrDegraded(ExtractionJob j) {
+        return j.getTextMeta() != null && Boolean.TRUE.equals(j.getTextMeta().get("ocrDegraded"));
     }
 
     private JobSummary jobSummaryOf(LearningPath p) {

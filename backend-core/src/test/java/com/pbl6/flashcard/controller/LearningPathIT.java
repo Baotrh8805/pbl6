@@ -3640,4 +3640,76 @@ class LearningPathIT extends IntegrationTest {
         // Thẻ gốc: lịch SRS y nguyên, không thêm dòng reviews nào (bản clone chưa học)
         assertEquals(before, srsSnapshot(uid));
     }
+
+    // ---------- Spec 21/10: Gemini quá tải khi OCR -> hạ cấp, sửa văn bản gốc ----------
+
+    private static final String TEXT2 = "第1課 あいさつ\nおはよう。\n第2課 かいもの\nパンを買います。";
+
+    private void stubDegradedText() {
+        Mockito.doAnswer(inv -> {
+            byte[] data = inv.getArgument(0);
+            String text = data != null ? new String(data, StandardCharsets.UTF_8) : inv.getArgument(2);
+            return new AiDtos.TextResult(text, Map.of("engine", "tesseract", "sourceType", "image", "pages", 1,
+                    "ocrDegraded", true, "ocrDegradedPages", 1, "ocrDegradedReason", "error"),
+                    List.of(Map.of("text", text, "page", 1)));
+        }).when(ai).extractText(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void draft_exposes_ocrDegraded_and_text_can_be_edited_and_reanalyzed() throws Exception {
+        stubDegradedText();
+        String token = newUser();
+        String id = read(postPath(token, TEXT, "10", "OCR kém").andExpect(status().isAccepted())).get("id").asText();
+        JsonNode draft = awaitDraft(token, id);
+        assertEquals("DRAFT", draft.get("status").asText(), draft.toString());
+        assertTrue(draft.get("job").get("ocrDegraded").asBoolean(), draft.get("job").toString());
+        assertFalse(draft.get("job").has("failureKind"));
+        List<JsonNode> ready = notificationsOf(token, "LEARNING_PATH_READY");
+        assertEquals(1, ready.size());
+        assertTrue(ready.get(0).get("payload").get("ocrDegraded").asBoolean(), ready.get(0).toString());
+        assertEquals(2, draft.get("chapters").size());
+
+        JsonNode text = read(call(get(BASE + id + "/text"), token, null).andExpect(status().isOk()));
+        assertEquals(TEXT, text.get("text").asText());
+
+        Mockito.clearInvocations(ai);
+        JsonNode accepted = read(call(put(BASE + id + "/text"), token, Map.of("text", TEXT2)).andExpect(status().isAccepted()));
+        assertEquals("PROCESSING", accepted.get("status").asText());
+        JsonNode again = awaitDraft(token, id);
+        assertEquals("DRAFT", again.get("status").asText(), again.toString());
+        assertEquals(2, again.get("chapters").size(), "dựng lại, không nhân đôi chương");
+        assertEquals(TEXT2, read(call(get(BASE + id + "/text"), token, null)).get("text").asText());
+        Mockito.verify(ai).analyze(org.mockito.ArgumentMatchers.eq(TEXT2), any(), any());
+        Mockito.verify(ai, Mockito.never()).extractText(any(), any(), any(), any(), any());
+        // Phân tích lại không tạo job mới -> không tốn lượt
+        assertEquals(1, read(call(get("/api/learning-paths"), token, null)).size());
+    }
+
+    @Test
+    void edit_text_rejected_when_active_blank_or_other_user() throws Exception {
+        String token = newUser();
+        String stranger = newUser();
+        String id = read(postPath(token, TEXT, "10", "Khoá").andExpect(status().isAccepted())).get("id").asText();
+        assertEquals("DRAFT", awaitDraft(token, id).get("status").asText());
+        call(put(BASE + id + "/text"), stranger, Map.of("text", TEXT2)).andExpect(status().isNotFound());
+        call(get(BASE + id + "/text"), stranger, null).andExpect(status().isNotFound());
+        call(put(BASE + id + "/text"), token, Map.of("text", "   ")).andExpect(status().isBadRequest());
+        activate(token, id, Map.of());
+        call(put(BASE + id + "/text"), token, Map.of("text", TEXT2)).andExpect(status().isConflict());
+    }
+
+    @Test
+    void overloaded_failure_shows_failureKind_on_path() throws Exception {
+        Mockito.doThrow(new AiServiceClient.AiServiceException("Dịch vụ AI đang quá tải, hãy thử lại sau vài phút.", 503, null, true))
+                .when(ai).extractText(any(), any(), any(), any(), any());
+        String token = newUser();
+        String id = read(postPath(token, TEXT, "10", "Quá tải").andExpect(status().isAccepted())).get("id").asText();
+        JsonNode failed = awaitDraft(token, id);
+        assertEquals("FAILED", failed.get("status").asText());
+        assertEquals("AI_OVERLOADED", failed.get("job").get("failureKind").asText());
+        assertEquals("Dịch vụ AI đang quá tải, hãy thử lại sau vài phút.", failed.get("errorMessage").asText());
+        // Chưa có văn bản -> sửa văn bản gốc / chạy lại đều 400 "Hãy tạo lại"
+        call(get(BASE + id + "/text"), token, null).andExpect(status().isBadRequest());
+        call(put(BASE + id + "/text"), token, Map.of("text", TEXT2)).andExpect(status().isBadRequest());
+    }
 }

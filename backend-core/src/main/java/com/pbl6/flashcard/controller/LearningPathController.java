@@ -216,6 +216,24 @@ public class LearningPathController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.retry(uid(me), id, service.today(date)));
     }
 
+    /** Spec 21/10: văn bản gốc đã trích của lộ trình (để soát / sửa khi OCR hạ cấp). 400 nếu job không còn văn bản. */
+    @GetMapping("/{id}/text")
+    public java.util.Map<String, String> sourceText(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id) {
+        return java.util.Map.of("text", service.sourceText(uid(me), id));
+    }
+
+    /**
+     * Spec 21/10: sửa văn bản gốc rồi phân tích lại (DRAFT / FAILED; không OCR lại, KHÔNG tốn lượt). 202 lộ trình PROCESSING
+     * (client poll như lúc tạo, bản nháp cũ được dựng lại); 400 văn bản rỗng / job không còn văn bản; 409 ACTIVE / đang xử lý.
+     */
+    @PutMapping("/{id}/text")
+    public ResponseEntity<LearningPathResponse> updateText(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
+                                                           @Valid @RequestBody LearningPathRequests.TextBody body,
+                                                           @RequestParam(required = false)
+                                                           @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.updateText(uid(me), id, body.text(), service.today(date)));
+    }
+
     /**
      * LP-6: dịch lại nghĩa tiếng Việt cho item của lộ trình (DRAFT / ACTIVE) qua bước ENRICH của worker; cách nhau ≥ 5 phút (429 như
      * bóc tách). 202 lộ trình đầy đủ, trạng thái lộ trình không đổi; 409 nếu PROCESSING / FAILED hoặc job đang chạy.
