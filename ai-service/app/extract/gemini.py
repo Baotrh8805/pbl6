@@ -10,6 +10,7 @@ import logging
 import re
 import time
 import unicodedata
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from app.core.config import settings
@@ -35,6 +36,21 @@ TOTAL_BUDGET_S = 150
 # Hết quota / quá tải sau khi đã thử lại hết -> tạm ngưng gọi Gemini COOLDOWN_S giây (mọi lượt gọi: OCR từng trang,
 # dịch nghĩa) để một tài liệu 18 trang scan không chờ 14 s x 18 trang vô ích.
 COOLDOWN_S = 120
+
+
+@dataclass(frozen=True)
+class CallProfile:
+    """Cách thử lại của một lượt gọi. budget_s None = không có ngân sách riêng (caller truyền deadline chung)."""
+    timeout_ms: int
+    delays: tuple[int, ...]
+    budget_s: Optional[int]
+
+
+DEFAULT_PROFILE = CallProfile(TIMEOUT_MS, RETRY_DELAYS, TOTAL_BUDGET_S)
+# OCR Vision (spec 21/10): Gemini chỉ là bước nâng chất lượng (Tesseract đã có bản dự phòng) nên không chờ lâu: timeout 30 s,
+# thử lại 1 lần, và deadline CHUNG cho cả tài liệu do image_reader truyền (OCR_GEMINI_BUDGET_S, mặc định 60 s) — nhiều trang
+# không được cộng dồn tới 3 phút read-timeout của backend như trước.
+OCR_PROFILE = CallProfile(30_000, (3,), None)
 _cooldown_until = 0.0        # cả model chính lẫn dự phòng đều hỏng -> không gọi Gemini
 # model chính -> hạn: chỉ model chính đó hết quota -> đi thẳng model dự phòng, không thử lại nó. Theo từng model vì model chính
 # đổi theo request: model Admin chọn hết quota không được đẩy lượt gọi dùng GEMINI_MODEL sang dự phòng
@@ -52,7 +68,7 @@ _client: Any = None
 class GeminiError(RuntimeError):
     def __init__(self, reason: str, message: str = "", retryable: bool = False, code: Optional[int] = None):
         super().__init__(message or reason)
-        self.reason = reason  # no_api_key | quota | error
+        self.reason = reason  # no_api_key | quota | error | budget (hết ngân sách OCR của tài liệu)
         self.retryable = retryable  # 429 / 503: đáng thử lại hoặc chuyển model dự phòng
         self.code = code  # mã HTTP của Google (404 = model không dùng được với key); None khi không rõ
 
@@ -127,12 +143,13 @@ def _map_error(exc: Exception, model: str = MODEL) -> GeminiError:
                        code=code if isinstance(code, int) else None)
 
 
-def _generate(contents: Any, config: Optional[dict] = None, model: Optional[str] = None) -> str:
-    return _generate_with_model(contents, config, model)[0]
+def _generate(contents: Any, config: Optional[dict] = None, model: Optional[str] = None, *,
+              profile: CallProfile = DEFAULT_PROFILE, deadline: Optional[float] = None) -> str:
+    return _generate_with_model(contents, config, model, profile=profile, deadline=deadline)[0]
 
 
-def _generate_with_model(contents: Any, config: Optional[dict] = None,
-                         model: Optional[str] = None) -> tuple[str, str]:
+def _generate_with_model(contents: Any, config: Optional[dict] = None, model: Optional[str] = None, *,
+                         profile: CallProfile = DEFAULT_PROFILE, deadline: Optional[float] = None) -> tuple[str, str]:
     """Gọi model chính (``model`` qua resolve_model, mặc định GEMINI_MODEL), thử lại theo RETRY_DELAYS khi 429/503, rồi
     mỗi model sau một lần → (văn bản, model đã trả lời). Chuỗi model: model chính → GEMINI_MODEL (khi model chính là model
     Admin chọn) → GEMINI_FALLBACK_MODEL (nếu đặt). Lỗi cuối cùng được raise nguyên `reason` để router/backend ghi
@@ -142,7 +159,10 @@ def _generate_with_model(contents: Any, config: Optional[dict] = None,
         raise GeminiError("quota", "Gemini quota exceeded (đang tạm ngưng gọi)", retryable=True)
     client = _get_client()
     from google.genai import types
-    cfg = types.GenerateContentConfig(**(config or {}))
+    cfg_kw = dict(config or {})
+    if profile.timeout_ms != TIMEOUT_MS:
+        cfg_kw["http_options"] = types.HttpOptions(timeout=profile.timeout_ms)   # client tạo với TIMEOUT_MS, đè theo lượt
+    cfg = types.GenerateContentConfig(**cfg_kw)
     primary = resolve_model(model)
     if primary != MODEL and _now() < max(_unusable_until.get(primary, 0.0), _primary_quota_until.get(primary, 0.0)):
         primary = MODEL  # model Admin chọn vừa 404 / hết quota -> lượt này như chưa chọn (chuỗi mặc định, có thử lại)
@@ -159,15 +179,21 @@ def _generate_with_model(contents: Any, config: Optional[dict] = None,
     prev: Optional[tuple[str, tuple[int, ...]]] = None
     gave_up_primary = False  # model Admin chọn trả 404 -> GEMINI_MODEL được thử lại đủ như khi chưa chọn
     for name in chain:
-        delays = RETRY_DELAYS if name == chain[0] == primary or (gave_up_primary and name == MODEL) else ()
+        delays = profile.delays if name == chain[0] == primary or (gave_up_primary and name == MODEL) else ()
         if prev is not None and prev[1] and last is not None and last.retryable:
             # đã thử lại đủ mà vẫn 429/503 -> các lượt sau bỏ qua model đó (đi thẳng model sau) trong COOLDOWN_S
             _primary_quota_until[prev[0]] = _now() + COOLDOWN_S
             logger.warning("gemini: model %s %s, dùng model %s trong %ss", prev[0], last, name, COOLDOWN_S)
         prev = (name, delays)
         for attempt in range(len(delays) + 1):
-            if last is not None and _now() - started + TIMEOUT_MS / 1000 > TOTAL_BUDGET_S:
-                logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, TOTAL_BUDGET_S)
+            if deadline is not None and _now() + profile.timeout_ms / 1000 > deadline:
+                # Hết ngân sách của MỘT tài liệu (OCR nhiều trang): không phải Gemini hỏng -> không tạm ngưng toàn cục
+                budget = GeminiError("budget", "Gemini: hết ngân sách OCR của tài liệu"
+                                     + (f" (lỗi cuối: {last})" if last is not None else ""), retryable=True)
+                logger.warning("gemini: %s", budget)
+                raise budget from None
+            if profile.budget_s is not None and last is not None                     and _now() - started + profile.timeout_ms / 1000 > profile.budget_s:
+                logger.warning("gemini: %s (hết ngân sách %ss, không thử thêm)", last, profile.budget_s)
                 _cooldown_until = _now() + COOLDOWN_S
                 raise last from None
             try:
@@ -230,13 +256,14 @@ def _collapse_repeats(text: str) -> str:
 
 
 def vision_transcribe(image_bytes: bytes, mime: str = "image/png", mode: str = "auto",
-                      model: Optional[str] = None) -> str:
+                      model: Optional[str] = None, deadline: Optional[float] = None) -> str:
     """Chép lại nguyên văn tiếng Nhật trong ảnh. Trả "" khi model không thấy chữ. ``model``: model chính backend chọn
-    (qua resolve_model; None = GEMINI_MODEL)."""
+    (qua resolve_model; None = GEMINI_MODEL). ``deadline``: mốc ``_now()`` chung của cả tài liệu (OCR_PROFILE) — không còn
+    đủ chỗ cho một lượt gọi thì raise GeminiError("budget") ngay, không gọi."""
     from google.genai import types
     prompt = _TRANSCRIBE_PROMPT.format(orientation=_ORIENTATION.get(mode, _ORIENTATION["auto"]))
     contents = [types.Part.from_bytes(data=image_bytes, mime_type=mime), prompt]
-    return _collapse_repeats(_generate(contents, {"temperature": 0.0}, model))
+    return _collapse_repeats(_generate(contents, {"temperature": 0.0}, model, profile=OCR_PROFILE, deadline=deadline))
 
 
 # --- Dịch nghĩa --------------------------------------------------------------

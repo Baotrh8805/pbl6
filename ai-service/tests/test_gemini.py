@@ -194,6 +194,12 @@ def _flaky(fails, code):
     return responder
 
 
+def _gen(*_args, model=None):
+    """Chuỗi thử lại / đổi model chung (hồ sơ mặc định: 3 lần thử lại). vision_transcribe nay dùng OCR_PROFILE (1 lần) —
+    xem các test "Hồ sơ gọi riêng cho OCR" cuối file."""
+    return gemini._generate("x", model=model)
+
+
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
     monkeypatch.setattr(gemini, "_sleep", lambda s: None)
@@ -205,14 +211,14 @@ def no_sleep(monkeypatch):
 
 def test_retries_503_then_succeeds(fake_client):
     models = fake_client(_flaky(2, 503))
-    assert gemini.vision_transcribe(b"png", "image/png", "horizontal") == "銀行口座\tbank account"
+    assert _gen() == "銀行口座\tbank account"
     assert len(models.calls) == 3 and all(c["model"] == gemini.MODEL for c in models.calls)
 
 
 def test_fallback_model_after_retries(fake_client, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
     models = fake_client(_flaky(4, 429))
-    assert gemini.vision_transcribe(b"png", "image/png", "horizontal")
+    assert _gen()
     assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
 
 
@@ -245,7 +251,7 @@ def test_slow_failures_stop_within_total_budget(fake_client, monkeypatch):
 def test_non_retryable_error_not_retried(fake_client):
     models = fake_client(_flaky(99, 404))
     with pytest.raises(gemini.GeminiError) as exc:
-        gemini.vision_transcribe(b"png", "image/png", "auto")
+        _gen()
     assert exc.value.reason == "error" and len(models.calls) == 1
 
 
@@ -263,7 +269,7 @@ def test_504_is_retried_then_fallback(fake_client, monkeypatch):
     # Model quá tải trả 503 rồi 504 DEADLINE_EXCEEDED (thấy thật ngày 12/10): 504 cũng phải thử lại / sang model dự phòng
     monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
     models = fake_client(_flaky(4, 504))
-    assert gemini.vision_transcribe(b"png", "image/png", "horizontal")
+    assert _gen()
     assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
 
 
@@ -275,15 +281,15 @@ def test_quota_cooldown_skips_calls_until_expiry(fake_client, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "")
     models = fake_client(_flaky(99, 429))
     with pytest.raises(gemini.GeminiError):
-        gemini.vision_transcribe(b"png", "image/png", "auto")
+        _gen()
     n = len(models.calls)
     assert n == 4
     with pytest.raises(gemini.GeminiError) as exc:
-        gemini.vision_transcribe(b"png", "image/png", "auto")
+        _gen()
     assert exc.value.reason == "quota" and len(models.calls) == n  # không gọi thêm
     clock["t"] += gemini.COOLDOWN_S + 1
     fake_client(lambda c, cfg: "ok")
-    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+    assert _gen() == "ok"
 
 
 def test_primary_quota_goes_straight_to_fallback_next_calls(fake_client, monkeypatch):
@@ -301,12 +307,12 @@ def test_primary_quota_goes_straight_to_fallback_next_calls(fake_client, monkeyp
         raise _Boom(429)
 
     models = box["models"] = fake_client(primary_429_fallback_ok)
-    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+    assert _gen() == "ok"
     assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
-    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+    assert _gen() == "ok"
     assert [c["model"] for c in models.calls[5:]] == ["fallback-model"]  # không gọi model chính
     clock["t"] += gemini.COOLDOWN_S + 1
-    gemini.vision_transcribe(b"png", "image/png", "auto")
+    _gen()
     assert models.calls[6]["model"] == gemini.MODEL  # hết thời gian nguội -> thử lại model chính
 
 
@@ -476,7 +482,7 @@ def test_request_model_overrides_default_for_every_call(fake_client, monkeypatch
     # Ba lượt gọi Gemini (OCR, dịch nghĩa, mẹo nhớ) đều theo model backend gửi khi nó nằm trong danh sách cho phép
     monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "gemini-9-ultra,gemini-2.5-pro,gemini-2.5-flash")
     vision = fake_client(lambda c, cfg: "日本語")
-    assert gemini.vision_transcribe(b"png", "image/png", "auto", model=" Gemini-9-Ultra ") == "日本語"
+    assert _gen(model=" Gemini-9-Ultra ") == "日本語"
     assert [c["model"] for c in vision.calls] == ["gemini-9-ultra"]     # GEMINI_ALLOWED_MODELS, không phân biệt hoa thường
     translate = fake_client(_echo_translate)
     gemini.translate_items([{"ref": "1", "term": "語"}], "vi", model="gemini-2.5-pro")
@@ -493,9 +499,9 @@ def test_unknown_request_model_uses_default_and_logs_once(fake_client, caplog):
     models = fake_client(lambda c, cfg: "ok")
     with caplog.at_level(logging.WARNING, logger=gemini.logger.name):
         for _ in range(3):
-            assert gemini.vision_transcribe(b"png", "image/png", "auto", model="gemini-2.5-flsh") == "ok"
-        gemini.vision_transcribe(b"png", "image/png", "auto", model="  ")
-        gemini.vision_transcribe(b"png", "image/png", "auto", model=None)
+            assert _gen(model="gemini-2.5-flsh") == "ok"
+        _gen(model="  ")
+        _gen(model=None)
     assert [c["model"] for c in models.calls] == [gemini.MODEL] * 5
     assert len([r for r in caplog.records if "gemini-2.5-flsh" in r.getMessage()]) == 1
 
@@ -515,14 +521,14 @@ def test_quota_on_requested_model_does_not_divert_default_model(fake_client, mon
         return "ok"
 
     models = box["models"] = fake_client(chosen_429)
-    assert gemini.vision_transcribe(b"png", "image/png", "auto", model="gemini-9-ultra") == "ok"
+    assert _gen(model="gemini-9-ultra") == "ok"
     assert [c["model"] for c in models.calls] == ["gemini-9-ultra"] * 4 + [gemini.MODEL]
-    assert gemini.vision_transcribe(b"png", "image/png", "auto", model="gemini-9-ultra") == "ok"
+    assert _gen(model="gemini-9-ultra") == "ok"
     assert models.calls[5]["model"] == gemini.MODEL
-    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "ok"
+    assert _gen() == "ok"
     assert models.calls[6]["model"] == gemini.MODEL
     clock["t"] += gemini.COOLDOWN_S + 1
-    gemini.vision_transcribe(b"png", "image/png", "auto", model="gemini-9-ultra")
+    _gen(model="gemini-9-ultra")
     assert models.calls[7]["model"] == "gemini-9-ultra"  # hết thời gian nguội -> thử lại model Admin chọn
 
 
@@ -547,7 +553,7 @@ def test_requested_model_404_falls_back_to_default_model(fake_client, monkeypatc
     models = box["models"] = fake_client(chosen_404)
     box["default_fails"] = 2
     with caplog.at_level(logging.WARNING, logger=gemini.logger.name):
-        assert gemini.vision_transcribe(b"png", "image/png", "auto", model="gemini-9-ultra") == "ok"
+        assert _gen(model="gemini-9-ultra") == "ok"
     assert [c["model"] for c in models.calls] == ["gemini-9-ultra"] + [gemini.MODEL] * 3   # GEMINI_MODEL được thử lại
     assert gemini._cooldown_until == 0.0
     assert any("gemini-9-ultra" in r.getMessage() and "404" in r.getMessage() for r in caplog.records)
@@ -556,7 +562,7 @@ def test_requested_model_404_falls_back_to_default_model(fake_client, monkeypatc
     assert models.calls[4]["model"] == gemini.MODEL and len(models.calls) == 5   # trong UNUSABLE_S: không tốn thêm 404
     assert out["model"] == gemini.MODEL                                          # generated_model ghi đúng model đã viết
     clock["t"] += gemini.UNUSABLE_S + 1
-    gemini.vision_transcribe(b"png", "image/png", "auto", model="gemini-9-ultra")
+    _gen(model="gemini-9-ultra")
     assert [c["model"] for c in models.calls[5:]] == ["gemini-9-ultra", gemini.MODEL]   # hết hạn -> thử lại (Admin có thể đã sửa)
 
 
@@ -565,7 +571,7 @@ def test_default_model_404_is_still_not_retried(fake_client, monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
     models = fake_client(_flaky(99, 404))
     with pytest.raises(gemini.GeminiError) as exc:
-        gemini.vision_transcribe(b"png", "image/png", "auto")
+        _gen()
     assert exc.value.code == 404 and "GEMINI_MODEL" in str(exc.value) and len(models.calls) == 1
 
 
@@ -586,7 +592,7 @@ def test_requested_model_failure_still_tries_default_model(fake_client, monkeypa
         return "ok"
 
     models = box["models"] = fake_client(chosen_fails)
-    assert gemini.vision_transcribe(b"png", "image/png", "auto", model=chosen) == "ok"
+    assert _gen(model=chosen) == "ok"
     assert [c["model"] for c in models.calls] == [chosen] * 4 + [gemini.MODEL]
     assert gemini._cooldown_until == 0.0
 
@@ -595,7 +601,7 @@ def test_unknown_model_log_memory_is_bounded(fake_client):
     # Tên lạ dài bao nhiêu cũng không 422 (form / JSON không giới hạn) nhưng chỉ lưu tối đa _WARN_KEY_CHARS ký tự mỗi tên
     fake_client(lambda c, cfg: "ok")
     for i in range(3):
-        gemini.vision_transcribe(b"png", "image/png", "auto", model=f"{i}" + "x" * 1_000_000)
+        _gen(model=f"{i}" + "x" * 1_000_000)
     assert len(gemini._warned_models) == 3
     assert max(len(k) for k in gemini._warned_models) <= gemini._WARN_KEY_CHARS
 
@@ -619,3 +625,56 @@ def test_health_lists_gemini_models(monkeypatch):
     assert body["geminiModel"] == gemini.MODEL and body["geminiModels"][0] == gemini.MODEL
     assert "gemini-9-ultra" in body["geminiModels"]
     assert not any(m.startswith("gemini-2.5") for m in body["geminiModels"])   # chưa đo -> không gợi ý cho Admin
+
+
+# --- Hồ sơ gọi riêng cho OCR (spec 21/10: timeout 30 s, 1 lần thử lại, deadline chung của tài liệu) -----------------
+
+def test_vision_uses_ocr_profile_timeout_and_single_retry(fake_client):
+    models = fake_client(_flaky(1, 503))
+    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "銀行口座\tbank account"
+    assert len(models.calls) == 2
+    assert models.calls[0]["config"].http_options.timeout == 30_000
+
+
+def test_vision_gives_up_after_one_retry(fake_client, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "")
+    models = fake_client(_flaky(5, 503))
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png")
+    assert exc.value.retryable and len(models.calls) == 2
+
+
+def test_translate_keeps_default_profile(fake_client):
+    models = fake_client(_flaky(3, 503))
+    with pytest.raises(gemini.GeminiError):   # bản dịch giả không phải JSON -> lỗi parse, nhưng đã gọi đủ 4 lượt
+        gemini.translate_items([{"ref": "a", "term": "x"}], "vi")
+    assert len(models.calls) == 4
+    assert models.calls[0]["config"].http_options is None
+
+
+def test_ocr_profile_budget_does_not_set_cooldown(fake_client, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    models = fake_client(lambda c, cfg: "ok")
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", deadline=clock[0] + 10)   # còn 10 s < timeout 30 s -> không gọi
+    assert exc.value.reason == "budget" and exc.value.retryable
+    assert len(models.calls) == 0
+    assert gemini._cooldown_until == 0.0
+
+
+def test_ocr_deadline_stops_retry_mid_chain(fake_client, monkeypatch):
+    # Lượt đầu 503; thử lại không còn đủ 30 s trước deadline -> dừng, báo "budget", không cooldown
+    clock = [0.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    monkeypatch.setattr(gemini, "_sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    flaky = _flaky(9, 503)
+
+    def slow(contents, cfg):
+        clock[0] += 15.0   # lượt gọi treo 15 s rồi 503
+        return flaky(contents, cfg)
+    models = fake_client(slow)
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", deadline=40.0)   # lượt 1 lúc t=0 (vừa đủ), thử lại lúc t=18 cần tới 48 > 40
+    assert exc.value.reason == "budget" and len(models.calls) == 1
+    assert gemini._cooldown_until == 0.0
