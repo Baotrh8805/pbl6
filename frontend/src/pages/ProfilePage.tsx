@@ -8,6 +8,7 @@ import { ProfileSecurityTab } from "@/features/profile/components/ProfileSecurit
 import { QuizHistoryTab } from "@/features/profile/components/QuizHistoryTab";
 import { FrictionTab } from "@/features/profile/components/FrictionTab";
 import { PracticeStatsTab } from "@/features/profile/components/PracticeStatsTab";
+import { MyReportsTab } from "@/features/profile/components/MyReportsTab";
 import { panelId, parseProfileTab, tabId, type ProfileTab } from "@/features/profile/lib/profileUtils";
 
 export const ProfilePage: React.FC = () => {
@@ -38,6 +39,7 @@ export const ProfilePage: React.FC = () => {
                 {activeTab === "history" && <QuizHistoryTab />}
                 {activeTab === "friction" && <FrictionTab />}
                 {activeTab === "practice" && <PracticeStatsTab />}
+                {activeTab === "reports" && <MyReportsTab />}
             </div>
         </section>
     );

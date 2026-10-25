@@ -20,8 +20,10 @@ class Settings(BaseModel):
     NEO4J_URI: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER: str = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "password123")
-    # Trích xuất tài liệu: khoá nội bộ backend → ai-service (rỗng = bỏ kiểm tra, dùng khi dev)
+    # Trích xuất tài liệu: khoá nội bộ backend → ai-service (rỗng = dev: chỉ nhận request từ localhost, xem core/security.py)
     AI_SERVICE_KEY: str = os.getenv("AI_SERVICE_KEY", "")
+    # Bật /docs khi đã đặt AI_SERVICE_KEY (mặc định tắt trên máy chủ có khoá; dev không khoá thì luôn bật)
+    AI_SERVICE_DOCS: bool = os.getenv("AI_SERVICE_DOCS", "").lower() in ("1", "true", "yes")
     # Đường dẫn binary Tesseract (Windows cần chỉ rõ), rỗng = dùng PATH
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", "")
     # Dưới ngưỡng này OCR chuyển sang Gemini Vision (nếu có key)

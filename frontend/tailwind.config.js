@@ -135,11 +135,14 @@ export default {
       keyframes: {
         fadeIn: { from: { opacity: "0" }, to: { opacity: "1" } },
         enter: { from: { opacity: "0", transform: "scale(0.95)" }, to: { opacity: "1", transform: "scale(1)" } },
+        reveal: { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "translateY(0)" } },
       },
       // animate-in: hiệu ứng mở menu/toast (thay cho plugin tailwindcss-animate, không thêm dependency)
       animation: {
         fadeIn: "fadeIn 150ms ease-out",
         in: "enter 150ms ease-out",
+        // Trang học: đáp án hiện ra khi lật thẻ
+        reveal: "reveal 150ms ease-out",
       },
       spacing: {
         "space-xs": "0.25rem",

@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -126,6 +127,24 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
             + "AND j.status IN ('DONE','FAILED','CANCELLED') AND j.createdAt < :before AND j.extractedText IS NOT NULL "
             + "AND EXISTS (SELECT 1 FROM LearningPath p WHERE p.jobId = j.id AND p.status = 'ACTIVE')")
     int clearTextOfOldPathJobs(@Param("before") Instant before);
+
+    /**
+     * Khoá tư vấn theo giao dịch cho hạn mức bóc tách của một người dùng (rà soát 25/10, D4): đếm job 24 giờ rồi mới lưu job mới
+     * là hai bước — N request song song cùng thấy "còn 1 lượt" và cùng lọt. Khoá xếp chúng thành hàng. Dạng hai khoá int (không
+     * đụng không gian khoá bigint của QuizAttemptRepository.lockCreate); namespace 1 = hạn mức bóc tách.
+     */
+    @Query(value = "SELECT CAST(pg_advisory_xact_lock(1, CAST(:uid AS int)) AS text)", nativeQuery = true)
+    String lockQuota(@Param("uid") Long uid);
+
+    /**
+     * Nhận job để chạy lại (rà soát 25/10, D5): chỉ job đã kết thúc mới chuyển được sang QUEUED, trong MỘT câu UPDATE. Hai lần bấm
+     * "Chạy lại" song song: lần sau nhận 0 dòng -> 409, không có hai worker cùng chạy một job (tốn Gemini gấp đôi, item trùng).
+     */
+    @Transactional
+    @Modifying
+    @Query("UPDATE ExtractionJob j SET j.status = 'QUEUED', j.stage = 'QUEUED' "
+            + "WHERE j.id = :id AND j.status IN ('DONE','FAILED','CANCELLED')")
+    int claimIdle(@Param("id") UUID id);
 
     /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
     @Modifying

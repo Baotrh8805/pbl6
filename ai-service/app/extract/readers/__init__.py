@@ -93,6 +93,15 @@ def truncate(result: TextResult) -> TextResult:
     return result
 
 
+def read_upload(fp) -> bytes:
+    """Đọc file upload (UploadFile.file) tối đa MAX_FILE_BYTES + 1 byte rồi kiểm: upload khổng lồ không bị nạp hết vào RAM
+    trước khi biết là quá cỡ."""
+    data = fp.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise FileTooLarge("File vượt quá 15 MB")
+    return data
+
+
 def _sniff(filename: Optional[str], data: bytes) -> str:
     """Xác định loại nguồn theo magic bytes trước, đuôi file sau."""
     head = data[:8]

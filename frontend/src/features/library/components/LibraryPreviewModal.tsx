@@ -7,6 +7,7 @@ import { useCopyToClipboard } from "@/lib/clipboard";
 import { DeckPreviewModal } from "@/features/decks/components/DeckPreviewModal";
 import { DeckRatings } from "@/features/decks/components/DeckRatings";
 import { ReportDeckModal } from "./ReportDeckModal";
+import { useReportedByMe } from "../useReportedByMe";
 
 interface LibraryPreviewModalProps {
   deck: LibraryDeck;
@@ -19,7 +20,7 @@ interface LibraryPreviewModalProps {
 export const LibraryPreviewModal: React.FC<LibraryPreviewModalProps> = ({ deck, onClose, onSave, onRated }) => {
   const { data, error, loading } = useAsync(() => fetchDeck(deck.id), [deck.id]);
   const [reportOpen, setReportOpen] = useState(false);
-  const [reported, setReported] = useState(false);
+  const [reported, markReported] = useReportedByMe(deck.id, !deck.mine);
   // Bộ thẻ Thư viện luôn công khai -> ai có tài khoản mở liên kết đều xem được (D2).
   const { copied, copy } = useCopyToClipboard();
   // Cả hai cách chép đều hỏng (không Clipboard API, execCommand từ chối) thì phải nói ra,
@@ -82,7 +83,7 @@ export const LibraryPreviewModal: React.FC<LibraryPreviewModalProps> = ({ deck, 
         </div>
       }
     />
-    <ReportDeckModal deckId={deck.id} isOpen={reportOpen} onClose={() => setReportOpen(false)} onReported={() => setReported(true)} />
+    <ReportDeckModal deckId={deck.id} isOpen={reportOpen} onClose={() => setReportOpen(false)} onReported={markReported} />
     </>
   );
 };

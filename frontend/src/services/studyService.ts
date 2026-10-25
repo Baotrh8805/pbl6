@@ -49,6 +49,14 @@ export const submitReview = async (
     await apiClient.post("/reviews", body);
 };
 
+/**
+ * Hoàn tác lượt chấm mới nhất của thẻ (lật / cram, trong 30 phút): server khôi phục lịch cũ từ nhật ký và xoá lượt đó.
+ * 409 = không còn gì để hoàn tác (quá hạn, lượt quiz, lượt ghi trước khi có tính năng này).
+ */
+export const undoReview = async (cardId: string): Promise<void> => {
+    await apiClient.post("/reviews/undo", { cardId });
+};
+
 // Response là ranh giới không đáng tin: câu hỏi hỏng thì bỏ, không để trang trắng.
 // Đợt 2 (hợp đồng §1.2): câu gõ (inputMode = "typing") có options = [] nên KHÔNG được loại vì thiếu phương án;
 // câu chọn vẫn cần ≥ 2 phương án như cũ. Server cũ không gửi type / inputMode -> câu nghĩa, chọn đáp án.

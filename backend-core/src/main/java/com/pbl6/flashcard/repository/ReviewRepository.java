@@ -19,12 +19,15 @@ import java.util.UUID;
 public interface ReviewRepository extends JpaRepository<Review, Long> {
     List<Review> findByUserId(Long userId);
 
-    /** Tạo bản ghi ôn nếu chưa có. ON CONFLICT: 2 lần chấm song song không vỡ unique (user_id, card_id). */
+    /**
+     * Tạo bản ghi ôn nếu chưa có. ON CONFLICT: 2 lần chấm song song không vỡ unique (user_id, card_id). Trả về số dòng đã chèn:
+     * 1 = trước đó chưa có (hoàn tác lượt này thì xoá dòng), 0 = đã có.
+     */
     @Modifying
     @Query(value = "INSERT INTO reviews (user_id, card_id, reps, interval_days, ease, due_at) "
             + "VALUES (:uid, :cardId, :reps, :intervalDays, :ease, :dueAt) ON CONFLICT (user_id, card_id) DO NOTHING",
             nativeQuery = true)
-    void insertIfAbsent(@Param("uid") Long uid, @Param("cardId") String cardId, @Param("reps") int reps,
+    int insertIfAbsent(@Param("uid") Long uid, @Param("cardId") String cardId, @Param("reps") int reps,
                         @Param("intervalDays") int intervalDays, @Param("ease") double ease, @Param("dueAt") Instant dueAt);
 
     @Modifying
@@ -43,6 +46,61 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
             + "VALUES (:uid, :cardId, :grade, :source, :reactionMs, :pathId)", nativeQuery = true)
     void log(@Param("uid") Long uid, @Param("cardId") String cardId, @Param("grade") String grade,
              @Param("source") String source, @Param("reactionMs") Integer reactionMs, @Param("pathId") UUID pathId);
+
+    /**
+     * Như log 6 tham số, kèm trạng thái reviews ngay trước lượt chấm (V31) để hoàn tác được. prevExists null = không hoàn tác
+     * được (quiz); false = chưa có dòng reviews (các prev_* null).
+     */
+    @Modifying
+    @Query(value = "INSERT INTO review_logs (user_id, card_id, grade, source, reaction_ms, path_id, "
+            + "prev_exists, prev_reps, prev_interval_days, prev_ease, prev_due_at) "
+            + "VALUES (:uid, :cardId, :grade, :source, :reactionMs, :pathId, "
+            + ":prevExists, :prevReps, :prevIntervalDays, :prevEase, :prevDueAt)", nativeQuery = true)
+    void log(@Param("uid") Long uid, @Param("cardId") String cardId, @Param("grade") String grade,
+             @Param("source") String source, @Param("reactionMs") Integer reactionMs, @Param("pathId") UUID pathId,
+             @Param("prevExists") Boolean prevExists, @Param("prevReps") Integer prevReps,
+             @Param("prevIntervalDays") Integer prevIntervalDays, @Param("prevEase") Double prevEase,
+             @Param("prevDueAt") Instant prevDueAt);
+
+    /** Lượt chấm mới nhất của một thẻ, đủ để quyết định có hoàn tác được không. */
+    interface LatestLog {
+        long getId();
+        String getSource();
+        Boolean getPrevExists();
+        /** reviewed_at còn trong cửa sổ hoàn tác (so ở DB, cùng đồng hồ với DEFAULT now() lúc ghi). */
+        boolean getFresh();
+    }
+
+    /** Khoá lượt chấm mới nhất của (uid, cardId) để hoàn tác; :windowSeconds = cửa sổ hoàn tác. */
+    @Query(value = """
+            SELECT l.id AS "id", l.source AS "source", l.prev_exists AS "prevExists",
+                   l.reviewed_at > now() - make_interval(secs => :windowSeconds) AS "fresh"
+            FROM review_logs l
+            WHERE l.user_id = :uid AND l.card_id = :cardId
+            ORDER BY l.id DESC
+            LIMIT 1
+            FOR UPDATE
+            """, nativeQuery = true)
+    Optional<LatestLog> findLatestLogForUpdate(@Param("uid") Long uid, @Param("cardId") String cardId,
+                                               @Param("windowSeconds") long windowSeconds);
+
+    /** Ghi lại lịch ôn cũ lưu trong log :logId (copy ở DB, giữ nguyên độ chính xác micro giây của due_at). */
+    @Modifying
+    @Query(value = """
+            UPDATE reviews r
+            SET reps = l.prev_reps, interval_days = l.prev_interval_days, ease = l.prev_ease, due_at = l.prev_due_at
+            FROM review_logs l
+            WHERE l.id = :logId AND r.user_id = l.user_id AND r.card_id = l.card_id
+            """, nativeQuery = true)
+    int restoreFromLog(@Param("logId") long logId);
+
+    @Modifying
+    @Query(value = "DELETE FROM reviews WHERE user_id = :uid AND card_id = :cardId", nativeQuery = true)
+    int deleteOne(@Param("uid") Long uid, @Param("cardId") String cardId);
+
+    @Modifying
+    @Query(value = "DELETE FROM review_logs WHERE id = :logId", nativeQuery = true)
+    int deleteLog(@Param("logId") long logId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM Review r WHERE r.userId = :uid AND r.cardId = :cardId")

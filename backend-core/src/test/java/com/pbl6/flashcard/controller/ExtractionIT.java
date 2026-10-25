@@ -464,4 +464,54 @@ class ExtractionIT extends IntegrationTest {
         Mockito.verify(ai).analyze(org.mockito.ArgumentMatchers.eq("新しい文章。"), blocks.capture(), any());
         assertNull(blocks.getValue(), "phân tích lại không được dùng blocks cũ");
     }
+
+    // ---------- Rà soát 25/10: D4 hạn mức khi gửi song song, D5 nhận job để chạy lại ----------
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.pbl6.flashcard.repository.ExtractionJobRepository jobRepo;
+
+    @Test
+    void parallel_uploads_cannot_exceed_the_daily_limit() throws Exception {
+        String email = newEmail();
+        String token = newUser(email);
+        com.pbl6.flashcard.model.User u = userRepository.findByEmail(email).orElseThrow();
+        u.setExtractionDailyLimit(1);
+        userRepository.save(u);
+
+        int n = 4;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(n);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        try {
+            List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                results.add(pool.submit(() -> {
+                    go.await();
+                    return postText(token, TEXT, null).andReturn().getResponse().getStatus();
+                }));
+            }
+            go.countDown();
+            int accepted = 0, limited = 0;
+            for (java.util.concurrent.Future<Integer> f : results) {
+                int s = f.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                if (s == 202) accepted++;
+                else if (s == 429) limited++;
+            }
+            assertEquals(1, accepted, "hạn mức 1 lượt: chỉ một request song song được nhận");
+            assertEquals(n - 1, limited);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void only_one_rerun_can_claim_a_finished_job() throws Exception {
+        String token = newUser();
+        String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+        assertEquals("DONE", awaitTerminal(token, id).get("status").asText());
+        java.util.UUID jobId = java.util.UUID.fromString(id);
+        assertEquals(1, jobRepo.claimIdle(jobId), "job DONE nhận được");
+        assertEquals(0, jobRepo.claimIdle(jobId), "đã QUEUED: lần bấm thứ hai không nhận được");
+        // API: job đang QUEUED -> 409, không đẩy thêm worker
+        call(post("/api/extractions/" + id + "/rerun"), token, null).andExpect(status().isConflict());
+    }
 }

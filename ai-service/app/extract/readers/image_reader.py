@@ -24,6 +24,9 @@ from app.extract.readers.text_reader import normalize
 
 MIN_SHORT_SIDE = 1000
 MAX_LONG_SIDE = 4000
+MAX_PIXELS = 40_000_000     # ảnh lớn hơn bị từ chối TRƯỚC khi giải nén: PNG vài MB có thể là ảnh 160 MP (~0,6 GB/bản float32)
+WORK_PIXELS = 16_000_000    # lớn hơn thì thu nhỏ (giữ tỉ lệ) trước khi xử lý; theo diện tích, không theo cạnh dài: ảnh chụp
+                            # màn hình dài 1080×20000 chỉ co ~0,86 chứ không bị ép còn 216×4000 mất chữ
 BG_DOWNSCALE = 4            # ước lượng nền trên ảnh thu nhỏ 1/4 (đủ mịn cho bóng đổ, ~10-60 ms thay vì 0.2-3 s)
 DESKEW_MAX_DEG = 5          # chỉ sửa nghiêng nhỏ; xoay 90/180 do OSD lo
 DESKEW_MIN_DEG = 0.3        # dưới mức này coi như thẳng, không xoay (tránh làm mờ ảnh)
@@ -92,10 +95,15 @@ def available() -> bool:
 
 
 def _preprocess(data: bytes):
-    """Grayscale, auto-contrast, phóng to để cạnh ngắn ≥ 1000px (cạnh dài ≤ 4000), khử nhiễu nhẹ."""
+    """Grayscale, thu nhỏ nếu > 16 MP, auto-contrast, phóng to để cạnh ngắn ≥ 1000px (cạnh dài ≤ 4000), khử nhiễu nhẹ."""
     from PIL import Image, ImageFilter, ImageOps
     try:
-        img = Image.open(io.BytesIO(data))
+        img = Image.open(io.BytesIO(data))  # chỉ đọc header: kích thước biết trước khi giải nén
+    except Exception as exc:  # noqa: BLE001 — gồm cả DecompressionBombError của Pillow
+        raise ReaderError("Không đọc được file ảnh") from exc
+    if img.width * img.height > MAX_PIXELS:
+        raise ReaderError(f"Ảnh quá lớn ({img.width}×{img.height}); tối đa {MAX_PIXELS // 1_000_000} megapixel")
+    try:
         img.load()
     except Exception as exc:  # noqa: BLE001
         raise ReaderError("Không đọc được file ảnh") from exc
@@ -106,6 +114,10 @@ def _preprocess(data: bytes):
         img = img.convert("RGBA")
         img = Image.alpha_composite(Image.new("RGBA", img.size, (255, 255, 255, 255)), img)
     img = img.convert("L")
+    if img.width * img.height > WORK_PIXELS:
+        # Thu nhỏ trước khi khử nền: _flatten_background tạo vài bản float32 cỡ ảnh, ảnh 40 MP sẽ tốn ~0,5 GB
+        k = (WORK_PIXELS / (img.width * img.height)) ** 0.5
+        img = img.resize((max(1, int(img.width * k)), max(1, int(img.height * k))), Image.LANCZOS)
     img = _flatten_background(img)
     img = ImageOps.autocontrast(img, cutoff=1)
     w, h = img.size

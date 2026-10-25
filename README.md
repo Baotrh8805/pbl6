@@ -282,7 +282,9 @@ chưa cài hoặc `TESSERACT_CMD` sai (hay gặp nhất là trỏ vào thư mụ
 `GEMINI_API_KEY`. Đổi `.env` xong phải khởi động lại service. Trang chủ Admin Panel (`/admin`) hiện lại các cờ này qua
 `GET /api/admin/health` của backend.
 
-Swagger: `http://localhost:8000/docs`. Test: `python -m pytest -q` (các test cần Tesseract tự bỏ qua nếu chưa cài).
+Swagger: `http://localhost:8000/docs` (chỉ khi chưa đặt `AI_SERVICE_KEY`, hoặc đặt thêm `AI_SERVICE_DOCS=1`). Chưa đặt khoá thì
+ai-service chỉ nhận request từ chính máy đó (localhost); trên máy chủ thật phải đặt `AI_SERVICE_KEY` giống nhau ở backend và
+ai-service. Test: `python -m pytest -q` (các test cần Tesseract tự bỏ qua nếu chưa cài).
 
 Ở thư mục gốc, `npm run dev` tự bật ai-service bằng `ai-service/venv` nếu đã tạo, nên sau khi cài xong chỉ cần một lệnh.
 Chi tiết luồng bóc tách, API và các trường hợp biên: [docs/EXTRACTION.md](docs/EXTRACTION.md).
@@ -312,7 +314,8 @@ Khai báo SMTP bằng biến môi trường (máy chủ) hoặc các khoá `spri
 
 - **Không** đặt `spring.mail.host` trong `application.properties` hay biến `SPRING_MAIL_HOST` rỗng: có khoá này (kể cả
   giá trị trống) là bật gửi mail thật.
-  Chưa cấu hình SMTP thì link xác thực / đặt lại mật khẩu được ghi vào log backend (dòng WARN) — chỉ dùng khi dev.
+  Chưa cấu hình SMTP thì link xác thực / đặt lại mật khẩu được ghi vào log backend (dòng WARN), **chỉ khi `FRONTEND_URL` là
+  localhost** (máy dev); máy chủ thật chỉ ghi lỗi "không gửi được email", không lộ link.
 - Xác thực email do khoá `email_verification_required` trong bảng `app_settings` quyết định (**mặc định `true`**), đổi ở
   Admin Panel > Cấu hình (SUPER_ADMIN), có hiệu lực ngay. Bật: tài khoản mới phải bấm link (hạn 24 giờ, dùng 1 lần) mới đăng
   nhập được — trước đó đăng nhập trả 403 `EMAIL_NOT_VERIFIED`, trang đăng nhập cho gửi lại link (tối đa 5 lần / 15 phút);

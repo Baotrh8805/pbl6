@@ -17,7 +17,7 @@ from app.extract import (conflicts, distractors, gemini, han_viet, han_viet_grap
 from app.extract.grammar import available as grammar_available
 from app.extract.jlpt import available as jlpt_available
 from app.extract.pipeline import analyze
-from app.extract.readers import FileTooLarge, OcrOverloaded, OcrUnavailable, ReaderError, read_source
+from app.extract.readers import FileTooLarge, OcrOverloaded, OcrUnavailable, ReaderError, read_source, read_upload
 from app.extract.jachars import has_japanese
 from app.extract.readers import image_reader
 
@@ -60,8 +60,9 @@ class ExtractionOptions(BaseModel):
 
 
 class AnalyzeRequest(BaseModel):
-    text: str = Field(..., min_length=1)
-    blocks: Optional[list[dict[str, Any]]] = None
+    # Trần đầu vào (backend gửi ≤ 50 000 ký tự / tài liệu): request quá cỡ → 422 thay vì làm phân tích chạy mãi
+    text: str = Field(..., min_length=1, max_length=200_000)
+    blocks: Optional[list[dict[str, Any]]] = Field(default=None, max_length=20_000)
     options: ExtractionOptions = Field(default_factory=ExtractionOptions)
 
 
@@ -137,8 +138,10 @@ class ConflictRequest(BaseModel):
     minConfidence: float = Field(default=0.6, ge=0.0, le=1.0)   # cùng mặc định với conflictMinConfidence của /analyze
 
 
+# def (không async): OCR / PDF / Gemini chạy đồng bộ tới vài phút -> FastAPI đưa vào threadpool, không chặn event loop
+# (async def gọi thẳng read_source làm treo MỌI request khác: enrich, distractors, health...).
 @router.post("/text")
-async def extract_text(
+def extract_text(
     file: Optional[UploadFile] = File(default=None),
     text: Optional[str] = Form(default=None),
     ocr_mode: str = Form(default="auto"),
@@ -149,8 +152,11 @@ async def extract_text(
     # (gemini.allowed_models) không 422: bị bỏ qua, dùng GEMINI_MODEL — cấu hình gõ sai không được làm hỏng lượt bóc tách
     gemini_model: Optional[str] = Form(default=None),
 ) -> dict:
-    data = await file.read() if file is not None else None
     filename = file.filename if file is not None else None
+    try:
+        data = read_upload(file.file) if file is not None else None
+    except FileTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     if not data and not (text and text.strip()):
         raise HTTPException(status_code=400, detail="Cần gửi file hoặc text")
     threshold = settings.OCR_FALLBACK_CONFIDENCE if ocr_fallback_confidence is None else ocr_fallback_confidence

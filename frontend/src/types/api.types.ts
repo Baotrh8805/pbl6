@@ -867,6 +867,22 @@ export interface ContentReport {
     sameDeckOpen: number;
 }
 
+/** Báo cáo nhìn từ phía người gửi (GET /library/reports): không có email người xử lý. */
+export interface MyReport {
+    id: number;
+    deckId: string;
+    deckTitle: string | null;
+    /** false = bộ thẻ đã bị gỡ khỏi Thư viện, không dẫn link tới. */
+    deckPublic: boolean;
+    reason: ReportReason;
+    detail: string | null;
+    status: ReportStatus;
+    action: ReportAction | null;
+    resolutionNote: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+}
+
 export interface AuditLog {
     id: number;
     actorEmail: string;

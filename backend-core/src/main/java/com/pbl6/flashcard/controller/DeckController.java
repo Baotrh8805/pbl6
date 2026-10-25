@@ -9,6 +9,7 @@ import com.pbl6.flashcard.dto.deck.DistractorsResponse;
 import com.pbl6.flashcard.dto.deck.QuizCapabilitiesResponse;
 import com.pbl6.flashcard.dto.deck.ShareMemberResponse;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
+import com.pbl6.flashcard.security.AiRateLimiter;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.DeckService;
 import jakarta.validation.Valid;
@@ -30,8 +31,10 @@ import java.util.UUID;
 public class DeckController {
 
     private final DeckService deckService;
+    private final AiRateLimiter aiLimiter;
 
-    public DeckController(DeckService deckService) {
+    public DeckController(DeckService deckService, AiRateLimiter aiLimiter) {
+        this.aiLimiter = aiLimiter;
         this.deckService = deckService;
     }
 
@@ -138,6 +141,7 @@ public class DeckController {
     @PostMapping("/{deckId}/distractors")
     public DistractorsResponse generateDistractors(@AuthenticationPrincipal CustomUserDetails me,
                                                    @PathVariable String deckId) {
+        aiLimiter.checkDeckAi(uid(me)); // gọi ai-service cho cả bộ thẻ (tới 3 phút), đốt quota dùng chung
         return deckService.generateDistractors(uid(me), deckId);
     }
 }
