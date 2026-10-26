@@ -19,3 +19,27 @@ Phạm vi: phủ đủ mục **1.2.1 Yêu cầu về chức năng** của "Yêu 
 | D12 | Lộ trình 2.0: ngày nghỉ trong tuần + trần thẻ/ngày | **Giữ cả hai** | Mặc định 7 ngày/tuần; trần mặc định **50** (đổi từ 30 ngày 19/10 chiều: trần tính cả thẻ ôn dự báo nên 30 chỉ còn ~5–8 thẻ mới/ngày; admin chỉnh được qua `learning_path_daily_cap_default`); hiện ở bản nháp và cài đặt lộ trình |
 
 Ngoài phạm vi (không nằm trong 1.2.1): thanh toán (UC-40), Google OAuth, GraphRAG/Neo4j thật, ASR/Praat phía server.
+
+## 26/10/2026: Từ điển Nhật–Việt cộng đồng (grill me 4 vòng, 16 câu)
+
+Spec: [2026-10-26-tu-dien-design.md](2026-10-26-tu-dien-design.md) (bảng đầy đủ + quyết định kỹ thuật K1–K10); kế hoạch:
+[../plans/2026-10-26-tu-dien-va-viec-con-lai.md](../plans/2026-10-26-tu-dien-va-viec-con-lai.md). Tính năng ngoài 1.2.1, đề xuất UC-43..45.
+
+| # | Câu hỏi | Quyết định | Hệ quả thiết kế |
+|---|---|---|---|
+| D14 | Phạm vi trang Từ điển | **Từ vựng + gộp Hán tự (`/kanji`) + Hán-Việt (`/han-viet`) + Sổ tay** thành `/dictionary` dạng tab | Route cũ redirect giữ tham số; không viết lại hai trang cũ; tab Ngữ pháp / Câu ví dụ để sau |
+| D15 | Nguồn nghĩa tiếng Việt | **Dịch sẵn ~8 000 từ JLPT bằng script 1 lần (commit CSV) + Gemini dịch khi tra lần đầu, lưu vĩnh viễn** | `dict_meanings` ở Postgres; admin sửa; không khoá Gemini → nghĩa Anh |
+| D16 | Hàng chờ admin | **Mục bị báo cáo lên đầu, rồi mục chỉ có nghĩa Anh / nghĩa máy chưa kiểm** | `/admin/dictionary` tab Hàng chờ xếp 3 nhóm |
+| D17 | Câu ví dụ | **Tatoeba qua "JMdict with examples" + Gemini dịch khi tra; thêm câu từ tài liệu người học** | Dựng lại `jmdict.sqlite` (JMdict đầy đủ, có id) |
+| D18 | Hướng tra | **Nhật (kanji / kana / romaji) ↔ Việt + Anh** | Romaji → kana ở frontend; Anh = FTS gloss (ai-service); Việt = `dict_meanings` (backend) |
+| D19 | Bình luận | **Phẳng + Hữu ích; sửa / xoá của mình; báo cáo bình luận; admin ẩn / xoá** | Không trả lời lồng |
+| D20 | Báo cáo từ điển | **Trường sai + đề xuất sửa + ghi chú; admin Áp dụng đề xuất / sửa tay / từ chối; thông báo người báo** | `dict_reports` (ENTRY / COMMENT) |
+| D21 | Quyền sửa từ điển gốc | **ADMIN và SUPER_ADMIN sửa trực tiếp**, audit + lịch sử + hoàn tác | Không duyệt hai cấp |
+| D22 | Tầm ảnh hưởng bản sửa | **Toàn hệ thống** (bóc tách, dịch nghĩa, mâu thuẫn, thẻ chữ Hán) | Ghi đè đẩy backend → ai-service; bóc tách lấy nghĩa Việt từ từ điển trước khi gọi Gemini |
+| D23 | Nghĩa máy chưa kiểm | **Hiện ngay, KHÔNG nhãn "bản dịch máy"**, chỉ nút báo lỗi | MACHINE / VERIFIED chỉ dùng nội bộ |
+| D24 | Đăng nhập | **Phải đăng nhập** | Staff dùng qua `/admin/dictionary` (D8 giữ) |
+| D25 | Nối với phần học | **Thêm vào bộ thẻ + lịch sử + sổ tay + popup tra nhanh** | Dùng lại `AddWordToDeckModal`, `DeckService.addCards` |
+| D26 | Hạn mức Gemini lúc tra | **Mọi người, trần theo giờ / tài khoản** (`dictionary_ai_hourly_limit` = 30); từ đã có bản dịch không tính | Hết trần vẫn tra, hiện nghĩa Anh |
+| D27 | Việc cũ đưa vào plan | **Cả 4 nhóm** (D9 + UC-29; hiệu quả lộ trình + nhắc email; nợ nhỏ + trang ghi nguồn; CI / smoke / failOrphans / tài liệu) | Phần B của kế hoạch |
+| D28 | Hạn, cách viết plan | **Từ điển ~2 tuần; plan chỉ liệt kê việc, không chia ngày** | — |
+| D29 | Chữ Hán | **Bình luận / báo cáo cho cả từ vựng và từng chữ Hán** | Khoá `w:` và `k:` |
