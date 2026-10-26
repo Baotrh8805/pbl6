@@ -189,8 +189,10 @@ của chữ Hán và của từ dùng chung bảng (D29).
 - Bước map khoá (task A3): `scripts/map_jlpt_vi_keys.py` đọc CSV trên + `jmdict.sqlite` mới, thêm cột `entry_key` (`w:<id>` khi
   `(expression, reading)` khớp `word_forms`, không thì `w:jlpt:<expression>|<reading>`), ghi đè cùng file; `DictionarySeedLoader`
   (§6.3) chỉ nạp dòng có `entry_key`. Nạp với `status=MACHINE, source=SEED` → nằm trong hàng chờ admin sau nhóm bị báo cáo (D16).
-- Script Gemini `scripts/translate_jlpt_vi.py` vẫn viết nhưng chỉ dùng để **dịch lại / mở rộng** (ví dụ ~20 000 từ `common` của JMdict)
-  khi người dùng có khoá; cùng định dạng CSV, resume được, lô 40, nghỉ 1 giây giữa lô. Toàn bộ JMdict (~218 000 mục) không dịch sẵn:
+- **Cập nhật 26/10 (lần 2)**: Claude cũng đã dịch **tập từ phổ biến của JMdict** (bản `jmdict-eng-common` đang có trong `jmdict.sqlite`,
+  trừ từ đã có trong JLPT): 21 806 nhóm → 29 655 dòng, file `backend-core/src/main/resources/dict/jmdict_common_meaning_vi.csv`
+  (cùng cột, `level` trống; chi tiết ở README cạnh file). Map `entry_key` cùng bước với file JLPT.
+- Script Gemini `scripts/translate_jlpt_vi.py` vẫn viết nhưng chỉ dùng để **dịch lại / mở rộng** khi người dùng có khoá; cùng định dạng CSV, resume được, lô 40, nghỉ 1 giây giữa lô. Toàn bộ JMdict (~218 000 mục) không dịch sẵn:
   dịch khi tra (D15).
 - Chuẩn nghĩa (dùng chung cho Claude, Gemini và admin): ngắn gọn ≤ 120 ký tự, nhiều nghĩa cách `; `, đồng nghĩa cách `, `, động từ /
   tính từ dạng trần, nhãn trong ngoặc cho trợ từ / liên từ / thán từ / lượng từ / địa danh / kính ngữ, không romaji, không tiếng Anh,

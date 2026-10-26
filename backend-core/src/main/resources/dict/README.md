@@ -13,3 +13,16 @@
   `w:jlpt:<expression>|<reading>`) sẽ được script `ai-service/scripts/map_jlpt_vi_keys.py` thêm sau khi dựng lại `jmdict.sqlite`
   (task A1 / A3); `DictionarySeedLoader` chỉ nạp dòng có khoá.
 - Sửa nghĩa: qua Admin Panel (lịch sử + audit) khi tính năng từ điển có; trước đó sửa thẳng CSV và ghi vào CHANGELOG.
+
+# Nghĩa tiếng Việt cho từ phổ biến của JMdict (`jmdict_common_meaning_vi.csv`)
+
+- **Nguồn từ**: bảng `entries` của `ai-service/app/extract/data/jmdict.sqlite` (bản `jmdict-eng-common` của jmdict-simplified, dựng ngày
+  19/10/2026; JMdict © EDRDG, CC BY-SA 4.0): 36 671 dòng (kanji, kana, gloss). Bỏ 7 016 dòng đã có trong `jlpt_meaning_vi.csv`
+  (so `(expression, reading)` sau khi chuẩn hoá kana), gom các biến thể cùng `(kana, gloss)` thành **21 806 nhóm** để dịch một lần, rồi
+  trải lại cho mọi biến thể (kanji / kana) → **29 655 dòng**, cột như file JLPT (`level` để trống).
+- **Nghĩa Việt**: Claude (`claude-fable-5-1`) viết ngày 26/10/2026, 22 lô × ~1 000 nhóm, mỗi lô qua script kiểm tra như file JLPT.
+  `meaning_en` là gloss của 1–2 nghĩa đầu trong JMdict (có thể cắt ngắn) — chỉ để đối chiếu. Chưa có người rà tay (`MACHINE / SEED`).
+- 50 cặp `(expression, reading)` xuất hiện 2 lần vì JMdict có hai mục từ khác nhau cùng dạng viết (ví dụ レーザー laser / leather,
+  ルックス lux / looks): giữ cả hai, nghĩa khác nhau; khi map `entry_key` (A3) mỗi dòng sẽ về đúng mục từ của nó theo `gloss`.
+- Toàn bộ JMdict (~218 000 mục) **không** dịch sẵn: phần ngoài tập phổ biến dịch khi tra (quyết định D15).
+
