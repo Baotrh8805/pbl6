@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchDictEntry, searchDictionary } from "@/services/dictionaryService";
 import type { DictEntry, DictKey, DictSearchResult, DictSummary } from "@/types/dictionary.types";
-import { headOf, prepareQuery, primaryMeaning } from "../dictUtils";
+import { deinflectNote, headOf, prepareQuery, primaryMeaning } from "../dictUtils";
 import { DictEntryView } from "./DictEntryView";
 
 const ROMAJI_KEY = "dict.romaji";
@@ -173,6 +173,11 @@ export const WordsTab: React.FC<{
           <p className="text-body-sm text-on-surface-variant">
             Gõ từ tiếng Nhật (chữ Hán, kana hoặc romaji), nghĩa tiếng Việt hay tiếng Anh để tra. Mỗi mục có âm Hán-Việt, nghĩa
             tiếng Việt, câu ví dụ và bình luận của cộng đồng.
+          </p>
+        )}
+        {items.length > 0 && deinflectNote(result) && (
+          <p role="status" className="text-xs text-on-surface-variant rounded-lg bg-surface-container-low px-3 py-2" lang="vi">
+            {deinflectNote(result)}
           </p>
         )}
         {items.length > 0 && (

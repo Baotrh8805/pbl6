@@ -191,3 +191,15 @@ export const entryToWordNode = (e: DictEntry) => {
 /** Mức H/L theo mora → các đoạn để vẽ bậc thang trọng âm. */
 export const pitchSteps = (moras: string[], hl: ("H" | "L")[]): { mora: string; high: boolean; drop: boolean }[] =>
     moras.map((m, i) => ({ mora: m, high: hl[i] === "H", drop: hl[i] === "H" && hl[i + 1] === "L" }));
+
+/**
+ * Ghi chú trên danh sách kết quả khi server đưa dạng đã chia về dạng gốc (tìm 食べました → mục 食べる đứng đầu). null khi không
+ * có hoặc dữ liệu hỏng; tối đa 5 dạng gốc, bỏ chuỗi rỗng / trùng.
+ */
+export function deinflectNote(result: { deinflected?: { query?: unknown; lemmas?: unknown } | null } | null | undefined): string | null {
+    const d = result?.deinflected;
+    if (!d || typeof d.query !== "string" || !Array.isArray(d.lemmas)) return null;
+    const lemmas = [...new Set(d.lemmas.filter((l): l is string => typeof l === "string" && l.trim() !== "").map((l) => l.trim()))].slice(0, 5);
+    if (lemmas.length === 0) return null;
+    return `«${d.query}» là dạng đã chia hoặc là một cụm, đang hiện trước mục của dạng gốc: ${lemmas.join(", ")}.`;
+}

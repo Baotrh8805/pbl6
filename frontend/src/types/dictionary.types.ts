@@ -31,6 +31,8 @@ export interface DictSearchResult {
     page: number;
     size: number;
     modeUsed: "ja" | "en" | "vi" | "vi+en";
+    /** Có khi từ gõ vào không trùng dạng viết nào và ai-service đưa về dạng gốc (食べました → 食べる); mục dạng gốc đứng đầu. */
+    deinflected?: { query: string; lemmas: string[] } | null;
 }
 
 export interface DictSense {

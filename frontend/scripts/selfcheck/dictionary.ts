@@ -4,6 +4,7 @@
 import {
   cardMeaningOf,
   currentValueOf,
+  deinflectNote,
   entryToWordNode,
   headOf,
   needsSubKey,
@@ -100,4 +101,14 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   const limit = DICTIONARY_FIELDS.find((f) => f.key === "dictionary_ai_hourly_limit")!;
   assert(parseSettingNumber(limit, "0") === 0 && parseSettingNumber(limit, "1001") === null, "Từ điển: trần dịch 0..1000");
   assert(queueCounts({ openDictReports: 3 }).openDictReports === 3 && queueCounts({}).openDictReports === null, "Từ điển: badge báo cáo từ điển");
+
+  // ---------- tra dạng đã chia (食べました → 食べる) ----------
+  assert(
+    deinflectNote({ deinflected: { query: "食べました", lemmas: ["食べる"] } }) ===
+      "«食べました» là dạng đã chia hoặc là một cụm, đang hiện trước mục của dạng gốc: 食べる.",
+    "Từ điển: ghi chú dạng gốc"
+  );
+  assert(deinflectNote({ deinflected: { query: "日本語を", lemmas: ["日本語", " ", "日本語", 3] } })?.endsWith(": 日本語.") === true, "Từ điển: dạng gốc bỏ rỗng / trùng / sai kiểu");
+  assert(deinflectNote({ deinflected: null }) === null && deinflectNote(undefined) === null, "Từ điển: không có dạng gốc -> không ghi chú");
+  assert(deinflectNote({ deinflected: { query: "x", lemmas: [] } }) === null, "Từ điển: danh sách dạng gốc rỗng -> không ghi chú");
 }
