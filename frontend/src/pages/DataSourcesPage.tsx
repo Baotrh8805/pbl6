@@ -15,14 +15,14 @@ const SOURCES: { name: string; url: string; use: string; license: string; licens
   {
     name: "Tatoeba (qua JMdict_e_examp)",
     url: "https://tatoeba.org",
-    use: "Câu ví dụ tiếng Nhật – Anh gắn với nghĩa của từ",
+    use: "Câu ví dụ tiếng Nhật – Anh gắn với nghĩa của từ; bản dịch tiếng Việt của câu do NihonGen dịch (phái sinh, cùng giấy phép)",
     license: "CC BY 2.0 FR",
     licenseUrl: "https://creativecommons.org/licenses/by/2.0/fr/",
   },
   {
     name: "KanjiVG — © Ulrich Apel",
     url: "https://kanjivg.tagaini.net",
-    use: "Nét viết chữ Hán cho luyện viết và chấm điểm",
+    use: "Nét viết chữ Hán cho luyện viết, chấm điểm và vẽ chữ để tra từ điển",
     license: "CC BY-SA 3.0",
     licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/",
   },

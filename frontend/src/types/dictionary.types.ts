@@ -257,3 +257,20 @@ export interface DictStats {
     comments7d: number;
     openReports: number;
 }
+
+/** Tab Câu (GET /api/dictionary/sentences): câu ví dụ chứa cụm tìm; vi = bản dịch Việt (dịch sẵn hoặc admin sửa), null khi chưa có. */
+export interface DictSentence {
+    id: string;
+    jpn: string;
+    eng: string | null;
+    vi: string | null;
+    /** Mục từ mà câu này làm ví dụ (≤ 8). */
+    words: { key: DictKey; form: string; head: string }[];
+}
+
+export interface DictSentenceResult {
+    items: DictSentence[];
+    total: number;
+    page: number;
+    size: number;
+}

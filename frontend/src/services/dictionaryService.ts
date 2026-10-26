@@ -1,17 +1,6 @@
 // Từ điển cho người học (/api/dictionary/*, spec 2026-10-26 §6.4). Khoá mục có ký tự ":" "|" và chữ Nhật → luôn encodeURIComponent.
 import { apiClient } from "./apiClient.ts";
-import type {
-    DictComment,
-    DictEntry,
-    DictExample,
-    DictKey,
-    DictPage,
-    DictReport,
-    DictReportField,
-    DictSearchResult,
-    DictSummary,
-    DictToken,
-} from "../types/dictionary.types.ts";
+import type { DictComment, DictEntry, DictExample, DictKey, DictPage, DictReport, DictReportField, DictSearchResult, DictSentenceResult, DictSummary, DictToken } from "../types/dictionary.types.ts";
 
 const enc = encodeURIComponent;
 
@@ -25,6 +14,14 @@ export const searchDictionary = async (
     signal?: AbortSignal
 ): Promise<DictSearchResult> =>
     (await apiClient.get<DictSearchResult>("/dictionary/search", { params: { q, mode, page, size }, signal })).data;
+
+/** Tab Câu: câu ví dụ chứa cụm q (Nhật đúng chuỗi, Anh từ đầu một từ, Việt có / không dấu); câu ngắn trước. */
+export const searchDictSentences = async (q: string, page = 0, size = 20, signal?: AbortSignal): Promise<DictSentenceResult> =>
+    (await apiClient.get<DictSentenceResult>("/dictionary/sentences", { params: { q, page, size }, signal })).data;
+
+/** Vẽ chữ Hán để tra: các nét (toạ độ khung vẽ) → chữ gợi ý, giống nhất trước. */
+export const recognizeHandwriting = async (strokes: { x: number; y: number }[][]): Promise<{ char: string; score: number }[]> =>
+    (await apiClient.post<{ candidates: { char: string; score: number }[] }>("/dictionary/handwriting", { strokes })).data.candidates ?? [];
 
 export const fetchDictEntry = async (key: DictKey, q?: string): Promise<DictEntry> =>
     (await apiClient.get<DictEntry>(`/dictionary/entries/${enc(key)}`, { params: q ? { q } : undefined })).data;

@@ -5,6 +5,7 @@ import { fetchDictEntry, searchDictionary } from "@/services/dictionaryService";
 import type { DictEntry, DictKey, DictSearchResult, DictSummary } from "@/types/dictionary.types";
 import { deinflectNote, headOf, prepareQuery, primaryMeaning } from "../dictUtils";
 import { DictEntryView } from "./DictEntryView";
+import { HandwritingPad } from "./HandwritingPad";
 
 const ROMAJI_KEY = "dict.romaji";
 const PAGE = 20;
@@ -55,6 +56,7 @@ export const WordsTab: React.FC<{
     setInput(query);
   }
   const [romaji, setRomaji] = useState(readRomaji);
+  const [drawOpen, setDrawOpen] = useState(false);
   const prepared = prepareQuery(query, romaji);
   const searchKey = prepared.q ? `${prepared.mode}|${prepared.q}` : "";
   // Kết quả gắn với khoá đã tạo ra nó (như useAsync): khoá đổi = đang tải, không cần setState trong effect
@@ -156,13 +158,26 @@ export const WordsTab: React.FC<{
             />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-on-surface-variant">
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={romaji} onChange={toggleRomaji} />
-              Gõ romaji → kana
-            </label>
+            <span className="inline-flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" checked={romaji} onChange={toggleRomaji} />
+                Gõ romaji → kana
+              </label>
+              <button
+                type="button"
+                onClick={() => setDrawOpen((v) => !v)}
+                aria-expanded={drawOpen}
+                className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">draw</span>
+                {drawOpen ? "Ẩn ô vẽ" : "Vẽ chữ Hán"}
+              </button>
+            </span>
             {prep.converted && <span lang="ja">Đang tra: {prep.q}</span>}
           </div>
         </form>
+
+        {drawOpen && <HandwritingPad pickHint="thêm vào ô tìm" onPick={(ch) => setInput((v) => v + ch)} />}
 
         {searchError && <p role="alert" className="text-body-sm text-error">{searchError}</p>}
         {searching && items.length === 0 && <p className="text-body-sm text-on-surface-variant">Đang tra…</p>}

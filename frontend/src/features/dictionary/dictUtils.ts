@@ -203,3 +203,29 @@ export function deinflectNote(result: { deinflected?: { query?: unknown; lemmas?
     if (lemmas.length === 0) return null;
     return `«${d.query}» là dạng đã chia hoặc là một cụm, đang hiện trước mục của dạng gốc: ${lemmas.join(", ")}.`;
 }
+
+/**
+ * Tách text thành các đoạn để tô cụm q (tab Câu). Không phân biệt hoa thường; q rỗng / không có trong text -> một đoạn không tô.
+ * Không bỏ dấu: gõ "an com" vẫn tìm ra câu "ăn cơm" (server khớp bỏ dấu) nhưng không tô — chấp nhận, tô sai còn tệ hơn.
+ */
+export function highlightParts(text: string, q: string): { text: string; hit: boolean }[] {
+    const needle = q.trim().toLowerCase();
+    if (!text) return [];
+    if (!needle) return [{ text, hit: false }];
+    const lower = text.toLowerCase();
+    // toLowerCase có thể đổi độ dài (vd. "İ") -> không dám cắt theo chỉ số của bản thường
+    if (lower.length !== text.length) return [{ text, hit: false }];
+    const out: { text: string; hit: boolean }[] = [];
+    // Như server: cụm chữ Latin chỉ khớp ở đầu một từ ("eat" tô eat / eating, không tô trong great); chữ Nhật khớp mọi chỗ.
+    const wordStart = /^[\p{Script=Latin}\d]/u.test(needle);
+    let from = 0;
+    for (let i = lower.indexOf(needle); i >= 0; i = lower.indexOf(needle, i + 1)) {
+        if (i < from) continue;
+        if (wordStart && i > 0 && /[\p{L}\p{N}]/u.test(lower[i - 1])) continue;
+        if (i > from) out.push({ text: text.slice(from, i), hit: false });
+        out.push({ text: text.slice(i, i + needle.length), hit: true });
+        from = i + needle.length;
+    }
+    if (from < text.length) out.push({ text: text.slice(from), hit: false });
+    return out;
+}

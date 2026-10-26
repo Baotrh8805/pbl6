@@ -5,6 +5,7 @@ import {
   cardMeaningOf,
   currentValueOf,
   deinflectNote,
+  highlightParts,
   entryToWordNode,
   headOf,
   needsSubKey,
@@ -111,4 +112,13 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(deinflectNote({ deinflected: { query: "日本語を", lemmas: ["日本語", " ", "日本語", 3] } })?.endsWith(": 日本語.") === true, "Từ điển: dạng gốc bỏ rỗng / trùng / sai kiểu");
   assert(deinflectNote({ deinflected: null }) === null && deinflectNote(undefined) === null, "Từ điển: không có dạng gốc -> không ghi chú");
   assert(deinflectNote({ deinflected: { query: "x", lemmas: [] } }) === null, "Từ điển: danh sách dạng gốc rỗng -> không ghi chú");
+
+  // ---------- tab Câu: tô cụm tìm ----------
+  const hp = (t: string, q: string) => highlightParts(t, q).map((p) => (p.hit ? `[${p.text}]` : p.text)).join("");
+  assert(hp("ご飯を食べた。食べた？", "食べた") === "ご飯を[食べた]。[食べた]？", "Từ điển (Câu): tô mọi chỗ khớp");
+  assert(hp("I Eat rice", "eat") === "I [Eat] rice", "Từ điển (Câu): không phân biệt hoa thường, giữ chữ gốc");
+  assert(hp("The great fish eat the small, eating", "eat") === "The great fish [eat] the small, [eat]ing", "Từ điển (Câu): chữ Latin chỉ tô ở đầu từ như server");
+  assert(hp("食べた。食べたい", "食べ") === "[食べ]た。[食べ]たい", "Từ điển (Câu): chữ Nhật tô mọi chỗ");
+  assert(hp("Tôi ăn cơm", "an com") === "Tôi ăn cơm", "Từ điển (Câu): gõ không dấu thì không tô (không đoán)");
+  assert(hp("abc", "  ") === "abc" && highlightParts("", "a").length === 0, "Từ điển (Câu): q rỗng / text rỗng");
 }

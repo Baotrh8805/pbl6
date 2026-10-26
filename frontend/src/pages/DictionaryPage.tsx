@@ -4,13 +4,16 @@ import { KanjiPage } from "@/pages/KanjiPage";
 import { HanVietMapPage } from "@/pages/HanVietMapPage";
 import { WordsTab } from "@/features/dictionary/components/WordsTab";
 import { NotebookTab } from "@/features/dictionary/components/NotebookTab";
+import { SentencesTab } from "@/features/dictionary/components/SentencesTab";
+import { HandwritingPad } from "@/features/dictionary/components/HandwritingPad";
 import { KanjiCommunity } from "@/features/dictionary/components/KanjiCommunity";
 import type { DictKey } from "@/types/dictionary.types";
 
-type DictTab = "words" | "kanji" | "hanviet" | "notebook";
+type DictTab = "words" | "sentences" | "kanji" | "hanviet" | "notebook";
 
 const TABS: { key: DictTab; label: string; icon: string }[] = [
   { key: "words", label: "Từ vựng", icon: "menu_book" },
+  { key: "sentences", label: "Câu", icon: "format_quote" },
   { key: "kanji", label: "Hán tự", icon: "translate" },
   { key: "hanviet", label: "Hán-Việt", icon: "hub" },
   { key: "notebook", label: "Sổ tay", icon: "bookmarks" },
@@ -19,6 +22,7 @@ const TAB_KEYS = TABS.map((t) => t.key);
 // tham số riêng của từng tab: đổi tab thì bỏ tham số của tab cũ để URL gọn và không lẫn (r = bộ thủ ở Hán tự)
 const TAB_PARAMS: Record<DictTab, string[]> = {
   words: ["q", "e"],
+  sentences: ["s"],
   kanji: ["k", "sub", "r"],
   hanviet: ["reading", "level"],
   notebook: [],
@@ -26,7 +30,7 @@ const TAB_PARAMS: Record<DictTab, string[]> = {
 const KANJI_RE = /[㐀-䶿一-鿿豈-﫿]/u;
 
 // Từ điển (D14): Từ vựng (mới) + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay. Mọi trạng thái trên URL:
-// ?tab=words&q=…&e=<khoá mục>, ?tab=kanji&k=食&sub=radicals&r=85, ?tab=hanviet&reading=…, ?tab=notebook.
+// ?tab=words&q=…&e=<khoá mục>, ?tab=sentences&s=…, ?tab=kanji&k=食&sub=radicals&r=85, ?tab=hanviet&reading=…, ?tab=notebook.
 export const DictionaryPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const raw = params.get("tab") as DictTab | null;
@@ -130,8 +134,24 @@ export const DictionaryPage: React.FC = () => {
             onOpen={openKey}
           />
         )}
+        {tab === "sentences" && (
+          <SentencesTab
+            query={params.get("s") ?? ""}
+            onQuery={(s) => go("sentences", { s: s || null }, true)}
+            onOpen={(k) => go("words", { e: k })}
+          />
+        )}
         {tab === "kanji" && (
           <div className="flex flex-col gap-4">
+            <details className="group rounded-2xl">
+              <summary className="cursor-pointer select-none inline-flex items-center gap-1.5 text-label-md font-semibold text-primary">
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">draw</span>
+                Không biết cách đọc? Vẽ chữ để tra
+              </summary>
+              <div className="mt-2">
+                <HandwritingPad pickHint="mở chữ đó" onPick={(ch) => go("kanji", { k: ch })} />
+              </div>
+            </details>
             <KanjiPage embedded />
             {kanjiChar && <KanjiCommunity ch={kanjiChar} />}
           </div>
