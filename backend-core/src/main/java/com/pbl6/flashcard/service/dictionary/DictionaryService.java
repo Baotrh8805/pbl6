@@ -92,10 +92,13 @@ public class DictionaryService {
 
         ArrayNode items = json.createArrayNode();
         long total;
+        JsonNode deinflected = null;
         if ("ja".equals(m) || "en".equals(m)) {
             JsonNode res = aiSearch(q, m, s, p * s);
             res.path("items").forEach(items::add);
             total = res.path("total").asLong(items.size());
+            // ai-service đưa dạng chia về dạng gốc khi q không trùng dạng viết nào (食べました → 食べる): chuyển tiếp để giao diện ghi chú
+            if (res.path("deinflected").isObject()) deinflected = res.get("deinflected");
         } else {
             // Việt trước (nghĩa đã lưu), rồi Anh (gloss JMdict); trùng khoá bỏ
             Set<String> seen = new LinkedHashSet<>();
@@ -127,6 +130,7 @@ public class DictionaryService {
         out.put("page", p);
         out.put("size", s);
         out.put("modeUsed", m);
+        if (deinflected != null) out.set("deinflected", deinflected);
         return out;
     }
 

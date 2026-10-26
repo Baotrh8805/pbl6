@@ -102,6 +102,16 @@ class DictionaryIT extends IntegrationTest {
         assertEquals("ja", r.get("modeUsed").asText());
         assertEquals("ăn; dùng bữa", r.get("items").get(0).get("meaningVi").asText());
         assertEquals("たべるる", r.get("items").get(0).get("reading").asText());
+        assertTrue(r.path("deinflected").isMissingNode(), "tìm đúng dạng viết: không có ghi chú dạng gốc");
+
+        // dạng đã chia: ai-service trả kèm deinflected → chuyển tiếp nguyên vẹn
+        Mockito.when(ai.search(eq("食べました"), eq("ja"), anyInt(), anyInt())).thenReturn(json.readTree("""
+                {"items":[{"id":"%s","key":"w:%s","headKanji":"食べる","headKana":"たべる","reading":"たべる","glossShort":"to eat",
+                 "common":true,"jlpt":"N5","nExamples":2}],"total":1,"deinflected":{"query":"食べました","lemmas":["食べる"]}}""".formatted(id, id)));
+        JsonNode conj = read(call(get("/api/dictionary/search").param("q", "食べました"), token, null).andExpect(status().isOk()));
+        assertEquals("食べる", conj.get("deinflected").get("lemmas").get(0).asText());
+        assertEquals("食べました", conj.get("deinflected").get("query").asText());
+        assertEquals("ăn; dùng bữa", conj.get("items").get(0).get("meaningVi").asText());
         call(get("/api/dictionary/search").param("q", " "), token, null).andExpect(status().isBadRequest());
         call(get("/api/dictionary/search").param("q", "a").param("mode", "fr"), token, null).andExpect(status().isBadRequest());
     }
