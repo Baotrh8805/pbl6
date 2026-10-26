@@ -1,5 +1,31 @@
 # Nhật ký thay đổi
 
+## 26/10/2026: Từ điển — tra dạng chia, câu ví dụ tiếng Việt, tab Câu, vẽ chữ, mở rộng nghĩa
+Năm cải tiến sau khi rà từ điển (Phần A). Không có migration.
+
+- **Tra dạng đã chia**: tìm 食べました / 読んで / 高かった / 勉強しています ra 食べる / 読む / 高い / 勉強. ai-service: khi q không trùng
+  dạng viết nào, lấy dạng gốc (lemma Sudachi) của các từ nội dung theo thứ tự trong câu (bỏ động từ phụ する / いる đứng sau), mục của
+  dạng gốc đứng đầu rồi tới kết quả tiền tố; response thêm `deinflected {query, lemmas}`, backend chuyển tiếp, giao diện ghi chú
+  "đang hiện trước mục của dạng gốc". Sudachi lỗi → tìm như cũ.
+- **Câu ví dụ tiếng Việt**: `ai-service/app/extract/data/example_vi.csv` — 26 316 câu Tatoeba dịch sẵn (Claude, chưa rà tay). Mục từ
+  trả `viSeed`; backend dùng khi chưa có bản admin / Gemini (`dict_example_vi`) và câu chưa bị admin sửa, nên không gọi AI cho các câu
+  này nữa. Nghĩa Việt đã lưu thắng bản dịch sẵn.
+- **Mở rộng nghĩa Việt**: `jmdict_example_words_meaning_vi.csv` — 14 068 mục có câu ví dụ mà chưa có nghĩa Việt (nạp lúc khởi động như
+  hai file cũ, `MACHINE / SEED`). Tổng nghĩa Việt dịch sẵn ~37 000 mục. 27 / 43 dòng JLPT chưa khớp được gán tay về mục JMdict.
+- **Tab Câu** (`/dictionary?tab=sentences&s=…`): tìm câu ví dụ theo cụm — chữ Nhật khớp đúng chuỗi, tiếng Anh khớp từ đầu một từ, tiếng
+  Việt có / không dấu (theo bản dịch sẵn); câu ngắn trước, tô cụm khớp, nghe câu, bấm từ trong câu để mở mục. ai-service
+  `GET /api/dict/sentences`, backend `GET /api/dictionary/sentences` (áp ghi đè câu, ẩn câu admin đã ẩn, bản dịch đã lưu thắng).
+- **Vẽ chữ Hán để tra**: ô vẽ ở tab Từ vựng (chữ chọn được nối vào ô tìm) và tab Hán tự (mở chữ đó). ai-service `handwriting.py` +
+  `POST /api/dict/handwriting`: so nét đã chuẩn hoá với nét mẫu KanjiVG (~2 000 chữ), lọc theo số nét ±2, ghép nét tối ưu (Hungarian),
+  cộng phần đúng thứ tự khi đủ nét. Đo trên 120 chữ ngẫu nhiên: đúng hạng 1 khi vẽ có nhiễu 120/120, đổi thứ tự nét 120/120, thiếu một
+  nét 111/120 (118/120 trong 5 gợi ý); ~200 ms / lần. Backend `POST /api/dictionary/handwriting` (120 lượt / phút / người).
+- **Test**: ai-service `test_dictionary.py` +9 (dạng chia, bản dịch sẵn, tab Câu, router), `test_handwriting.py` 8 (bộ nét giả + một
+  test dữ liệu thật tự bỏ qua khi thiếu tệp); backend `DictionaryIT` +4 (chuyển tiếp dạng gốc, bản dịch sẵn / admin thắng, tab Câu,
+  vẽ chữ); selfcheck `dictionary.ts` (ghi chú dạng gốc, tô cụm). Kiểm trên trình duyệt (localhost): tra 食べました, tab Câu Nhật / Anh /
+  Việt không dấu, bấm từ trong câu, vẽ 十 bằng sự kiện con trỏ ra 十 đầu danh sách, 375 px không tràn.
+- **Chưa làm / giới hạn**: bản dịch câu và nghĩa mới chưa có người rà; vẽ chữ chỉ nhận ~2 000 chữ có trong KanjiVG đã lọc theo JLPT;
+  tô cụm không tô khi gõ không dấu (server vẫn tìm ra).
+
 ## 26/10/2026: Nhắc học qua email theo lộ trình (B4)
 Kế hoạch [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) B4. Một migration mới:
 **V34** (`learning_paths.remind_email boolean NOT NULL DEFAULT false`, chỉ thêm cột).

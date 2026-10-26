@@ -89,7 +89,7 @@ lịch sử) · bình luận + Hữu ích + báo cáo bình luận · báo cáo 
 popup tra nhanh ở màn học và trong câu ví dụ · thẻ thống kê Từ điển ở Tổng quan admin.
 
 **Ngoài phạm vi.** `[Tab Ngữ pháp] → bỏ qua: patterns.yaml chỉ có mẫu + ví dụ, không có giải thích; thêm khi có nội dung tiếng Việt.`
-`[Tìm câu ví dụ theo cụm (tab Câu)] → bỏ qua; thêm khi cần, dữ liệu đã có trong examples.` `[Trả lời lồng, nhắc tên, ảnh trong bình
+`[Tìm câu ví dụ theo cụm (tab Câu)] → bỏ qua; thêm khi cần, dữ liệu đã có trong examples.` (26/10 tối: **đã làm**, kèm tra dạng chia, câu ví dụ dịch sẵn, vẽ chữ để tra — xem CHANGELOG.) `[Trả lời lồng, nhắc tên, ảnh trong bình
 luận] → bỏ qua.` `[Người dùng đóng góp nghĩa thành nghĩa chính không qua admin] → bỏ qua (D20: qua báo cáo).` `[Tra công khai không
 đăng nhập] → bỏ qua (D24).` `[Audio giọng người, NHK] → bỏ qua; TTS trình duyệt như màn học.` `[Dịch ngược Việt → Nhật bằng AI]
 → bỏ qua; tìm Việt chỉ tra trong nghĩa Việt đã lưu.`
