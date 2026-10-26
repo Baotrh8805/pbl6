@@ -403,7 +403,7 @@ Chú thích trạng thái:
 | C6 | Câu i+1 | Câu chỉ có đúng 1 từ chưa biết; chỉ tìm trong tài liệu của người học | Xong | `sentence_mining.py`, `IPlusOneController` |
 | C7 | Câu hỏi chia thể động từ | 12 dạng: 10 thể + kính ngữ お〜になる / khiêm nhường お〜する; dùng câu mẫu khi tài liệu không có câu phù hợp | Xong | `conjugate.py`, `48c1a33` |
 | D1 | CRUD bộ thẻ | Có thư mục lồng nhau, nhập theo lô | Xong (cũ) | `DeckController`, `FolderController` |
-| D2 | Chia sẻ bằng liên kết | Link `/decks/{id}` theo quyền Công khai / mời / thư mục; **chưa có `share_token` (D9)** | **Một phần** | `ShareDeckModal.tsx`; grep `share_token` = 0 |
+| D2 | Chia sẻ bằng liên kết | Link `/decks/{id}` theo quyền Công khai / mời / thư mục; link riêng `/d/<token>` (`share_token`, D9, thêm 26/10) | **Xong** (26/10) | `ShareDeckModal.tsx`, `DeckShareLinkService.java`, `DeckShareLinkIT` |
 | D3 | Sao chép bộ thẻ | Từ loại và phương án nhiễu được chép theo | Xong | `POST /api/decks/{id}/clone` |
 | D4 | Tìm bộ thẻ công khai | Lọc theo từ khoá / cấp / chủ đề, sắp xếp, chấm sao | Xong (cũ) | `GET /api/library/decks` |
 | E1 | SRS + đo phản xạ | **SM-2 rút gọn** (không phải FSRS). `reactionMs` được ghi lại nhưng không vào công thức lịch | Xong ≠1.3 | `SrsService`, `ReviewService`, V20 |
@@ -718,7 +718,7 @@ Xem §8a a4.
 
 ### 7.2 Giới hạn đã biết (chấp nhận ở quy mô hiện tại)
 
-- **D2**: chưa có link bí mật `share_token` (D9). UC-29 (xuất Anki / CSV / PDF) chưa làm.
+- **D2**: chưa có link bí mật `share_token` (D9). UC-29 (xuất Anki / CSV / PDF) chưa làm. *(26/10: cả hai đã làm, xem CHANGELOG.)*
 - **E4**: mẫu trọng âm là kiểu từ điển kanjium, chỉ có cho từ JLPT. Không có mẫu NHK hay giọng bản xứ.
 - **Giới hạn chức năng**:
   - E1 dùng SM-2, phản xạ không vào công thức lịch.

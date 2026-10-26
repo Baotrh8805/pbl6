@@ -280,6 +280,9 @@ A5 có hợp đồng API (viết `api.types.ts` từ spec §6.5 trước).
 
 ## B1. Link chia sẻ bộ thẻ (D9) — đóng dòng "Một phần" D2 của bảng phủ 1.2.1
 
+> **Trạng thái 26/10: Xong.** Khác thiết kế: link quay lại sau đăng nhập dùng cơ chế `state.from` sẵn có của `ProtectedRoute` (không cần
+> sửa `LoginPage`); bộ đã xoá trả 404 (xoá cứng nên token mất theo), không phải 409. Selfcheck ở `scripts/selfcheck/deckShare.ts`.
+
 - **Thiết kế**: V33 `ALTER TABLE decks ADD COLUMN IF NOT EXISTS share_token varchar(43) UNIQUE` (null = tắt; 32 byte ngẫu nhiên
   base64url). Chủ bộ: `POST /api/decks/{id}/share-link` (tạo hoặc xoay), `DELETE` (thu hồi). Người đã đăng nhập mở `/d/<token>` →
   frontend gọi `POST /api/decks/share-link/{token}/accept` → backend thêm dòng `deck_shares` vai trò xem (dùng lại cơ chế mời qua email
@@ -291,6 +294,9 @@ A5 có hợp đồng API (viết `api.types.ts` từ spec §6.5 trước).
   `manual.ts` hoặc `learner.ts`.
 
 ## B2. Xuất bộ thẻ (UC-29)
+
+> **Trạng thái 26/10: Xong.** Test quyền gộp vào `DeckShareLinkIT` (không tách `DeckExportIT`); tên tệp theo ngày giờ Việt Nam tính ở
+> backend. Anki thêm dòng tiêu đề `#separator:tab` / `#html:true`, mặt sau có Hán-Việt.
 
 - `GET /api/decks/{id}/export?format=csv|anki` (chủ hoặc người được xem): CSV UTF-8 có BOM `term,reading,meaning,level,han_viet,pos`;
   `anki` = TSV 2 cột `mặt trước<TAB>mặt sau` (mặt sau: cách đọc + nghĩa nhiều dòng, `<br>`), tên tệp theo giờ máy (cùng cách sửa c16).

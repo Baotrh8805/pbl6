@@ -12,12 +12,12 @@
 | Sprint | Số UC | Xong | Một phần | Còn lại |
 | :--- | :---: | :---: | :---: | :---: |
 | Sprint 1 (UC-01 → UC-16) | 16 | 15 | 1 | 0 |
-| Sprint 2 (UC-17 → UC-29) | 13 | 12 | 0 | 1 |
+| Sprint 2 (UC-17 → UC-29) | 13 | 13 | 0 | 0 |
 | Sprint 3 (UC-30 → UC-42) | 13 | 8 | 2 | 3 |
-| **Tổng** | **42** | **35** | **3** | **4** |
+| **Tổng** | **42** | **36** | **3** | **3** |
 
 Một phần: UC-01 (chưa có Google OAuth), UC-33 (mẫu trọng âm là kiểu từ điển, không phải giọng bản xứ), UC-36 (chưa so giữa
-các tài liệu của người học với nhau). Còn lại: UC-29 (xuất file), UC-34 + UC-35 (Neo4j / GraphRAG), UC-40 (thanh toán).
+các tài liệu của người học với nhau). Còn lại: UC-34 + UC-35 (Neo4j / GraphRAG), UC-40 (thanh toán).
 
 Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm vừa làm vừa học hiệu quả mà không bị ngợp, công việc được chia làm 3 Sprint:
 
@@ -70,9 +70,9 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [x] UC-26: Thuật toán lặp lại ngắt quãng (Spaced Repetition System - SRS) nhắc ôn từ vựng. *(SM-2 cải tiến; đo thời gian phản xạ mỗi lần chấm (Lộ trình 2.0); dashboard có thẻ đến hạn, chuỗi ngày học)*
 
 ### Tiếp nối Phân hệ 4:
-- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(Thư viện cộng đồng + chấm sao / bình luận; chia sẻ bộ thẻ / thư mục qua email (xem & học hoặc sửa), link thư mục công khai. Link chia sẻ riêng cho từng bộ thẻ (`share_token`, quyết định D9) **chưa làm**)*
+- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(Thư viện cộng đồng + chấm sao / bình luận; chia sẻ bộ thẻ / thư mục qua email (xem & học hoặc sửa), link thư mục công khai. Link riêng cho từng bộ thẻ `/d/<token>` (`share_token`, quyết định D9): người đã đăng nhập mở link được quyền xem; chủ tạo / đổi / tắt ở hộp Chia sẻ (26/10))*
 - [x] UC-28: Tìm kiếm và sao chép bộ thẻ của người khác về tài khoản mình.
-- [ ] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF). *(chỉ có chiều nhập: dán văn bản từ Excel / Anki / Quizlet; chưa có xuất)*
+- [x] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF). *(menu Xuất ở trang bộ thẻ: CSV UTF-8 cho Excel, tệp TSV nhập vào Anki, trang in `/decks/:id/print` để lưu PDF bằng trình duyệt (26/10))*
 
 ---
 

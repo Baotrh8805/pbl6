@@ -1,5 +1,24 @@
 # Nhật ký thay đổi
 
+## 26/10/2026: Link chia sẻ bộ thẻ (D9) + xuất bộ thẻ (UC-29)
+Kế hoạch [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) B1, B2. Một migration
+mới: **V33** (`decks.share_token varchar(43)` + chỉ mục unique một phần, chỉ thêm cột).
+
+- **Link riêng (B1, D9)**: chủ bộ thẻ tạo / đổi / tắt link `/d/<token>` (32 byte ngẫu nhiên base64url) ở hộp Chia sẻ; người đã đăng
+  nhập mở link → `POST /api/decks/share-link/{token}/accept` thêm dòng `deck_shares` quyền Chỉ xem (xem, học, sao chép dù bộ riêng tư)
+  rồi chuyển tới `/decks/{id}`. Người đã được mời giữ quyền cũ (EDITOR không bị hạ), chủ mở link của mình không đổi gì. Đổi link =
+  link cũ hết hiệu lực; tắt link không gỡ người đã vào (gỡ ở danh sách). Chưa đăng nhập → trang đăng nhập rồi quay lại đúng link.
+  Token sai / đã thu hồi / bộ đã xoá → 404. API: `GET/POST/DELETE /api/decks/{id}/share-link` (chỉ chủ), `DeckShareLinkService`.
+- **Xuất bộ thẻ (B2, UC-29)**: `GET /api/decks/{id}/export?format=csv|anki` (ai xem được bộ thẻ đều xuất được, `DeckExportService`).
+  CSV UTF-8 có BOM `term,reading,meaning,level,han_viet,pos` (trích dẫn RFC 4180, ô bắt đầu bằng `= + - @` thêm `'` để Excel không chạy
+  công thức); Anki = TSV có tiêu đề `#separator:tab` / `#html:true` (mặt trước thuật ngữ, mặt sau cách đọc + nghĩa + Hán-Việt, escape
+  HTML, xuống dòng = `<br>`); tên tệp `<tên-bộ-không-dấu>-<ngày VN>.csv` / `-anki.txt`. PDF: trang in `/decks/:id/print` (bảng thẻ,
+  CSS in, nút "In / Lưu PDF"). Frontend: menu **Xuất** ở trang bộ thẻ (`DeckExportMenu`, tự neo trái / phải theo chỗ trống).
+- **Test**: backend `DeckShareLinkIT` 3 (tạo / đổi / tắt / nhận / token sai / bộ đã xoá / giữ EDITOR / staff 403 / xuất CSV, Anki,
+  400, 404) + `DeckExportServiceTest` 3; frontend `scripts/selfcheck/deckShare.ts` (URL link, tên tệp từ `Content-Disposition`).
+  Kiểm trên trình duyệt (localhost, tài khoản thử): tạo link → người khác đăng nhập qua link → vào bộ thẻ với quyền xem; link sai báo
+  lỗi; tải CSV / Anki đúng tên và nội dung; trang in; 375 px không tràn.
+
 ## 26/10/2026: Từ điển Nhật–Việt cộng đồng (UC-43..45)
 Spec / kế hoạch: [Plan/specs/2026-10-26-tu-dien-design.md](Plan/specs/2026-10-26-tu-dien-design.md),
 [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) (phần A). Quyết định D14–D29.
