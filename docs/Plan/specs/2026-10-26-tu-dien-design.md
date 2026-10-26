@@ -1,6 +1,6 @@
 # Spec: Từ điển Nhật–Việt cộng đồng (tra từ, bình luận, báo cáo, admin sửa từ điển gốc)
 
-Ngày 26/10/2026 · nhánh `a` · trạng thái: **đã chốt với người dùng (grill me 4 vòng, 16 câu), chưa có code**; kế hoạch triển khai ở
+Ngày 26/10/2026 · nhánh `a` · trạng thái: **đã chốt (grill me 4 vòng, 16 câu); đã triển khai 26/10/2026 (ai-service + backend + frontend, xem CHANGELOG)**; kế hoạch triển khai ở
 [plans/2026-10-26-tu-dien-va-viec-con-lai.md](../plans/2026-10-26-tu-dien-va-viec-con-lai.md) (phần A), kèm việc cũ còn lại (phần B).
 Tính năng mới, **ngoài** mục 1.2.1 của "Yêu cầu chức năng.docx" (docx chỉ có "Tra cứu chữ Hán" F1 / C5); đề xuất đặt UC-43..45 trong
 [USE_CASES_CHECKLIST.md](../../USE_CASES_CHECKLIST.md). Mẫu tham chiếu: ứng dụng Mazii (tra từ, Hán-Việt, ví dụ, bình luận cộng đồng, báo lỗi).
@@ -149,7 +149,7 @@ của chữ Hán và của từ dùng chung bảng (D29).
   appliesToKanji}, sense[] {partOfSpeech[], appliesToKanji[], appliesToKana[], related[], antonym[], field[], dialect[], misc[],
   info[], languageSource[], gloss[] {lang, gender, type, text}} }`, `tags {mã: mô tả}` ở gốc file. Bản có ví dụ **không có type định
   nghĩa chính thức**: trong file thực tế mỗi `sense` có thêm `examples[] { source {type: "tatoeba", value: "<id câu>"}, text: "<dạng
-  từ dùng trong câu>", sentences[] { land: "jpn"\|"eng", text } }` (`land` là lỗi chính tả có chủ ý của upstream, giữ nguyên) →
+  từ dùng trong câu>", sentences[] { lang: "jpn"\|"eng", text } }` (đã kiểm trên bản 3.6.2+20261019: trường là `lang`) →
   **bước đầu của task build: mở một mục mẫu, in cấu trúc, chỉnh tên trường trước khi parse**.
 - Bảng mới (cùng file, cùng kết nối `mode=ro`):
 

@@ -1,5 +1,36 @@
 # Nhật ký thay đổi
 
+## 26/10/2026: Từ điển Nhật–Việt cộng đồng (UC-43..45)
+Spec / kế hoạch: [Plan/specs/2026-10-26-tu-dien-design.md](Plan/specs/2026-10-26-tu-dien-design.md),
+[Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) (phần A). Quyết định D14–D29.
+Một migration mới: **V32** (chỉ thêm bảng `dict_*` + 2 khoá cấu hình; mở rộng CHECK khoá `app_settings` như V21).
+
+- **Bảo mật / git**: `application-local.properties` (mật khẩu Supabase, JWT secret) đã bị commit từ 21/10 → gỡ khỏi git, trả lại dòng
+  `.gitignore` (`8701745`). **Phải đổi mật khẩu DB và JWT secret** vì lịch sử git vẫn còn bản cũ. Đã gộp `origin/a` (`ac7dc9c`, 25/10).
+- **Dữ liệu**: `jmdict.sqlite` dựng lại từ bản JMdict đầy đủ có ví dụ Tatoeba (`jmdict-examples-eng`, 218 930 mục, 32 362 câu, FTS5;
+  ~197 MB, gitignore; `--dict-scope compact` cho file nhỏ hơn). Bảng `entries` cũ giữ nguyên nên bóc tách không đổi kết quả.
+  Nghĩa tiếng Việt dịch sẵn (Claude viết): 7 972 từ JLPT + 21 806 nhóm từ phổ biến JMdict (29 655 dòng), đã map `entry_key`
+  (99 % khớp mục JMdict) bằng `scripts/map_dict_vi_keys.py`; backend nạp vào `dict_meanings` lúc khởi động (`DictionarySeedLoader`,
+  status MACHINE, không bao giờ đè bản admin).
+- **ai-service**: `/api/dict/{search, entries, kanji, key, tokenize, translate, overrides}` (`dictionary.py`, `dict_router.py`); tìm
+  Nhật (kana ↔ katakana, chính xác rồi tiền tố) và Anh (FTS); lớp ghi đè của admin `overrides.py` (RAM + `data/dict_overrides.json`)
+  áp vào Hán-Việt, nghĩa chữ, gloss JMdict, cách đọc khi bóc tách; item `/extract/analyze` thêm `dictKey`; health thêm 4 cờ `dict*`;
+  `gemini.translate_dictionary`.
+- **backend**: `/api/dictionary/*` (USER) tra cứu gộp 4 lớp (gốc → ghi đè → nghĩa Việt → cộng đồng), dịch lúc tra có trần theo giờ
+  (`dictionary_ai_hourly_limit`, mặc định 30; người học không thấy nhãn "máy dịch", D23), bình luận + Hữu ích, báo lỗi mục / bình
+  luận, sổ tay, lịch sử tra (300 / người); `/api/admin/dictionary/*` (ADMIN, SUPER_ADMIN) hàng chờ (bị báo cáo → chỉ có nghĩa Anh →
+  nghĩa máy chưa kiểm), sửa nghĩa Việt / xác nhận / dịch lại, ghi đè dữ liệu gốc, bản dịch ví dụ, áp đề xuất một nút, hoàn tác, ẩn /
+  xoá bình luận, lịch sử, đồng bộ ai-service (`DictionaryOverridePublisher`: sau commit + 10 phút / lần); audit target `DICTIONARY`;
+  thông báo `DICT_REPORT_RESOLVED`, `DICT_COMMENT_HIDDEN`; thống kê admin thêm `openDictReports`, `dict`. Bóc tách lấy nghĩa Việt có
+  sẵn trong từ điển trước khi gọi Gemini, nghĩa Gemini mới được lưu lại (`stats.fromDictionary`).
+- **frontend**: trang `/dictionary` (tab Từ vựng / Hán tự / Hán-Việt / Sổ tay; `/kanji`, `/han-viet` chuyển hướng giữ tham số),
+  chi tiết mục (Hán-Việt theo chữ, JLPT, trọng âm, nghĩa Việt / Anh, câu ví dụ + dịch, tra từng từ trong câu, câu từ tài liệu của mình,
+  thêm vào bộ thẻ, sổ tay, báo lỗi, bình luận), nút tra từ điển ở màn học, `/admin/dictionary` (hàng chờ, tìm & sửa, bình luận, lịch
+  sử, ngăn sửa), tab Từ điển ở `/admin/reports`, hai khoá ở Cấu hình (tuỳ chọn), trang `/about/data` ghi nguồn / giấy phép.
+- **Test**: ai-service **1383 passed** (+17 `test_dictionary.py`, hai test hợp đồng cập nhật khoá mới); backend `DictionaryIT` 12 + 1 test
+  mới ở `ExtractionIT`; frontend lint + build + self-check (module `dictionary.ts`) xanh.
+- **Chưa kiểm**: dịch Gemini thật (máy không có khoá), V32 trên Supabase, giao diện trên điện thoại thật.
+
 ## 25/10/2026: thao tác khi học flashcard
 Spec / kế hoạch: [Plan/specs/2026-10-25-thao-tac-hoc-the-design.md](Plan/specs/2026-10-25-thao-tac-hoc-the-design.md),
 [Plan/plans/2026-10-25-thao-tac-hoc-the.md](Plan/plans/2026-10-25-thao-tac-hoc-the.md). Một migration mới: **V31**. Không đổi thuật toán SRS.

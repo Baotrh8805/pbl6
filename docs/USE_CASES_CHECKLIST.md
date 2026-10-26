@@ -99,7 +99,8 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [x] UC-41: Quản lý báo cáo nội dung sai lệch / vi phạm bản quyền từ người dùng. *(nút "Báo cáo" trên bộ thẻ public; admin resolve / dismiss; đợt 2: báo lỗi câu hỏi quiz, kiểm duyệt mẹo nhớ trước khi công khai)*
 - [x] UC-42: Sao lưu và khôi phục dữ liệu hệ thống. *(`scripts/backup.ps1|sh` (pg_dump) + quy trình `pg_restore` trong SUPABASE_SETUP.md; Admin Panel cảnh báo khi bản sao lưu cuối quá 48 giờ (`app.backup.marker`, test `BackupStatusTest`); không có nút sao lưu / khôi phục trên giao diện, script không có test tự động)*
 
-### Phân hệ 8: Từ điển cộng đồng (kế hoạch 26/10/2026, **chưa có code**; ngoài 1.2.1)
-- [ ] UC-43: Tra từ điển Nhật–Việt (từ vựng, Hán tự, Hán-Việt, nghĩa Việt, trọng âm, ví dụ Tatoeba + bản dịch, sổ tay, lịch sử, tra nhanh từ màn học, thêm vào bộ thẻ). *(spec [Plan/specs/2026-10-26-tu-dien-design.md](Plan/specs/2026-10-26-tu-dien-design.md); nghĩa Việt dịch sẵn JLPT + Gemini khi tra, lưu `dict_meanings`)*
-- [ ] UC-44: Bình luận chia sẻ kiến thức dưới mỗi mục từ / chữ Hán (phẳng, Hữu ích, sửa / xoá của mình, báo cáo bình luận; admin ẩn / xoá).
-- [ ] UC-45: Báo lỗi cách đọc / Hán-Việt / nghĩa / ví dụ kèm đề xuất sửa; admin và super admin xem hàng chờ (mục bị báo cáo và mục chưa có nghĩa Việt lên đầu), áp dụng đề xuất hoặc sửa thẳng từ điển gốc, bản sửa có hiệu lực toàn hệ thống (bóc tách, thẻ chữ Hán, cảnh báo mâu thuẫn), có lịch sử + hoàn tác + audit.
+### Phân hệ 8: Từ điển cộng đồng (26/10/2026; ngoài 1.2.1)
+- [x] UC-43: Tra từ điển Nhật–Việt (từ vựng, Hán tự, Hán-Việt, nghĩa Việt, trọng âm, ví dụ Tatoeba + bản dịch, sổ tay, lịch sử, tra nhanh từ màn học, thêm vào bộ thẻ). *(spec [Plan/specs/2026-10-26-tu-dien-design.md](Plan/specs/2026-10-26-tu-dien-design.md); nghĩa Việt dịch sẵn JLPT + Gemini khi tra, lưu `dict_meanings`)*
+- [x] UC-44: Bình luận chia sẻ kiến thức dưới mỗi mục từ / chữ Hán (phẳng, Hữu ích, sửa / xoá của mình, báo cáo bình luận; admin ẩn / xoá).
+- [x] UC-45: Báo lỗi cách đọc / Hán-Việt / nghĩa / ví dụ kèm đề xuất sửa; admin và super admin xem hàng chờ (mục bị báo cáo và mục chưa có nghĩa Việt lên đầu), áp dụng đề xuất hoặc sửa thẳng từ điển gốc, bản sửa có hiệu lực toàn hệ thống (bóc tách, thẻ chữ Hán, cảnh báo mâu thuẫn), có lịch sử + hoàn tác + audit.
+  *(26/10: có test tự động — ai-service `tests/test_dictionary.py`, backend `DictionaryIT` + `ExtractionIT`, frontend self-check `dictionary.ts`; dịch Gemini thật chưa chạy vì máy không có khoá, phần đó bàn giao kiểm tay)*

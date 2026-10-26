@@ -1,6 +1,6 @@
 # Kế hoạch triển khai: Từ điển Nhật–Việt cộng đồng (phần A) + việc cũ còn lại (phần B)
 
-Ngày 26/10/2026 · nhánh `a` · trạng thái: **đã chốt với người dùng, chưa code**. Spec:
+Ngày 26/10/2026 · nhánh `a` · trạng thái: **phần A (từ điển) đã code 26/10/2026; phần B chưa làm**. Spec:
 [specs/2026-10-26-tu-dien-design.md](../specs/2026-10-26-tu-dien-design.md) (quyết định D14–D29, K1–K10, schema, API, giao diện).
 Theo D28: kế hoạch **chỉ liệt kê việc, thứ tự và phụ thuộc, không chia theo ngày**; mục tiêu phần A xong trong khoảng 2 tuần.
 Mỗi task ghi: mục tiêu · tệp · bước · test · xong khi. Mọi commit theo [chính sách](../../TEAM_GUIDELINES.md): commit local sau khi test
