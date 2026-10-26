@@ -11,6 +11,7 @@ secrets/
 credentials.json
 # Bản sao lưu DB (scripts/backup.ps1 / backup.sh)
 backups/
+backend-core/src/main/resources/application-local.properties
 ai-service/.env
 
 # ==============================================================================
