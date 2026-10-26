@@ -112,18 +112,21 @@ A5 có hợp đồng API (viết `api.types.ts` từ spec §6.5 trước).
   `test_conflicts.py` (tham chiếu admin:dict thắng).
 - **Xong khi**: `pytest` xanh; `GET /api/dict/search?q=たべる` trên máy dev trả 食べる đầu danh sách; `GET /api/extract/health` có 4 cờ mới.
 
-## A3. ai-service: `translate_dictionary` + script dịch sẵn JLPT
+## A3. ai-service: `translate_dictionary` + map khoá cho nghĩa JLPT đã dịch + script dịch mở rộng
 
+- **Đã làm 26/10 (trước khi code)**: Claude tự dịch 7 972 dòng JLPT N5–N1 → `backend-core/src/main/resources/dict/jlpt_meaning_vi.csv`
+  (chưa có `entry_key`, xem spec §4.3). Phần còn lại của task:
 - **Tệp**: `app/extract/gemini.py` (`_DICT_TRANSLATE_PROMPT`, `_DICT_TRANSLATE_SCHEMA`, `translate_dictionary(items, model)`),
   `app/api/dict_router.py` (`POST /dict/translate`, mã lỗi như `/extract/enrich`: `no_api_key` / `quota` / `aiOverloaded` → 503 với
-  `reason`), `scripts/translate_jlpt_vi.py`, đầu ra `backend-core/src/main/resources/dict/jlpt_meaning_vi.csv` (commit), `README.md`
-  mục chạy script, `data/README.md`.
-- **Bước**: (1) prompt + schema + test parse; (2) endpoint; (3) script: đọc CSV JLPT + overrides, tra `word_forms` lấy id, khoá
-  `w:<id>` / `w:jlpt:…`, lô 40, resume, nghỉ 1 giây, ghi CSV tăng dần, tóm tắt cuối; (4) người dùng chạy 2 lô đầu (80 dòng), Claude
-  rà 50 dòng mẫu, chỉnh prompt nếu cần, rồi người dùng chạy hết (~200 lời gọi); (5) commit CSV.
+  `reason`), `scripts/map_jlpt_vi_keys.py` (thêm cột `entry_key` vào CSV bằng `jmdict.sqlite` của A1; in số dòng khớp JMdict / dùng
+  khoá `w:jlpt:`), `scripts/translate_jlpt_vi.py` (dịch lại / mở rộng bằng Gemini khi có khoá: đầu vào CSV JLPT hoặc danh sách
+  `entries` common của `jmdict.sqlite`, resume, lô 40, nghỉ 1 giây), `README.md` + `data/README.md` mục dữ liệu nghĩa Việt.
+- **Bước**: (1) prompt + schema + test parse; (2) endpoint; (3) script map khoá, chạy trên máy dev sau A1, commit CSV đã có khoá;
+  (4) script Gemini (không chạy trong đợt này nếu người dùng không đưa khoá); (5) README.
 - **Test**: `test_gemini.py` (parse đủ / thiếu trường / id ví dụ giữ nguyên), `test_dict_router.py` (translate với Gemini giả, 503 khi
-  không khoá), `tests/test_translate_jlpt_script.py` (hàm thuần: dựng khoá, resume bỏ dòng đã có).
-- **Xong khi**: CSV ≥ 7 500 dòng có nghĩa Việt, không dòng trống; `pytest` xanh.
+  không khoá), `tests/test_map_jlpt_vi_keys.py` (map khớp / không khớp / kana ↔ katakana / biến thể `高校; 高等学校`), `tests/
+  test_translate_jlpt_script.py` (hàm thuần: resume bỏ dòng đã có).
+- **Xong khi**: CSV có `entry_key` cho mọi dòng (≥ 95 % khớp JMdict thật, phần còn lại `w:jlpt:`); `pytest` xanh.
 
 ## A4. Backend: V32, entity, repository, hàm thuần, seed
 

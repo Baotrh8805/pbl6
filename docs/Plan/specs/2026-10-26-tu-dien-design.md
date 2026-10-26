@@ -180,17 +180,21 @@ của chữ Hán và của từ dùng chung bảng (D29).
   giới hạn 300 ký tự.
 - Cache LRU 2 048 mục cho `entry`; `search` không cache (ai-service nhanh, backend đã có `TtlCache`).
 
-### 4.3 Script dịch sẵn JLPT: `ai-service/scripts/translate_jlpt_vi.py`
+### 4.3 Nghĩa Việt dịch sẵn cho JLPT (đã làm 26/10, không cần khoá Gemini)
 
-- Đầu vào: `data/jlpt/n*.csv` (+ `jlpt_meaning_overrides.csv`), `jmdict.sqlite` (để lấy `id`); cần `GEMINI_API_KEY` (chỉ máy của
-  người dùng). Khoá: `w:<id>` khi `(expression, reading)` khớp `word_forms`, không thì `w:jlpt:<expression>|<reading>`.
-- Gọi `gemini.translate_dictionary` theo lô 40 (~200 lần gọi cho ~8 000 dòng), chạy lại được (bỏ qua khoá đã có trong file đầu ra),
-  nghỉ 1 giây giữa lô, dừng sạch khi hết quota (ghi phần đã dịch).
-- Đầu ra **commit**: `backend-core/src/main/resources/dict/jlpt_meaning_vi.csv` cột `entry_key,term,reading,level,meaning_vi,model,
-  generated_at` (~1 MB). Nạp vào `dict_meanings` bởi `DictionarySeedLoader` (§6.3) với `status=MACHINE, source=SEED` → nằm trong hàng
-  chờ admin sau nhóm bị báo cáo (D16).
-- Prompt: nghĩa ngắn gọn ≤ 120 ký tự, nhiều nghĩa cách nhau bằng `; `, giữ từ loại ngầm (động từ "…"), không romaji, không giải thích;
-  sau lô đầu người dùng xem 50 dòng mẫu rồi mới chạy hết.
+- **Cập nhật 26/10**: người dùng yêu cầu Claude tự dịch thay vì chạy script Gemini. Claude (model `claude-fable-5-1`) đã viết nghĩa
+  tiếng Việt cho **toàn bộ 7 972 dòng** của `data/jlpt/n*.csv` ngay trong phiên (9 tác tử song song, mỗi lô qua script kiểm tra
+  định dạng / thiếu dòng / sót tiếng Anh), gộp thành `backend-core/src/main/resources/dict/jlpt_meaning_vi.csv` (commit) với cột
+  `expression,reading,level,meaning_vi,meaning_en,source,generated_at`. Chưa có `entry_key` vì `jmdict.sqlite` có id chỉ tồn tại sau A1.
+- Bước map khoá (task A3): `scripts/map_jlpt_vi_keys.py` đọc CSV trên + `jmdict.sqlite` mới, thêm cột `entry_key` (`w:<id>` khi
+  `(expression, reading)` khớp `word_forms`, không thì `w:jlpt:<expression>|<reading>`), ghi đè cùng file; `DictionarySeedLoader`
+  (§6.3) chỉ nạp dòng có `entry_key`. Nạp với `status=MACHINE, source=SEED` → nằm trong hàng chờ admin sau nhóm bị báo cáo (D16).
+- Script Gemini `scripts/translate_jlpt_vi.py` vẫn viết nhưng chỉ dùng để **dịch lại / mở rộng** (ví dụ ~20 000 từ `common` của JMdict)
+  khi người dùng có khoá; cùng định dạng CSV, resume được, lô 40, nghỉ 1 giây giữa lô. Toàn bộ JMdict (~218 000 mục) không dịch sẵn:
+  dịch khi tra (D15).
+- Chuẩn nghĩa (dùng chung cho Claude, Gemini và admin): ngắn gọn ≤ 120 ký tự, nhiều nghĩa cách `; `, đồng nghĩa cách `, `, động từ /
+  tính từ dạng trần, nhãn trong ngoặc cho trợ từ / liên từ / thán từ / lượng từ / địa danh / kính ngữ, không romaji, không tiếng Anh,
+  không chữ Nhật trong cột nghĩa.
 
 ### 4.4 API ai-service mới: `app/api/dict_router.py`, prefix `/api/dict` (đăng ký trong `main.py`)
 
