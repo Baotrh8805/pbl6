@@ -17,7 +17,9 @@ public record AdminStatsResponse(Users users, Decks decks, long cards, Extractio
                                  long openQuestionFlags, long pendingMnemonics, long openAppeals,
                                  Ai ai, List<OcrPoint> ocrSeries,
                                  /* Từ điển (V32): báo cáo từ điển đang mở (badge) + số liệu kho nghĩa Việt */
-                                 long openDictReports, com.pbl6.flashcard.dto.dictionary.DictDtos.DictStats dict) {
+                                 long openDictReports, com.pbl6.flashcard.dto.dictionary.DictDtos.DictStats dict,
+                                 /* B3: lượt ôn trong / ngoài lộ trình trong cửa sổ days (trừ học nhanh) */
+                                 PathEffect pathEffect) {
 
     /** staffPendingSetup: staff chưa đổi mật khẩu seed (dashboard cảnh báo). */
     public record Users(long total, long new7d, long new30d, long locked, long premium, long active7d, long staffPendingSetup) {}
@@ -36,6 +38,10 @@ public record AdminStatsResponse(Users users, Decks decks, long cards, Extractio
      * remedial = source_type 'remedial' (đếm chéo, lộ trình bổ khuyết cũng nằm trong active / completed).
      */
     public record LearningPathBreakdown(long active, long completed, long failed, long remedial, long draft) {}
+
+    /** B3: so tỷ lệ "again" và trung vị phản xạ giữa lượt ôn trong lộ trình và ngoài lộ trình. */
+    public record PathEffect(com.pbl6.flashcard.dto.insights.PathEffectResponse.Window inPath,
+                             com.pbl6.flashcard.dto.insights.PathEffectResponse.Window outside) {}
 
     public record DayPoint(LocalDate date, long newUsers, long extractions, long quizzes) {}
 
