@@ -130,7 +130,7 @@ Hạn chế đã biết: OCR nhiễu (`第l課`) hoặc heading chỉ là đoạ
 | GET | `/` (2.0) | `?date=` | một truy vấn batch cho job / chương / thẻ (LP-7); ACTIVE kèm `today{…, newCount, dueCount, behindCount}` và `completion` |
 | GET | `/today-summary` | `?date=` | `[{pathId, title, dayIndex, totalDays, state, newCount, dueCount, behindCount, studyDays, dailyCap}]` cho mọi lộ trình ACTIVE — widget Tổng quan + badge sidebar dùng chung (LP-16) |
 | GET | `/{id}` (2.0) | `?date=` | thêm `dailyCap, studyDays, reminder, completedAt, lastRebalancedAt`; ACTIVE: `completion`, `chapters[].{learned, mastered, state, quizBestPct, quizPassedAt}`, `today{…, newCount, dueCount, behindCount}` với `tasks[].{count, cardIds}`, `forecast[]`; DRAFT: `suggestedDays`, `overCap` |
-| PATCH | `/{id}` (2.0) | `{title?, totalDays?, startDate?, dailyCap?, studyDays?, reminder?}` · `?date=` | ACTIVE đổi `totalDays / startDate / studyDays / dailyCap` → xếp lại thẻ **chưa học** từ hôm nay (thẻ đã học giữ ngày); 400 nếu `totalDays` < ngày học hiện tại; 409 nếu lịch mới cần > 365 ngày; `overflow = true` khi không giữ được trần |
+| PATCH | `/{id}` (2.0) | `{title?, totalDays?, startDate?, dailyCap?, studyDays?, reminder?, remindEmail?}` · `?date=` | ACTIVE đổi `totalDays / startDate / studyDays / dailyCap` → xếp lại thẻ **chưa học** từ hôm nay (thẻ đã học giữ ngày); 400 nếu `totalDays` < ngày học hiện tại; 409 nếu lịch mới cần > 365 ngày; `overflow = true` khi không giữ được trần |
 | PATCH / POST | `/{id}/chapters/{cid}`, `/{id}/chapters/{cid}/merge-up`, `/{id}/items` | thêm `?date=` | như 1.0; response theo ngày máy khách (LP-11); 409 "Đang dịch lại nghĩa" khi job của lộ trình đang chạy |
 | POST | `/{id}/activate` (2.0) | `{startDate?, totalDays?, dailyCap?, studyDays?}` · `?date=` | 201 như cũ; ghi `learning_path_cards` (seq, scheduled_day, weight) theo `plan` (§3.2 spec 2.0), chương chốt `cardCount / dayFrom / dayTo` từ các dòng đó; khoá dòng lộ trình (LP-13) nên bấm hai lần → 409, một thư mục; `overflow = true` khi không giữ được trần |
 | GET | `/{id}/session` | `?kind=today\|catchup\|due\|chapter&chapterId=&date=` | `{kind, date, dayIndex, state, counts{new, due, catchup, total}, cards[{cardId, deckId, chapterId, chapterTitle, term, reading, readingSegments, meaning, hanViet, level, kind, mode: new\|due\|cram}]}`. `today` = đến hạn → nợ (cắt để đến hạn + nợ + mới ≤ `dailyCap`, không bao giờ bỏ thẻ mới) → mới hôm nay; `before` / `rest` chỉ đến hạn, `after` đến hạn + nợ; `catchup` mọi thẻ nợ; `due` mọi thẻ đến hạn; `chapter` mọi thẻ của chương. 409 không ACTIVE; 400 `kind` sai / thiếu `chapterId`; 404 chương lộ trình khác |
@@ -288,6 +288,11 @@ Mọi endpoint: vai trò USER (staff 403), cần Bearer (thiếu → 401), DTO `
   app) khi mới + đến hạn + nợ > 0 và `today.state` là `during` / `after`; **trước ngày học 1 và ngày nghỉ theo `studyDays` thì im lặng**
   kể cả khi có thẻ đến hạn (người học đã chọn nghỉ; thẻ đó vẫn hiện ở "Học gì tiếp" / phiên hôm nay khi họ tự mở app). Số liệu =
   `todaySummary`, batch theo người dùng. Tắt nhắc: `PATCH /api/learning-paths/{id} {reminder: false}`.
+- **Nhắc qua email** (B4, V34 `remind_email`, mặc định tắt; bật: `PATCH {remindEmail: true}`, chỉ có tác dụng khi `reminder` bật):
+  sau khi nhắc trong app, mỗi người nhận **một email mỗi lượt** gộp các lộ trình vừa được nhắc mà bật email (cột đọc lại lúc gửi) —
+  tiêu đề "Hôm nay học N thẻ – <tên lộ trình>" hoặc "… trong K lộ trình", thân: ngày học, thẻ mới / đến hạn / nợ, link `/roadmap/{id}`,
+  cách tắt. Gửi **sau commit** giao dịch của người đó (`MailService.sendNotice`, lỗi gửi chỉ ghi log); bỏ qua tài khoản bị khoá / đã xoá /
+  chưa xác thực email; thiếu `spring.mail.host` → một dòng log "bỏ qua N email nhắc học" mỗi lượt.
 - Test: `InsightIT` (4 tín hiệu + quyền xem, cửa sổ `days` và mốc 14 ngày, bỏ trống quiz exam / practice, trần 150 thẻ + `suggestedDays`,
   biên ma sát, thứ tự "học gì tiếp" kể cả lộ trình đã hoàn thành và bộ Thư viện đã học), `InsightGroupingTest` (hàm thuần gom nhóm),
   `LearningPathIT` (`remedial_*`: kanji / level / deck / kind, chủ đề bộ, SRS thẻ gốc), `LearningPathReminderJobIT` (giờ cấu hình, chạy

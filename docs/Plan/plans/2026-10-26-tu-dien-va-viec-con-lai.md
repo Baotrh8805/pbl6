@@ -318,6 +318,10 @@ A5 có hợp đồng API (viết `api.types.ts` từ spec §6.5 trước).
 
 ## B4. Nhắc học qua email (tuỳ chọn theo lộ trình)
 
+> **Trạng thái 26/10: Xong.** Khác thiết kế: gộp một email / người / lượt thay vì một email / lộ trình (vẫn tối đa một lần / lộ trình /
+> ngày); email gửi sau commit giao dịch của người đó; IT dùng `JavaMailSender` giả thay vì mock `MailService` để chạy cả `MailService`
+> thật; bỏ qua tài khoản khoá / đã xoá / chưa xác thực email.
+
 - V34 `ALTER TABLE learning_paths ADD COLUMN IF NOT EXISTS remind_email boolean NOT NULL DEFAULT false`; cài đặt lộ trình thêm công tắc;
   `LearningPathReminderJob` khi tạo thông báo in-app và `remind_email=true` và `spring.mail.host` có → `MailService` gửi 1 mail / ngày
   (dùng `last_reminded_on` sẵn có), nội dung: số thẻ hôm nay + link lộ trình; thiếu SMTP thì chỉ log.

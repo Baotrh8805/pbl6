@@ -1,5 +1,21 @@
 # Nhật ký thay đổi
 
+## 26/10/2026: Nhắc học qua email theo lộ trình (B4)
+Kế hoạch [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) B4. Một migration mới:
+**V34** (`learning_paths.remind_email boolean NOT NULL DEFAULT false`, chỉ thêm cột).
+
+- **backend**: `PATCH /api/learning-paths/{id}` nhận `remindEmail`, response có `remindEmail`. `LearningPathReminderJob` sau khi gửi
+  nhắc trong app gửi thêm **một email / người / lượt**, gộp các lộ trình vừa được nhắc mà bật `remind_email` (đọc lại cột lúc gửi):
+  tiêu đề nêu tổng số thẻ hôm nay, thân liệt kê từng lộ trình (ngày học, thẻ mới / đến hạn / nợ) kèm link `/roadmap/{id}` và chỉ
+  chỗ tắt. Tối đa một email / lộ trình / ngày nhờ `last_reminded_on` sẵn có. Email soạn trong giao dịch của người đó nhưng **gửi
+  sau commit**; bỏ qua tài khoản bị khoá / đã xoá / chưa xác thực email. Thiếu SMTP: một dòng log mỗi lượt, không gửi.
+  `MailService` thêm `isConfigured()` và `sendNotice(...)` (thư không chứa token, lỗi gửi chỉ ghi log).
+- **frontend**: Cài đặt lộ trình thêm công tắc **Nhắc thêm qua email** dưới "Nhắc học mỗi sáng" (mờ đi khi tắt nhắc trong app).
+- **Test**: `LearningPathReminderJobIT` +1 (JavaMailSender giả: bật theo lộ trình, gộp 2 lộ trình một thư, chạy bù không gửi lại,
+  tài khoản khoá không nhận, tắt một lộ trình thì thư hôm sau chỉ còn lộ trình kia), `LearningPathReminderJobTest` +4 (gửi sau
+  commit, thiếu SMTP / khoá / chưa xác thực không gửi, soạn nội dung), `MailServiceTest` +2; selfcheck `settingsPatch` +3.
+  Chưa gửi thử qua SMTP thật (máy dev không có cấu hình SMTP).
+
 ## 26/10/2026: Hiệu quả lộ trình (B3)
 Kế hoạch [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) B3. **Không có migration**:
 `review_logs.path_id` / `reaction_ms` đã có từ V20 và client đã gửi từ lộ trình 2.0.

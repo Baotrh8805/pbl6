@@ -55,7 +55,8 @@ khi khởi động, Hibernate chỉ kiểm tra entity khớp schema (`ddl-auto=v
 ---
 
 ## 5. Gửi email quên mật khẩu (SMTP)
-Chưa cấu hình thì link đặt lại mật khẩu chỉ được ghi vào log backend (dòng WARN), đủ dùng khi dev.
+Chưa cấu hình thì link đặt lại mật khẩu chỉ được ghi vào log backend (dòng WARN), đủ dùng khi dev. Cùng cấu hình này cũng dùng
+cho email nhắc học theo lộ trình (B4); thiếu SMTP thì job chỉ ghi "bỏ qua N email nhắc học" và vẫn gửi thông báo trong app.
 Muốn gửi email thật (ví dụ Gmail), thêm vào `application-local.properties`:
 
 ```properties
