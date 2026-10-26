@@ -33,7 +33,14 @@ public class DeckController {
     private final DeckService deckService;
     private final AiRateLimiter aiLimiter;
 
-    public DeckController(DeckService deckService, AiRateLimiter aiLimiter) {
+    private final com.pbl6.flashcard.service.DeckShareLinkService shareLinks;
+    private final com.pbl6.flashcard.service.DeckExportService exports;
+
+    public DeckController(DeckService deckService, AiRateLimiter aiLimiter,
+                          com.pbl6.flashcard.service.DeckShareLinkService shareLinks,
+                          com.pbl6.flashcard.service.DeckExportService exports) {
+        this.shareLinks = shareLinks;
+        this.exports = exports;
         this.aiLimiter = aiLimiter;
         this.deckService = deckService;
     }
@@ -99,6 +106,48 @@ public class DeckController {
                                         @PathVariable Long userId) {
         deckService.unshare(uid(me), deckId, userId);
         return ResponseEntity.noContent().build();
+    }
+
+    // ---------- link chia sẻ (D9) + xuất bộ thẻ (UC-29), kế hoạch 2026-10-26 B1 / B2 ----------
+
+    /** {token | null}: link chia sẻ hiện tại của bộ (chỉ chủ). */
+    @GetMapping("/{deckId}/share-link")
+    public com.pbl6.flashcard.service.DeckShareLinkService.ShareLink shareLink(@AuthenticationPrincipal CustomUserDetails me,
+                                                                            @PathVariable String deckId) {
+        return shareLinks.get(uid(me), deckId);
+    }
+
+    /** Tạo link mới (có rồi thì đổi token, link cũ hết hiệu lực). */
+    @PostMapping("/{deckId}/share-link")
+    public com.pbl6.flashcard.service.DeckShareLinkService.ShareLink rotateShareLink(@AuthenticationPrincipal CustomUserDetails me,
+                                                                                  @PathVariable String deckId) {
+        return shareLinks.rotate(uid(me), deckId);
+    }
+
+    @DeleteMapping("/{deckId}/share-link")
+    public ResponseEntity<Void> revokeShareLink(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String deckId) {
+        shareLinks.revoke(uid(me), deckId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Mở link /d/<token>: nhận quyền xem, trả {deckId, access}. Token sai / đã thu hồi = 404. */
+    @PostMapping("/share-link/{token}/accept")
+    public com.pbl6.flashcard.service.DeckShareLinkService.Accepted acceptShareLink(@AuthenticationPrincipal CustomUserDetails me,
+                                                                                 @PathVariable String token) {
+        return shareLinks.accept(uid(me), token);
+    }
+
+    /** Tệp CSV (Excel) hoặc TSV cho Anki; tên tệp ASCII + filename* UTF-8. */
+    @GetMapping("/{deckId}/export")
+    public ResponseEntity<byte[]> export(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String deckId,
+                                         @RequestParam(defaultValue = "csv") String format) {
+        com.pbl6.flashcard.service.DeckExportService.Export e = exports.exportFor(uid(me), deckId, format);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.attachment().filename(e.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                                .build().toString())
+                .contentType(org.springframework.http.MediaType.parseMediaType(e.contentType()))
+                .body(e.body());
     }
 
     @PostMapping("/{deckId}/cards")
