@@ -43,6 +43,11 @@ public class MailService {
         return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
     }
 
+    /** Có SMTP (spring.mail.host → bean JavaMailSender)? Job nhắc học (B4) hỏi trước để thiếu SMTP chỉ ghi một dòng log mỗi lượt. */
+    public boolean isConfigured() {
+        return mailSender.getIfAvailable() != null;
+    }
+
     /** Link tuyệt đối tới trang frontend, vd. frontendLink("/verify-email?token=abc"). */
     public String frontendLink(String pathAndQuery) {
         return frontendUrl + pathAndQuery;
@@ -74,6 +79,30 @@ public class MailService {
         } catch (MailException e) {
             // Không lộ cho client (vẫn trả thông báo chung), chỉ ghi log để vận hành xử lý
             log.error("Gửi email {} thất bại cho {}", purpose, to, e);
+        }
+    }
+
+    /**
+     * Thư thông báo thường (nhắc học, B4): không chứa token bí mật nên khác sendLink ở chỗ thiếu SMTP chỉ ghi log mức info, không
+     * in nội dung. Trả true khi đã giao cho SMTP; lỗi gửi chỉ ghi log (giờ sau / ngày sau vẫn chạy), không ném.
+     */
+    public boolean sendNotice(String to, String purpose, String subject, String body) {
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (sender == null) {
+            log.info("Chưa cấu hình SMTP (spring.mail.host) - bỏ qua email {} cho {}", purpose, to);
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailFrom);
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(body);
+        try {
+            sender.send(message);
+            return true;
+        } catch (MailException e) {
+            log.error("Gửi email {} thất bại cho {}", purpose, to, e);
+            return false;
         }
     }
 }

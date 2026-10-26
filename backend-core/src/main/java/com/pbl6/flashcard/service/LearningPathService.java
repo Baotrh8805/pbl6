@@ -914,6 +914,7 @@ public class LearningPathService {
             previewChanged = true;
         }
         if (req.reminder() != null) path.setReminder(req.reminder());
+        if (req.remindEmail() != null) path.setRemindEmail(req.remindEmail());
         // Bản nháp: số ngày / trần làm lịch xem trước đổi (ngày bắt đầu / ngày học trong tuần không đổi chỉ số ngày học) -> bản
         // không nhận ra chương chia lại chương "Ngày N" theo lịch mới (LP-08). Trần cũng chia lại như số ngày: hạ trần làm tràn
         // lịch thì hai chương kề dồn vào một ngày và bị gộp, nâng trần lại phải tách ra được. Đang dịch lại nghĩa thì 409 cho mọi
@@ -2211,7 +2212,7 @@ public class LearningPathService {
         return new LearningPathResponse(p.getId(), p.getTitle(), p.getStatus(), p.getSourceType(), p.getSourceName(),
                 p.getTotalDays(), p.getStartDate(), p.getChaptersDetected(), p.getJobId(), p.getFolderId(),
                 p.getCreatedAt(), p.getActivatedAt(), p.getErrorMessage(), job, chapters, today, days,
-                p.getDailyCap(), p.getStudyDays(), p.isReminder(), p.getCompletedAt(), p.getLastRebalancedAt(),
+                p.getDailyCap(), p.getStudyDays(), p.isReminder(), p.isRemindEmail(), p.getCompletedAt(), p.getLastRebalancedAt(),
                 completion, quizPassPct, forecast, suggestedDays, overCap, overflow);
     }
 }

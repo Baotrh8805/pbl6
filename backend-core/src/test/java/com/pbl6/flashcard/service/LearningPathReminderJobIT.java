@@ -10,6 +10,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.mockito.ArgumentCaptor;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -23,6 +27,11 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -52,6 +61,10 @@ class LearningPathReminderJobIT extends IntegrationTest {
 
     @Autowired
     PlatformTransactionManager txm;
+
+    /** B4: SMTP giả — MailService thật thấy có bean nên coi là đã cấu hình; bắt thư để kiểm người nhận / nội dung. */
+    @MockitoBean
+    JavaMailSender mailSender;
 
     private String savedHour;
 
@@ -293,5 +306,57 @@ class LearningPathReminderJobIT extends IntegrationTest {
         JsonNode p = reminders(token).get(0).get("payload");
         assertEquals(2, p.get("dayIndex").asInt());
         assertTrue(p.get("behindCount").asInt() > 0, p.toString());
+    }
+
+    @Test
+    void email_reminder_is_opt_in_per_path_merged_per_user_once_a_day_and_skips_locked_accounts() throws Exception {
+        LocalDate day1 = LocalDate.of(2033, 5, 2);
+        String emailA = newEmail();
+        String tokenA = newUser(emailA);
+        Long uidA = userId(emailA);
+        String p1 = remedialPath(tokenA, day1, 5).get("id").asText();
+        String p2 = remedialPath(tokenA, day1, 5).get("id").asText();
+        String emailB = newEmail();
+        String tokenB = newUser(emailB);
+        Long uidB = userId(emailB);
+        String pb = remedialPath(tokenB, day1, 5).get("id").asText();
+        String emailC = newEmail();
+        String tokenC = newUser(emailC);
+        Long uidC = userId(emailC);
+        String pc = remedialPath(tokenC, day1, 5).get("id").asText();
+
+        // mặc định tắt; bật qua PATCH (A: cả hai lộ trình, B: không bật, C: bật nhưng tài khoản bị khoá)
+        assertFalse(read(call(get(BASE + p1), tokenA, null)).get("remindEmail").asBoolean());
+        for (String[] t : new String[][] {{p1, tokenA}, {p2, tokenA}, {pc, tokenC}}) {
+            JsonNode r = read(call(patch(BASE + t[0]), t[1], Map.of("remindEmail", true)).andExpect(status().isOk()));
+            assertTrue(r.get("remindEmail").asBoolean());
+        }
+        jdbc.update("UPDATE users SET locked_at = now() WHERE id = ?", uidC);
+        jdbc.update("UPDATE learning_paths SET last_reminded_on = ? WHERE user_id NOT IN (?, ?, ?)", day1, uidA, uidB, uidC);
+        clearInvocations(mailSender);
+
+        assertEquals(4, job.run(at(day1, H), day1), "thông báo trong app không đổi: A 2, B 1, C 1");
+        ArgumentCaptor<SimpleMailMessage> sent = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(1)).send(sent.capture());
+        SimpleMailMessage m = sent.getValue();
+        assertArrayEquals(new String[] {emailA}, m.getTo());
+        assertTrue(m.getSubject().contains("trong 2 lộ trình"), m.getSubject());
+        assertTrue(m.getText().contains("/roadmap/" + p1) && m.getText().contains("/roadmap/" + p2), m.getText());
+        assertTrue(m.getText().contains("thẻ mới"), m.getText());
+
+        // chạy lại cùng ngày (lượt bù): không gửi thêm
+        clearInvocations(mailSender);
+        assertEquals(0, job.run(at(day1, H + 3), day1));
+        verify(mailSender, never()).send(any(SimpleMailMessage.class));
+
+        // tắt email ở một lộ trình: hôm sau chỉ còn lộ trình kia trong thư
+        LocalDate day2 = day1.plusDays(1);
+        call(patch(BASE + p2), tokenA, Map.of("remindEmail", false)).andExpect(status().isOk());
+        onlyUser(day2, uidA);
+        job.run(at(day2, H), day2);
+        verify(mailSender, times(1)).send(sent.capture());
+        assertTrue(sent.getValue().getText().contains("/roadmap/" + p1));
+        assertFalse(sent.getValue().getText().contains("/roadmap/" + p2), sent.getValue().getText());
+        assertEquals(1, reminders(tokenB).size(), "B vẫn nhận nhắc trong app ngày 1");
     }
 }

@@ -70,6 +70,10 @@ public interface LearningPathRepository extends JpaRepository<LearningPath, UUID
     List<LearningPath> findReminderCandidates(@Param("today") LocalDate today,
                                               @Param("activatedBefore") Instant activatedBefore);
 
+    /** B4: trong các lộ trình vừa giành lượt nhắc, lộ trình nào bật nhắc qua email — đọc lại lúc gửi, không dùng bản nạp đầu lượt. */
+    @Query("SELECT p.id FROM LearningPath p WHERE p.id IN :ids AND p.remindEmail = true")
+    List<UUID> findRemindEmailIds(@Param("ids") java.util.Collection<UUID> ids);
+
     /**
      * Giành lượt nhắc hôm nay của một lộ trình: UPDATE có điều kiện chỉ ghi cột last_reminded_on (không ghi lại cả dòng từ bản
      * đọc cũ, nên không đè PATCH / complete chạy xen giữa) và chỉ khi lộ trình VẪN là ứng viên lúc ghi — Postgres xét lại WHERE

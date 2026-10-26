@@ -75,6 +75,10 @@ public class LearningPath {
     @Column(nullable = false)
     private boolean reminder = true;
 
+    /** Nhắc thêm qua email (V34, B4); chỉ có tác dụng khi reminder bật. Mặc định tắt. */
+    @Column(name = "remind_email", nullable = false)
+    private boolean remindEmail = false;
+
     /** Người dùng chốt hoàn thành hoặc hệ thống tự đặt khi qua ngày cuối và đã học hết (V20). */
     @Column(name = "completed_at")
     private Instant completedAt;
@@ -126,6 +130,8 @@ public class LearningPath {
     public void setStudyDays(String studyDays) { this.studyDays = studyDays; }
     public boolean isReminder() { return reminder; }
     public void setReminder(boolean reminder) { this.reminder = reminder; }
+    public boolean isRemindEmail() { return remindEmail; }
+    public void setRemindEmail(boolean remindEmail) { this.remindEmail = remindEmail; }
     public Instant getCompletedAt() { return completedAt; }
     public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
     public Instant getLastRebalancedAt() { return lastRebalancedAt; }

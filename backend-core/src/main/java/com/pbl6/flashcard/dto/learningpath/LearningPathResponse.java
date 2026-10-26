@@ -21,7 +21,7 @@ public record LearningPathResponse(UUID id, String title, String status, String 
                                    UUID folderId, Instant createdAt, Instant activatedAt, String errorMessage,
                                    JobSummary job, List<LearningPathChapterResponse> chapters, Today today,
                                    List<Day> days,
-                                   int dailyCap, String studyDays, boolean reminder, Instant completedAt,
+                                   int dailyCap, String studyDays, boolean reminder, boolean remindEmail, Instant completedAt,
                                    Instant lastRebalancedAt, Completion completion, Integer quizPassPct,
                                    List<Forecast> forecast,
                                    Integer suggestedDays, Boolean overCap, Boolean overflow) {

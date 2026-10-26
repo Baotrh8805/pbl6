@@ -18,12 +18,12 @@ public final class LearningPathRequests {
     public static final String STUDY_DAYS = "[01]{7}";
 
     /**
-     * dailyCap 5–200 (trần tải/ngày), studyDays mask T2..CN, reminder bật/tắt nhắc học (V20). Ở lộ trình ACTIVE, đổi totalDays /
+     * dailyCap 5–200 (trần tải/ngày), studyDays mask T2..CN, reminder bật/tắt nhắc học (V20), remindEmail nhắc thêm qua email (V34). Ở lộ trình ACTIVE, đổi totalDays /
      * startDate / studyDays / dailyCap xếp lại thẻ CHƯA học từ hôm nay (thẻ đã học giữ ngày).
      */
     public record Patch(@Size(max = 100) String title, @Min(1) @Max(365) Integer totalDays, LocalDate startDate,
                         @Min(5) @Max(200) Integer dailyCap, @Pattern(regexp = STUDY_DAYS) String studyDays,
-                        Boolean reminder) {}
+                        Boolean reminder, Boolean remindEmail) {}
 
     public record ChapterPatch(@NotBlank @Size(max = 100) String title) {}
 
