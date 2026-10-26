@@ -653,11 +653,13 @@ export interface PathSettingsValues {
     dailyCap: number;
     studyDays: string;
     reminder: boolean;
+    /** B4: không truyền = không đổi. */
+    remindEmail?: boolean;
 }
 
 /** Patch chỉ gồm trường khác với lộ trình hiện tại (không có gì đổi -> {} , nơi gọi bỏ qua PATCH). */
 export function settingsPatch(
-    path: Pick<LearningPath, "totalDays" | "startDate" | "dailyCap" | "studyDays" | "reminder">,
+    path: Pick<LearningPath, "totalDays" | "startDate" | "dailyCap" | "studyDays" | "reminder" | "remindEmail">,
     v: PathSettingsValues
 ): LearningPathPatch {
     const patch: LearningPathPatch = {};
@@ -666,6 +668,7 @@ export function settingsPatch(
     if (v.dailyCap !== (path.dailyCap ?? DEFAULT_DAILY_CAP)) patch.dailyCap = v.dailyCap;
     if (v.studyDays !== (path.studyDays ?? ALL_WEEK)) patch.studyDays = v.studyDays;
     if (v.reminder !== (path.reminder ?? false)) patch.reminder = v.reminder;
+    if (v.remindEmail !== undefined && v.remindEmail !== (path.remindEmail ?? false)) patch.remindEmail = v.remindEmail;
     return patch;
 }
 

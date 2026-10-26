@@ -502,6 +502,8 @@ export interface LearningPath {
     /** 7 ký tự 0/1 cho Thứ 2..Chủ nhật; "1111111" = học cả tuần. */
     studyDays?: string;
     reminder?: boolean;
+    /** B4 (V34): nhắc thêm qua email (chỉ có tác dụng khi reminder bật); thiếu ở response cũ = tắt. */
+    remindEmail?: boolean;
     completedAt?: string | null;
     lastRebalancedAt?: string | null;
     /** ACTIVE: hai thước đo tiến độ (đã học / đã thuộc) + chương đã qua kiểm tra. */
@@ -525,6 +527,7 @@ export interface LearningPathPatch {
     dailyCap?: number;
     studyDays?: string;
     reminder?: boolean;
+    remindEmail?: boolean;
 }
 
 export interface ActivateLearningPathDto {

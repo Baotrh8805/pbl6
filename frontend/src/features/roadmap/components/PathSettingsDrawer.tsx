@@ -70,10 +70,11 @@ const SettingsForm: React.FC<{
   const [cap, setCap] = useState(String(path.dailyCap ?? DEFAULT_DAILY_CAP));
   const [mask, setMask] = useState(path.studyDays ?? ALL_WEEK);
   const [reminder, setReminder] = useState(path.reminder ?? false);
+  const [remindEmail, setRemindEmail] = useState(path.remindEmail ?? false);
   const [errors, setErrors] = useState<{ days?: string; start?: string; cap?: string }>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const ids = { days: useId(), start: useId(), cap: useId(), reminder: useId() };
+  const ids = { days: useId(), start: useId(), cap: useId(), reminder: useId(), remindEmail: useId() };
 
   // Mốc tối thiểu tính đúng như server (`placeFrom`): theo ngày bắt đầu / ngày học ĐANG CHỌN trong form chứ không
   // phải `path.today` — đặt lại ngày bắt đầu = hôm nay thì được rút ngắn (từ = 1); ngày nghỉ thì thẻ xếp từ ngày học kế
@@ -98,7 +99,7 @@ const SettingsForm: React.FC<{
     setErrors(next);
     if (Object.keys(next).length > 0 || !isValidStudyDays(mask)) return;
 
-    const patch = settingsPatch(path, { totalDays: daysNum, startDate: start, dailyCap: capNum, studyDays: mask, reminder });
+    const patch = settingsPatch(path, { totalDays: daysNum, startDate: start, dailyCap: capNum, studyDays: mask, reminder, remindEmail });
     if (Object.keys(patch).length === 0) {
       onDone();
       return;
@@ -174,30 +175,26 @@ const SettingsForm: React.FC<{
         error={errors.start}
       />
 
-      <label htmlFor={ids.reminder} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-container-low cursor-pointer">
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold text-on-surface">Nhắc học mỗi sáng</span>
-          <span className="block text-xs text-on-surface-variant">Thông báo trong ứng dụng khi hôm nay có thẻ cần học.</span>
-        </span>
-        <span className="relative inline-flex shrink-0">
-          <input
-            id={ids.reminder}
-            type="checkbox"
-            role="switch"
-            checked={reminder}
-            onChange={(e) => setReminder(e.target.checked)}
-            className="peer sr-only"
-          />
-          <span
-            aria-hidden="true"
-            className="w-10 h-6 rounded-full bg-outline-variant transition-colors peer-checked:bg-secondary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40"
-          />
-          <span
-            aria-hidden="true"
-            className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4"
-          />
-        </span>
-      </label>
+      <SwitchRow
+        id={ids.reminder}
+        title="Nhắc học mỗi sáng"
+        hint="Thông báo trong ứng dụng khi hôm nay có thẻ cần học."
+        checked={reminder}
+        onChange={setReminder}
+      />
+      {/* B4: email chỉ đi kèm nhắc trong app (server chỉ gửi khi cả hai bật); tắt nhắc thì công tắc email mờ đi nhưng giữ lựa chọn */}
+      <SwitchRow
+        id={ids.remindEmail}
+        title="Nhắc thêm qua email"
+        hint={
+          reminder
+            ? "Một email mỗi sáng khi hôm nay có thẻ cần học, gộp chung các lộ trình bật email."
+            : "Bật “Nhắc học mỗi sáng” để dùng."
+        }
+        checked={remindEmail}
+        disabled={!reminder}
+        onChange={setRemindEmail}
+      />
 
       {reschedules && (
         <p className="text-body-sm text-on-surface-variant flex items-start gap-1.5">
@@ -208,3 +205,44 @@ const SettingsForm: React.FC<{
     </form>
   );
 };
+
+/** Một hàng công tắc (checkbox role=switch) dùng cho các lựa chọn nhắc học. */
+const SwitchRow: React.FC<{
+  id: string;
+  title: string;
+  hint: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}> = ({ id, title, hint, checked, disabled = false, onChange }) => (
+  <label
+    htmlFor={id}
+    className={`flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-container-low ${
+      disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+    }`}
+  >
+    <span className="min-w-0">
+      <span className="block text-sm font-semibold text-on-surface">{title}</span>
+      <span className="block text-xs text-on-surface-variant">{hint}</span>
+    </span>
+    <span className="relative inline-flex shrink-0">
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className="w-10 h-6 rounded-full bg-outline-variant transition-colors peer-checked:bg-secondary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40"
+      />
+      <span
+        aria-hidden="true"
+        className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4"
+      />
+    </span>
+  </label>
+);
