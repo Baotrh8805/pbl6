@@ -37,6 +37,7 @@ from collections import Counter
 from typing import Any, Iterable, Optional
 
 from app.extract import conflicts
+from app.extract import dictionary, overrides  # từ điển: dictKey + cách đọc ghi đè (spec 2026-10-26)
 from app.extract import han_viet as hv
 from app.extract import heteronyms
 from app.extract import jmdict
@@ -358,6 +359,7 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
             cap_report = [{"index": 1, "cap": MAX_VOCAB, "candidates": len(items), "kept": min(len(items), MAX_VOCAB)}]
     layout = "list" if layouts and all(l == "list" for l in layouts) else "prose"
     result = _finish(items, grammar_items, n_sentences, total_tokens, layout, truncated, max_vocab, candidates)
+    _attach_dictionary(result, opts)
     _attach_conflicts(result, opts)
     _attach_example_segments(result, opts, rubies)
     if split:
@@ -373,6 +375,24 @@ def analyze(text: str, blocks: Optional[list[dict]], options: Optional[dict]) ->
 
 
 DOC_KEYS = ("docReading", "docMeaningEn", "docLevel")
+
+
+def _attach_dictionary(result: dict, opts: dict) -> None:
+    """Từ điển (spec 2026-10-26 §9.3): item vocab mang `dictKey` ("w:<id JMdict>" hoặc None) để backend lấy nghĩa Việt đã có
+    thay vì gọi Gemini; cách đọc admin đã sửa (overrides) thay cách đọc Sudachi / JMdict và dựng lại readingSegments.
+    Cách đọc tài liệu tự ghi vẫn nằm ở docReading (kiểm mâu thuẫn so với cách đọc mới). Thiếu bảng words → mọi dictKey None."""
+    have = dictionary.available()
+    for it in result["items"]:
+        if it.get("kind") != "vocab":
+            it["dictKey"] = None   # ngữ pháp: không có mục từ điển, khoá vẫn có để client xử lý một kiểu
+            continue
+        key = dictionary.key_for(it["term"], it.get("reading")) if have else None
+        it["dictKey"] = key
+        fixed = overrides.word(key, "reading") if key else None
+        if fixed and fixed != it.get("reading"):
+            it["reading"] = fixed
+            if it.get("readingSegments") is not None or (opts.get("includeFurigana") and has_kanji(it["term"])):
+                it["readingSegments"] = align(it["term"], fixed)
 
 
 def _attach_conflicts(result: dict, opts: dict) -> None:

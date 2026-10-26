@@ -207,7 +207,7 @@ def test_analyze():
     assert set(item) == {"kind", "position", "term", "surface", "reading", "readingSegments", "hanViet", "pos",
                          "meaningEn", "meaningVi", "level", "levelConfidence", "levelSources", "frequency",
                          "example", "exampleVi", "suspect", "chapter", "conflicts",
-                         "readingNote", "exampleSegments", "docReading", "docMeaningEn", "docLevel"}
+                         "readingNote", "exampleSegments", "docReading", "docMeaningEn", "docLevel", "dictKey"}
     # văn xuôi không ruby: tài liệu không khai báo gì → ba khoá đều null trên mọi item (kể cả ngữ pháp)
     assert all((it["docReading"], it["docMeaningEn"], it["docLevel"]) == (None, None, None) for it in body["items"])
 
@@ -237,7 +237,7 @@ def test_health():
     assert set(body) == {"sudachi", "jmdict", "jlpt", "unihan", "grammar", "tesseract", "gemini", "geminiModel", "geminiModels",
                          "radicals", "kradfile", "kanjivg", "pitch", "distractors",
                          "kanjiStrokes", "hanVietGraph", "kanjiCards", "conjugation", "conflicts",
-                         "radicalCards", "mining"}
+                         "radicalCards", "mining", "dictWords", "dictExamples", "dictFts", "dictOverridesVersion"}
     assert body["conflicts"] is True     # F2: danh sách JLPT đã commit là đủ để so cách đọc / nghĩa / cấp
     # C4 thẻ bộ thủ (bảng radicals_214.csv đã commit; `radicals` ở trên là unihan_rs.csv) và C6 khai thác câu (Sudachi)
     assert body["radicalCards"] is True and body["mining"] is True

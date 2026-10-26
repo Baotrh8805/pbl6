@@ -63,7 +63,15 @@ def lookup(lemma: str, reading: Optional[str] = None) -> Optional[dict]:
                 break
     if not row:
         return None
-    return {"kanji": row[0], "kana": row[1], "gloss": row[2], "common": bool(row[3]), "jlpt": row[4]}
+    out = {"kanji": row[0], "kana": row[1], "gloss": row[2], "common": bool(row[3]), "jlpt": row[4]}
+    from app.extract import overrides  # noqa: PLC0415 (ghi đè gloss của admin, D22)
+    if overrides.count():
+        from app.extract import dictionary  # noqa: PLC0415
+        key = dictionary.key_for(row[0] or row[1], row[1])
+        gloss = overrides.word(key, "meaning_en") if key else None
+        if gloss:
+            out["gloss"] = gloss
+    return out
 
 
 # ----------------------------------------------------------------------------- distractors (C3 đồng âm)

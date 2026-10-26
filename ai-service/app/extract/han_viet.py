@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.extract.jachars import is_kanji
+from app.extract import overrides  # ghi đè của admin (từ điển, D22)
 
 DATA_FILE = Path(__file__).parent / "data" / "unihan_vietnamese.csv"
 # Unihan kVietnamese thiếu nhiều chữ thông dụng (酒, 薬, 郵…) và ghi âm Nôm trước / thay cho âm Hán-Việt ở rất nhiều
@@ -51,7 +52,7 @@ def han_viet(term: str) -> Optional[str]:
         if not is_kanji(ch):
             continue
         key = prev if ch == "々" and prev else ch  # 々 lặp âm chữ trước
-        r = table.get(key)
+        r = overrides.han_viet(key) or table.get(key)
         if r:
             parts.append(r)
         prev = ch

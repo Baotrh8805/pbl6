@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.security import require_internal_key
 from app.extract import (conflicts, distractors, gemini, han_viet, han_viet_graph, jmdict, kanji_cards, kanjidata,
                          radicals, sentence_mining, tokenizer)
+from app.extract import dictionary, overrides  # cờ health của từ điển
 from app.extract.grammar import available as grammar_available
 from app.extract.jlpt import available as jlpt_available
 from app.extract.pipeline import analyze
@@ -281,4 +282,9 @@ def extract_health() -> dict:
         # C6 khai thác câu i+1 (/mining/*): chỉ cần Sudachi
         "radicalCards": radicals.available(),
         "mining": sentence_mining.available(),
+        # Từ điển (spec 2026-10-26): bảng words / examples / FTS trong jmdict.sqlite mới; bản ghi đè admin đang giữ
+        "dictWords": dictionary.available(),
+        "dictExamples": dictionary.has_examples(),
+        "dictFts": dictionary.has_fts(),
+        "dictOverridesVersion": overrides.version(),
     }

@@ -346,6 +346,55 @@ def translate_items(items: list[dict], target_lang: str = "vi", model: Optional[
     return out
 
 
+# --- Từ điển: nghĩa tiếng Việt + dịch câu ví dụ lúc tra (spec 2026-10-26-tu-dien-design §4.5) -------------
+
+_DICT_PROMPT = (
+    "You are a Japanese-Vietnamese dictionary editor for Vietnamese learners of Japanese.\n"
+    "For each input item (a Japanese headword with its English JMdict glosses and part-of-speech codes) give:\n"
+    "- \"meaningVi\": a concise Vietnamese dictionary meaning (max 120 characters). Several senses separated by \"; \", "
+    "synonyms inside one sense separated by \", \". Most common sense first. Verbs and adjectives in bare form. "
+    "For particles, conjunctions, interjections, counters, prefixes, suffixes, honorific or humble words and place "
+    "names start with a Vietnamese label in parentheses, e.g. \"(trợ từ) ...\", \"(kính ngữ) ...\", \"(địa danh) ...\". "
+    "Translate the real meaning of the Japanese word (the English gloss is only a hint). No Japanese characters, "
+    "no romaji, no English except well-known international terms.\n"
+    "- \"examples\": for each given example sentence (\"id\", \"jpn\", \"eng\") a natural Vietnamese translation "
+    "of the Japanese sentence as {{\"id\", \"vi\"}}, keeping \"id\" exactly.\n"
+    "Keep \"ref\" exactly as given. Return ONLY a JSON array of objects {{\"ref\", \"meaningVi\", \"examples\"}}, "
+    "one per input item, same order.\n\nItems:\n{items}"
+)
+
+_DICT_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "ref": {"type": "string"},
+            "meaningVi": {"type": "string"},
+            "examples": {"type": "array", "items": {"type": "object", "properties": {
+                "id": {"type": "string"}, "vi": {"type": "string"}}, "required": ["id", "vi"]}},
+        },
+        "required": ["ref", "meaningVi", "examples"],
+    },
+}
+
+
+def translate_dictionary(items: list[dict], model: Optional[str] = None) -> list[dict]:
+    """Lô mục từ điển → [{ref, meaningVi, examples: [{id, vi}]}] (chưa lọc; router lọc). Lô BATCH_SIZE như translate_items."""
+    if not available():
+        raise GeminiError("no_api_key")
+    out: list[dict] = []
+    for i in range(0, len(items), BATCH_SIZE):
+        batch = [{k: v for k, v in it.items() if v not in (None, "", [])} for it in items[i:i + BATCH_SIZE]]
+        prompt = _DICT_PROMPT.format(items=json.dumps(batch, ensure_ascii=False))
+        raw = _generate(prompt, {"temperature": 0.2, "response_mime_type": "application/json",
+                                 "response_schema": _DICT_SCHEMA}, model)
+        for d in _parse_json_list(raw):
+            exs = [{"id": str(e.get("id", "")), "vi": (e.get("vi") or "").strip()}
+                   for e in (d.get("examples") or []) if isinstance(e, dict)]
+            out.append({"ref": str(d.get("ref", "")), "meaningVi": (d.get("meaningVi") or "").strip(), "examples": exs})
+    return out
+
+
 # --- Mẹo nhớ bộ thủ (C4) ------------------------------------------------------
 
 MNEMONIC_MAX_CHARS = 300   # Gemini được yêu cầu ≤ 200; quá 300 là model lan man → bỏ, router dùng template

@@ -13,6 +13,7 @@ credentials.json
 backups/
 backend-core/src/main/resources/application-local.properties
 ai-service/.env
+ai-service/app/extract/data/dict_overrides.json
 
 # ==============================================================================
 # Java & Maven (backend-core)

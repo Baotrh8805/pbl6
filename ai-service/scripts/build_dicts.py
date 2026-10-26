@@ -8,7 +8,7 @@ Tạo ra:
   app/extract/data/unihan_japanese.csv    (commit; kJapanese = cách đọc on/kun từng kanji, dùng tách furigana)
   app/extract/data/unihan_rs.csv          (commit; kRSUnicode/kTotalStrokes = bộ thủ + số nét, ~21k chữ, ~250 KB)
   app/extract/data/unihan_definitions.csv (commit; kDefinition = nghĩa EN của từng chữ, chữ JIS có âm Nhật, ~280 KB)
-  app/extract/data/jmdict.sqlite          (KHÔNG commit, ~30 MB)
+  app/extract/data/jmdict.sqlite          (KHÔNG commit; JMdict đầy đủ + ví dụ Tatoeba, xem write_jmdict)
   app/extract/data/kanji_strokes.json     (KHÔNG commit; nét viết KanjiVG 32 điểm/nét, chỉ kanji trong từ vựng JLPT)
   app/extract/data/kradfile.csv           (KHÔNG commit; thành phần cấu tạo kanji theo KRADFILE của EDRDG)
   app/extract/data/pitch_accent.csv       (KHÔNG commit; trọng âm kanjium, chỉ từ vựng JLPT)
@@ -141,16 +141,24 @@ def build_unihan() -> None:
     print(f"  unihan_vietnamese.csv: {len(viet)} chars; unihan_japanese.csv: {len(ja)} chars")
 
 
-def _latest_jmdict_asset() -> tuple[str, str]:
+def _latest_jmdict_assets() -> dict[str, tuple[str, str]]:
+    """Asset jmdict-*.json.zip của release mới nhất: {"examples" | "eng" | "common": (tên, url)}."""
     req = urllib.request.Request(JMDICT_RELEASE_API, headers={"User-Agent": USER_AGENT,
                                                             "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         release = json.load(resp)
+    out: dict[str, tuple[str, str]] = {}
     for asset in release.get("assets", []):
         name = asset.get("name", "")
-        if name.startswith("jmdict-eng-common") and name.endswith(".json.zip"):
-            return name, asset["browser_download_url"]
-    raise SystemExit("Không tìm thấy asset jmdict-eng-common*.json.zip trong release mới nhất")
+        if not name.endswith(".json.zip"):
+            continue
+        for key, prefix in (("examples", "jmdict-examples-eng-"), ("common", "jmdict-eng-common-"), ("eng", "jmdict-eng-")):
+            if name.startswith(prefix) and key not in out:
+                out[key] = (name, asset["browser_download_url"])
+                break
+    if not out:
+        raise SystemExit("Không tìm thấy asset jmdict-*.json.zip trong release mới nhất")
+    return out
 
 
 def _gloss_of(sense_list: list) -> str:
@@ -163,44 +171,186 @@ def _gloss_of(sense_list: list) -> str:
     return "; ".join(parts)
 
 
-def build_jmdict() -> None:
-    print("[jmdict]")
-    name, url = _latest_jmdict_asset()
-    zpath = _download(url, CACHE_DIR / name)
-    out = DATA_DIR / "jmdict.sqlite"
+def _to_hira(s: str) -> str:
+    """Katakana → hiragana (chép từ jachars vì script chạy với -I)."""
+    return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in s or "")
+
+
+_JLPT_STRIP_RE = re.compile(r"[～〜\s]")
+_JLPT_SPLIT_RE = re.compile(r"[;；、,]")
+_JLPT_ORDER = {"N5": 0, "N4": 1, "N3": 2, "N2": 3, "N1": 4}
+
+
+def _jlpt_index(jlpt_dir: Path) -> dict[tuple[str, str], str]:
+    """(dạng viết, cách đọc hiragana) → cấp JLPT dễ nhất. Biến thể "足; 脚" tách ra; thiếu CSV → {}."""
+    idx: dict[tuple[str, str], str] = {}
+    for n in (5, 4, 3, 2, 1):
+        path = jlpt_dir / f"n{n}.csv"
+        if not path.exists():
+            continue
+        level = f"N{n}"
+        with open(path, encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                readings = [_to_hira(_JLPT_STRIP_RE.sub("", r)) for r in _JLPT_SPLIT_RE.split(row.get("reading") or "")]
+                for expr in _JLPT_SPLIT_RE.split(row.get("expression") or ""):
+                    expr = _JLPT_STRIP_RE.sub("", expr)
+                    if not expr:
+                        continue
+                    for rd in readings or [""]:
+                        key = (expr, rd)
+                        if key not in idx or _JLPT_ORDER[level] < _JLPT_ORDER[idx[key]]:
+                            idx[key] = level
+    return idx
+
+
+def _sense_json(sense: dict) -> dict:
+    return {
+        "pos": sense.get("partOfSpeech", []),
+        "misc": sense.get("misc", []),
+        "field": sense.get("field", []),
+        "dialect": sense.get("dialect", []),
+        "info": sense.get("info", []),
+        "gloss": [g.get("text", "") for g in sense.get("gloss", []) if g.get("lang", "eng") == "eng" and g.get("text")],
+        "appliesToKanji": sense.get("appliesToKanji", ["*"]),
+        "appliesToKana": sense.get("appliesToKana", ["*"]),
+    }
+
+
+def _has_fts5(con: sqlite3.Connection) -> bool:
+    try:
+        con.execute("CREATE VIRTUAL TABLE temp._fts_probe USING fts5(x)")
+        con.execute("DROP TABLE temp._fts_probe")
+        return True
+    except sqlite3.OperationalError:
+        return False
+
+
+def _kana_for(kanji_text: str, kanas: list) -> str | None:
+    for r in kanas:
+        applies = r.get("appliesToKanji", ["*"])
+        if "*" in applies or kanji_text in applies:
+            return r["text"]
+    return None
+
+
+def write_jmdict(data: dict, out: Path, jlpt_index: dict[tuple[str, str], str] | None = None,
+                 scope: str = "full", fts: bool | None = None) -> dict[str, int]:
+    """Dựng jmdict.sqlite từ JSON jmdict-simplified đã parse (hàm theo file, test được không cần mạng).
+
+    `entries` (schema / nội dung như trước: mọi cặp kanji–kana của mục có cờ common) giữ cho bóc tách, đồng âm, đồ thị
+    Hán-Việt. Bảng cho từ điển (spec 2026-10-26-tu-dien-design §4.1): words, word_forms, word_gloss_fts (hoặc word_gloss khi
+    sqlite không có FTS5), examples (Tatoeba), tags, meta. scope="compact": chỉ mục common, thuộc JLPT hoặc có ví dụ.
+    """
+    jlpt_index = jlpt_index or {}
     if out.exists():
         out.unlink()
     con = sqlite3.connect(out)
-    con.execute("CREATE TABLE entries (kanji TEXT, kana TEXT, gloss TEXT, common INTEGER, jlpt TEXT)")
-    rows = []
-    with zipfile.ZipFile(zpath) as zf:
-        inner = [n for n in zf.namelist() if n.endswith(".json")][0]
-        with zf.open(inner) as raw:
-            data = json.load(raw)
-    for word in data["words"]:
-        gloss = _gloss_of(word.get("sense", []))
+    if fts is None:
+        fts = _has_fts5(con)
+    con.executescript("""
+        CREATE TABLE entries (kanji TEXT, kana TEXT, gloss TEXT, common INTEGER, jlpt TEXT);
+        CREATE TABLE words (id TEXT PRIMARY KEY, forms TEXT NOT NULL, senses TEXT NOT NULL, common INTEGER NOT NULL,
+                            jlpt TEXT, head_kanji TEXT, head_kana TEXT, gloss_short TEXT, n_examples INTEGER NOT NULL);
+        CREATE TABLE word_forms (form TEXT NOT NULL, word_id TEXT NOT NULL, is_kana INTEGER NOT NULL,
+                                 common INTEGER NOT NULL, reading TEXT);
+        CREATE TABLE examples (id INTEGER PRIMARY KEY, word_id TEXT NOT NULL, sense_idx INTEGER NOT NULL,
+                               tatoeba_id TEXT, form TEXT, jpn TEXT NOT NULL, eng TEXT);
+        CREATE TABLE tags (code TEXT PRIMARY KEY, label TEXT);
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    """)
+    if fts:
+        con.execute("CREATE VIRTUAL TABLE word_gloss_fts USING fts5(gloss, word_id UNINDEXED, tokenize='porter unicode61')")
+    else:
+        con.execute("CREATE TABLE word_gloss (word_id TEXT NOT NULL, gloss TEXT NOT NULL)")
+    entries, words, forms, glosses, examples = [], [], [], [], []
+    for word in data.get("words", []):
+        senses = word.get("sense", [])
+        gloss = _gloss_of(senses)
         if not gloss:
             continue
         kanjis = word.get("kanji", [])
         kanas = word.get("kana", [])
         common = int(any(k.get("common") for k in kanjis + kanas))
+        wid = str(word.get("id"))
+        n_ex = sum(len(s.get("examples") or []) for s in senses)
         if kanjis:
-            for k in kanjis:
-                # Chỉ ghép kana áp dụng cho kanji đó (appliesToKanji = ["*"] hoặc danh sách)
-                for r in kanas:
-                    applies = r.get("appliesToKanji", ["*"])
-                    if "*" in applies or k["text"] in applies:
-                        rows.append((k["text"], r["text"], gloss, common, None))
+            pairs = [(k["text"], r["text"]) for k in kanjis for r in kanas
+                     if "*" in r.get("appliesToKanji", ["*"]) or k["text"] in r.get("appliesToKanji", [])]
         else:
-            for r in kanas:
-                rows.append((None, r["text"], gloss, common, None))
-    con.executemany("INSERT INTO entries VALUES (?,?,?,?,?)", rows)
-    con.execute("CREATE INDEX idx_entries_kanji_kana ON entries(kanji, kana)")
-    con.execute("CREATE INDEX idx_entries_kana ON entries(kana)")
+            pairs = [(None, r["text"]) for r in kanas]
+        level = None
+        for kt, rt in pairs:
+            lv = jlpt_index.get((kt or rt, _to_hira(rt)))
+            if lv and (level is None or _JLPT_ORDER[lv] < _JLPT_ORDER[level]):
+                level = lv
+        if common:
+            entries.extend((kt, rt, gloss, common, None) for kt, rt in pairs)
+        if scope == "compact" and not (common or level or n_ex):
+            continue
+        head_kanji = next((k["text"] for k in kanjis if k.get("common")), kanjis[0]["text"] if kanjis else None)
+        head_kana = (_kana_for(head_kanji, kanas) if head_kanji else None) or (kanas[0]["text"] if kanas else None)
+        form_list = [{"text": k["text"], "kana": False, "common": bool(k.get("common")), "tags": k.get("tags", [])}
+                     for k in kanjis]
+        form_list += [{"text": r["text"], "kana": True, "common": bool(r.get("common")), "tags": r.get("tags", []),
+                       "appliesToKanji": r.get("appliesToKanji", ["*"])} for r in kanas]
+        words.append((wid, json.dumps(form_list, ensure_ascii=False),
+                      json.dumps([_sense_json(s) for s in senses], ensure_ascii=False),
+                      common, level, head_kanji, head_kana, gloss, n_ex))
+        for k in kanjis:
+            forms.append((k["text"], wid, 0, int(bool(k.get("common"))), _kana_for(k["text"], kanas) or head_kana))
+        for r in kanas:
+            forms.append((r["text"], wid, 1, int(bool(r.get("common"))), r["text"]))
+            hira = _to_hira(r["text"])
+            if hira != r["text"]:
+                forms.append((hira, wid, 1, int(bool(r.get("common"))), r["text"]))
+        all_gloss = "; ".join(x.get("text", "") for s in senses for x in s.get("gloss", [])
+                              if x.get("lang", "eng") == "eng" and x.get("text"))
+        glosses.append((all_gloss, wid))
+        for si, s in enumerate(senses):
+            for ex in s.get("examples") or []:
+                sents = {x.get("lang"): x.get("text") for x in ex.get("sentences", [])}
+                if not sents.get("jpn"):
+                    continue
+                src = ex.get("source") or {}
+                examples.append((wid, si, str(src.get("value") or ""), ex.get("text"), sents["jpn"], sents.get("eng")))
+    con.executemany("INSERT INTO entries VALUES (?,?,?,?,?)", entries)
+    con.executemany("INSERT INTO words VALUES (?,?,?,?,?,?,?,?,?)", words)
+    con.executemany("INSERT INTO word_forms VALUES (?,?,?,?,?)", forms)
+    table = "word_gloss_fts" if fts else "word_gloss"
+    con.executemany(f"INSERT INTO {table}(gloss, word_id) VALUES (?,?)", glosses)
+    con.executemany("INSERT INTO examples(word_id, sense_idx, tatoeba_id, form, jpn, eng) VALUES (?,?,?,?,?,?)", examples)
+    con.executemany("INSERT INTO tags VALUES (?,?)", list((data.get("tags") or {}).items()))
+    con.executemany("INSERT INTO meta VALUES (?,?)", [("dictDate", str(data.get("dictDate", ""))),
+                                                     ("version", str(data.get("version", ""))),
+                                                     ("fts", "1" if fts else "0"), ("scope", scope)])
+    con.executescript("""
+        CREATE INDEX idx_entries_kanji_kana ON entries(kanji, kana);
+        CREATE INDEX idx_entries_kana ON entries(kana);
+        CREATE INDEX idx_word_forms_form ON word_forms(form);
+        CREATE INDEX idx_word_forms_word ON word_forms(word_id);
+        CREATE INDEX idx_examples_word ON examples(word_id);
+    """)
     con.commit()
     con.execute("VACUUM")
     con.close()
-    print(f"  jmdict.sqlite: {len(rows)} rows, {out.stat().st_size // 1024} KB")
+    return {"entries": len(entries), "words": len(words), "forms": len(forms), "examples": len(examples), "fts": int(fts)}
+
+
+def build_jmdict(scope: str = "full") -> None:
+    print("[jmdict]")
+    assets = _latest_jmdict_assets()
+    key = "examples" if "examples" in assets else "eng"
+    if key != "examples":
+        print("  CẢNH BÁO: release không có jmdict-examples-eng, dùng jmdict-eng (không có câu ví dụ)")
+    name, url = assets[key]
+    zpath = _download(url, CACHE_DIR / name)
+    with zipfile.ZipFile(zpath) as zf:
+        inner = [n for n in zf.namelist() if n.endswith(".json")][0]
+        with zf.open(inner) as raw:
+            data = json.load(raw)
+    out = DATA_DIR / "jmdict.sqlite"
+    stats = write_jmdict(data, out, _jlpt_index(JLPT_DIR), scope)
+    print(f"  jmdict.sqlite: {stats}, {out.stat().st_size // 1024} KB")
 
 
 # =============================================================================
@@ -647,12 +797,14 @@ BUILDERS = {
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=list(BUILDERS))
+    ap.add_argument("--dict-scope", choices=["full", "compact"], default="full",
+                    help="jmdict: full = mọi mục; compact = chỉ mục common / JLPT / có ví dụ")
     args = ap.parse_args()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     for name, build in BUILDERS.items():
         if args.only in (None, name):
-            build()
+            build(args.dict_scope) if name == "jmdict" else build()
     print("done")
 
 

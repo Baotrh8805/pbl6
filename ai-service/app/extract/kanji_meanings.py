@@ -101,4 +101,7 @@ def available() -> bool:
 
 def meaning(ch: str) -> Optional[str]:
     """Nghĩa EN của một chữ Hán ("存" → "exist, live, be; survive; remain"); không có dữ liệu → None."""
-    return _load().get(ch) if ch else None
+    if not ch:
+        return None
+    from app.extract import overrides  # noqa: PLC0415 (ghi đè của admin, D22)
+    return overrides.kanji_meaning(ch) or _load().get(ch)
