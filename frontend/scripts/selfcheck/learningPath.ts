@@ -5,6 +5,14 @@
 // .ts để node chạy trực tiếp (--experimental-strip-types). Async vì khoá chống gửi trùng phải kiểm qua Promise thật.
 import { runOnce } from "../../src/lib/inFlight.ts";
 import {
+  againTrend,
+  barPct,
+  formatRate,
+  formatReaction,
+  parseAdminPathEffect,
+  parsePathEffect,
+} from "../../src/lib/pathEffect.ts";
+import {
   CHAPTER_QUIZ_NO_ATTEMPT,
   CHAPTER_QUIZ_NOT_EXAM,
   DECK_PATH_NOTICE,
@@ -239,4 +247,39 @@ export async function runLearningPathChecks(assert: (cond: boolean, msg: string)
     junk.total === 3 && junk.segments.map((s) => s.value).join() === "0,0,2,1,0" && junk.remedial === 0,
     "Admin LP: số âm / NaN / lẻ từ server -> 0 hoặc làm tròn xuống, không vỡ thanh"
   );
+
+  // ---------- B3: hiệu quả lộ trình ----------
+  const eff = parsePathEffect({
+    pathId: "p1",
+    title: "Lộ trình",
+    remedial: false,
+    total: { cards: 4, studiedCards: 3, reviews: 4, again: 1, againRate: 0.25, medianReactionMs: 3000, retentionEligible: 2, retained: 1, retention7d: 0.5 },
+    chapters: [
+      { chapterId: "c2", position: 2, title: "", stats: { reviews: 1, againRate: 2, medianReactionMs: -5 } },
+      { chapterId: "c1", position: 1, title: "Chương đầu", stats: { cards: 2, reviews: 3, againRate: 0.333 } },
+      { position: 3 },
+    ],
+    remedialSplit: { remedialPathId: "r1", remedialTitle: "Bổ khuyết", at: "2026-10-10T00:00:00Z", before: { reviews: 3 }, after: {} },
+  });
+  assert(eff.chapters.map((c) => c.chapterId).join() === "c1,c2", "Hiệu quả LT: sắp theo thứ tự chương, bỏ chương thiếu id");
+  assert(eff.chapters[1].title === "Chương 2", "Hiệu quả LT: chương không tên -> 'Chương N'");
+  assert(eff.chapters[1].stats.againRate === null && eff.chapters[1].stats.medianReactionMs === null, "Hiệu quả LT: tỷ lệ ngoài 0..1 / phản xạ âm -> null");
+  assert(eff.chapters[1].stats.cards === 0 && eff.chapters[1].stats.retention7d === null, "Hiệu quả LT: thiếu trường -> 0 / null");
+  assert(eff.remedialSplit?.before.reviews === 3 && eff.remedialSplit.after.reviews === 0, "Hiệu quả LT: cửa sổ trước / sau đọc đủ");
+  assert(parsePathEffect(null).chapters.length === 0 && parsePathEffect(null).remedialSplit === null, "Hiệu quả LT: response hỏng -> rỗng, không lỗi");
+  assert(parsePathEffect({ remedialSplit: { before: {} } }).remedialSplit === null, "Hiệu quả LT: split thiếu remedialPathId -> null");
+
+  assert(formatRate(0.333) === "33%" && formatRate(null) === "—" && formatRate(0) === "0%", "Hiệu quả LT: định dạng tỷ lệ");
+  assert(formatReaction(850) === "0,9 giây" && formatReaction(12400) === "12 giây" && formatReaction(null) === "—", "Hiệu quả LT: định dạng phản xạ");
+  assert(barPct(0.257) === 26 && barPct(null) === 0 && barPct(1) === 100, "Hiệu quả LT: bề rộng thanh");
+
+  const w = (reviews: number, againRate: number | null) => ({ reviews, again: 0, againRate, medianReactionMs: null });
+  assert(againTrend({ before: w(10, 0.4), after: w(10, 0.2) }) === "better", "Hiệu quả LT: 'Lại' giảm -> tốt hơn");
+  assert(againTrend({ before: w(10, 0.2), after: w(10, 0.4) }) === "worse", "Hiệu quả LT: 'Lại' tăng -> kém hơn");
+  assert(againTrend({ before: w(10, 0.3), after: w(10, 0.31) }) === "same", "Hiệu quả LT: chênh < 2 điểm % -> không đổi");
+  assert(againTrend({ before: w(4, 0.5), after: w(10, 0.1) }) === "unknown", "Hiệu quả LT: một bên < 5 lượt -> chưa đủ dữ liệu");
+
+  const adm = parseAdminPathEffect({ inPath: { reviews: 7, againRate: 0.1 }, outside: { reviews: 3 } });
+  assert(adm?.inPath.reviews === 7 && adm.outside.againRate === null, "Admin hiệu quả LT: đọc hai cửa sổ");
+  assert(parseAdminPathEffect(undefined) === undefined && parseAdminPathEffect({ inPath: {} }) === undefined, "Admin hiệu quả LT: thiếu -> ẩn");
 }

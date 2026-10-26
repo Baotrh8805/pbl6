@@ -692,6 +692,14 @@ export interface AdminStats {
     health?: { engines?: AdminEngineFlags };
     /** Lộ trình 2.0 theo trạng thái (spec §4.5); backend bỏ trường khi null (NON_NULL) -> thẻ "Lộ trình học tập" tự ẩn. */
     learningPathBreakdown?: AdminLearningPathBreakdown;
+    /** B3: lượt ôn trong / ngoài lộ trình trong cửa sổ days (trừ học nhanh). */
+    pathEffect?: AdminPathEffect;
+}
+
+/** AdminStatsResponse.PathEffect: hai cửa sổ cùng dạng PathEffectWindow. */
+export interface AdminPathEffect {
+    inPath: PathEffectWindow;
+    outside: PathEffectWindow;
 }
 
 /**
@@ -1155,4 +1163,53 @@ export interface RadicalCardsResponse {
     items: RadicalCard[];
     groups: RadicalGroup[];
     reason: string | null;
+}
+
+// ===== Hiệu quả lộ trình (kế hoạch 2026-10-26 B3, GET /api/insights/path-effect/{pathId}) =====
+
+/** Tỷ lệ 0..1, null khi chưa có mẫu. Lượt "học nhanh" không tính. */
+export interface PathEffectStats {
+    cards: number;
+    studiedCards: number;
+    reviews: number;
+    again: number;
+    againRate: number | null;
+    medianReactionMs: number | null;
+    /** Thẻ có lượt ôn cách lượt đầu trong lộ trình ≥ 7 ngày. */
+    retentionEligible: number;
+    /** Trong số trên: lượt ôn đầu tiên sau mốc 7 ngày không phải "Lại". */
+    retained: number;
+    retention7d: number | null;
+}
+
+export interface PathEffectChapter {
+    chapterId: string;
+    position: number;
+    title: string;
+    stats: PathEffectStats;
+}
+
+export interface PathEffectWindow {
+    reviews: number;
+    again: number;
+    againRate: number | null;
+    medianReactionMs: number | null;
+}
+
+/** Chia lượt ôn của lộ trình tại lúc tạo lộ trình bổ khuyết đầu tiên sau khi lộ trình này bắt đầu. */
+export interface PathEffectSplit {
+    remedialPathId: string;
+    remedialTitle: string;
+    at: string;
+    before: PathEffectWindow;
+    after: PathEffectWindow;
+}
+
+export interface PathEffect {
+    pathId: string;
+    title: string;
+    remedial: boolean;
+    total: PathEffectStats;
+    chapters: PathEffectChapter[];
+    remedialSplit: PathEffectSplit | null;
 }

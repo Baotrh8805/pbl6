@@ -29,6 +29,7 @@ import { CreateLearningPathModal } from "@/features/roadmap/components/CreateLea
 import { PathDraftEditor, type ActivateValues } from "@/features/roadmap/components/PathDraftEditor";
 import { PathActiveView } from "@/features/roadmap/components/PathActiveView";
 import { PathSettingsDrawer } from "@/features/roadmap/components/PathSettingsDrawer";
+import { PathEffectPanel } from "@/features/roadmap/components/PathEffectPanel";
 import {
   OVERFLOW_WARNING,
   chapterQuizReplaceNotice,
@@ -525,6 +526,8 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
             quizError={quizError}
             onOpenSettings={() => setSettingsOpen(true)}
           />
+          {/* B3: chữ ký lịch ôn trong shell đổi sau mỗi lượt chấm -> tải lại số liệu ngầm */}
+          <PathEffectPanel pathId={path.id} reloadKey={reviewSignature(reviews)} />
           <PathSettingsDrawer
             isOpen={settingsOpen}
             path={path}
@@ -544,5 +547,12 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
     </section>
   );
 };
+
+/** Đổi sau mỗi lượt chấm (reps / số thẻ đổi) — đủ làm khoá tải lại, không cần chính xác. */
+function reviewSignature(reviews: Record<string, { reps: number }>): number {
+  let n = 0;
+  for (const r of Object.values(reviews)) n += r.reps + 1;
+  return n;
+}
 
 export default RoadmapDetailPage;

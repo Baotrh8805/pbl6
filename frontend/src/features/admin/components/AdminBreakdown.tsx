@@ -2,6 +2,7 @@ import React from "react";
 import type { AdminStats } from "@/types/api.types";
 import { extractionBreakdown, learningPathBreakdown } from "../adminUtils.ts";
 import { AdminPathBreakdown } from "./AdminPathBreakdown";
+import { parseAdminPathEffect } from "@/lib/pathEffect";
 
 interface AdminBreakdownProps {
   stats: AdminStats;
@@ -251,7 +252,7 @@ export const AdminBreakdown: React.FC<AdminBreakdownProps> = ({ stats }) => {
       </div>
 
       {/* Hàng riêng từ lg (3 thẻ trên đã chia đủ 1/3): 5 nhóm cần bề ngang để nhãn không bị cắt */}
-      {paths && <AdminPathBreakdown view={paths} className="lg:col-span-3" />}
+      {paths && <AdminPathBreakdown view={paths} effect={parseAdminPathEffect(stats.pathEffect)} className="lg:col-span-3" />}
     </div>
   );
 };
