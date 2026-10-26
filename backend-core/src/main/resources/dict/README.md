@@ -26,3 +26,15 @@
   ルックス lux / looks): giữ cả hai, nghĩa khác nhau; khi map `entry_key` (A3) mỗi dòng sẽ về đúng mục từ của nó theo `gloss`.
 - Toàn bộ JMdict (~218 000 mục) **không** dịch sẵn: phần ngoài tập phổ biến dịch khi tra (quyết định D15).
 
+# Nghĩa tiếng Việt cho từ có câu ví dụ (`jmdict_example_words_meaning_vi.csv`)
+
+- **Nguồn từ**: mọi mục JMdict có ít nhất một câu ví dụ Tatoeba trong `jmdict.sqlite` (bảng `examples`, 28 930 mục) mà **chưa** có nghĩa
+  Việt trong hai file trên → **14 068 mục**, mỗi mục một dòng, `entry_key = w:<id JMdict>` có sẵn (không cần map), `expression` / `reading`
+  là dạng viết / cách đọc chính, `meaning_en` là nghĩa tiếng Anh đầu tiên (đối chiếu).
+- **Nghĩa Việt**: Claude (`claude-fable-5-1`) viết ngày 26/10/2026 theo cùng chuẩn với hai file trên (5 lô, mỗi lô qua script kiểm tra).
+  Nạp sau hai file kia (`DictionarySeedLoader.DEFAULT_FILES`), `MACHINE / SEED`, không đè bản admin.
+- Cùng ngày: 27 trong 43 dòng `w:jlpt:` của `jlpt_meaning_vi.csv` được gán tay về mục JMdict đúng (dạng có đuôi する / と / に / な,
+  dạng viết khác: おおまかな → 大まか, ラジオカセ → ラジカセ, ～(に) よると → によると…). 16 dòng còn lại là hậu tố / tiền tố một chữ
+  Hán đọc âm On (～光 こう, ～国 こく, 初～ しょ…) hoặc câu cố định (お元気で, お待ちください…) mà JMdict không có mục riêng: giữ khoá
+  `w:jlpt:` (vẫn tra được như mục riêng).
+

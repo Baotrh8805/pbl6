@@ -33,7 +33,8 @@ import java.util.concurrent.CompletableFuture;
 public class DictionarySeedLoader {
 
     private static final Logger log = LoggerFactory.getLogger(DictionarySeedLoader.class);
-    public static final List<String> DEFAULT_FILES = List.of("dict/jlpt_meaning_vi.csv", "dict/jmdict_common_meaning_vi.csv");
+    public static final List<String> DEFAULT_FILES = List.of("dict/jlpt_meaning_vi.csv", "dict/jmdict_common_meaning_vi.csv",
+            "dict/jmdict_example_words_meaning_vi.csv");
     private static final int BATCH = 1000;
 
     private final DictionaryStore store;

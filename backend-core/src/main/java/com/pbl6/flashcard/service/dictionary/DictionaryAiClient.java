@@ -31,6 +31,15 @@ public class DictionaryAiClient {
         return ai.getJson("tra từ điển", "/api/dict/search", null, query);
     }
 
+    /** Tab Câu: {items: [{id, jpn, eng, viSeed, words: [{key, form, head}]}], total} — câu ví dụ chứa cụm q (Nhật / Anh / Việt). */
+    public JsonNode sentences(String q, int limit, int offset) {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("q", q);
+        query.put("limit", limit);
+        query.put("offset", offset);
+        return ai.getJson("tìm câu ví dụ", "/api/dict/sentences", null, query);
+    }
+
     /** Mục từ đầy đủ theo id JMdict; 404 khi không có. */
     public JsonNode entry(String wordId) {
         return ai.getJson("mở mục từ điển", "/api/dict/entries/{id}", Map.of("id", wordId), null);
@@ -55,6 +64,11 @@ public class DictionaryAiClient {
     }
 
     /** {tokens: [{surface, lemma, reading, key}]}. */
+    /** Vẽ chữ Hán để tra: {strokes: [[{x, y}]]} → {candidates: [{char, score}]}; thiếu dữ liệu nét → 503 handwritingUnavailable. */
+    public JsonNode handwriting(List<List<Map<String, Double>>> strokes) {
+        return ai.postJson("nhận dạng chữ vẽ", "/api/dict/handwriting", Map.of("strokes", strokes, "limit", 12));
+    }
+
     public JsonNode tokenize(String text) {
         return ai.postJson("tách câu", "/api/dict/tokenize", Map.of("text", text));
     }

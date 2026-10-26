@@ -19,6 +19,13 @@ public final class DictDtos {
 
     public record TokenizeRequest(@NotBlank @Size(max = 300) String text) {}
 
+    /** Vẽ chữ Hán để tra: các nét theo thứ tự vẽ, mỗi nét là dãy điểm (toạ độ khung vẽ). */
+    public record HandwritingRequest(
+            @jakarta.validation.constraints.NotNull @Size(min = 1, max = 40)
+            java.util.List<java.util.List<HwPoint>> strokes) {}   // 1..500 điểm mỗi nét: kiểm ở DictionaryService (chú thích lồng làm Jackson không dựng được record)
+
+    public record HwPoint(double x, double y) {}
+
     public record CommentRequest(@NotBlank @Size(max = 1000) String content) {}
 
     public record Comment(long id, String entryKey, long userId, String displayName, String content, int helpfulCount,

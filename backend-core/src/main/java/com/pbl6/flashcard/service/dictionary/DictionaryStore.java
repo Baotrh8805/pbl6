@@ -162,6 +162,26 @@ public class DictionaryStore {
         return out;
     }
 
+    /** Tab Câu: bản dịch đã lưu theo mã câu (mọi mục từ dùng câu đó); bản admin (VERIFIED) thắng bản Gemini. */
+    public Map<String, String> exampleViByIds(Collection<String> exampleIds) {
+        Map<String, String> out = new HashMap<>();
+        if (exampleIds.isEmpty()) return out;
+        String in = String.join(",", java.util.Collections.nCopies(exampleIds.size(), "?"));
+        jdbc.query("SELECT example_id, text_vi FROM dict_example_vi WHERE example_id IN (" + in + ") "
+                        + "ORDER BY (status = 'VERIFIED'), updated_at",
+                rs -> { out.put(rs.getString(1), rs.getString(2)); }, exampleIds.toArray());
+        return out;
+    }
+
+    /** Tab Câu: ghi đè câu ví dụ (sửa câu Nhật / Anh, ẩn) theo mã câu, ở bất kỳ mục từ nào. */
+    public List<Override> exampleOverridesByIds(Collection<String> exampleIds) {
+        if (exampleIds.isEmpty()) return List.of();
+        String in = String.join(",", java.util.Collections.nCopies(exampleIds.size(), "?"));
+        return jdbc.query("SELECT id, entry_key, field, sub_key, value, created_at FROM dict_overrides "
+                + "WHERE field IN ('example_jpn', 'example_eng', 'example_hidden') AND sub_key IN (" + in + ")",
+                OVERRIDE, exampleIds.toArray());
+    }
+
     public void insertMachineExample(String key, String exampleId, String textVi, String model) {
         jdbc.update("INSERT INTO dict_example_vi (entry_key, example_id, text_vi, status, source, model) "
                 + "VALUES (?,?,?,'MACHINE','GEMINI',?) ON CONFLICT (entry_key, example_id) DO NOTHING",

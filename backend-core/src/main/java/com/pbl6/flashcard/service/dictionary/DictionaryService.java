@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -131,6 +132,52 @@ public class DictionaryService {
         out.put("size", s);
         out.put("modeUsed", m);
         if (deinflected != null) out.set("deinflected", deinflected);
+        return out;
+    }
+
+    /**
+     * Tab Câu: câu ví dụ chứa cụm q (Nhật đúng chuỗi, Anh từ đầu một từ, Việt dịch sẵn có / không dấu), câu ngắn trước. Mỗi câu:
+     * {id, jpn, eng, vi, words[{key, form, head}]}; áp ghi đè câu của admin (sửa câu, ẩn — ẩn ở bất kỳ mục nào là ẩn ở đây), bản
+     * dịch đã lưu (admin / Gemini) thắng bản dịch sẵn.
+     */
+    public ObjectNode sentences(String rawQ, int page, int size) {
+        String q = rawQ == null ? "" : rawQ.strip();
+        if (q.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nhập cụm từ cần tìm.");
+        if (q.length() > MAX_QUERY) q = q.substring(0, MAX_QUERY);
+        int p = Math.max(0, Math.min(page, MAX_PAGE));
+        int s = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        String qq = q;
+        JsonNode res = searchCache.get("sent|" + s + "|" + p * s + "|" + q, () -> upstream(() -> ai.sentences(qq, s, p * s)));
+        List<String> ids = new ArrayList<>();
+        res.path("items").forEach(it -> ids.add(it.path("id").asText()));
+        Map<String, String> saved = store.exampleViByIds(ids);
+        Map<String, Map<String, String>> ov = new HashMap<>();
+        for (DictionaryStore.Override o : store.exampleOverridesByIds(ids)) {
+            ov.computeIfAbsent(o.subKey(), k -> new HashMap<>()).merge(o.field(), o.value(),
+                    (a, b) -> "example_hidden".equals(o.field()) && "true".equalsIgnoreCase(a) ? a : b);
+        }
+        ArrayNode items = json.createArrayNode();
+        int hidden = 0;
+        for (JsonNode it : res.path("items")) {
+            ObjectNode x = ((ObjectNode) it).deepCopy();
+            String id = x.path("id").asText();
+            Map<String, String> o = ov.getOrDefault(id, Map.of());
+            if ("true".equalsIgnoreCase(o.get("example_hidden"))) {
+                hidden++;
+                continue;
+            }
+            if (o.containsKey("example_jpn")) x.put("jpn", o.get("example_jpn"));
+            if (o.containsKey("example_eng")) x.put("eng", o.get("example_eng"));
+            String seed = o.containsKey("example_jpn") ? null : text(x, "viSeed", null);
+            x.remove("viSeed");
+            x.put("vi", saved.getOrDefault(id, seed));
+            items.add(x);
+        }
+        ObjectNode out = json.createObjectNode();
+        out.set("items", items);
+        out.put("total", Math.max(0, res.path("total").asLong(items.size()) - hidden));
+        out.put("page", p);
+        out.put("size", s);
         return out;
     }
 
@@ -344,7 +391,10 @@ public class DictionaryService {
             String hidden = overrideOfSub(ovs, key.raw(), "example_hidden", id);
             if (hidden != null) xo.put("hidden", "true".equalsIgnoreCase(hidden));
             DictionaryStore.ExampleVi v = exVi.get(id);
-            xo.put("vi", v != null ? v.textVi() : null);
+            // bản admin / Gemini đã lưu thắng; không có thì bản dịch sẵn của ai-service (example_vi.csv, câu gốc chưa bị sửa)
+            String seed = jpn == null ? text(xo, "viSeed", null) : null;
+            xo.remove("viSeed");
+            xo.put("vi", v != null ? v.textVi() : seed);
             if (includeHidden || !xo.path("hidden").asBoolean(false)) examples.add(xo);
         }
         e.set("examples", examples);
@@ -514,6 +564,36 @@ public class DictionaryService {
     }
 
     // ================================================================== tách câu, sổ tay, lịch sử
+
+    /**
+     * Vẽ chữ Hán để tra (cải tiến 26/10): chuyển nét sang ai-service nhận dạng, trả {candidates: [{char, score}]} (giống nhất trước).
+     * Toạ độ NaN / vô hạn → 400; ai-service thiếu dữ liệu nét → 503 kèm lời nhắc.
+     */
+    public JsonNode handwriting(long uid, List<List<com.pbl6.flashcard.dto.dictionary.DictDtos.HwPoint>> strokes) {
+        limiter.checkHandwriting(uid);
+        List<List<Map<String, Double>>> body = new ArrayList<>(strokes.size());
+        for (var s : strokes) {
+            if (s == null || s.isEmpty() || s.size() > 500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nét vẽ không hợp lệ.");
+            List<Map<String, Double>> pts = new ArrayList<>(s.size());
+            for (var p : s) {
+                if (p == null || !Double.isFinite(p.x()) || !Double.isFinite(p.y())) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nét vẽ không hợp lệ.");
+                }
+                pts.add(Map.of("x", p.x(), "y", p.y()));
+            }
+            body.add(pts);
+        }
+        try {
+            return ai.handwriting(body);
+        } catch (AiServiceClient.AiServiceException e) {
+            if (e.status() == 503 && String.valueOf(e.getMessage()).contains("handwritingUnavailable")) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Máy chủ chưa có dữ liệu nét chữ Hán (KanjiVG) nên chưa vẽ để tra được.");
+            }
+            if (e.status() == 400 || e.status() == 422) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nét vẽ không hợp lệ.");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Dịch vụ nhận dạng chữ tạm thời không khả dụng.");
+        }
+    }
 
     public JsonNode tokenize(long uid, String text) {
         limiter.checkTokenize(uid);

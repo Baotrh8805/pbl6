@@ -1,6 +1,7 @@
 package com.pbl6.flashcard.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.pbl6.flashcard.model.Role;
 import com.pbl6.flashcard.service.AiServiceClient;
 import com.pbl6.flashcard.service.dictionary.DictionaryAiClient;
@@ -88,6 +89,75 @@ class DictionaryIT extends IntegrationTest {
     }
 
     // ------------------------------------------------------------------ tra cứu + dịch lúc tra
+
+    @Test
+    void example_seed_translation_is_used_until_admin_or_gemini_text_exists() throws Exception {
+        String token = newUser();
+        jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'MACHINE','SEED')",
+                "w:" + id, "食べる", "たべる", "ăn");
+        ObjectNode base = (ObjectNode) entryJson(id, "食べる", "たべる", "to eat");
+        ((ObjectNode) base.path("examples").get(0)).put("viSeed", "Tôi ăn cơm.");
+        ((ObjectNode) base.path("examples").get(1)).put("viSeed", "Tôi ăn bánh mì.");
+        Mockito.when(ai.entry(id)).thenReturn(base);
+
+        JsonNode e = entry(token, "w:" + id);
+        assertEquals("Tôi ăn cơm.", e.get("examples").get(0).get("vi").asText());
+        assertTrue(e.get("examples").get(0).path("viSeed").isMissingNode(), "viSeed không lộ ra client");
+        Mockito.verify(ai, Mockito.never()).translate(Mockito.any());   // câu đã có bản dịch sẵn: không gọi AI
+
+        // admin sửa bản dịch câu 1, sửa câu Nhật của câu 2 (bản dịch sẵn không còn khớp → bỏ)
+        jdbc.update("INSERT INTO dict_example_vi (entry_key, example_id, text_vi, status, source) VALUES (?,?,?, 'VERIFIED','ADMIN')",
+                "w:" + id, "ex1-" + id, "Tôi đang ăn cơm.");
+        jdbc.update("INSERT INTO dict_overrides (entry_key, field, sub_key, value) VALUES (?, 'example_jpn', ?, 'パンを二つ食べる。')",
+                "w:" + id, "ex2-" + id);
+        dictionary.invalidate();
+        JsonNode e2 = entry(token, "w:" + id);
+        assertEquals("Tôi đang ăn cơm.", e2.get("examples").get(0).get("vi").asText());
+        assertTrue(e2.get("examples").get(1).get("vi").isNull());
+    }
+
+    @Test
+    void handwriting_proxies_strokes_and_maps_errors() throws Exception {
+        String token = newUser();
+        Mockito.when(ai.handwriting(Mockito.anyList())).thenReturn(json.readTree("{\"candidates\":[{\"char\":\"十\",\"score\":0.01}]}"));
+        var body = java.util.Map.of("strokes", java.util.List.of(
+                java.util.List.of(java.util.Map.of("x", 0.0, "y", 0.5), java.util.Map.of("x", 1.0, "y", 0.5)),
+                java.util.List.of(java.util.Map.of("x", 0.5, "y", 0.0), java.util.Map.of("x", 0.5, "y", 1.0))));
+        JsonNode r = read(call(post("/api/dictionary/handwriting"), token, body).andExpect(status().isOk()));
+        assertEquals("十", r.get("candidates").get(0).get("char").asText());
+        Mockito.verify(ai).handwriting(Mockito.argThat(s -> s.size() == 2 && s.get(1).get(1).get("y") == 1.0));
+
+        call(post("/api/dictionary/handwriting"), token, java.util.Map.of("strokes", java.util.List.of())).andExpect(status().isBadRequest());
+        Mockito.when(ai.handwriting(Mockito.anyList()))
+                .thenThrow(new com.pbl6.flashcard.service.AiServiceClient.AiServiceException("ai-service 503: handwritingUnavailable", 503, null));
+        JsonNode err = read(call(post("/api/dictionary/handwriting"), token, body).andExpect(status().isServiceUnavailable()));
+        assertTrue(err.get("message").asText().contains("KanjiVG"), err.toString());
+    }
+
+    @Test
+    void sentences_tab_overlays_saved_translations_and_hides_hidden_examples() throws Exception {
+        String token = newUser();
+        String a = "sa-" + id, b = "sb-" + id, c = "sc-" + id;
+        Mockito.when(ai.sentences(eq("食べ"), anyInt(), anyInt())).thenReturn(json.readTree("""
+                {"items":[
+                  {"id":"%s","jpn":"ご飯を食べる。","eng":"I eat rice.","viSeed":"Tôi ăn cơm.","words":[{"key":"w:%s","form":"食べる","head":"食べる"}]},
+                  {"id":"%s","jpn":"パンを食べた。","eng":"I ate bread.","viSeed":"Tôi đã ăn bánh mì.","words":[]},
+                  {"id":"%s","jpn":"よく食べる。","eng":"He eats a lot.","viSeed":null,"words":[]}],
+                 "total":3}""".formatted(a, id, b, c)));
+        jdbc.update("INSERT INTO dict_example_vi (entry_key, example_id, text_vi, status, source) VALUES (?,?,?, 'VERIFIED','ADMIN')",
+                "w:999" + id, b, "Tôi ăn bánh mì rồi.");
+        jdbc.update("INSERT INTO dict_overrides (entry_key, field, sub_key, value) VALUES (?, 'example_hidden', ?, 'true')", "w:1" + id, c);
+
+        JsonNode r = read(call(get("/api/dictionary/sentences").param("q", "食べ"), token, null).andExpect(status().isOk()));
+        assertEquals(2, r.get("items").size());
+        assertEquals(2, r.get("total").asLong(), "câu bị ẩn không tính");
+        assertEquals("Tôi ăn cơm.", r.get("items").get(0).get("vi").asText());
+        assertEquals("w:" + id, r.get("items").get(0).get("words").get(0).get("key").asText());
+        assertEquals("Tôi ăn bánh mì rồi.", r.get("items").get(1).get("vi").asText(), "bản admin thắng bản dịch sẵn");
+        assertTrue(r.get("items").get(1).path("viSeed").isMissingNode());
+        call(get("/api/dictionary/sentences").param("q", "  "), token, null).andExpect(status().isBadRequest());
+    }
+
 
     @Test
     void search_overlays_vietnamese_meaning_and_admin_reading() throws Exception {

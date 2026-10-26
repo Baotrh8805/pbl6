@@ -40,6 +40,13 @@ public class DictionaryController {
         return dictionary.search(q, mode, page, size);
     }
 
+    /** Tab Câu: {items[{id, jpn, eng, vi, words[{key, form, head}]}], total, page, size} — câu ví dụ chứa cụm q. */
+    @GetMapping("/sentences")
+    public ObjectNode sentences(@RequestParam String q, @RequestParam(defaultValue = "0") int page,
+                                @RequestParam(defaultValue = "20") int size) {
+        return dictionary.sentences(q, page, size);
+    }
+
     /** Mục đầy đủ (gốc + ghi đè + nghĩa Việt + ví dụ dịch + câu từ tài liệu của mình); dịch lúc tra nếu thiếu nghĩa Việt. */
     @GetMapping("/entries/{key}")
     public ObjectNode entry(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String key,
@@ -51,6 +58,12 @@ public class DictionaryController {
     public ObjectNode translateExamples(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String key,
                                         @Valid @RequestBody DictDtos.TranslateExamplesRequest body) {
         return dictionary.translateExamples(uid(me), key, body.exampleIds());
+    }
+
+    /** Vẽ chữ Hán để tra: {strokes: [[{x, y}]]} → {candidates: [{char, score}]}. */
+    @PostMapping("/handwriting")
+    public JsonNode handwriting(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody DictDtos.HandwritingRequest body) {
+        return dictionary.handwriting(uid(me), body.strokes());
     }
 
     @PostMapping("/tokenize")

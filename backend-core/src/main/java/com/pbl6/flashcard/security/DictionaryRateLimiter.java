@@ -15,6 +15,7 @@ import java.time.Duration;
  *       (admin đổi có hiệu lực ngay); 0 = tắt dịch lúc tra. Hết lượt KHÔNG chặn tra cứu — chỉ không dịch mới.</li>
  *   <li>Bình luận: app.rate-limit.dict-comment.* (mặc định 20 / giờ) → 429.</li>
  *   <li>Tách câu cho popup tra nhanh: app.rate-limit.dict-tokenize.* (mặc định 60 / phút) → 429.</li>
+ *   <li>Vẽ chữ Hán để tra (nhận dạng sau mỗi nét): app.rate-limit.dict-handwriting.* (mặc định 120 / phút) → 429.</li>
  * </ul>
  * Lưu trong RAM như các bộ giới hạn khác (mất khi khởi động lại).
  */
@@ -24,16 +25,20 @@ public class DictionaryRateLimiter {
     private final AttemptLimiter ai = new AttemptLimiter(Integer.MAX_VALUE, Duration.ofHours(1));
     private final AttemptLimiter comment;
     private final AttemptLimiter tokenize;
+    private final AttemptLimiter handwriting;
     private final SettingsService settings;
 
     public DictionaryRateLimiter(SettingsService settings,
                                  @Value("${app.rate-limit.dict-comment.max:20}") int commentMax,
                                  @Value("${app.rate-limit.dict-comment.window:PT1H}") Duration commentWindow,
                                  @Value("${app.rate-limit.dict-tokenize.max:60}") int tokenizeMax,
-                                 @Value("${app.rate-limit.dict-tokenize.window:PT1M}") Duration tokenizeWindow) {
+                                 @Value("${app.rate-limit.dict-tokenize.window:PT1M}") Duration tokenizeWindow,
+                                 @Value("${app.rate-limit.dict-handwriting.max:120}") int handwritingMax,
+                                 @Value("${app.rate-limit.dict-handwriting.window:PT1M}") Duration handwritingWindow) {
         this.settings = settings;
         this.comment = new AttemptLimiter(commentMax, commentWindow);
         this.tokenize = new AttemptLimiter(tokenizeMax, tokenizeWindow);
+        this.handwriting = new AttemptLimiter(handwritingMax, handwritingWindow);
     }
 
     public int aiLimit() {
@@ -66,6 +71,10 @@ public class DictionaryRateLimiter {
 
     public void checkTokenize(Long uid) {
         check(tokenize, uid, "Bạn tra quá nhanh, vui lòng thử lại sau.");
+    }
+
+    public void checkHandwriting(Long uid) {
+        check(handwriting, uid, "Bạn vẽ quá nhanh, vui lòng thử lại sau.");
     }
 
     private static void check(AttemptLimiter limiter, Long uid, String message) {
