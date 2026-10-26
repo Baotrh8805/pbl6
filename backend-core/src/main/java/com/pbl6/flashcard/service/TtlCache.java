@@ -11,7 +11,7 @@ import java.util.function.Supplier;
  * nhất, vì mọi mục cùng TTL). Hai request cùng khoá lúc trống có thể cùng gọi nguồn một lần: chấp nhận, đổi lại không khoá.
  * Lỗi của nguồn không được cache (lần sau gọi lại).
  */
-class TtlCache<K, V> {
+public class TtlCache<K, V> {
 
     private record Entry<V>(V value, long expiresAt) {}
 
@@ -20,13 +20,18 @@ class TtlCache<K, V> {
     private final int maxEntries;
     private final LongSupplier clock;
 
-    TtlCache(long ttlMillis, int maxEntries, LongSupplier clock) {
+    public TtlCache(long ttlMillis, int maxEntries, LongSupplier clock) {
         this.ttlMillis = ttlMillis;
         this.maxEntries = maxEntries;
         this.clock = clock;
     }
 
-    V get(K key, Supplier<V> loader) {
+    /** Quên mọi mục (dữ liệu nguồn vừa đổi, vd. admin sửa từ điển). */
+    public void clear() {
+        entries.clear();
+    }
+
+    public V get(K key, Supplier<V> loader) {
         long now = clock.getAsLong();
         Entry<V> hit = entries.get(key);
         if (hit != null && hit.expiresAt() > now) return hit.value();

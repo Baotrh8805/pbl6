@@ -27,7 +27,19 @@ public final class AiDtos {
                        String meaningEn, String meaningVi, String level, Double levelConfidence,
                        List<String> levelSources, Integer frequency, String example, String exampleVi,
                        Boolean suspect, Integer chapter, List<Map<String, Object>> conflicts,
-                       String docReading, String docMeaningEn) {
+                       String docReading, String docMeaningEn, String dictKey) {
+
+        /** Dạng F2 trước từ điển (21 tham số, chưa có dictKey "w:<id JMdict>" của spec 2026-10-26 §9.3). */
+        public Item(String kind, Integer position, String term, String surface, String reading,
+                    List<Map<String, String>> readingSegments, String hanViet, String pos,
+                    String meaningEn, String meaningVi, String level, Double levelConfidence,
+                    List<String> levelSources, Integer frequency, String example, String exampleVi,
+                    Boolean suspect, Integer chapter, List<Map<String, Object>> conflicts,
+                    String docReading, String docMeaningEn) {
+            this(kind, position, term, surface, reading, readingSegments, hanViet, pos, meaningEn, meaningVi, level,
+                    levelConfidence, levelSources, frequency, example, exampleVi, suspect, chapter, conflicts, docReading,
+                    docMeaningEn, null);
+        }
 
         /** Dạng trước F2 (không có conflicts / doc*): giữ cho mã và test đang dựng item theo 18 tham số. */
         public Item(String kind, Integer position, String term, String surface, String reading,
@@ -36,7 +48,7 @@ public final class AiDtos {
                     List<String> levelSources, Integer frequency, String example, String exampleVi,
                     Boolean suspect, Integer chapter) {
             this(kind, position, term, surface, reading, readingSegments, hanViet, pos, meaningEn, meaningVi, level,
-                    levelConfidence, levelSources, frequency, example, exampleVi, suspect, chapter, null, null, null);
+                    levelConfidence, levelSources, frequency, example, exampleVi, suspect, chapter, null, null, null, null);
         }
     }
 

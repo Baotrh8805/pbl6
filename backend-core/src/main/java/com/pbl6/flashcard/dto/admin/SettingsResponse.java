@@ -34,5 +34,9 @@ public record SettingsResponse(
         /** ≤ 40 ký tự; rỗng = model mặc định của ai-service */
         @JsonProperty("ai_model_primary") String aiModelPrimary,
         @JsonProperty("email_verification_required") Boolean emailVerificationRequired,
+        /** Từ điển (V32): lượt dịch Gemini lúc tra / giờ / tài khoản, 0..1000 (0 = tắt). Tuỳ chọn khi PUT (null = giữ nguyên) */
+        @JsonProperty("dictionary_ai_hourly_limit") Integer dictionaryAiHourlyLimit,
+        /** Từ điển (V32): số câu ví dụ dịch kèm khi mục chưa có nghĩa Việt, 0..10. Tuỳ chọn khi PUT */
+        @JsonProperty("dictionary_examples_translate") Integer dictionaryExamplesTranslate,
         @JsonProperty("updatedAt") Instant updatedAt) {
 }

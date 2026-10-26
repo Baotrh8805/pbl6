@@ -15,7 +15,9 @@ public record AdminStatsResponse(Users users, Decks decks, long cards, Extractio
                                  long learningPaths, long openReports, List<DayPoint> series,
                                  @JsonInclude(JsonInclude.Include.NON_NULL) LearningPathBreakdown learningPathBreakdown,
                                  long openQuestionFlags, long pendingMnemonics, long openAppeals,
-                                 Ai ai, List<OcrPoint> ocrSeries) {
+                                 Ai ai, List<OcrPoint> ocrSeries,
+                                 /* Từ điển (V32): báo cáo từ điển đang mở (badge) + số liệu kho nghĩa Việt */
+                                 long openDictReports, com.pbl6.flashcard.dto.dictionary.DictDtos.DictStats dict) {
 
     /** staffPendingSetup: staff chưa đổi mật khẩu seed (dashboard cảnh báo). */
     public record Users(long total, long new7d, long new30d, long locked, long premium, long active7d, long staffPendingSetup) {}

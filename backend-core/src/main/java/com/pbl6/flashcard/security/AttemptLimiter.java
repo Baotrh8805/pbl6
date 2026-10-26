@@ -45,6 +45,16 @@ public class AttemptLimiter {
         }
     }
 
+    /** Số lần trong cửa sổ hiện tại (đã bỏ lần quá hạn) — cho bộ giới hạn có trần đổi lúc chạy (DictionaryRateLimiter). */
+    public int count(String key) {
+        Deque<Instant> list = attempts.get(key);
+        if (list == null) return 0;
+        synchronized (list) {
+            prune(list, Instant.now());
+            return list.size();
+        }
+    }
+
     public void reset(String key) {
         attempts.remove(key);
     }

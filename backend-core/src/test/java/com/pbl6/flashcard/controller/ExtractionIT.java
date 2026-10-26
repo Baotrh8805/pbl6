@@ -32,6 +32,9 @@ class ExtractionIT extends IntegrationTest {
     @org.springframework.beans.factory.annotation.Autowired
     private com.pbl6.flashcard.repository.AppSettingRepository appSettings;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     private static final String TEXT = "毎日漢字を勉強します。";
 
     @BeforeEach
@@ -513,5 +516,36 @@ class ExtractionIT extends IntegrationTest {
         assertEquals(0, jobRepo.claimIdle(jobId), "đã QUEUED: lần bấm thứ hai không nhận được");
         // API: job đang QUEUED -> 409, không đẩy thêm worker
         call(post("/api/extractions/" + id + "/rerun"), token, null).andExpect(status().isConflict());
+    }
+
+    /** Từ điển (spec 2026-10-26 §9.3): item có nghĩa Việt trong từ điển không gửi Gemini; nghĩa Gemini vừa dịch được lưu lại. */
+    @Test
+    void enrich_uses_dictionary_meanings_and_saves_new_ones() throws Exception {
+        String rnd = String.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L));
+        String studyKey = "w:" + rnd;
+        String kanjiKey = "w:" + (Long.parseLong(rnd) - 1);
+        jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'VERIFIED','ADMIN')",
+                studyKey, "zz" + rnd, "べんきょう", "học tập (từ điển)");
+        Mockito.when(ai.analyze(anyString(), any(), any())).thenReturn(new AiDtos.AnalyzeResult(List.of(
+                new AiDtos.Item("vocab", 1, "漢字", "漢字", "かんじ", null, "HÁN TỰ", "名詞", "kanji", null, "N4", 1.0, List.of(), 1,
+                        TEXT, null, null, null, null, null, null, kanjiKey),
+                new AiDtos.Item("vocab", 2, "勉強", "勉強し", "べんきょう", null, "MIỄN CƯỜNG", "名詞", "study", null, "N5", 0.5,
+                        List.of(), 2, TEXT, null, false, null, null, null, null, studyKey)),
+                Map.of("vocab", 2, "grammar", 0), false));
+        try {
+            String token = newUser();
+            String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+            JsonNode done = awaitTerminal(token, id);
+            assertEquals(1, done.get("stats").get("fromDictionary").asInt(), done.toString());
+            org.mockito.ArgumentCaptor<AiDtos.EnrichRequest> sent = org.mockito.ArgumentCaptor.forClass(AiDtos.EnrichRequest.class);
+            Mockito.verify(ai).enrich(sent.capture());
+            assertEquals(List.of("漢字"), sent.getValue().items().stream().map(AiDtos.EnrichInput::term).toList());
+            JsonNode items = read(call(get("/api/extractions/" + id + "/items"), token, null).andExpect(status().isOk()));
+            assertEquals("học tập (từ điển)", items.get(1).get("meaningVi").asText());
+            assertEquals("chữ Hán", jdbc.queryForObject("SELECT meaning_vi FROM dict_meanings WHERE entry_key = ?", String.class,
+                    kanjiKey));
+        } finally {
+            jdbc.update("DELETE FROM dict_meanings WHERE entry_key IN (?, ?)", studyKey, kanjiKey);
+        }
     }
 }

@@ -265,12 +265,14 @@ class AdminSettingsIT extends IntegrationTest {
     }
 
     /**
-     * V14 seed 4 khoá; V20 (lộ trình 2.0) thêm 3 khoá learning_path_*; V21 (WP-G5) thêm 6 khoá AI — không khoá nào khác lọt vào
-     * app_settings, và CHECK của V21 chặn khoá lạ.
+     * V14 seed 4 khoá; V20 (lộ trình 2.0) thêm 3 khoá learning_path_*; V21 (WP-G5) thêm 6 khoá AI; V32 (từ điển) thêm 2 khoá
+     * dictionary_* — không khoá nào khác lọt vào app_settings, và CHECK (V21, tạo lại ở V32) chặn khoá lạ.
      */
     @Test
-    void migration_seeds_exactly_thirteen_rows() { // ST-08
-        assertEquals(13, settings.count());
+    void migration_seeds_exactly_fifteen_rows() { // ST-08
+        assertEquals(15, settings.count());
+        assertTrue(settings.existsById("dictionary_ai_hourly_limit"));
+        assertTrue(settings.existsById("dictionary_examples_translate"));
         for (String k : defaults().keySet()) {
             assertTrue(settings.existsById(k), k);
         }

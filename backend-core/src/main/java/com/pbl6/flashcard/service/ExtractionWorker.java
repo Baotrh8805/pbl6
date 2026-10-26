@@ -46,9 +46,14 @@ public class ExtractionWorker {
     private final KnowledgeSourceService knowledge;
     private final SettingsService settings;
 
+    /** Nghĩa tiếng Việt đã có trong từ điển (spec 2026-10-26 §9.3): dùng trước khi gọi Gemini, ghi lại sau khi dịch. */
+    private final com.pbl6.flashcard.service.dictionary.DictionaryStore dictionary;
+
     public ExtractionWorker(ExtractionJobRepository jobs, ExtractionItemRepository items, AiServiceClient ai,
                             PlatformTransactionManager txManager, ApplicationEventPublisher events,
-                            KnowledgeSourceService knowledge, SettingsService settings) {
+                            KnowledgeSourceService knowledge, SettingsService settings,
+                            com.pbl6.flashcard.service.dictionary.DictionaryStore dictionary) {
+        this.dictionary = dictionary;
         this.events = events;
         this.knowledge = knowledge;
         this.settings = settings;
@@ -119,10 +124,13 @@ public class ExtractionWorker {
         AnalyzeResult ar = ai.analyze(snapshot.getExtractedText(), blocks, sent);
 
         List<ExtractionItem> created = new ArrayList<>();
+        Map<UUID, String> dictKeys = new HashMap<>();
         int position = 0;
         for (AiDtos.Item it : ar.items() != null ? ar.items() : List.<AiDtos.Item>of()) {
             if (it.term() == null || it.term().isBlank()) continue;
-            created.add(toEntity(jobId, it, ++position));
+            ExtractionItem e = toEntity(jobId, it, ++position);
+            created.add(e);
+            if (it.dictKey() != null && it.dictKey().startsWith("w:")) dictKeys.put(e.getId(), it.dictKey());
         }
         Map<String, Object> stats = new LinkedHashMap<>(ar.stats() != null ? ar.stats() : Map.of());
         if (Boolean.TRUE.equals(ar.truncated())) stats.put("truncated", true);
@@ -145,7 +153,7 @@ public class ExtractionWorker {
         boolean wantVi = "vi".equals(snapshot.getOptions().get("meaningLang"));
         if (wantVi && !created.isEmpty()) {
             update(jobId, j -> j.setStage(ExtractionJob.STAGE_ENRICH));
-            enrich(jobId, created, stats);
+            enrich(jobId, created, stats, dictKeys);
         } else {
             stats.put("enriched", false);
         }
@@ -206,7 +214,7 @@ public class ExtractionWorker {
             ExtractionJob snapshot = tx.execute(s -> jobs.findById(jobId).orElseThrow());
             Map<String, Object> stats = new LinkedHashMap<>(snapshot.getStats() != null ? snapshot.getStats() : Map.of());
             List<ExtractionItem> pending = tx.execute(s -> items.findByJobIdOrderByPositionAsc(jobId));
-            enrich(jobId, pending, stats);
+            enrich(jobId, pending, stats, Map.of());
             stats.put("enrichedAt", Instant.now().toString());
             update(jobId, j -> {
                 j.setStats(stats);
@@ -219,7 +227,8 @@ public class ExtractionWorker {
         }
     }
 
-    private void enrich(UUID jobId, List<ExtractionItem> created, Map<String, Object> stats) {
+    private void enrich(UUID jobId, List<ExtractionItem> created, Map<String, Object> stats, Map<UUID, String> dictKeys) {
+        stats.put("fromDictionary", fillFromDictionary(created, dictKeys));
         List<AiDtos.EnrichInput> inputs = new ArrayList<>();
         Map<String, ExtractionItem> byRef = new HashMap<>();
         for (ExtractionItem i : created) {
@@ -253,6 +262,8 @@ public class ExtractionWorker {
                     if (o.exampleVi() != null && !o.exampleVi().isBlank()) i.setExampleVi(cut(o.exampleVi(), 500));
                 }
             });
+            // Nghĩa Gemini vừa dịch cho mục có dictKey -> lưu vào từ điển (không đè bản đã có), lần sau khỏi gọi lại
+            saveToDictionary(outputs, byRef, dictKeys);
         } catch (AiServiceClient.AiServiceException e) {
             log.warn("Bỏ qua bước dịch nghĩa cho job {}: {}", jobId, e.getMessage());
             stats.put("enriched", false);
@@ -262,6 +273,57 @@ public class ExtractionWorker {
             log.error("Bỏ qua bước dịch nghĩa cho job {} vì lỗi bất ngờ", jobId, e);
             stats.put("enriched", false);
             stats.put("enrichReason", "error");
+        }
+    }
+
+    /**
+     * Gán nghĩa tiếng Việt có sẵn trong từ điển cho item vocab chưa có nghĩa (theo dictKey, không có thì theo (term, cách đọc)),
+     * lưu DB luôn. Trả số item đã gán. Lỗi DB không làm hỏng bước dịch (Gemini vẫn dịch phần còn lại như cũ).
+     */
+    private int fillFromDictionary(List<ExtractionItem> list, Map<UUID, String> dictKeys) {
+        try {
+            List<ExtractionItem> need = list.stream()
+                    .filter(i -> ExtractionItem.VOCAB.equals(i.getKind()) && i.getMeaningVi() == null).toList();
+            if (need.isEmpty()) return 0;
+            Map<String, com.pbl6.flashcard.service.dictionary.DictionaryStore.Meaning> byKey = dictionary.meanings(
+                    need.stream().map(i -> dictKeys.get(i.getId())).filter(java.util.Objects::nonNull).distinct().toList());
+            Map<String, com.pbl6.flashcard.service.dictionary.DictionaryStore.Meaning> byTerm = dictionary.meaningsByTerm(
+                    need.stream().map(ExtractionItem::getTerm).distinct().toList());
+            Map<UUID, String> found = new HashMap<>();
+            for (ExtractionItem i : need) {
+                com.pbl6.flashcard.service.dictionary.DictionaryStore.Meaning m = dictKeys.containsKey(i.getId()) ? byKey.get(dictKeys.get(i.getId())) : null;
+                if (m == null) m = byTerm.get(com.pbl6.flashcard.service.dictionary.DictionaryStore.termKey(i.getTerm(), i.getReading()));
+                if (m != null) found.put(i.getId(), m.meaningVi());
+            }
+            if (found.isEmpty()) return 0;
+            tx.executeWithoutResult(s -> {
+                for (ExtractionItem i : items.findAllById(found.keySet())) {
+                    if (i.getMeaningVi() == null) i.setMeaningVi(cut(found.get(i.getId()), 1000));
+                }
+            });
+            for (ExtractionItem i : need) {
+                if (found.containsKey(i.getId())) i.setMeaningVi(cut(found.get(i.getId()), 1000));
+            }
+            return found.size();
+        } catch (RuntimeException e) {
+            log.warn("Bỏ qua tra nghĩa từ điển khi bóc tách: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    private void saveToDictionary(Map<UUID, AiDtos.EnrichOutput> outputs, Map<String, ExtractionItem> byRef,
+                                  Map<UUID, String> dictKeys) {
+        if (dictKeys.isEmpty()) return;
+        try {
+            for (ExtractionItem i : byRef.values()) {
+                String key = dictKeys.get(i.getId());
+                AiDtos.EnrichOutput o = outputs.get(i.getId());
+                if (key == null || o == null || o.meaningVi() == null || o.meaningVi().isBlank()) continue;
+                dictionary.insertMachineMeaning(key, i.getTerm(), i.getReading(), i.getLevel(), cut(o.meaningVi().strip(), 1000),
+                        "GEMINI", ai.geminiModel());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Không lưu được nghĩa vừa dịch vào từ điển: {}", e.getMessage());
         }
     }
 

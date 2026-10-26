@@ -30,6 +30,10 @@ public class Notification {
     public static final String LEARNING_PATH_CHAPTER_RETRY = "LEARNING_PATH_CHAPTER_RETRY";
     /** Đợt 2 §4 (G2): mẹo nhớ bộ thủ của người dùng đã được duyệt / từ chối; payload {kanji, status, note}. */
     public static final String MNEMONIC_REVIEWED = "MNEMONIC_REVIEWED";
+    /** Từ điển (V32): báo lỗi mục từ / bình luận đã được admin xử lý {reportId, entryKey, term, action, note}. */
+    public static final String DICT_REPORT_RESOLVED = "DICT_REPORT_RESOLVED";
+    /** Từ điển (V32): bình luận của người học bị admin ẩn {commentId, entryKey, term, note}. */
+    public static final String DICT_COMMENT_HIDDEN = "DICT_COMMENT_HIDDEN";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -34,6 +34,7 @@ public class AdminStatsService {
     private final QuestionBankService questionBank;
     private final MnemonicService mnemonics;
     private final AppealService appeals;
+    private final com.pbl6.flashcard.service.dictionary.AdminDictionaryService dictionary;
     private final ZoneId zone;
     private final String version;
     private final String backupMarker;
@@ -43,6 +44,7 @@ public class AdminStatsService {
                              ExtractionJobRepository jobs, QuizAttemptRepository quizzes, LearningPathRepository paths,
                              ReportService reports, AiServiceClient ai, QuestionBankService questionBank,
                              MnemonicService mnemonics, AppealService appeals,
+                             com.pbl6.flashcard.service.dictionary.AdminDictionaryService dictionary,
                              @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone,
                              @Value("${app.version:dev}") String version,
                              @Value("${app.backup.marker:}") String backupMarker) {
@@ -56,6 +58,7 @@ public class AdminStatsService {
         this.ai = ai;
         this.questionBank = questionBank;
         this.mnemonics = mnemonics;
+        this.dictionary = dictionary;
         this.appeals = appeals;
         this.zone = ZoneId.of(zone);
         this.version = version;
@@ -94,7 +97,7 @@ public class AdminStatsService {
                         paths.countByCompletedAtIsNotNull(), paths.countByStatus(LearningPath.FAILED),
                         paths.countBySourceType(LearningPath.SOURCE_REMEDIAL), paths.countByStatus(LearningPath.DRAFT)),
                 questionBank.countOpenFlags(), mnemonics.countPending(), appeals.countOpen(),
-                aiStats(since), ocrSeries(since, from, days));
+                aiStats(since), ocrSeries(since, from, days), dictionary.countOpenReports(), dictionary.stats());
     }
 
     /** G6: hiệu suất engine đọc văn bản + bước dịch nghĩa, job tạo trong cửa sổ {@code days}. */

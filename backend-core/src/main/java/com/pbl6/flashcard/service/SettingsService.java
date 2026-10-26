@@ -45,6 +45,10 @@ public class SettingsService {
     public static final String KEY_AI_MODEL_PRIMARY = "ai_model_primary";
     /** Quyết định D2: chặn đăng nhập tới khi xác thực email. Gói xác thực email (V24) đọc khoá này. */
     public static final String KEY_EMAIL_VERIFICATION = "email_verification_required";
+    /** Từ điển (V32, D26): trần lượt gọi Gemini khi tra / giờ / tài khoản (0 = tắt dịch lúc tra). */
+    public static final String KEY_DICT_AI_LIMIT = "dictionary_ai_hourly_limit";
+    /** Từ điển (V32): số câu ví dụ đầu dịch kèm nghĩa khi mục chưa có nghĩa Việt. */
+    public static final String KEY_DICT_EXAMPLES = "dictionary_examples_translate";
 
     /**
      * Giá trị seed của migration. Chỉ dùng khi dòng thiếu / giá trị trong DB không đọc được (sửa tay sai): GET vẫn trả được để
@@ -55,7 +59,8 @@ public class SettingsService {
             Map.entry(KEY_REGISTRATION_OPEN, "true"), Map.entry(KEY_LP_DAILY_CAP, "50"), Map.entry(KEY_LP_QUIZ_PASS, "80"),
             Map.entry(KEY_LP_REMINDER_HOUR, "7"), Map.entry(KEY_OCR_FALLBACK, "0.85"), Map.entry(KEY_OCR_LOW_LINE, "0.75"),
             Map.entry(KEY_DISTRACTOR_MIN, "0.6"), Map.entry(KEY_CONTRADICTION_ALERT, "0.7"), Map.entry(KEY_AI_MODEL_PRIMARY, ""),
-            Map.entry(KEY_EMAIL_VERIFICATION, "true"));
+            Map.entry(KEY_EMAIL_VERIFICATION, "true"),
+            Map.entry(KEY_DICT_AI_LIMIT, "30"), Map.entry(KEY_DICT_EXAMPLES, "3"));
 
     static final int MAX_MODEL_CHARS = 40;
     static final int MAX_DAILY_LIMIT = 1000;
@@ -119,6 +124,24 @@ public class SettingsService {
         }
     }
 
+    /** Trần lượt dịch Gemini lúc tra từ điển / giờ; không ném (cấu hình hỏng → mặc định 30). */
+    public int dictionaryAiHourlyLimit() {
+        return intOrDefault(KEY_DICT_AI_LIMIT);
+    }
+
+    /** Số câu ví dụ dịch kèm nghĩa khi mục chưa có nghĩa Việt; không ném. */
+    public int dictionaryExamplesTranslate() {
+        return intOrDefault(KEY_DICT_EXAMPLES);
+    }
+
+    private int intOrDefault(String key) {
+        try {
+            return Integer.parseInt(raw(key).trim());
+        } catch (RuntimeException e) {
+            return Integer.parseInt(DEFAULTS.get(key));
+        }
+    }
+
     @Transactional(readOnly = true)
     public SettingsResponse current() {
         Map<String, AppSetting> all = new HashMap<>();
@@ -138,6 +161,8 @@ public class SettingsService {
                 doubleOf(all, KEY_CONTRADICTION_ALERT),
                 textOf(all, KEY_AI_MODEL_PRIMARY),
                 Boolean.parseBoolean(textOf(all, KEY_EMAIL_VERIFICATION)),
+                intOf(all, KEY_DICT_AI_LIMIT),
+                intOf(all, KEY_DICT_EXAMPLES),
                 updatedAt);
     }
 
@@ -186,6 +211,11 @@ public class SettingsService {
         wanted.put(KEY_CONTRADICTION_ALERT, decimal(req.contradictionAlertThreshold()));
         wanted.put(KEY_AI_MODEL_PRIMARY, req.aiModelPrimary().trim());
         wanted.put(KEY_EMAIL_VERIFICATION, String.valueOf(req.emailVerificationRequired()));
+        // hai khoá từ điển tuỳ chọn: frontend cũ không gửi thì giữ giá trị hiện tại
+        if (req.dictionaryAiHourlyLimit() != null) wanted.put(KEY_DICT_AI_LIMIT, String.valueOf(req.dictionaryAiHourlyLimit()));
+        if (req.dictionaryExamplesTranslate() != null) {
+            wanted.put(KEY_DICT_EXAMPLES, String.valueOf(req.dictionaryExamplesTranslate()));
+        }
 
         Map<String, Object> changes = new HashMap<>();
         // micro giây = timestamptz: current() dưới đây đọc lại chính các entity này, nên updatedAt của response = mọi lần GET sau
@@ -240,6 +270,10 @@ public class SettingsService {
         unit(errors, KEY_OCR_LOW_LINE, req.ocrLowLineConfidence());
         unit(errors, KEY_DISTRACTOR_MIN, req.distractorMinConfidence());
         unit(errors, KEY_CONTRADICTION_ALERT, req.contradictionAlertThreshold());
+        if (req.dictionaryAiHourlyLimit() != null) intRange(errors, KEY_DICT_AI_LIMIT, req.dictionaryAiHourlyLimit(), 0, 1000);
+        if (req.dictionaryExamplesTranslate() != null) {
+            intRange(errors, KEY_DICT_EXAMPLES, req.dictionaryExamplesTranslate(), 0, 10);
+        }
         if (req.aiModelPrimary() != null && req.aiModelPrimary().trim().length() > MAX_MODEL_CHARS) {
             errors.add(KEY_AI_MODEL_PRIMARY + " tối đa " + MAX_MODEL_CHARS + " ký tự.");
         }
