@@ -423,9 +423,11 @@ public class DictionaryService {
         String flight = key.raw() + "|" + needMeaning + "|" + exTargets.stream().map(x -> x.path("id").asText()).toList();
         CompletableFuture<JsonNode> running = inflight.get(flight);
         JsonNode res;
+        boolean acquired = false;
         try {
             if (running == null) {
                 if (!limiter.tryAcquireAi(uid)) return "LIMIT";
+                acquired = true;
                 CompletableFuture<JsonNode> mine = new CompletableFuture<>();
                 running = inflight.putIfAbsent(flight, mine);
                 if (running == null) {
@@ -444,6 +446,7 @@ public class DictionaryService {
             Throwable c = ex.getCause();
             if (c instanceof AiServiceClient.AiServiceException ae && ae.status() == 503
                     && String.valueOf(ae.getMessage()).contains("no_api_key")) {
+                if (acquired) limiter.refundAi(uid);
                 return "EN_ONLY";
             }
             log.warn("Từ điển: dịch {} thất bại: {}", key.raw(), c == null ? ex.getMessage() : c.getMessage());

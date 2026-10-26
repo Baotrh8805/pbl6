@@ -151,6 +151,7 @@ class DictionaryIT extends IntegrationTest {
         assertTrue(e.get("meaningVi").isNull());
         assertEquals("EN_ONLY", e.get("viState").asText());
         assertEquals("to eat", e.get("glossShort").asText());
+        assertEquals(30, e.get("aiLeft").asInt(), "không có khoá AI: không tính lượt");
 
         // trần = 0: không gọi AI
         Mockito.reset(ai);

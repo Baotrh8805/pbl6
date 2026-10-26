@@ -55,6 +55,15 @@ public class AttemptLimiter {
         }
     }
 
+    /** Bỏ lần ghi gần nhất (thao tác hoá ra không tốn tài nguyên, vd. AI báo không có khoá). */
+    public void undoLast(String key) {
+        Deque<Instant> list = attempts.get(key);
+        if (list == null) return;
+        synchronized (list) {
+            list.pollLast();
+        }
+    }
+
     public void reset(String key) {
         attempts.remove(key);
     }

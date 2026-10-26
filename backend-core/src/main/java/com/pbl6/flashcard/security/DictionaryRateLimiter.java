@@ -55,6 +55,11 @@ public class DictionaryRateLimiter {
         }
     }
 
+    /** Trả lại lượt vừa lấy khi lời gọi không tới được Gemini (không có khoá AI): không tính vào trần. */
+    public void refundAi(Long uid) {
+        ai.undoLast(key(uid));
+    }
+
     public void checkComment(Long uid) {
         check(comment, uid, "Bạn bình luận quá nhanh, vui lòng thử lại sau.");
     }
