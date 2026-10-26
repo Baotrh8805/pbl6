@@ -306,6 +306,10 @@ A5 có hợp đồng API (viết `api.types.ts` từ spec §6.5 trước).
 
 ## B3. Phân tích hiệu quả lộ trình (`review_logs.path_id`, `reaction_ms`)
 
+> **Trạng thái 26/10: Xong.** Khác thiết kế: không cần migration (cột có từ V20); truy vấn đặt ở `PathEffectService` (JDBC) thay vì
+> `ReviewRepository`; test ở `PathEffectIT` riêng thay vì mở rộng `InsightIT`; so trước / sau theo mốc tạo lộ trình bổ khuyết đầu tiên
+> của người học (không giới hạn cùng bộ thẻ, vì thẻ bổ khuyết là bản sao không lưu nguồn); lượt học nhanh không tính.
+
 - `GET /api/insights/path-effect/{pathId}`: theo chương: số lượt, tỷ lệ "again", trung vị phản xạ, tỷ lệ nhớ sau 7 ngày (có lượt ôn
   sau ≥ 7 ngày không again), so sánh trước / sau bổ khuyết (lộ trình remedial có `sourcePathId`? — nếu chưa có cột thì so theo thời
   điểm tạo lộ trình bổ khuyết của cùng người với cùng bộ thẻ); `ReviewRepository` thêm truy vấn gộp theo `path_id`.

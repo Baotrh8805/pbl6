@@ -1,5 +1,21 @@
 # Nhật ký thay đổi
 
+## 26/10/2026: Hiệu quả lộ trình (B3)
+Kế hoạch [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) B3. **Không có migration**:
+`review_logs.path_id` / `reaction_ms` đã có từ V20 và client đã gửi từ lộ trình 2.0.
+
+- **backend**: `GET /api/insights/path-effect/{pathId}` (`PathEffectService`, JDBC gộp ở DB): theo chương và tổng — số thẻ đã học,
+  lượt ôn, tỷ lệ "Lại", trung vị phản xạ, tỷ lệ nhớ sau 7 ngày; so trước / sau lộ trình bổ khuyết theo mốc thời gian tạo bổ khuyết
+  đầu tiên. Lượt học nhanh không tính. `GET /api/admin/stats` thêm `pathEffect {inPath, outside}` (lượt ôn trong / ngoài lộ trình
+  trong cửa sổ `days`). Chi tiết định nghĩa ở [LEARNING_PATH.md](LEARNING_PATH.md) bảng API.
+- **frontend**: khung **Hiệu quả học** ở trang lộ trình đang học (4 số tổng, bảng theo chương, hai thanh "Lại" trước / sau bổ khuyết +
+  nhận xét giảm / tăng / không đổi / chưa đủ dữ liệu, cần ≥ 5 lượt mỗi bên); tải lại ngầm sau mỗi lượt chấm. Thẻ "Lộ trình học tập"
+  ở Tổng quan admin thêm dòng ôn trong / ngoài lộ trình.
+- **Test**: backend `PathEffectIT` 2 (dữ liệu chèn có mốc thời gian: chương, tổng, nhớ 7 ngày, chia trước / sau, loại cram, 404 / 403,
+  khối admin); frontend selfcheck `learningPath.ts` (đọc response hỏng, định dạng, xu hướng). Kiểm trên trình duyệt (localhost, lộ
+  trình thật dựng qua ai-service + bổ khuyết): số khớp API, 375 px không tràn, hai thanh cùng thước đo. Thẻ admin chưa xem trên
+  trình duyệt (môi trường thử không có tài khoản admin), chỉ kiểm qua test.
+
 ## 26/10/2026: Link chia sẻ bộ thẻ (D9) + xuất bộ thẻ (UC-29)
 Kế hoạch [Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md](Plan/plans/2026-10-26-tu-dien-va-viec-con-lai.md) B1, B2. Một migration
 mới: **V33** (`decks.share_token varchar(43)` + chỉ mục unique một phần, chỉ thêm cột).
