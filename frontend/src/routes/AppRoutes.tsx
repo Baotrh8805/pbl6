@@ -21,6 +21,8 @@ import { ExtractionPage } from "@/pages/ExtractionPage";
 import { ExtractionsPage } from "@/pages/ExtractionsPage";
 import { DictionaryPage } from "@/pages/DictionaryPage";
 import { DataSourcesPage } from "@/pages/DataSourcesPage";
+import { SharedDeckLinkPage } from "@/pages/SharedDeckLinkPage";
+import { DeckPrintPage } from "@/pages/DeckPrintPage";
 import { AdminDictionaryPage } from "@/pages/admin/AdminDictionaryPage";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -104,6 +106,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="/library" element={<DeckLibraryPage />} />
         <Route path="/decks/new" element={<DeckEditorPage mode="create" />} />
         <Route path="/decks/:deckId" element={<DeckDetailPage />} />
+        {/* Link riêng chia sẻ bộ thẻ (D9): nhận quyền xem rồi chuyển sang /decks/:id */}
+        <Route path="/d/:token" element={<SharedDeckLinkPage />} />
         <Route path="/decks/:deckId/edit" element={<DeckEditorPage mode="edit" />} />
         <Route path="/decks/:deckId/add-cards" element={<DeckEditorPage mode="add-cards" />} />
         <Route path="/extractions" element={<ExtractionsPage />} />
@@ -158,6 +162,14 @@ export const AppRoutes: React.FC = () => {
       </Route>
 
       {/* Ngoài layout: học và kiểm tra chiếm trọn màn hình */}
+      <Route
+        path="/decks/:deckId/print"
+        element={
+          <ProtectedRoute>
+            <DeckPrintPage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/decks/:deckId/study"
         element={

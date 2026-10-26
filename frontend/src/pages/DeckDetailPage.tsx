@@ -10,6 +10,7 @@ import { canSpeak, speak } from "@/lib/speech";
 import { Button } from "@/components/ui/Button";
 import { CardModal } from "@/features/decks/components/DeckModals";
 import { ShareDeckModal } from "@/features/decks/components/ShareDeckModal";
+import { DeckExportMenu } from "@/features/decks/components/DeckExportMenu";
 import { SaveToFolderModal } from "@/features/decks/components/SaveToFolderModal";
 import { canEditDeck, deckSourceLabel } from "@/lib/deckUtils";
 import { useDialog } from "@/components/ui/dialogContext";
@@ -212,6 +213,9 @@ export const DeckDetailPage: React.FC = () => {
                             {deck.visibility === "public" ? "Chia sẻ · Công khai" : "Chia sẻ"}
                         </Button>
                     )}
+
+                    {/* Xuất CSV / Anki / bản in (UC-29): ai xem được bộ thẻ đều xuất được */}
+                    <DeckExportMenu deckId={deck.id} />
 
                     {/* Báo cáo vi phạm: bộ thẻ public của người khác (UC-41) */}
                     {!isOwner && deck.visibility === "public" && (

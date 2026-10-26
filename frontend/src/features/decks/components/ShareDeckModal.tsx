@@ -7,6 +7,7 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { useAsync } from "@/lib/useAsync";
 import { deckShareUrl } from "@/lib/deckUtils";
 import { useCopyToClipboard } from "@/lib/clipboard";
+import { fetchShareLink, revokeShareLink, rotateShareLink, shareLinkUrl } from "@/services/deckShareService";
 import type { Deck, DeckMember, DeckVisibility, SharePermission } from "@/types/api.types";
 import { CATEGORIES } from "@/features/library/components/libraryOptions";
 
@@ -31,6 +32,7 @@ export const ShareDeckModal: React.FC<ShareDeckModalProps> = ({ deck, onClose })
         <PublishSection deck={deck} onSaved={setVisibility} />
         <MembersSection deckId={deck.id} />
         <LinkSection deckId={deck.id} isPublic={visibility === "public"} />
+        <PrivateLinkSection deckId={deck.id} />
       </div>
     </Modal>
   );
@@ -242,7 +244,7 @@ const MembersSection: React.FC<{ deckId: string }> = ({ deckId }) => {
   );
 };
 
-// Liên kết tới trang bộ thẻ (D2). Không có "link bí mật" riêng: ai mở được phụ thuộc vào
+// Liên kết tới trang bộ thẻ (D2). Ai mở được link này phụ thuộc vào
 // chế độ Công khai, danh sách mời ở trên và cả thư mục chứa bộ thẻ (backend DeckService.access
 // cấp quyền xem khi thư mục được chia sẻ / để công khai), nên gợi ý đổi theo chế độ đã lưu.
 const LinkSection: React.FC<{ deckId: string; isPublic: boolean }> = ({ deckId, isPublic }) => {
@@ -300,6 +302,106 @@ const LinkSection: React.FC<{ deckId: string; isPublic: boolean }> = ({ deckId, 
           {error}
         </p>
       )}
+    </section>
+  );
+};
+
+// Link riêng (D9): ai đã đăng nhập mở link /d/<token> thì được thêm vào danh sách với quyền Chỉ xem,
+// kể cả khi bộ thẻ để riêng tư. Đổi link = link cũ hết hiệu lực; Tắt = không ai vào thêm qua link
+// (người đã vào vẫn giữ quyền, gỡ ở danh sách phía trên).
+const PrivateLinkSection: React.FC<{ deckId: string }> = ({ deckId }) => {
+  const [reload, setReload] = useState(0);
+  const current = useAsync(() => fetchShareLink(deckId), [deckId], reload);
+  const [override, setOverride] = useState<{ token: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { copied, copy } = useCopyToClipboard();
+  const linkId = useId();
+  const token = override ? override.token : (current.data ?? null);
+  const url = token ? shareLinkUrl(window.location.origin, token) : "";
+
+  const run = async (action: () => Promise<string | null>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setOverride({ token: await action() });
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const handleCopy = async () => {
+    const ok = await copy(url, inputRef.current);
+    setError(ok ? null : "Không thể sao chép tự động. Hãy chọn liên kết và sao chép thủ công.");
+  };
+
+  return (
+    <section className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high/60 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-sm">Link riêng (chỉ xem)</h3>
+        {token && (
+          <span className="text-[11px] font-semibold text-secondary flex items-center gap-1">
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">link</span>Đang bật
+          </span>
+        )}
+      </div>
+      {current.loading && !override ? (
+        <p className="text-xs text-on-surface-variant">Đang tải…</p>
+      ) : current.error && !override ? (
+        <p role="alert" className="text-xs text-error">{current.error}</p>
+      ) : token ? (
+        <>
+          <div className="flex items-center gap-2">
+            <label htmlFor={linkId} className="sr-only">Link riêng tới bộ thẻ</label>
+            <input
+              ref={inputRef}
+              id={linkId}
+              type="text"
+              readOnly
+              value={url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="w-full bg-surface-container-lowest px-3 py-2 rounded-lg text-xs font-mono text-on-surface-variant select-all border border-outline-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <button
+              type="button"
+              onClick={handleCopy}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 ${
+                copied ? "bg-secondary text-on-secondary" : "bg-primary text-on-primary hover:bg-primary-container"
+              }`}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">{copied ? "check" : "content_copy"}</span>
+              <span>{copied ? "Đã chép!" : "Sao chép"}</span>
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(() => rotateShareLink(deckId))}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">autorenew</span>
+              Đổi link
+            </Button>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void run(async () => (await revokeShareLink(deckId), null))}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">link_off</span>
+              Tắt link
+            </Button>
+          </div>
+          <p className="text-[11px] text-outline">
+            Ai đã đăng nhập mở link này sẽ được thêm vào danh sách với quyền Chỉ xem, kể cả khi bộ thẻ để riêng tư. Đổi link thì link cũ hết hiệu lực.
+          </p>
+        </>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-outline">Tạo link để gửi cho người chưa có trong danh sách, không cần biết email của họ.</p>
+          <Button size="sm" disabled={busy} onClick={() => void run(() => rotateShareLink(deckId))}>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">add_link</span>
+            Tạo link
+          </Button>
+        </div>
+      )}
+      <p aria-live="polite" className="sr-only">{copied ? "Đã chép link riêng" : ""}</p>
+      {error && <p role="alert" className="text-xs text-error font-medium">{error}</p>}
     </section>
   );
 };
