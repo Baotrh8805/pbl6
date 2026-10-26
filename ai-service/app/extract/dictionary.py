@@ -15,7 +15,7 @@ import sqlite3
 from functools import lru_cache
 from typing import Optional
 
-from app.extract import han_viet, jmdict, kanji_cards, kanji_meanings, overrides, pitch
+from app.extract import example_vi, han_viet, jmdict, kanji_cards, kanji_meanings, overrides, pitch
 from app.extract.jachars import has_japanese, hira_to_kata, is_kanji, kata_to_hira
 
 MAX_QUERY_CHARS = 64
@@ -236,6 +236,54 @@ def search(q: str, mode: str = "ja", limit: int = 20, offset: int = 0) -> dict:
     return _search_ja(q, limit, offset)
 
 
+# ----------------------------------------------------------------------------- tab Câu
+
+MAX_SENTENCE_WORDS = 8
+
+
+def sentences(q: str, limit: int = 20, offset: int = 0) -> dict:
+    """Tìm câu ví dụ theo cụm (tab Câu, cải tiến 26/10): q có chữ Nhật → câu chứa đúng chuỗi đó; không thì câu có bản dịch Anh
+    (không phân biệt hoa thường) hoặc bản dịch Việt dịch sẵn (khớp có dấu, gõ không dấu thì khớp cả bản bỏ dấu) chứa q. Mỗi câu
+    Tatoeba một lần, câu ngắn trước. items: {id, jpn, eng, viSeed, words: [{key, form, head}]} — words là các mục từ mà câu này
+    làm ví dụ (≤ 8), để mở mục từ. total ≤ 500. Câu admin đã ẩn / sửa vẫn theo dữ liệu gốc (backend lọc bằng lớp ghi đè)."""
+    q = (q or "").strip()[:MAX_QUERY_CHARS]
+    if not q:
+        return {"items": [], "total": 0}
+    limit = max(1, min(limit, MAX_LIMIT))
+    offset = max(0, min(offset, MAX_OFFSET))
+    if has_japanese(q):
+        rows = _rows("SELECT tatoeba_id, MIN(jpn), MIN(eng) FROM examples WHERE instr(jpn, ?) > 0 GROUP BY tatoeba_id "
+                     "ORDER BY length(MIN(jpn)), CAST(tatoeba_id AS INTEGER) LIMIT ?", (q, TOTAL_CAP))
+    else:
+        ql = q.casefold()
+        # tiếng Anh: khớp từ đầu một từ ("eat" ra eat / eats / eating, không ra great / weather)
+        word_re = re.compile(r"\b" + re.escape(ql))
+        en = [r for r in _rows("SELECT tatoeba_id, MIN(jpn), MIN(eng) FROM examples WHERE instr(lower(eng), ?) > 0 "
+                               "GROUP BY tatoeba_id LIMIT 20000", (ql,)) if word_re.search((r[2] or "").casefold())][:TOTAL_CAP]
+        vi_ids = example_vi.search(q, TOTAL_CAP)
+        seen = {r[0] for r in en}
+        extra = [t for t in vi_ids if t not in seen]
+        vi_rows = []
+        for i in range(0, len(extra), 400):
+            chunk = extra[i:i + 400]
+            vi_rows += _rows(f"SELECT tatoeba_id, MIN(jpn), MIN(eng) FROM examples WHERE tatoeba_id IN "
+                             f"({','.join('?' * len(chunk))}) GROUP BY tatoeba_id", tuple(chunk))
+        rows = sorted(en + vi_rows, key=lambda r: (len(r[1] or ""), int(r[0]) if str(r[0]).isdigit() else 0))[:TOTAL_CAP]
+    page = rows[offset:offset + limit]
+    words: dict[str, list[dict]] = {}
+    if page:
+        ids = tuple(r[0] for r in page)
+        for tid, wid, form, head_kanji, head_kana in _rows(
+                f"SELECT e.tatoeba_id, e.word_id, e.form, w.head_kanji, w.head_kana FROM examples e JOIN words w ON w.id = e.word_id "
+                f"WHERE e.tatoeba_id IN ({','.join('?' * len(ids))}) ORDER BY e.id", ids):
+            lst = words.setdefault(tid, [])
+            if len(lst) < MAX_SENTENCE_WORDS and all(w["key"] != f"w:{wid}" for w in lst):
+                lst.append({"key": f"w:{wid}", "form": form, "head": head_kanji or head_kana})
+    items = [{"id": tid, "jpn": jpn, "eng": eng, "viSeed": example_vi.get(tid), "words": words.get(tid, [])}
+             for tid, jpn, eng in page]
+    return {"items": items, "total": len(rows)}
+
+
 # ----------------------------------------------------------------------------- mục từ
 
 @lru_cache(maxsize=256)
@@ -300,8 +348,9 @@ def entry(word_id: str) -> Optional[dict]:
     for tid, form, jpn, eng, si in _rows("SELECT tatoeba_id, form, jpn, eng, sense_idx FROM examples WHERE word_id = ? "
                                          "ORDER BY sense_idx, id LIMIT ?", (wid, MAX_EXAMPLES)):
         ov = overrides.example(key, tid)
+        # viSeed: bản dịch sẵn (example_vi.csv) của câu GỐC — admin đã sửa câu Nhật thì bản dịch cũ không còn khớp, bỏ
         examples.append({"id": tid, "form": form, "jpn": ov["jpn"] or jpn, "eng": ov["eng"] or eng, "senseIndex": si,
-                         "hidden": ov["hidden"]})
+                         "hidden": ov["hidden"], "viSeed": None if ov["jpn"] else example_vi.get(tid)})
     reading = reading_override or head_kana
     word = head_kanji or head_kana
     hv = han_viet.han_viet(head_kanji) if head_kanji else None

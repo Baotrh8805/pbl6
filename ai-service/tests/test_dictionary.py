@@ -5,7 +5,9 @@ sqlite dựng trong tmp_path từ tests/fixtures/jmdict_mini.json (8 mục thậ
 """
 from __future__ import annotations
 
+import csv
 import importlib.util
+import re
 import json
 import sqlite3
 from pathlib import Path
@@ -13,7 +15,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.extract import dictionary, gemini, han_viet, jmdict, kanji_meanings, overrides, pipeline
+from app.extract import dictionary, example_vi, gemini, han_viet, jmdict, kanji_meanings, overrides, pipeline
 
 FIXTURE = Path(__file__).parent / "fixtures" / "jmdict_mini.json"
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "build_dicts.py"
@@ -156,6 +158,70 @@ def test_search_ja_deinflect_failure_falls_back_to_plain_search(dict_db, monkeyp
     assert dictionary.search("食べました") == {"items": [], "total": 0}
 
 
+@pytest.fixture
+def ex_vi(dict_db, tmp_path, monkeypatch):
+    """example_vi.csv thử: dịch sẵn câu ví dụ đầu tiên của 食べる."""
+    first = dictionary.entry("1358280")["examples"][0]
+    path = tmp_path / "example_vi.csv"
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["tatoeba_id", "vi"])
+        w.writerow([first["id"], "Đường này ăn cơm, \"ngon\""])
+    monkeypatch.setattr(example_vi, "DATA_FILE", path)
+    example_vi.clear_cache()
+    dictionary.clear_cache()
+    yield first
+    example_vi.clear_cache()
+    dictionary.clear_cache()
+
+
+def test_example_vi_seed_on_entry_examples(ex_vi):
+    ex = dictionary.entry("1358280")["examples"]
+    assert ex[0]["viSeed"] == 'Đường này ăn cơm, "ngon"'
+    assert all(x["viSeed"] is None for x in ex[1:])
+    assert example_vi.available() and example_vi.count() == 1
+    assert example_vi.fold("Đường ĂN") == "duong an"
+
+
+def test_example_vi_dropped_when_admin_rewrote_the_sentence(ex_vi):
+    overrides.replace([{"key": "w:1358280", "field": "example_jpn", "subKey": ex_vi["id"], "value": "別の文。"}], version=1)
+    dictionary.clear_cache()
+    assert dictionary.entry("1358280")["examples"][0]["viSeed"] is None
+
+
+def test_example_vi_missing_file_is_harmless(dict_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(example_vi, "DATA_FILE", tmp_path / "khong-co.csv")
+    example_vi.clear_cache()
+    assert not example_vi.available() and example_vi.get("1") is None and example_vi.search("ăn", 5) == []
+    example_vi.clear_cache()
+
+
+def test_sentences_by_japanese_english_and_vietnamese(ex_vi):
+    """Tab Câu: chuỗi Nhật khớp đúng chuỗi; Anh khớp từ đầu một từ; Việt khớp có dấu hoặc không dấu; mỗi câu kèm mục từ."""
+    part = ex_vi["jpn"][:3]
+    r = dictionary.sentences(part)
+    hit = next(i for i in r["items"] if i["id"] == ex_vi["id"])
+    assert part in hit["jpn"] and hit["viSeed"] == 'Đường này ăn cơm, "ngon"'
+    assert any(w["key"] == "w:1358280" for w in hit["words"])
+    assert all(part in i["jpn"] for i in r["items"])
+    lens = [len(i["jpn"]) for i in r["items"]]
+    assert lens == sorted(lens), "câu ngắn trước"
+
+    eat = dictionary.sentences("eat")
+    assert eat["items"] and all(re.search(r"\beat", i["eng"].lower()) for i in eat["items"])
+    for q in ("ăn cơm", "an com", "ĐƯỜNG"):
+        assert [i["id"] for i in dictionary.sentences(q)["items"]] == [ex_vi["id"]], q
+    assert dictionary.sentences("ăn côm")["items"] == []   # có dấu thì khớp đúng dấu
+    assert dictionary.sentences("   ") == {"items": [], "total": 0}
+
+
+def test_sentences_paging(ex_vi):
+    allr = dictionary.sentences("the", limit=50)
+    assert allr["total"] >= 3
+    page = dictionary.sentences("the", limit=2, offset=1)
+    assert [i["id"] for i in page["items"]] == [i["id"] for i in allr["items"][1:3]] and page["total"] == allr["total"]
+
+
 def test_search_en_prefers_exact_gloss_and_easy_level(dict_db):
     items = dictionary.search("eat", "en")["items"]
     assert items[0]["headKanji"] == "食べる"   # cả hai gloss "to eat"; N5 trước N4
@@ -242,6 +308,9 @@ def test_overrides_reject_unknown_field(dict_db):
 def test_router_search_entry_kanji(client):
     assert client.get("/api/dict/search", params={"q": "がっこう"}).json()["items"][0]["key"] == "w:1206730"
     assert client.get("/api/dict/search", params={"q": "x", "mode": "fr"}).status_code == 422
+    sent = client.get("/api/dict/sentences", params={"q": "食", "limit": 2}).json()
+    assert len(sent["items"]) == 2 and sent["total"] >= 2 and "words" in sent["items"][0]
+    assert client.get("/api/dict/sentences", params={"q": " "}).status_code == 400
     conj = client.get("/api/dict/search", params={"q": "食べました"}).json()
     assert conj["items"][0]["key"] == "w:1358280" and conj["deinflected"] == {"query": "食べました", "lemmas": ["食べる"]}
     assert client.get("/api/dict/entries/1206730").json()["jlpt"] == "N5"

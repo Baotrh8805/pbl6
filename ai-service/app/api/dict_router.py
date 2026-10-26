@@ -6,14 +6,15 @@ sao lớp ghi đè của admin; nghĩa tiếng Việt, bình luận, báo cáo n
 """
 from __future__ import annotations
 
+import math
 import re
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.security import require_internal_key
-from app.extract import dictionary, gemini, overrides
+from app.extract import dictionary, gemini, handwriting, overrides
 from app.extract.jachars import has_japanese
 
 router = APIRouter(prefix="/dict", tags=["Từ điển"], dependencies=[Depends(require_internal_key)])
@@ -39,6 +40,19 @@ def dict_search(q: str = Query(..., min_length=1, max_length=dictionary.MAX_QUER
         raise HTTPException(status_code=400, detail="q rỗng")
     try:
         return dictionary.search(q, mode, limit, offset)
+    except dictionary.DictUnavailable:
+        raise _unavailable()
+
+
+@router.get("/sentences")
+def dict_sentences(q: str = Query(..., min_length=1, max_length=dictionary.MAX_QUERY_CHARS),
+                   limit: int = Query(default=20, ge=1, le=dictionary.MAX_LIMIT),
+                   offset: int = Query(default=0, ge=0, le=dictionary.MAX_OFFSET)) -> dict:
+    """Tab Câu: câu ví dụ chứa cụm q (Nhật / Anh / Việt dịch sẵn)."""
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="q rỗng")
+    try:
+        return dictionary.sentences(q, limit, offset)
     except dictionary.DictUnavailable:
         raise _unavailable()
 
@@ -81,6 +95,31 @@ def dict_key(term: str = Query(..., min_length=1, max_length=dictionary.MAX_QUER
         return {"key": dictionary.key_for(term, reading)}
     except dictionary.DictUnavailable:
         raise _unavailable()
+
+
+class HwPoint(BaseModel):
+    x: float
+    y: float
+
+
+HwStroke = Annotated[list[HwPoint], Field(min_length=1, max_length=handwriting.MAX_POINTS)]
+
+
+class HandwritingRequest(BaseModel):
+    strokes: list[HwStroke] = Field(..., min_length=1, max_length=handwriting.MAX_STROKES)
+    limit: int = Field(default=handwriting.DEFAULT_LIMIT, ge=1, le=handwriting.MAX_LIMIT)
+
+
+@router.post("/handwriting")
+def dict_handwriting(req: HandwritingRequest) -> dict:
+    """Vẽ chữ Hán để tra: nét theo thứ tự đã vẽ (toạ độ khung vẽ bất kỳ, chỉ cần cùng hệ) → {candidates: [{char, score}]}.
+    Chưa có kanji_strokes.json → 503 handwritingUnavailable."""
+    if not handwriting.available():
+        raise HTTPException(status_code=503, detail="handwritingUnavailable")
+    strokes = [[(p.x, p.y) for p in s] for s in req.strokes]
+    if any(not (math.isfinite(x) and math.isfinite(y)) for s in strokes for x, y in s):
+        raise HTTPException(status_code=422, detail="Toạ độ không hợp lệ")
+    return {"candidates": handwriting.recognize(strokes, req.limit)}
 
 
 class TokenizeRequest(BaseModel):
