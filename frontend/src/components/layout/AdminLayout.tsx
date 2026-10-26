@@ -35,6 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/reports", icon: "flag", label: "Báo cáo", badge: "openReports", badgeLabel: "báo cáo đang mở" },
       { to: "/admin/mnemonics", icon: "lightbulb", label: "Mẹo nhớ", badge: "pendingMnemonics", badgeLabel: "mẹo nhớ chờ duyệt" },
       { to: "/admin/questions", icon: "quiz", label: "Ngân hàng câu hỏi", badge: "openQuestionFlags", badgeLabel: "câu hỏi bị báo lỗi" },
+      { to: "/admin/dictionary", icon: "dictionary", label: "Từ điển", badge: "openDictReports", badgeLabel: "báo cáo từ điển đang mở" },
       { to: "/admin/knowledge", icon: "menu_book", label: "Nguồn tri thức" },
       { to: "/admin/appeals", icon: "gavel", label: "Khiếu nại", badge: "openAppeals", badgeLabel: "khiếu nại đang mở" },
     ],

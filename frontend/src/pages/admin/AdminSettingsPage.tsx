@@ -13,6 +13,8 @@ import { adminFieldClass } from "@/features/admin/components/AdminFilterBar";
 import {
   AI_MODEL_MAX,
   AI_THRESHOLD_FIELDS,
+  DICTIONARY_FIELDS,
+  OPTIONAL_NUMBER_FIELDS,
   EXTRACTION_LIMIT_MAX,
   LEARNING_PATH_FIELDS,
   SETTINGS_NUMBER_FIELDS,
@@ -58,8 +60,10 @@ export const AdminSettingsPage: React.FC = () => {
   const textOf = (f: SettingsNumberField) => numText[f.key] ?? (s[f.key] === undefined ? "" : String(s[f.key]));
   const numErrors: Partial<Record<SettingsNumberKey, string>> = {};
   const numValues: Partial<Record<SettingsNumberKey, number>> = {};
+  // khoá tuỳ chọn chỉ kiểm / so khi backend có trả
+  const editableFields = [...SETTINGS_NUMBER_FIELDS, ...OPTIONAL_NUMBER_FIELDS.filter((f) => base[f.key] !== undefined)];
   if (extrasReady) {
-    for (const f of SETTINGS_NUMBER_FIELDS) {
+    for (const f of editableFields) {
       const text = textOf(f);
       const err = settingNumberError(f, text);
       if (err) numErrors[f.key] = err;
@@ -81,7 +85,7 @@ export const AdminSettingsPage: React.FC = () => {
     s.announcement !== base.announcement ||
     s.registration_open !== base.registration_open ||
     (extrasReady &&
-      (SETTINGS_NUMBER_FIELDS.some((f) => numValues[f.key] !== undefined && numValues[f.key] !== base[f.key]) ||
+      (editableFields.some((f) => numValues[f.key] !== undefined && numValues[f.key] !== base[f.key]) ||
         (s.ai_model_primary ?? "").trim() !== (base.ai_model_primary ?? "") ||
         s.email_verification_required !== base.email_verification_required));
 
@@ -364,6 +368,26 @@ export const AdminSettingsPage: React.FC = () => {
                 value={textOf(f)}
                 error={numErrors[f.key] ?? null}
                 disabled={!canEdit || !extrasReady}
+                onChange={(text) => setNumText((cur) => ({ ...cur, [f.key]: text }))}
+              />
+            ))}
+          </div>
+        </AdminDetailCard>
+
+        {/* Card 6 (V32): từ điển */}
+        <AdminDetailCard
+          title="Từ điển"
+          icon="dictionary"
+          description="Dịch nghĩa tiếng Việt bằng AI khi người học mở mục chưa có nghĩa (lưu vĩnh viễn, mục đã dịch không tốn lượt)."
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {DICTIONARY_FIELDS.map((f) => (
+              <SettingNumberInput
+                key={f.key}
+                field={f}
+                value={textOf(f)}
+                error={numErrors[f.key] ?? null}
+                disabled={!canEdit || !extrasReady || base[f.key] === undefined}
                 onChange={(text) => setNumText((cur) => ({ ...cur, [f.key]: text }))}
               />
             ))}

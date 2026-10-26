@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
@@ -19,8 +19,9 @@ import { DeckLibraryPage } from "@/pages/DeckLibraryPage";
 import { FoldersPage } from "@/pages/FoldersPage";
 import { ExtractionPage } from "@/pages/ExtractionPage";
 import { ExtractionsPage } from "@/pages/ExtractionsPage";
-import { HanVietMapPage } from "@/pages/HanVietMapPage";
-import { KanjiPage } from "@/pages/KanjiPage";
+import { DictionaryPage } from "@/pages/DictionaryPage";
+import { DataSourcesPage } from "@/pages/DataSourcesPage";
+import { AdminDictionaryPage } from "@/pages/admin/AdminDictionaryPage";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
@@ -40,6 +41,18 @@ import { AdminAccountPage } from "@/pages/admin/AdminAccountPage";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicRoute } from "./PublicRoute";
 import { StaffSetupPage } from "@/pages/StaffSetupPage";
+
+/** /kanji?tab=radicals&r=5&k=食 → /dictionary?tab=kanji&sub=radicals&r=5&k=食; /han-viet?reading=… → /dictionary?tab=hanviet&… */
+const LegacyRedirect: React.FC<{ tab: "kanji" | "hanviet" }> = ({ tab }) => {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  if (tab === "kanji" && params.has("tab")) {
+    params.set("sub", params.get("tab") ?? "");
+    params.delete("tab");
+  }
+  params.set("tab", tab);
+  return <Navigate to={`/dictionary?${params.toString()}`} replace />;
+};
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -74,6 +87,8 @@ export const AppRoutes: React.FC = () => {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       {/* Link kích hoạt tài khoản trong email (?token=): cũng không bọc PublicRoute, người đang đăng nhập vẫn kích hoạt được */}
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      {/* Ghi nguồn dữ liệu / giấy phép (CC BY-SA): công khai */}
+      <Route path="/about/data" element={<DataSourcesPage />} />
 
       {/* Protected Routes: layout lồng, Outlet giữ Header/Sidebar không remount */}
       <Route
@@ -96,10 +111,11 @@ export const AppRoutes: React.FC = () => {
         <Route path="/roadmap" element={<RoadmapPage />} />
         <Route path="/roadmap/:id" element={<RoadmapDetailPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
-        {/* F1: bản đồ Hán–Việt (?reading=&level=) — trong layout để dùng danh sách bộ thẻ từ shell context */}
-        <Route path="/han-viet" element={<HanVietMapPage />} />
-        {/* C4 + C5: tra chữ Hán (?k=) và bảng bộ thủ (?tab=radicals&r=) — trong layout để dùng cấp người học từ shell context */}
-        <Route path="/kanji" element={<KanjiPage />} />
+        {/* Từ điển (spec 2026-10-26, D14): Từ vựng + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay */}
+        <Route path="/dictionary" element={<DictionaryPage />} />
+        {/* Route cũ chuyển sang tab tương ứng, giữ tham số (link trong thông báo, bộ thẻ, bookmark vẫn đúng) */}
+        <Route path="/han-viet" element={<LegacyRedirect tab="hanviet" />} />
+        <Route path="/kanji" element={<LegacyRedirect tab="kanji" />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
@@ -137,6 +153,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="audit" element={<AdminAuditPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
         {/* Hồ sơ của staff: đổi mật khẩu sau lần bắt buộc ở /setup (staff không dùng /profile của người học) */}
+        <Route path="dictionary" element={<AdminDictionaryPage />} />
         <Route path="account" element={<AdminAccountPage />} />
       </Route>
 

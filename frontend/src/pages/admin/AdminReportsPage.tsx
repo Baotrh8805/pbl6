@@ -15,6 +15,8 @@ import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
 import { reportActionLabel } from "@/features/admin/moderationUtils";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
+import { DictReportsPanel } from "@/features/admin/components/DictReportsPanel";
+import { useSearchParams } from "react-router-dom";
 
 const PAGE_SIZE = 20;
 const STATUSES: ReportStatus[] = ["OPEN", "RESOLVED", "DISMISSED"];
@@ -25,7 +27,7 @@ const STATUS_ICONS: Record<ReportStatus, string> = {
   DISMISSED: "cancel",
 };
 
-export const AdminReportsPage: React.FC = () => {
+const DeckReportsPage: React.FC = () => {
   const q = useAdminQuery({ status: "OPEN" });
   const { userProfile } = useAuth();
   const canAct = atLeast(userProfile?.role, "ADMIN");
@@ -257,6 +259,42 @@ export const AdminReportsPage: React.FC = () => {
         }}
       />
     </section>
+  );
+};
+
+/** Báo cáo: bộ thẻ (như trước) | từ điển (spec 2026-10-26 §8.2, ?source=dict). */
+export const AdminReportsPage: React.FC = () => {
+  const [params] = useSearchParams();
+  const dict = params.get("source") === "dict";
+  return (
+    <div className="flex flex-col gap-space-md">
+      <nav aria-label="Nguồn báo cáo" className="flex gap-1.5 p-1 bg-surface-container-low rounded-xl w-fit">
+        {[
+          { to: "/admin/reports", label: "Bộ thẻ", icon: "style", active: !dict },
+          { to: "/admin/reports?source=dict", label: "Từ điển", icon: "dictionary", active: dict },
+        ].map((t) => (
+          <Link
+            key={t.to}
+            to={t.to}
+            aria-current={t.active ? "page" : undefined}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold ${
+              t.active ? "bg-surface-container-lowest text-primary shadow-xs" : "text-on-surface-variant hover:bg-surface-container"
+            }`}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">{t.icon}</span>
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+      {dict ? (
+        <section className="flex flex-col gap-space-lg pb-space-xl">
+          <AdminPageHeader title="Báo cáo từ điển" description="Báo lỗi mục từ (kèm đề xuất sửa) và báo cáo bình luận của người học." />
+          <DictReportsPanel />
+        </section>
+      ) : (
+        <DeckReportsPage />
+      )}
+    </div>
   );
 };
 

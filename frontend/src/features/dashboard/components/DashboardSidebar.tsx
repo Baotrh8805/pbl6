@@ -156,10 +156,8 @@ const SECTIONS: NavSectionConfig[] = [
         label: "Thư Viện Cộng Đồng",
         renderBadge: ({ isActive }) => <LibraryCountBadge isActive={isActive} />,
       },
-      // F1: tra âm Hán-Việt -> chữ Hán -> từ ghép (khám phá, không gắn bộ thẻ nào)
-      { to: "/han-viet", icon: "hub", label: "Bản Đồ Hán–Việt" },
-      // C4 + C5: tra chữ Hán (On/Kun, ví dụ) và 214 bộ thủ -> tạo bộ thẻ
-      { to: "/kanji", icon: "translate", label: "Chữ Hán & Bộ Thủ" },
+      // Từ điển (spec 2026-10-26): tra từ vựng + Hán tự & bộ thủ + bản đồ Hán-Việt + sổ tay, bình luận, báo lỗi
+      { to: "/dictionary", icon: "menu_book", label: "Từ Điển" },
     ],
   },
 ];

@@ -235,12 +235,22 @@ export const ocrOverallErrorPct = (rows: readonly OcrChartRow[]): number | null 
 
 /** Bộ đếm hàng đợi kiểm duyệt từ AdminStats; null = backend chưa trả trường đó (ẩn thẻ / badge). */
 export const queueCounts = (
-  s: { pendingMnemonics?: unknown; openAppeals?: unknown; openQuestionFlags?: unknown; openReports?: unknown } | null | undefined
-): { pendingMnemonics: number | null; openAppeals: number | null; openQuestionFlags: number | null; openReports: number | null } => ({
+  s:
+    | { pendingMnemonics?: unknown; openAppeals?: unknown; openQuestionFlags?: unknown; openReports?: unknown; openDictReports?: unknown }
+    | null
+    | undefined
+): {
+  pendingMnemonics: number | null;
+  openAppeals: number | null;
+  openQuestionFlags: number | null;
+  openReports: number | null;
+  openDictReports: number | null;
+} => ({
   pendingMnemonics: isNum(s?.pendingMnemonics) ? s.pendingMnemonics : null,
   openAppeals: isNum(s?.openAppeals) ? s.openAppeals : null,
   openQuestionFlags: isNum(s?.openQuestionFlags) ? s.openQuestionFlags : null,
   openReports: isNum(s?.openReports) ? s.openReports : null,
+  openDictReports: isNum(s?.openDictReports) ? s.openDictReports : null,
 });
 
 // ---------- §4 mẹo nhớ ----------

@@ -9,7 +9,9 @@ export type SettingsNumberKey =
     | "ocr_fallback_confidence"
     | "ocr_low_line_confidence"
     | "distractor_min_confidence"
-    | "contradiction_alert_threshold";
+    | "contradiction_alert_threshold"
+    | "dictionary_ai_hourly_limit"
+    | "dictionary_examples_translate";
 
 export interface SettingsNumberField {
     key: SettingsNumberKey;
@@ -95,7 +97,34 @@ export const AI_THRESHOLD_FIELDS: readonly SettingsNumberField[] = [
     },
 ];
 
+/** Từ điển (V32, D26): trần dịch Gemini lúc tra và số câu ví dụ dịch kèm. */
+export const DICTIONARY_FIELDS: readonly SettingsNumberField[] = [
+    {
+        key: "dictionary_ai_hourly_limit",
+        label: "Lượt dịch AI khi tra / giờ",
+        hint: "Mỗi tài khoản được kích hoạt tối đa bấy nhiêu lần dịch Gemini mỗi giờ khi mở mục chưa có nghĩa Việt (mục đã có bản dịch không tính). 0 = tắt dịch lúc tra, hiện nghĩa tiếng Anh.",
+        min: 0,
+        max: 1000,
+        step: 1,
+        integer: true,
+        unit: "lượt / giờ",
+    },
+    {
+        key: "dictionary_examples_translate",
+        label: "Câu ví dụ dịch kèm",
+        hint: "Số câu ví dụ đầu tiên được dịch cùng lúc với nghĩa khi mục chưa có nghĩa Việt; người học vẫn bấm dịch thêm được.",
+        min: 0,
+        max: 10,
+        step: 1,
+        integer: true,
+        unit: "câu",
+    },
+];
+
 export const SETTINGS_NUMBER_FIELDS: readonly SettingsNumberField[] = [...LEARNING_PATH_FIELDS, ...AI_THRESHOLD_FIELDS];
+
+/** Khoá tuỳ chọn (backend có thì đọc / sửa / gửi; thiếu không khoá cả trang như khoá bắt buộc của V20/V21). */
+export const OPTIONAL_NUMBER_FIELDS: readonly SettingsNumberField[] = DICTIONARY_FIELDS;
 
 export const AI_MODEL_MAX = 40;
 
@@ -177,6 +206,10 @@ export function normalizeAdminSettings(raw: unknown): { settings: AdminSettings;
         const v = numberOf(pick(f.key));
         if (v !== undefined) settings[f.key] = v;
     }
+    for (const f of OPTIONAL_NUMBER_FIELDS) {
+        const v = numberOf(rec[f.key] ?? rec[camelOf(f.key)]);
+        if (v !== undefined) settings[f.key] = v;
+    }
     const model = pick("ai_model_primary");
     if (typeof model === "string") settings.ai_model_primary = model;
     const email = pick("email_verification_required");
@@ -235,6 +268,9 @@ export function buildSettingsPayload(s: AdminSettings, camelExtras = false): Adm
     for (const key of EXTRA_SETTING_KEYS) {
         const value = key === "ai_model_primary" ? (s.ai_model_primary ?? "").trim() : s[key];
         out[camelExtras ? camelOf(key) : key] = value;
+    }
+    for (const f of OPTIONAL_NUMBER_FIELDS) {
+        if (typeof s[f.key] === "number") out[camelExtras ? camelOf(f.key) : f.key] = s[f.key];
     }
     return out;
 }

@@ -51,6 +51,7 @@ import { useSwipe } from "@/features/study/useSwipe";
 import { StudyProgress } from "@/features/study/components/StudyProgress";
 import { StudySummary } from "@/features/study/components/StudySummary";
 import { ShortcutHelpModal } from "@/features/study/components/ShortcutHelpModal";
+import { StudyDictButton } from "@/features/dictionary/components/StudyDictButton";
 
 // Nhãn chế độ từng thẻ: Mới (chưa chấm lần nào) / Ôn (đến hạn) / Luyện (chỉ ghi log, không đổi lịch SRS).
 const MODE_CLASS: Record<SessionCardMode, string> = {
@@ -690,6 +691,7 @@ export const StudyPage: React.FC = () => {
                                 </span>
                             </button>
                         )}
+                        <StudyDictButton term={current.term} className={iconButton} />
                         <button
                             type="button"
                             onClick={() => setPractice("speak")}

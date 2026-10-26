@@ -21,10 +21,11 @@ const panelId = (t: KanjiTab) => `kanji-panel-${t}`;
 // C4 + C5 — Chữ Hán & Bộ thủ: tra từng chữ (Hán-Việt, bộ, On/Kun, mẹo nhớ đã duyệt + góp mẹo, ví dụ) và khám phá
 // 214 bộ thủ. Mọi trạng thái điều hướng nằm trên URL (?tab=radicals&r=85, ?k=学生) để link chéo giữa hai tab, link từ
 // trang bộ thẻ, F5 và nút Back đều đúng.
-export const KanjiPage: React.FC = () => {
+export const KanjiPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
+  const tabParam = embedded ? "sub" : "tab";
   const { currentLevel } = useShell();
   const [params, setParams] = useSearchParams();
-  const tab: KanjiTab = params.get("tab") === "radicals" ? "radicals" : "lookup";
+  const tab: KanjiTab = params.get(tabParam) === "radicals" ? "radicals" : "lookup";
   const rawK = params.get("k") ?? "";
   const allKanji = extractKanji(rawK);
   const kanji = allKanji.slice(0, MAX_LOOKUP_KANJI);
@@ -40,8 +41,8 @@ export const KanjiPage: React.FC = () => {
     setParams((prev) => {
       const out = new URLSearchParams(prev);
       if (next.tab !== undefined) {
-        if (next.tab === "lookup") out.delete("tab");
-        else out.set("tab", next.tab);
+        if (next.tab === "lookup") out.delete(tabParam);
+        else out.set(tabParam, next.tab);
       }
       if (next.k !== undefined) {
         if (next.k) out.set("k", next.k);
@@ -68,6 +69,7 @@ export const KanjiPage: React.FC = () => {
 
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
+      {!embedded && (
       <header>
         <h1 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
           <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-primary">
@@ -80,6 +82,7 @@ export const KanjiPage: React.FC = () => {
           rồi tạo bộ thẻ chỉ với một nút bấm.
         </p>
       </header>
+      )}
 
       <div
         role="tablist"

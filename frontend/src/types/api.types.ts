@@ -682,6 +682,8 @@ export interface AdminStats {
     openAppeals?: number;
     /** Báo lỗi câu hỏi quiz đang mở (G3). */
     openQuestionFlags?: number;
+    /** Báo cáo từ điển đang mở (V32). */
+    openDictReports?: number;
     /** Hiệu suất AI theo engine đọc văn bản + bước dịch nghĩa (G6). */
     ai?: AdminAiStats;
     /** Chuỗi OCR theo ngày, đủ `days` phần tử như series. */
@@ -915,6 +917,9 @@ export interface AdminSettings {
     /** Tên model AI chính (≤ 40 ký tự); rỗng = mặc định của ai-service. */
     ai_model_primary?: string;
     email_verification_required?: boolean;
+    /** Từ điển (V32): trần dịch AI lúc tra / giờ, 0..1000; số câu ví dụ dịch kèm, 0..10. */
+    dictionary_ai_hourly_limit?: number;
+    dictionary_examples_translate?: number;
 }
 
 // ===== Bản đồ Hán–Việt (F1, proxy /api/nlp/han-viet-graph & han-viet-suggest) =====

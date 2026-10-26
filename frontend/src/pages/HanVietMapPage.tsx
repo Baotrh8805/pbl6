@@ -29,7 +29,7 @@ const isLevel = (v: string | null): v is (typeof JLPT_LEVELS)[number] =>
 
 // F1 – Bản đồ Hán–Việt: gõ một âm (NHẬT) -> các chữ Hán mang âm đó -> từ ghép của từng chữ, vẽ toả tròn + liệt kê theo
 // cấp. Âm / cấp nằm trên URL (?reading=&level=) để link "Xem mạng lưới" và nút Back hoạt động.
-export const HanVietMapPage: React.FC = () => {
+export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [params, setParams] = useSearchParams();
   const reading = normalizeHanVietQuery(params.get("reading") ?? "");
   const levelParam = params.get("level");
@@ -105,6 +105,7 @@ export const HanVietMapPage: React.FC = () => {
 
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
+      {!embedded && (
       <header>
         <h1 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
           <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-primary">
@@ -117,6 +118,7 @@ export const HanVietMapPage: React.FC = () => {
           cách nhớ kanji nhanh cho người Việt.
         </p>
       </header>
+      )}
 
       {/* Ô tìm + gợi ý */}
       <div className="relative">

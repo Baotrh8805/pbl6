@@ -15,6 +15,8 @@ export type NotificationType =
     | "LEARNING_PATH_CHAPTER_RETRY"
     | "LEARNING_PATH_COMPLETED"
     | "MNEMONIC_REVIEWED"
+    | "DICT_REPORT_RESOLVED"
+    | "DICT_COMMENT_HIDDEN"
     | (string & {});
 
 export interface AppNotification {
@@ -106,10 +108,29 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
         case "MNEMONIC_REVIEWED": {
             const kanji = str(p.kanji);
             const subject = `Mẹo nhớ cho chữ ${kanji || "Hán"} của bạn`;
-            const to = kanji ? `/kanji?k=${encodeURIComponent(kanji)}` : "/kanji";
+            const to = kanji ? `/dictionary?tab=kanji&k=${encodeURIComponent(kanji)}` : "/dictionary?tab=kanji";
             return p.status === "REJECTED"
                 ? { text: `${subject} đã bị từ chối.${str(p.note) ? ` Lý do: ${str(p.note)}` : ""}`, to }
                 : { text: `${subject} đã được duyệt.${str(p.note) ? ` Ghi chú: ${str(p.note)}` : ""}`, to };
+        }
+        case "DICT_REPORT_RESOLVED": {
+            const key = str(p.entryKey);
+            const to = key ? `/dictionary?e=${encodeURIComponent(key)}` : "/dictionary";
+            const what = p.kind === "COMMENT" ? "Báo cáo bình luận" : "Báo lỗi từ điển";
+            if (p.status === "DISMISSED") {
+                return { text: `${what} của bạn không được chấp nhận.${str(p.note) ? ` Lý do: ${str(p.note)}` : ""}`, to };
+            }
+            return {
+                text: p.action === "APPLIED" ? `${what} của bạn đã được áp dụng. Cảm ơn bạn!` : `${what} của bạn đã được xử lý.`,
+                to,
+            };
+        }
+        case "DICT_COMMENT_HIDDEN": {
+            const key = str(p.entryKey);
+            return {
+                text: `Một bình luận từ điển của bạn đã bị ẩn.${str(p.note) ? ` Lý do: ${str(p.note)}` : ""}`,
+                to: key ? `/dictionary?e=${encodeURIComponent(key)}` : "/dictionary",
+            };
         }
         default:
             return { text: `Thông báo: ${n.type}` };

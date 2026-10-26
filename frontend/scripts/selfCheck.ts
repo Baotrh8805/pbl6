@@ -209,6 +209,7 @@ import { runManualChecks } from "./selfcheck/manual.ts";
 import { runLearningPathChecks } from "./selfcheck/learningPath.ts";
 // Thao tác trang học (spec 25/10): file riêng.
 import { runStudyChecks } from "./selfcheck/study.ts";
+import { runDictionaryChecks } from "./selfcheck/dictionary.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -1222,6 +1223,7 @@ async function runSelfCheck() {
   runManualChecks(assertTrue);
   await runLearningPathChecks(assertTrue);
   runStudyChecks(assertTrue);
+  runDictionaryChecks(assertTrue);
   assertStrictEqual(parseProfileTab("practice"), "practice", "Tab Luyện tập hợp lệ từ URL");
 
   // Báo cáo của tôi (UC-41): tab trên URL + câu kết quả nói với người gửi + thông báo dẫn về tab
