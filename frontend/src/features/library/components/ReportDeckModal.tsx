@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { useDialog } from "@/components/ui/dialogContext";
 import { extractErrorMessage } from "@/services/apiClient";
 import { reportDeck } from "@/services/adminService";
 import type { ReportReason } from "@/types/api.types";
@@ -13,6 +14,8 @@ const REASONS: { value: ReportReason; label: string }[] = [
   { value: "SPAM", label: "Spam" },
   { value: "OTHER", label: "Khác" },
 ];
+
+const TRACK_HINT = "Theo dõi trạng thái tại Hồ sơ → Báo cáo của tôi.";
 
 interface ReportDeckModalProps {
   deckId: string;
@@ -27,6 +30,7 @@ export const ReportDeckModal: React.FC<ReportDeckModalProps> = ({ deckId, isOpen
   const [detail, setDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialog = useDialog();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,10 +40,21 @@ export const ReportDeckModal: React.FC<ReportDeckModalProps> = ({ deckId, isOpen
       await reportDeck(deckId, { reason, detail: detail.trim() || undefined });
       onReported();
       onClose();
+      setDetail("");
+      void dialog.alert({
+        title: "Đã gửi báo cáo",
+        message: `Cảm ơn bạn! Quản trị viên sẽ xem xét và bạn sẽ nhận thông báo khi có kết quả. ${TRACK_HINT}`,
+        tone: "success",
+      });
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 409) {
         onReported();
         onClose();
+        void dialog.alert({
+          title: "Bạn đã báo cáo bộ thẻ này",
+          message: `Báo cáo trước của bạn vẫn đang chờ xử lý. ${TRACK_HINT}`,
+          tone: "info",
+        });
       } else {
         setError(extractErrorMessage(err));
       }

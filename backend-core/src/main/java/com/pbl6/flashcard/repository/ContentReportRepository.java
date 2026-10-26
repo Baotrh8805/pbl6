@@ -23,6 +23,17 @@ public interface ContentReportRepository extends JpaRepository<ContentReport, Lo
             + "ORDER BY r.createdAt DESC, r.id DESC")
     Page<ContentReport> search(@Param("status") String status, @Param("deckId") String deckId, Pageable pageable);
 
+    /** Báo cáo của một người học (deckId / status null = không lọc), mới nhất trước. */
+    @Query("SELECT r FROM ContentReport r WHERE r.reporterId = :uid AND (:deckId IS NULL OR r.deckId = :deckId) "
+            + "AND (:status IS NULL OR r.status = :status) ORDER BY r.createdAt DESC, r.id DESC")
+    Page<ContentReport> findMine(@Param("uid") Long uid, @Param("deckId") String deckId, @Param("status") String status,
+                                 Pageable pageable);
+
+    /** Người báo cáo rút lại báo cáo của chính mình khi còn OPEN: trả 0 = không phải của họ hoặc đã xử lý. */
+    @Modifying(clearAutomatically = true)
+    @Query("DELETE FROM ContentReport r WHERE r.id = :id AND r.reporterId = :uid AND r.status = 'OPEN'")
+    int withdraw(@Param("id") Long id, @Param("uid") Long uid);
+
     /** Đóng báo cáo chỉ khi còn OPEN: trả 0 = đã có người xử lý trước. */
     @Modifying(clearAutomatically = true)
     @Query("UPDATE ContentReport r SET r.status = :status, r.action = :action, r.resolutionNote = :note, "

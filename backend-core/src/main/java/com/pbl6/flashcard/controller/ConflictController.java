@@ -2,6 +2,7 @@ package com.pbl6.flashcard.controller;
 
 import com.pbl6.flashcard.dto.extraction.ExtractionJobResponse;
 import com.pbl6.flashcard.dto.learningpath.LearningPathResponse;
+import com.pbl6.flashcard.security.AiRateLimiter;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.ConflictService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -25,14 +26,17 @@ import java.util.UUID;
 public class ConflictController {
 
     private final ConflictService service;
+    private final AiRateLimiter aiLimiter;
 
-    public ConflictController(ConflictService service) {
+    public ConflictController(ConflictService service, AiRateLimiter aiLimiter) {
+        this.aiLimiter = aiLimiter;
         this.service = service;
     }
 
     /** 200 job (stats.conflicts / conflictsByField mới); 404 job người khác; 409 job đang chạy hoặc thuộc lộ trình. */
     @PostMapping("/extractions/{id}/recheck-conflicts")
     public ExtractionJobResponse recheckExtraction(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id) {
+        aiLimiter.checkDeckAi(me.getUser().getId());
         return service.recheckExtraction(me.getUser().getId(), id);
     }
 
@@ -41,6 +45,7 @@ public class ConflictController {
     public LearningPathResponse recheckPath(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
                                             @RequestParam(required = false)
                                             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        aiLimiter.checkDeckAi(me.getUser().getId());
         return service.recheckPath(me.getUser().getId(), id, date);
     }
 }

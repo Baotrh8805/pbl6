@@ -4,6 +4,7 @@ import com.pbl6.flashcard.dto.admin.AdminPage;
 import com.pbl6.flashcard.dto.admin.DismissRequest;
 import com.pbl6.flashcard.dto.admin.ReportResponse;
 import com.pbl6.flashcard.dto.admin.ResolveRequest;
+import com.pbl6.flashcard.dto.library.MyReportResponse;
 import com.pbl6.flashcard.dto.library.ReportRequest;
 import com.pbl6.flashcard.model.ContentReport;
 import com.pbl6.flashcard.model.Deck;
@@ -89,6 +90,27 @@ public class ReportService {
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bạn đã báo cáo bộ thẻ này, đang chờ xử lý.");
         }
+    }
+
+    /** "Báo cáo của tôi": cũng dùng để biết đã có báo cáo OPEN cho một bộ thẻ chưa (deckId + status=OPEN). */
+    @Transactional(readOnly = true)
+    public AdminPage<MyReportResponse> mine(User reporter, String deckId, String status, int page, int size) {
+        Page<ContentReport> p = reports.findMine(reporter.getId(), deckId, status, PageRequest.of(page, size));
+        List<String> deckIds = p.getContent().stream().map(ContentReport::getDeckId).distinct().toList();
+        Map<String, Deck> deckById = decks.findAllById(deckIds).stream().collect(Collectors.toMap(Deck::getId, d -> d));
+        return AdminPage.of(p, p.getContent().stream().map(r -> {
+            Deck d = deckById.get(r.getDeckId());
+            return MyReportResponse.of(r, d == null ? null : d.getTitle(), d != null && d.isPublic());
+        }).toList());
+    }
+
+    /** Rút lại báo cáo còn OPEN (xoá hẳn: admin chưa xem thì không cần dấu vết). */
+    @Transactional
+    public void withdraw(User reporter, Long id) {
+        if (reports.withdraw(id, reporter.getId()) > 0) return;
+        boolean mineButClosed = reports.findById(id).filter(r -> r.getReporterId().equals(reporter.getId())).isPresent();
+        if (mineButClosed) throw new ResponseStatusException(HttpStatus.CONFLICT, "Báo cáo đã được xử lý, không thể rút lại.");
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, NOT_FOUND);
     }
 
     // ---------- admin ----------

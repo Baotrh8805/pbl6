@@ -6,6 +6,7 @@ import com.pbl6.flashcard.dto.extraction.ExtractionJobResponse;
 import com.pbl6.flashcard.dto.extraction.ExtractionRequests.CreateDecks;
 import com.pbl6.flashcard.dto.extraction.ExtractionRequests.ItemPatch;
 import com.pbl6.flashcard.dto.extraction.ExtractionRequests.TextUpdate;
+import com.pbl6.flashcard.security.AiRateLimiter;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.ExtractionService;
 import jakarta.validation.Valid;
@@ -30,8 +31,10 @@ import java.util.UUID;
 public class ExtractionController {
 
     private final ExtractionService service;
+    private final AiRateLimiter aiLimiter;
 
-    public ExtractionController(ExtractionService service) {
+    public ExtractionController(ExtractionService service, AiRateLimiter aiLimiter) {
+        this.aiLimiter = aiLimiter;
         this.service = service;
     }
 
@@ -73,17 +76,20 @@ public class ExtractionController {
     @PutMapping("/{id}/text")
     public ResponseEntity<ExtractionJobResponse> updateText(@AuthenticationPrincipal CustomUserDetails me,
                                                             @PathVariable UUID id, @Valid @RequestBody TextUpdate body) {
+        aiLimiter.checkReanalyze(uid(me)); // phân tích lại không tạo job mới -> không qua hạn mức ngày
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.updateText(uid(me), id, body.text()));
     }
 
     @PostMapping("/{id}/rerun")
     public ResponseEntity<ExtractionJobResponse> rerun(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id) {
+        aiLimiter.checkReanalyze(uid(me));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.rerun(uid(me), id));
     }
 
     /** Chạy lại riêng bước dịch nghĩa VN khi Gemini hết quota / lỗi (không phân tích lại, không tính hạn mức ngày). */
     @PostMapping("/{id}/enrich")
     public ResponseEntity<ExtractionJobResponse> reEnrich(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id) {
+        aiLimiter.checkReanalyze(uid(me));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.reEnrich(uid(me), id));
     }
 

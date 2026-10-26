@@ -24,6 +24,7 @@ from app.extract.readers.text_reader import extract_paren_rubies, normalize
 
 MAX_PAGES = 20
 RENDER_DPI = 200
+MAX_RENDER_PIXELS = 25_000_000   # trang khổ lớn (poster, khổ A0, MediaBox giả 200 inch) hạ dpi để ảnh render ≤ 25 MP
 MIN_CHARS_PER_PAGE = 30   # ít hơn mức này (vd. chỉ watermark "Scanned by ...") → coi là scan
 
 FURIGANA_RATIO = 0.7      # kana cỡ < 70% trung vị trang (và < 70% chữ gốc bên dưới) → ứng viên furigana
@@ -54,6 +55,16 @@ class _Char:
         self.visible = not self.generated and bool(self.ch) and not self.ch.isspace()
 
 
+def _render_scale(width_pt: float, height_pt: float) -> float:
+    """Tỉ lệ render (pixel / point): RENDER_DPI, hạ xuống khi trang lớn tới mức ảnh vượt MAX_RENDER_PIXELS
+    (A4 ở 200 dpi ~ 3,9 MP nên trang thường không đổi)."""
+    scale = RENDER_DPI / 72
+    area = max(1.0, width_pt) * max(1.0, height_pt)
+    if area * scale * scale > MAX_RENDER_PIXELS:
+        scale = math.sqrt(MAX_RENDER_PIXELS / area)
+    return scale
+
+
 def _render_pages(data: bytes, n_pages: int) -> list[bytes]:
     import pypdfium2 as pdfium
     pdf = pdfium.PdfDocument(data)
@@ -61,7 +72,7 @@ def _render_pages(data: bytes, n_pages: int) -> list[bytes]:
     try:
         for i in range(min(len(pdf), n_pages)):
             page = pdf[i]
-            bitmap = page.render(scale=RENDER_DPI / 72)
+            bitmap = page.render(scale=_render_scale(*page.get_size()))
             pil = bitmap.to_pil()
             buf = io.BytesIO()
             pil.save(buf, format="PNG")

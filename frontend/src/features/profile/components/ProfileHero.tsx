@@ -9,6 +9,7 @@ const TAB_LABELS: Record<ProfileTab, { label: string; icon: string }> = {
     history: { label: "Lịch sử kiểm tra", icon: "history" },
     friction: { label: "Phản xạ chậm", icon: "timer" },
     practice: { label: "Luyện tập", icon: "exercise" },
+    reports: { label: "Báo cáo của tôi", icon: "flag" },
 };
 
 interface ProfileHeroProps {

@@ -1,5 +1,18 @@
 # Nhật ký thay đổi
 
+## 25/10/2026: thao tác khi học flashcard
+Spec / kế hoạch: [Plan/specs/2026-10-25-thao-tac-hoc-the-design.md](Plan/specs/2026-10-25-thao-tac-hoc-the-design.md),
+[Plan/plans/2026-10-25-thao-tac-hoc-the.md](Plan/plans/2026-10-25-thao-tac-hoc-the.md). Một migration mới: **V31**. Không đổi thuật toán SRS.
+
+- **Trang học** (`StudyPage`, `features/study/*`): chạm vào thẻ / Space / Enter để lật qua lại hai mặt, chấm bằng phím 1 2 3 4;
+  vuốt trái = Lại, phải = Tốt trên màn hình cảm ứng; thẻ "Lại" gặp lại sau 3 thẻ (trước: cuối hàng đợi); thanh tiến độ + bộ đếm
+  Mới · Ôn · Học lại; màn tổng kết (thời gian, phân bố 4 mức, thẻ bấm Lại nhiều nhất, "Luyện lại n thẻ này" ở chế độ Luyện); phím `?`
+  mở bảng phím tắt; F5 giữa phiên học tiếp hàng đợi dở (`sessionStorage`, 12 giờ).
+- **Hoàn tác lượt chấm**: Z / Ctrl+Z / nút ↶, tối đa 20 bước mỗi phiên. `POST /api/reviews/undo {cardId}` → 204; 409 khi không có gì để
+  hoàn tác (quá 30 phút, lượt quiz, lượt ghi trước V31, lượt của người khác). V31 thêm `review_logs.prev_*` (lịch ngay trước lượt chấm);
+  hoàn tác ghi lại lịch cũ (hoặc xoá dòng `reviews` nếu là lượt đầu) và xoá log, nên heatmap / chuỗi ngày không đếm lượt đã bỏ.
+- Test: `ReviewSrsIT` thêm 3 test hoàn tác; `scripts/selfcheck/study.ts`.
+
 ## 20/10/2026 (chiều): hoàn tất phần còn thiếu của Lộ trình học tập / Admin
 Tổng kết và kế hoạch: [Progress/2026-10-19-tong-ket-va-ke-hoach.md](Progress/2026-10-19-tong-ket-va-ke-hoach.md) (§3, §5, §6.2, §10).
 10 commit `8de6ea1`..`a0094a3` (10:17–13:59), HEAD `a0094a3`, 44 commit kể từ `de8accb`; vẫn chỉ ở local, chưa push. Một migration

@@ -244,4 +244,55 @@ class ContentReportIT extends IntegrationTest {
         JsonNode dismissed = read(call(get("/api/admin/reports").param("status", "DISMISSED").param("size", "100"), admin.token, null));
         assertTrue(dismissed.get("items").findValuesAsText("id").contains(String.valueOf(rid)));
     }
+
+    @Test
+    void reporter_lists_own_reports_and_sees_outcome() throws Exception { // RP-16
+        Account owner = user();
+        Account reporter = user();
+        Account other = user();
+        Account admin = staff(Role.ADMIN);
+        String a = publicDeck(owner.token, "Của A");
+        String b = publicDeck(owner.token, "Của B");
+        long ra = read(report(reporter.token, a, "WRONG_CONTENT", "thẻ 1 sai")).get("id").asLong();
+        report(reporter.token, b, "SPAM", null).andExpect(status().isCreated());
+        report(other.token, a, "SPAM", null).andExpect(status().isCreated());
+
+        JsonNode mine = read(call(get("/api/library/reports"), reporter.token, null).andExpect(status().isOk()));
+        assertEquals(2, mine.get("total").asLong());
+        assertFalse(mine.get("items").get(0).has("reporterEmail"));
+
+        // nút "Đã báo cáo" ở trang bộ thẻ: lọc theo deckId + OPEN
+        JsonNode openA = read(call(get("/api/library/reports").param("deckId", a).param("status", "OPEN"), reporter.token, null));
+        assertEquals(1, openA.get("total").asLong());
+        assertEquals(0, read(call(get("/api/library/reports").param("deckId", a), owner.token, null)).get("total").asLong());
+
+        call(post("/api/admin/reports/" + ra + "/resolve"), admin.token,
+                Map.of("action", "UNPUBLISH_DECK", "note", "Đã gỡ")).andExpect(status().isOk());
+        JsonNode row = read(call(get("/api/library/reports").param("deckId", a), reporter.token, null)).get("items").get(0);
+        assertEquals("RESOLVED", row.get("status").asText());
+        assertEquals("UNPUBLISH_DECK", row.get("action").asText());
+        assertEquals("Đã gỡ", row.get("resolutionNote").asText());
+        assertEquals("Của A", row.get("deckTitle").asText());
+        assertFalse(row.get("deckPublic").asBoolean());
+        assertFalse(row.has("resolvedByEmail"));
+        call(get("/api/library/reports").param("status", "BOGUS"), reporter.token, null).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void reporter_withdraws_open_report_only() throws Exception { // RP-17
+        Account owner = user();
+        Account reporter = user();
+        Account other = user();
+        Account admin = staff(Role.ADMIN);
+        String id = publicDeck(owner.token, "Rút");
+        long rid = read(report(reporter.token, id, "SPAM", null)).get("id").asLong();
+
+        call(delete("/api/library/reports/" + rid), other.token, null).andExpect(status().isNotFound());
+        call(delete("/api/library/reports/" + rid), reporter.token, null).andExpect(status().isNoContent());
+        call(delete("/api/library/reports/" + rid), reporter.token, null).andExpect(status().isNotFound());
+        // rút xong thì báo cáo lại được (không còn OPEN chặn unique index)
+        long again = read(report(reporter.token, id, "SPAM", null).andExpect(status().isCreated())).get("id").asLong();
+        call(post("/api/admin/reports/" + again + "/dismiss"), admin.token, Map.of()).andExpect(status().isOk());
+        call(delete("/api/library/reports/" + again), reporter.token, null).andExpect(status().isConflict());
+    }
 }

@@ -62,7 +62,8 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
                       : p.action === "CLEAR_COMMENT"
                         ? "được xử lý: bình luận vi phạm đã bị xoá"
                         : "được xử lý";
-            return { text: `Báo cáo của bạn về ${title} đã ${outcome}.${str(p.note) ? ` Ghi chú: ${str(p.note)}` : ""}`, to: deckLink };
+            // Mở "Báo cáo của tôi" thay vì bộ thẻ: bộ đã bị gỡ thì người báo cáo không mở được nữa.
+            return { text: `Báo cáo của bạn về ${title} đã ${outcome}.${str(p.note) ? ` Ghi chú: ${str(p.note)}` : ""}`, to: "/profile?tab=reports" };
         }
         case "DECK_UNPUBLISHED":
             return { text: `Bộ thẻ ${title} của bạn đã bị quản trị viên gỡ khỏi Thư viện (chuyển về riêng tư).`, to: deckLink };

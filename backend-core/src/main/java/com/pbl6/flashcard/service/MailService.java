@@ -32,6 +32,17 @@ public class MailService {
         this.mailFrom = mailFrom;
     }
 
+    /** app.frontend-url trỏ về máy này (dev): http(s)://localhost | 127.0.0.1 [:port]. */
+    boolean isLocalFrontend() {
+        String host;
+        try {
+            host = java.net.URI.create(frontendUrl).getHost();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "[::1]".equals(host);
+    }
+
     /** Link tuyệt đối tới trang frontend, vd. frontendLink("/verify-email?token=abc"). */
     public String frontendLink(String pathAndQuery) {
         return frontendUrl + pathAndQuery;
@@ -44,7 +55,13 @@ public class MailService {
     public void sendLink(String to, String purpose, String subject, String body, String link) {
         JavaMailSender sender = mailSender.getIfAvailable();
         if (sender == null) {
-            log.warn("Chưa cấu hình SMTP (spring.mail.host) - link {} cho {}: {}", purpose, to, link);
+            // Ai đọc được log là dùng được link (đặt lại mật khẩu của bất kỳ ai, kể cả SUPER_ADMIN): chỉ in link khi frontend là
+            // localhost (máy dev không có SMTP cần link để tự xác thực); máy chủ thật quên cấu hình SMTP thì chỉ cảnh báo.
+            if (isLocalFrontend()) {
+                log.warn("Chưa cấu hình SMTP (spring.mail.host) - link {} cho {}: {}", purpose, to, link);
+            } else {
+                log.error("Chưa cấu hình SMTP (spring.mail.host) - KHÔNG gửi được email {} cho {}", purpose, to);
+            }
             return;
         }
         SimpleMailMessage message = new SimpleMailMessage();

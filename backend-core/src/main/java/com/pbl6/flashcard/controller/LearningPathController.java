@@ -9,6 +9,7 @@ import com.pbl6.flashcard.dto.learningpath.SessionResponse;
 import com.pbl6.flashcard.dto.learningpath.TodaySummaryResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
+import com.pbl6.flashcard.security.AiRateLimiter;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.InsightService;
 import com.pbl6.flashcard.service.LearningPathService;
@@ -39,8 +40,10 @@ public class LearningPathController {
     private final LearningPathService service;
     // Lộ trình bổ khuyết đi qua InsightService (tính thẻ yếu rồi gọi LearningPathService.remedial trong cùng giao dịch)
     private final InsightService insights;
+    private final AiRateLimiter aiLimiter;
 
-    public LearningPathController(LearningPathService service, InsightService insights) {
+    public LearningPathController(LearningPathService service, InsightService insights, AiRateLimiter aiLimiter) {
+        this.aiLimiter = aiLimiter;
         this.service = service;
         this.insights = insights;
     }
@@ -213,6 +216,7 @@ public class LearningPathController {
     public ResponseEntity<LearningPathResponse> retry(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
                                                       @RequestParam(required = false)
                                                       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        aiLimiter.checkReanalyze(uid(me)); // chạy lại không tạo job mới -> không qua hạn mức ngày
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.retry(uid(me), id, service.today(date)));
     }
 
@@ -231,6 +235,7 @@ public class LearningPathController {
                                                            @Valid @RequestBody LearningPathRequests.TextBody body,
                                                            @RequestParam(required = false)
                                                            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        aiLimiter.checkReanalyze(uid(me));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.updateText(uid(me), id, body.text(), service.today(date)));
     }
 
@@ -242,6 +247,7 @@ public class LearningPathController {
     public ResponseEntity<LearningPathResponse> enrich(@AuthenticationPrincipal CustomUserDetails me, @PathVariable UUID id,
                                                        @RequestParam(required = false)
                                                        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        aiLimiter.checkReanalyze(uid(me));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.enrich(uid(me), id, service.today(date)));
     }
 

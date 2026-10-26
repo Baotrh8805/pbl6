@@ -146,4 +146,84 @@ class ReviewSrsIT extends IntegrationTest {
         assertEquals(Integer.valueOf(5), jdbc.queryForObject(
                 "SELECT count(*) FROM review_logs WHERE user_id = ?", Integer.class, uid), "request bị từ chối không ghi log");
     }
+
+    // ---------- Hoàn tác lượt chấm (spec 25/10 §3.8): POST /api/reviews/undo ----------
+
+    private void undo(String token, String card, int expected) throws Exception {
+        call(post("/api/reviews/undo"), token, Map.of("cardId", card)).andExpect(status().is(expected));
+    }
+
+    private JsonNode stored(String token) throws Exception {
+        return read(call(get("/api/reviews"), token, null));
+    }
+
+    @Test
+    void undo_restores_the_exact_previous_schedule_step_by_step() throws Exception {
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        String card = firstCard(token);
+
+        review(token, card, "good", false);
+        JsonNode afterGood = stored(token).get(0);
+        review(token, card, "again", false);
+        review(token, card, "good", false);
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM review_logs WHERE user_id = ?", Integer.class, uid));
+
+        undo(token, card, 204); // bỏ "good" thứ hai
+        undo(token, card, 204); // bỏ "again" -> về đúng trạng thái sau lượt "good" đầu
+        JsonNode now = stored(token).get(0);
+        for (String f : new String[]{"intervalDays", "ease", "reps", "dueAt"}) {
+            assertEquals(afterGood.get(f), now.get(f), "hoàn tác phải trả lại đúng " + f);
+        }
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM review_logs WHERE user_id = ?", Integer.class, uid),
+                "lượt đã hoàn tác bị xoá khỏi nhật ký (heatmap / chuỗi ngày không đếm)");
+
+        undo(token, card, 204); // lượt đầu tiên: trước đó chưa có dòng reviews -> xoá dòng
+        assertEquals(0, stored(token).size());
+        undo(token, card, 409); // hết lượt để hoàn tác
+    }
+
+    @Test
+    void undo_of_a_cram_review_only_drops_the_log() throws Exception {
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        String card = firstCard(token);
+
+        JsonNode normal = review(token, card, "good", false);
+        review(token, card, "again", true);
+        undo(token, card, 204);
+        JsonNode after = stored(token).get(0);
+        for (String f : new String[]{"intervalDays", "ease", "reps", "dueAt"}) {
+            assertEquals(normal.get(f), after.get(f), "hoàn tác cram không đổi " + f);
+        }
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM review_logs WHERE user_id = ? AND source = 'cram'",
+                Integer.class, uid));
+    }
+
+    @Test
+    void undo_is_refused_when_too_old_from_quiz_legacy_or_someone_else() throws Exception {
+        String email = newEmail();
+        String token = newUser(email);
+        Long uid = userId(email);
+        String card = firstCard(token);
+        String other = newUser();
+
+        review(token, card, "good", false);
+        undo(other, card, 409); // không phải lượt của mình
+        jdbc.update("UPDATE review_logs SET reviewed_at = now() - interval '31 minutes' WHERE user_id = ?", uid);
+        undo(token, card, 409); // quá 30 phút
+        assertEquals(1, stored(token).size(), "bị từ chối thì không đổi gì");
+
+        review(token, card, "good", false);
+        jdbc.update("UPDATE review_logs SET prev_exists = NULL WHERE user_id = ?", uid); // log ghi trước V31
+        undo(token, card, 409);
+
+        jdbc.update("INSERT INTO review_logs (user_id, card_id, grade, source) VALUES (?, ?, 'again', 'quiz')", uid, card);
+        undo(token, card, 409); // quiz không hoàn tác được
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM review_logs WHERE user_id = ?", Integer.class, uid));
+
+        call(post("/api/reviews/undo"), token, Map.of()).andExpect(status().isBadRequest());
+    }
 }

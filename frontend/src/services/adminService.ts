@@ -25,8 +25,10 @@ import type {
     AdminUserRow,
     AuditLog,
     ContentReport,
+    MyReport,
     ReportAction,
     ReportReason,
+    ReportStatus,
     Role,
 } from "../types/api.types.ts";
 
@@ -112,6 +114,15 @@ export const dismissReport = async (id: number, body: { note?: string }): Promis
 /** Người học báo cáo bộ thẻ public (409 = đã báo cáo rồi). */
 export const reportDeck = async (deckId: string, body: { reason: ReportReason; detail?: string }): Promise<void> => {
     await apiClient.post(`/library/decks/${enc(deckId)}/reports`, body);
+};
+
+/** Báo cáo của chính người học; deckId + status=OPEN để biết đã báo cáo bộ thẻ đó chưa. */
+export const fetchMyReports = async (params: { deckId?: string; status?: ReportStatus; page?: number; size?: number }): Promise<AdminPage<MyReport>> =>
+    (await apiClient.get<AdminPage<MyReport>>("/library/reports", { params: clean(params) })).data;
+
+/** Rút lại báo cáo còn mở (409 = admin đã xử lý). */
+export const withdrawReport = async (id: number): Promise<void> => {
+    await apiClient.delete(`/library/reports/${enc(id)}`);
 };
 
 // ---------- nhật ký, cấu hình, thông báo ----------

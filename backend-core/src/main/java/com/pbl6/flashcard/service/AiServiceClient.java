@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -68,6 +69,16 @@ public class AiServiceClient {
 
     /** Tra cứu NLP có người dùng đang chờ trên trang: không để request treo tới 3 phút như bóc tách tài liệu. */
     static final Duration NLP_READ_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * Số lời gọi dài ({@link #postJsonLong}, tới 3 phút) chạy cùng lúc từ thread request (rà soát 25/10, D3): ai-service treo mà
+     * người dùng bấm lại liên tục thì mỗi lần giữ một thread Tomcat — đủ nhiều là đăng nhập / học cũng đứng. Hết chỗ thì chờ
+     * {@link #LONG_CALL_WAIT} rồi trả 503 "đang bận" thay vì xếp hàng vô hạn. Worker bóc tách đi đường khác (extractText /
+     * analyze / enrich) nên không tranh chỗ ở đây.
+     */
+    static final int LONG_CALL_PERMITS = 6;
+    static final Duration LONG_CALL_WAIT = Duration.ofSeconds(2);
+    private final Semaphore longCalls = new Semaphore(LONG_CALL_PERMITS);
 
     private final RestClient http;
     /** Kiểm tra sức khoẻ cho dashboard admin: timeout ngắn, không dùng chung client đọc 3 phút. */
@@ -313,9 +324,24 @@ public class AiServiceClient {
 
     /** POST JSON cho tác vụ dài (timeout như bóc tách, mặc định 3 phút): sinh câu nhiễu cả bộ thẻ, trích nguồn chuẩn... */
     public JsonNode postJsonLong(String step, String path, Object body) {
-        return call(step, () -> http.post().uri(path)
-                .contentType(MediaType.APPLICATION_JSON).body(body)
-                .retrieve().body(JsonNode.class));
+        boolean acquired;
+        try {
+            acquired = longCalls.tryAcquire(LONG_CALL_WAIT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AiServiceException("Dịch vụ AI đang bận, vui lòng thử lại sau ít phút.", 503, e);
+        }
+        if (!acquired) {
+            log.warn("ai-service {}: đủ {} lời gọi dài đang chạy, từ chối", step, LONG_CALL_PERMITS);
+            throw new AiServiceException("Dịch vụ AI đang bận, vui lòng thử lại sau ít phút.", 503, null);
+        }
+        try {
+            return call(step, () -> http.post().uri(path)
+                    .contentType(MediaType.APPLICATION_JSON).body(body)
+                    .retrieve().body(JsonNode.class));
+        } finally {
+            longCalls.release();
+        }
     }
 
     private <T> T call(String step, java.util.function.Supplier<T> request) {

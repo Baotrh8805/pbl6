@@ -1,6 +1,8 @@
 package com.pbl6.flashcard.controller;
 
+import com.pbl6.flashcard.dto.admin.AdminPage;
 import com.pbl6.flashcard.dto.deck.DeckRequest;
+import com.pbl6.flashcard.dto.library.MyReportResponse;
 import com.pbl6.flashcard.dto.library.DeckRatingsResponse;
 import com.pbl6.flashcard.dto.library.LibraryDeckResponse;
 import com.pbl6.flashcard.dto.library.RatingRequest;
@@ -40,6 +42,23 @@ public class LibraryController {
                                                                 @Valid @RequestBody ReportRequest req) {
         var r = reportService.create(me.getUser(), deckId, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(java.util.Map.of("id", r.getId(), "status", r.getStatus()));
+    }
+
+    /** Báo cáo của chính người gọi; deckId + status=OPEN để biết nút "Báo cáo" đã thành "Đã báo cáo" chưa. */
+    @GetMapping("/reports")
+    public AdminPage<MyReportResponse> myReports(@AuthenticationPrincipal CustomUserDetails me,
+                                                 @RequestParam(required = false) @Size(max = 255) String deckId,
+                                                 @RequestParam(required = false) @Pattern(regexp = "OPEN|RESOLVED|DISMISSED") String status,
+                                                 @RequestParam(defaultValue = "0") @Min(0) @Max(10_000) int page,
+                                                 @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
+        return reportService.mine(me.getUser(), deckId, status, page, size);
+    }
+
+    /** Rút lại báo cáo còn OPEN của chính mình: 404 không phải của mình, 409 đã được xử lý. */
+    @DeleteMapping("/reports/{id}")
+    public ResponseEntity<Void> withdrawReport(@AuthenticationPrincipal CustomUserDetails me, @PathVariable Long id) {
+        reportService.withdraw(me.getUser(), id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/decks")

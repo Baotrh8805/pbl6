@@ -23,7 +23,9 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
@@ -67,10 +69,12 @@ public class ExtractionService {
     private final SettingsService settings;
     // Chỉ để biết job lộ trình còn lộ trình trỏ tới hay đã mồ côi (deleteJob); không gọi ngược LearningPathService (vòng phụ thuộc)
     private final LearningPathRepository paths;
+    private final TransactionTemplate tx;
 
     public ExtractionService(ExtractionJobRepository jobs, ExtractionItemRepository items, ExtractionWorker worker,
                              DeckService deckService, ObjectMapper json, SettingsService settings,
-                             LearningPathRepository paths) {
+                             LearningPathRepository paths, PlatformTransactionManager txManager) {
+        this.tx = new TransactionTemplate(txManager);
         this.jobs = jobs;
         this.items = items;
         this.worker = worker;
@@ -96,12 +100,16 @@ public class ExtractionService {
      */
     public ExtractionJobResponse create(User user, byte[] data, String filename, String text, String optionsJson) {
         ExtractionOptions options = parseOptions(optionsJson).withDefaults(user.getJlptLevel());
-        ExtractionJob job = prepareJob(user, data, filename, text, options, ExtractionJob.PURPOSE_EXTRACTION);
+        // Giao dịch ngắn quanh kiểm hạn mức + lưu job (khoá hạn mức trong prepareJob), commit xong mới đẩy sang worker
+        ExtractionJob job = tx.execute(s -> prepareJob(user, data, filename, text, options, ExtractionJob.PURPOSE_EXTRACTION));
         startJob(job, data, filename, text);
         return view(job, false);
     }
 
-    /** Kiểm đầu vào + giới hạn ngày rồi lưu job (chưa chạy). options đã được điền mặc định. */
+    /**
+     * Kiểm đầu vào + giới hạn ngày rồi lưu job (chưa chạy). options đã được điền mặc định. Gọi TRONG giao dịch (create /
+     * LearningPathService.create): khoá hạn mức của người dùng giữ tới hết giao dịch đó.
+     */
     ExtractionJob prepareJob(User user, byte[] data, String filename, String text, ExtractionOptions options,
                              String purpose) {
         boolean hasFile = data != null && data.length > 0;
@@ -116,6 +124,7 @@ public class ExtractionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Văn bản vượt quá 50.000 ký tự.");
         }
         String sourceType = hasFile ? sniff(data, filename) : "text";
+        jobs.lockQuota(user.getId()); // request song song của cùng người xếp hàng: đếm + lưu job như một bước (D4)
         enforceDailyLimit(user);
 
         ExtractionJob job = new ExtractionJob();
@@ -299,6 +308,7 @@ public class ExtractionService {
 
     private ExtractionJobResponse updateTextJob(ExtractionJob job, String text) {
         requireIdle(job);
+        claim(job);
         job.setExtractedText(text);
         // blocks (bố cục khối OCR, dùng để tách cụm) không còn khớp văn bản đã sửa -> bỏ, phân tích lại theo văn bản thuần
         if (job.getTextMeta() != null && job.getTextMeta().containsKey("blocks")) {
@@ -362,6 +372,7 @@ public class ExtractionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Lượt này chưa có văn bản để phân tích lại. Hãy tải tài liệu lên lần nữa.");
         }
+        claim(job);
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
         job.setErrorMessage(null);
@@ -405,12 +416,23 @@ public class ExtractionService {
                 // giá trị lạ trong stats -> không chặn
             }
         }
+        claim(job);
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
         job.setErrorMessage(null);
         jobs.save(job);
         dispatch(job, () -> worker.runEnrich(job.getId()));
         return view(job, false);
+    }
+
+    /**
+     * Nhận job sang QUEUED bằng UPDATE có điều kiện (D5), SAU mọi bước kiểm tra (lỗi 400 sau khi đã nhận sẽ để job kẹt QUEUED).
+     * requireIdle trên entity đã nạp chỉ là kiểm nhanh: hai request song song cùng thấy DONE, chỉ một bên nhận được ở đây.
+     */
+    private void claim(ExtractionJob job) {
+        if (jobs.claimIdle(job.getId()) == 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Lượt bóc tách đang được xử lý, hãy đợi xong.");
+        }
     }
 
     private static void requireIdle(ExtractionJob job) {

@@ -16,6 +16,7 @@ import { useDialog } from "@/components/ui/dialogContext";
 import { CardContent } from "@/features/decks/components/CardContent";
 import { DeckRatings } from "@/features/decks/components/DeckRatings";
 import { ReportDeckModal } from "@/features/library/components/ReportDeckModal";
+import { useReportedByMe } from "@/features/library/useReportedByMe";
 import { Modal } from "@/components/ui/Modal";
 import { PronunciationPanel } from "@/features/practice/components/PronunciationPanel";
 import { KanjiWritePanel } from "@/features/practice/components/KanjiWritePanel";
@@ -43,7 +44,10 @@ export const DeckDetailPage: React.FC = () => {
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [isSaveCopyOpen, setIsSaveCopyOpen] = useState(false);
     const [isReportOpen, setIsReportOpen] = useState(false);
-    const [reported, setReported] = useState(false);
+    const [reported, markReported] = useReportedByMe(
+        deckId,
+        !!data && data.deck.access !== "owner" && data.deck.visibility === "public"
+    );
     // Thẻ đang mở hộp luyện phát âm (E3/E4); null = đóng.
     const [practiceCard, setPracticeCard] = useState<Card | null>(null);
     // Thẻ đang mở hộp luyện viết kanji (E2) + chữ đang chọn trong thẻ; null = đóng.
@@ -415,7 +419,7 @@ export const DeckDetailPage: React.FC = () => {
                 onSave={handleSaveCard}
             />
 
-            <ReportDeckModal deckId={deck.id} isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} onReported={() => setReported(true)} />
+            <ReportDeckModal deckId={deck.id} isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} onReported={markReported} />
 
             {/* Luyện phát âm: key theo thẻ để đổi thẻ là panel dựng lại từ đầu (bỏ kết quả cũ, dừng ghi âm) */}
             <Modal

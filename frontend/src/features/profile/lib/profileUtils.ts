@@ -14,7 +14,8 @@ export const scoreTone = (score: number, total: number): ScoreTone => {
 };
 
 // friction (F4): thẻ phản xạ chậm; practice (E2–E4): thống kê luyện viết / phát âm — thêm cuối để thứ tự tab cũ không đổi.
-export const PROFILE_TABS = ["info", "security", "history", "friction", "practice"] as const;
+// reports: báo cáo bộ thẻ mình đã gửi (UC-41).
+export const PROFILE_TABS = ["info", "security", "history", "friction", "practice", "reports"] as const;
 export type ProfileTab = (typeof PROFILE_TABS)[number];
 
 export const parseProfileTab = (raw: string | null): ProfileTab =>
@@ -22,6 +23,15 @@ export const parseProfileTab = (raw: string | null): ProfileTab =>
 
 export const tabId = (t: ProfileTab) => `profile-tab-${t}`;
 export const panelId = (t: ProfileTab) => `profile-panel-${t}`;
+
+/** Kết quả báo cáo nói với người gửi (không dùng từ ngữ quản trị như "Gỡ bộ thẻ" / "Không làm gì"). */
+export const myReportOutcome = (status: string, action: string | null): string | null => {
+    if (status === "DISMISSED") return "Đã xem xét, không phát hiện vi phạm.";
+    if (status !== "RESOLVED") return null;
+    if (action === "UNPUBLISH_DECK") return "Bộ thẻ đã bị gỡ khỏi Thư viện.";
+    if (action === "CLEAR_COMMENT") return "Bình luận vi phạm đã bị xoá.";
+    return "Đã xem xét và xử lý.";
+};
 
 export const DAILY_GOAL_PRESETS = [10, 20, 30, 50] as const;
 

@@ -6,6 +6,7 @@ import com.pbl6.flashcard.dto.deck.QuizResultResponse;
 import com.pbl6.flashcard.dto.deck.QuizAttemptDtos.*;
 import com.pbl6.flashcard.dto.deck.ReviewRequest;
 import com.pbl6.flashcard.dto.deck.ReviewResponse;
+import com.pbl6.flashcard.dto.deck.UndoReviewRequest;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.QuizAttemptService;
 import com.pbl6.flashcard.service.QuizService;
@@ -67,6 +68,14 @@ public class StudyController {
     public ReviewResponse submitReview(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody ReviewRequest body) {
         return reviewService.review(uid(me), body.cardId(), body.grade(), Boolean.TRUE.equals(body.cram()),
                 body.reactionMs(), body.pathId());
+    }
+
+    /** Hoàn tác lượt chấm mới nhất (lật / cram, trong 30 phút) của thẻ; 409 khi không còn gì để hoàn tác. */
+    @PostMapping("/reviews/undo")
+    public ResponseEntity<Void> undoReview(@AuthenticationPrincipal CustomUserDetails me,
+                                           @Valid @RequestBody UndoReviewRequest body) {
+        reviewService.undo(uid(me), body.cardId());
+        return ResponseEntity.noContent().build();
     }
 
     /** Câu hỏi mẫu (xem trước đề), không mở lượt làm bài. */

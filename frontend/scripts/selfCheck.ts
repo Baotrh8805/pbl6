@@ -24,7 +24,7 @@ import {
   lastReviewedAt,
 } from "../src/lib/learningStats.ts";
 import { flattenFolders } from "../src/features/folders/components/folderTree.ts";
-import { getInitials, isValidDailyGoal, parseProfileTab, scoreTone } from "../src/features/profile/lib/profileUtils.ts";
+import { getInitials, isValidDailyGoal, myReportOutcome, parseProfileTab, scoreTone } from "../src/features/profile/lib/profileUtils.ts";
 import {
   behindCount,
   chapterPerDay,
@@ -207,6 +207,8 @@ import { runQuizChecks } from "./selfcheck/quiz.ts";
 import { runManualChecks } from "./selfcheck/manual.ts";
 // Lộ trình 2.0 đợt cuối (LP-13 chống gửi trùng, LP-15 bộ thẻ thuộc lộ trình, thẻ lộ trình ở Tổng quan admin): async, file riêng.
 import { runLearningPathChecks } from "./selfcheck/learningPath.ts";
+// Thao tác trang học (spec 25/10): file riêng.
+import { runStudyChecks } from "./selfcheck/study.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -1219,7 +1221,20 @@ async function runSelfCheck() {
   runLearnerChecks(assertTrue);
   runManualChecks(assertTrue);
   await runLearningPathChecks(assertTrue);
+  runStudyChecks(assertTrue);
   assertStrictEqual(parseProfileTab("practice"), "practice", "Tab Luyện tập hợp lệ từ URL");
+
+  // Báo cáo của tôi (UC-41): tab trên URL + câu kết quả nói với người gửi + thông báo dẫn về tab
+  assertStrictEqual(parseProfileTab("reports"), "reports", "Tab Báo cáo của tôi hợp lệ từ URL");
+  assertStrictEqual(myReportOutcome("OPEN", null), null, "Báo cáo đang mở chưa có kết quả");
+  assertStrictEqual(myReportOutcome("DISMISSED", null), "Đã xem xét, không phát hiện vi phạm.", "Bỏ qua = không vi phạm");
+  assertStrictEqual(myReportOutcome("RESOLVED", "UNPUBLISH_DECK"), "Bộ thẻ đã bị gỡ khỏi Thư viện.", "Gỡ bộ thẻ");
+  assertStrictEqual(myReportOutcome("RESOLVED", "NONE"), "Đã xem xét và xử lý.", "NONE không hiện 'Không làm gì'");
+  assertStrictEqual(
+    describeNotification({ id: 2, type: "REPORT_RESOLVED", payload: { deckId: "d1", deckTitle: "A", status: "RESOLVED", action: "UNPUBLISH_DECK" }, readAt: null, createdAt: "2026-10-25T00:00:00Z" }).to,
+    "/profile?tab=reports",
+    "Thông báo kết quả báo cáo mở tab Báo cáo của tôi (bộ thẻ có thể đã bị gỡ)"
+  );
 
   console.log(" All self-check assertions passed successfully!");
 }
