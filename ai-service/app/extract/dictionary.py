@@ -143,16 +143,97 @@ def _search_en(q: str, limit: int, offset: int) -> dict:
     return {"items": [_summary(meta[h[0]]) for h in page], "total": len(ordered)}
 
 
+# Loại từ Sudachi được coi là "từ nội dung" khi đưa dạng chia về dạng gốc; trợ từ, trợ động từ, ký hiệu, hậu tố bỏ qua.
+_CONTENT_POS = frozenset({"動詞", "形容詞", "形状詞", "名詞", "代名詞", "副詞", "連体詞", "感動詞", "接続詞"})
+MAX_LEMMAS = 5
+
+
+def _lemma_candidates(q: str) -> list[str]:
+    """Dạng gốc của các từ nội dung trong q theo thứ tự xuất hiện (食べました → 食べる, 高かった → 高い, 勉強しています → 勉強).
+    Động từ "phụ" (非自立可能: する, いる, くる…) đứng sau một từ nội dung khác bị bỏ: trong 勉強しています từ cần tra là 勉強,
+    không phải する / いる; còn đứng đầu (行かなかった, 見られる) thì vẫn là từ chính. Chuỗi toàn katakana mà Sudachi không nhận ra
+    (タベマシタ) được thử lại ở dạng hiragana. Bỏ dạng trùng với chính q (đã tìm rồi)."""
+    from app.extract import tokenizer  # noqa: PLC0415 (Sudachi nạp chậm, chỉ nạp khi cần)
+    out: list[str] = []
+    for text in dict.fromkeys((q, kata_to_hira(q))):
+        found_content = False
+        for t in tokenizer.tokenize(text, "C"):
+            if t.pos1 not in _CONTENT_POS or t.oov or not has_japanese(t.surface):
+                continue
+            if found_content and t.pos1 == "動詞" and t.pos2 == "非自立可能":
+                continue
+            found_content = True
+            if t.lemma and t.lemma != q and t.lemma not in out:
+                out.append(t.lemma)
+        if out:
+            break
+    return out[:MAX_LEMMAS]
+
+
+def _exact_ja(form: str) -> list[dict]:
+    """Mục có dạng viết trùng hẳn form (kana ↔ katakana), phổ biến / JLPT dễ trước."""
+    variants = tuple(dict.fromkeys((form, kata_to_hira(form), hira_to_kata(form))))
+    rows = _rows(f"SELECT DISTINCT {_SUMMARY_COLS} FROM word_forms f JOIN words w ON w.id = f.word_id "
+                 f"WHERE f.form IN ({','.join('?' * len(variants))}) "
+                 f"ORDER BY w.common DESC, {_LEVEL_RANK}, CAST(w.id AS INTEGER) LIMIT {MAX_LIMIT}", variants)
+    return [_summary(r) for r in rows]
+
+
+def _has_exact(q: str) -> bool:
+    variants = tuple(dict.fromkeys((q, kata_to_hira(q), hira_to_kata(q))))
+    return bool(_rows(f"SELECT 1 FROM word_forms WHERE form IN ({','.join('?' * len(variants))}) LIMIT 1", variants))
+
+
+def _search_deinflected(q: str, limit: int, offset: int) -> Optional[dict]:
+    """Dự phòng khi q không trùng hẳn dạng viết nào: mục của dạng gốc từng từ nội dung (theo thứ tự trong câu) đứng đầu, sau đó
+    mới tới kết quả tìm theo tiền tố của chính q (読んで → 読む rồi 読んで字のごとく). None khi không tách được (Sudachi lỗi /
+    thiếu) hoặc không dạng gốc nào có trong từ điển — khi đó tìm như thường."""
+    try:
+        lemmas = _lemma_candidates(q)
+    except Exception:  # noqa: BLE001 — thiếu SudachiDict hay lỗi tách từ không được làm hỏng tìm kiếm thường
+        return None
+    items: list[dict] = []
+    used: list[str] = []
+    seen: set[str] = set()
+    for lemma in lemmas:
+        hits = [h for h in _exact_ja(lemma) if h["key"] not in seen]
+        if hits:
+            used.append(lemma)
+            for h in hits:
+                seen.add(h["key"])
+                items.append(h)
+    if not items:
+        return None
+    lemma_count = len(items)
+    prefix = _search_ja(q, offset + limit, 0)
+    dup = 0
+    for h in prefix["items"]:
+        if h["key"] in seen:
+            dup += 1
+        else:
+            items.append(h)
+    total = min(TOTAL_CAP, lemma_count + prefix["total"] - dup)
+    return {"items": items[offset:offset + limit], "total": total, "deinflected": {"query": q, "lemmas": used}}
+
+
 def search(q: str, mode: str = "ja", limit: int = 20, offset: int = 0) -> dict:
     """{items: [{id, key, headKanji, headKana, reading, glossShort, common, jlpt, nExamples}], total (≤ 500)}.
-    mode ja: dạng viết đúng (kana ↔ katakana) trước rồi tiền tố; phổ biến, JLPT dễ, dạng ngắn trước.
+    mode ja: dạng viết đúng (kana ↔ katakana) trước rồi tiền tố; phổ biến, JLPT dễ, dạng ngắn trước. q không trùng hẳn dạng viết
+    nào thì mục của dạng gốc lên đầu (食べました → 食べる, 読んで → 読む): kết quả thêm deinflected = {query, lemmas} để giao diện
+    ghi "kết quả cho dạng gốc".
     mode en: FTS trên gloss tiếng Anh, gloss trùng hẳn trước, rồi mục phổ biến, rồi bm25."""
     q = (q or "").strip()[:MAX_QUERY_CHARS]
     if not q:
         return {"items": [], "total": 0}
     limit = max(1, min(limit, MAX_LIMIT))
     offset = max(0, min(offset, MAX_OFFSET))
-    return _search_en(q, limit, offset) if mode == "en" else _search_ja(q, limit, offset)
+    if mode == "en":
+        return _search_en(q, limit, offset)
+    if has_japanese(q) and not _has_exact(q):
+        merged = _search_deinflected(q, limit, offset)
+        if merged:
+            return merged
+    return _search_ja(q, limit, offset)
 
 
 # ----------------------------------------------------------------------------- mục từ

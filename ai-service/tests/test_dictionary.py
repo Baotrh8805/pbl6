@@ -119,6 +119,43 @@ def test_search_ja_exact_first_and_kana_katakana(dict_db):
     assert [i["headKanji"] for i in prefix["items"]][:2] == ["日本", "日本語"]
 
 
+def test_search_ja_deinflects_conjugated_forms(dict_db):
+    """Dạng đã chia không trùng dạng viết nào -> mục của dạng gốc (lemma Sudachi) đứng đầu, kèm deinflected để giao diện ghi chú."""
+    for q in ("食べました", "たべました", "タベマシタ", "食べたい", "食べて"):
+        r = dictionary.search(q)
+        assert r["items"] and r["items"][0]["key"] == "w:1358280", q
+        assert r["deinflected"]["query"] == q and len(r["deinflected"]["lemmas"]) == 1, q
+    assert dictionary.search("食べました")["deinflected"]["lemmas"] == ["食べる"]
+    assert dictionary.search("召し上がりました")["items"][0]["headKanji"] == "召し上がる"
+
+
+def test_search_ja_deinflect_only_when_no_exact_match(dict_db):
+    exact = dictionary.search("食べる")
+    assert "deinflected" not in exact and exact["items"][0]["key"] == "w:1358280"
+    # dạng gốc trùng với kết quả tiền tố: không lặp mục, tổng không đếm hai lần
+    partial = dictionary.search("食べ")
+    assert [i["key"] for i in partial["items"]].count("w:1358280") == 1 and partial["total"] == 1
+    # dạng gốc không có trong từ điển: tìm như thường, không có deinflected
+    missing = dictionary.search("走りました")
+    assert missing == {"items": [], "total": 0}
+
+
+def test_search_ja_deinflect_sentence_keeps_word_order_and_pages(dict_db):
+    """Câu nhiều từ: từ nội dung theo thứ tự trong câu; động từ phụ (する / いる) sau danh từ không phải từ cần tra."""
+    r = dictionary.search("日本語を勉強しています")
+    assert r["deinflected"]["lemmas"] == ["日本語"]          # 勉強 không có trong dữ liệu thử, する / いる bị bỏ
+    two = dictionary.search("日本語と日本", limit=1, offset=1)
+    assert two["total"] == 2 and [i["headKanji"] for i in two["items"]] == ["日本"]
+    assert dictionary.search("日本語と日本", limit=1)["items"][0]["headKanji"] == "日本語"
+
+
+def test_search_ja_deinflect_failure_falls_back_to_plain_search(dict_db, monkeypatch):
+    def boom(q):
+        raise RuntimeError("SudachiDict hỏng")
+    monkeypatch.setattr(dictionary, "_lemma_candidates", boom)
+    assert dictionary.search("食べました") == {"items": [], "total": 0}
+
+
 def test_search_en_prefers_exact_gloss_and_easy_level(dict_db):
     items = dictionary.search("eat", "en")["items"]
     assert items[0]["headKanji"] == "食べる"   # cả hai gloss "to eat"; N5 trước N4
@@ -205,6 +242,8 @@ def test_overrides_reject_unknown_field(dict_db):
 def test_router_search_entry_kanji(client):
     assert client.get("/api/dict/search", params={"q": "がっこう"}).json()["items"][0]["key"] == "w:1206730"
     assert client.get("/api/dict/search", params={"q": "x", "mode": "fr"}).status_code == 422
+    conj = client.get("/api/dict/search", params={"q": "食べました"}).json()
+    assert conj["items"][0]["key"] == "w:1358280" and conj["deinflected"] == {"query": "食べました", "lemmas": ["食べる"]}
     assert client.get("/api/dict/entries/1206730").json()["jlpt"] == "N5"
     assert client.get("/api/dict/entries/abc").status_code == 404
     assert client.get("/api/dict/entries/123456789").status_code == 404
