@@ -41,6 +41,9 @@ def candidates(cell: str) -> list[str]:
 def find_key(con: sqlite3.Connection, expression: str, reading: str, gloss: str) -> str | None:
     readings = [to_hira(r) for r in candidates(reading)]
     for form in candidates(expression):
+        # CSV JLPT bẩn: cách đọc dính する khi dạng viết không có (運動,うんどうする) → thử thêm bản bỏ đuôi
+        if not form.endswith("する"):
+            readings += [r[:-2] for r in readings if r.endswith("する") and len(r) > 2 and r[:-2] not in readings]
         rows = con.execute("SELECT DISTINCT f.word_id, w.gloss_short, w.common FROM word_forms f JOIN words w "
                            "ON w.id = f.word_id WHERE f.form = ?", (form,)).fetchall()
         if not rows:

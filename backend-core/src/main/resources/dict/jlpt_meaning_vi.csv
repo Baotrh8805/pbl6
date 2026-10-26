@@ -6614,14 +6614,14 @@ w:1199890,壊す,こわす,N4,"làm hỏng, phá vỡ, làm vỡ","to break, to 
 w:1445690,怒る,おこる,N4,"nổi giận, tức giận; mắng",to get angry; to scold angrily,claude-fable-5-1,2026-10-26
 w:1349410,床屋,とこや,N4,"tiệm hớt tóc, tiệm cắt tóc nam",barber's (shop),claude-fable-5-1,2026-10-26
 w:1032030,オートバイ,オートバイ,N4,"xe máy, xe mô tô",motorcycle (lit: auto-bi(ke)),claude-fable-5-1,2026-10-26
-w:jlpt:運動|うんどうする,運動,うんどうする,N4,"vận động, tập thể dục; phong trào (xã hội)",exercise,claude-fable-5-1,2026-10-26
+w:1172910,運動,うんどうする,N4,"vận động, tập thể dục; phong trào (xã hội)",exercise,claude-fable-5-1,2026-10-26
 w:1310640,止む,やむ,N4,"ngừng, tạnh (mưa), dứt","to cease, to stop",claude-fable-5-1,2026-10-26
 w:1012500,もし,もし,N4,"(phó từ) nếu, giả sử",if,claude-fable-5-1,2026-10-26
 w:1489340,表,おもて,N4,"mặt trước, mặt phải; bề mặt; bên ngoài",surface; front; outside,claude-fable-5-1,2026-10-26
 w:1413260,大学生,だいがくせい,N4,sinh viên đại học,"college student, university student",claude-fable-5-1,2026-10-26
 w:1172870,運転手,うんてんしゅ,N4,"tài xế, người lái xe",driver (by occupation),claude-fable-5-1,2026-10-26
 w:1543070,予習,よしゅう,N4,"chuẩn bị bài trước, xem bài trước khi lên lớp",preparation of lessons (for class),claude-fable-5-1,2026-10-26
-w:jlpt:心配|しんぱいする,心配,しんぱいする,N4,"lo lắng, lo âu, bận tâm","worry, concern",claude-fable-5-1,2026-10-26
+w:1360930,心配,しんぱいする,N4,"lo lắng, lo âu, bận tâm","worry, concern",claude-fable-5-1,2026-10-26
 w:1509430,別,べつ,N4,"khác, riêng; sự phân biệt, sự khác biệt","distinction, different",claude-fable-5-1,2026-10-26
 w:1484930,非常に,ひじょうに,N4,"rất, vô cùng, hết sức",extremely; very,claude-fable-5-1,2026-10-26
 w:1002400,お宅,おたく,N4,"nhà (của người khác, lịch sự); quý vị, ông, bà",(someone else's) house; home -- polite word for 家 (いえ) --,claude-fable-5-1,2026-10-26
@@ -6705,7 +6705,7 @@ w:1100810,パート (タイム),パート (タイム),N4,"việc làm bán thờ
 w:1316300,時代,じだい,N4,"thời đại, thời kỳ, thời","age, period, epoch, era",claude-fable-5-1,2026-10-26
 w:1362950,申し上げる,もうしあげる,N4,"(khiêm nhường ngữ) nói, thưa, trình bày","(humble)to say, to tell",claude-fable-5-1,2026-10-26
 w:1319060,～式,～しき,N4,"(hậu tố) lễ (khai giảng, kết hôn); kiểu, cách thức",~ ceremony; ~ style,claude-fable-5-1,2026-10-26
-w:jlpt:出席|しゅっせきする,出席,しゅっせきする,N4,"tham dự, có mặt, đi học (điểm danh)",attendance,claude-fable-5-1,2026-10-26
+w:1339460,出席,しゅっせきする,N4,"tham dự, có mặt, đi học (điểm danh)",attendance,claude-fable-5-1,2026-10-26
 w:2220280,～家,～か,N4,"(hậu tố) nhà, người chuyên về (nhà văn, họa sĩ...)",person who is specialized in ~,claude-fable-5-1,2026-10-26
 w:1253190,迎える,むかえる,N4,"đón, đón tiếp, chào đón",to welcome; to meet; to greet,claude-fable-5-1,2026-10-26
 w:1357980,触る,さわる,N4,"sờ, chạm, đụng vào","to touch, to feel",claude-fable-5-1,2026-10-26
@@ -6742,7 +6742,7 @@ w:1106010,ビル,ビル,N4,"tòa nhà, cao ốc",(abbr.) building,claude-fable-5
 w:jlpt:けんかする|けんかする,けんかする,けんかする,N4,"cãi nhau, đánh nhau, ẩu đả",quarrel,claude-fable-5-1,2026-10-26
 w:1217700,頑張る,がんばる,N4,"cố gắng, nỗ lực, gắng sức","to try one's best, to try hard, to persist",claude-fable-5-1,2026-10-26
 w:1447000,投げる,なげる,N4,"ném, quăng; bỏ cuộc","to pitch, to cast away",claude-fable-5-1,2026-10-26
-w:jlpt:故障|こしょうする,故障,こしょうする,N4,"hỏng hóc, trục trặc, sự cố (máy móc)",breakdown,claude-fable-5-1,2026-10-26
+w:1267180,故障,こしょうする,N4,"hỏng hóc, trục trặc, sự cố (máy móc)",breakdown,claude-fable-5-1,2026-10-26
 w:1554820,力,ちから,N4,"sức, sức mạnh, lực; năng lực","strength, power",claude-fable-5-1,2026-10-26
 w:1329590,受ける,うける,N4,"nhận, tiếp nhận; dự (thi); chịu, hứng","to take (an examination, interview, etc.); to receive",claude-fable-5-1,2026-10-26
 w:1222590,気分,きぶん,N4,"tâm trạng, cảm giác, trạng thái (trong người)","feeling, mood",claude-fable-5-1,2026-10-26
@@ -6755,7 +6755,7 @@ w:1404740,足りる,たりる,N4,"đủ, đầy đủ",to be sufficient; to be e
 w:1589060,行う,おこなう,N4,"tiến hành, thực hiện, tổ chức",to carry out; to conduct (typically used in written language),claude-fable-5-1,2026-10-26
 w:1498880,ぶどう,ぶどう,N4,"nho, quả nho",grapes,claude-fable-5-1,2026-10-26
 w:1529550,無くなる,なくなる,N4,"mất, biến mất; hết, cạn","to disappear, to get lost",claude-fable-5-1,2026-10-26
-w:jlpt:準備|じゅんびする,準備,じゅんびする,N4,"chuẩn bị, sửa soạn",prepare,claude-fable-5-1,2026-10-26
+w:1341670,準備,じゅんびする,N4,"chuẩn bị, sửa soạn",prepare,claude-fable-5-1,2026-10-26
 w:1373860,世界,せかい,N4,thế giới,world,claude-fable-5-1,2026-10-26
 w:1334080,住所,じゅうしょ,N4,"địa chỉ, nơi ở",address; place of residence,claude-fable-5-1,2026-10-26
 w:1293640,再来月,さらいげつ,N4,tháng sau nữa (hai tháng sau),the month after next,claude-fable-5-1,2026-10-26
@@ -6861,7 +6861,7 @@ w:1002170,お嬢さん,おじょうさん,N4,"con gái (của người khác, l�
 w:1546220,用意,ようい,N4,"chuẩn bị, sửa soạn, sẵn sàng",preparation,claude-fable-5-1,2026-10-26
 w:1593670,探す,さがす,N4,"tìm, tìm kiếm","to search, to seek, to look for",claude-fable-5-1,2026-10-26
 w:1250220,形,かたち,N4,"hình, hình dáng, hình dạng, hình thức",shape,claude-fable-5-1,2026-10-26
-w:jlpt:運転|うんてんする,運転,うんてんする,N4,"lái (xe), vận hành (máy)",driving,claude-fable-5-1,2026-10-26
+w:1172830,運転,うんてんする,N4,"lái (xe), vận hành (máy)",driving,claude-fable-5-1,2026-10-26
 w:1006110,すっかり,すっかり,N4,"hoàn toàn, hẳn, sạch (quên sạch)","all, completely",claude-fable-5-1,2026-10-26
 w:1017330,アナウンサー,アナウンサー,N4,"phát thanh viên, người dẫn chương trình",announcer,claude-fable-5-1,2026-10-26
 w:1002500,お土産,おみやげ,N4,"quà lưu niệm, quà (mua khi đi xa về)",souvenir,claude-fable-5-1,2026-10-26
@@ -6874,14 +6874,14 @@ w:1160570,育てる,そだてる,N4,"nuôi, nuôi dưỡng, nuôi dạy; trồng
 w:1527040,味噌,みそ,N4,"tương miso, tương đậu nành lên men kiểu Nhật","miso, bean paste",claude-fable-5-1,2026-10-26
 w:1612770,お祝い,おいわい,N4,"chúc mừng, lễ mừng; quà mừng","congratulation, celebration",claude-fable-5-1,2026-10-26
 w:1600530,乗り物,のりもの,N4,"phương tiện đi lại, phương tiện giao thông",vehicle,claude-fable-5-1,2026-10-26
-w:jlpt:案内|あんないする,案内,あんないする,N4,"hướng dẫn, chỉ dẫn, dẫn đường; thông báo","information, guidance",claude-fable-5-1,2026-10-26
+w:1154860,案内,あんないする,N4,"hướng dẫn, chỉ dẫn, dẫn đường; thông báo","information, guidance",claude-fable-5-1,2026-10-26
 w:1432850,通う,かよう,N4,"đi (học, làm) hằng ngày, đi về thường xuyên, đi lại",to go back and forth; to commute,claude-fable-5-1,2026-10-26
 w:1559290,連れる,つれる,N4,"dẫn theo, dắt theo, đưa đi","to lead, to take (a person)",claude-fable-5-1,2026-10-26
 w:1225130,技術,ぎじゅつ,N4,"kỹ thuật, công nghệ; kỹ năng","technique, technology, skill",claude-fable-5-1,2026-10-26
 w:1348530,小鳥,ことり,N4,"chim nhỏ, chim non",small bird,claude-fable-5-1,2026-10-26
 w:1185290,下宿,げしゅく,N4,"nhà trọ, ở trọ (nhà dân)","lodging, boarding house",claude-fable-5-1,2026-10-26
 w:1065680,ジャム,ジャム,N4,"mứt, mứt quả",jam,claude-fable-5-1,2026-10-26
-w:jlpt:招待|しょうたいする,招待,しょうたいする,N4,"mời, lời mời, sự mời",invitation,claude-fable-5-1,2026-10-26
+w:1349610,招待,しょうたいする,N4,"mời, lời mời, sự mời",invitation,claude-fable-5-1,2026-10-26
 w:1238550,鏡,かがみ,N4,"gương, tấm gương",mirror,claude-fable-5-1,2026-10-26
 w:1476430,はず,はず,N4,"(cách nói) chắc hẳn, lẽ ra phải, đáng lẽ",it should be so,claude-fable-5-1,2026-10-26
 w:1517480,法律,ほうりつ,N4,"pháp luật, luật pháp",law,claude-fable-5-1,2026-10-26
@@ -6917,7 +6917,7 @@ w:1238410,興味,きょうみ,N4,"sự hứng thú, quan tâm, thích thú",inte
 w:1169340,引っ越す,ひっこす,N4,"chuyển nhà, dọn nhà",to move to a new place of residence,claude-fable-5-1,2026-10-26
 w:1557290,冷房,れいぼう,N4,"máy lạnh, điều hòa làm mát","cooling, air conditioning",claude-fable-5-1,2026-10-26
 w:1444980,都合,つごう,N4,"sự thuận tiện, hoàn cảnh, lịch (rảnh, bận); điều kiện","circumstances, convenience",claude-fable-5-1,2026-10-26
-w:jlpt:遠慮|えんりょする,遠慮,えんりょする,N4,"ngại, giữ ý, khách sáo; kiêng, từ chối (khéo)","restraint, reserve, hesitate",claude-fable-5-1,2026-10-26
+w:1178450,遠慮,えんりょする,N4,"ngại, giữ ý, khách sáo; kiêng, từ chối (khéo)","restraint, reserve, hesitate",claude-fable-5-1,2026-10-26
 w:1518540,亡くなる,なくなる,N4,"mất, qua đời",to pass away,claude-fable-5-1,2026-10-26
 w:1192700,科学,かがく,N4,khoa học,science,claude-fable-5-1,2026-10-26
 w:1010150,はっきり,はっきり,N4,"rõ ràng, rành mạch, dứt khoát","clearly, distinctly",claude-fable-5-1,2026-10-26
@@ -6927,7 +6927,7 @@ w:1396840,祖父,そふ,N4,"ông (nội, ngoại)",grandfather,claude-fable-5-1,
 w:1279990,港,みなと,N4,"cảng, bến cảng","harbor, port",claude-fable-5-1,2026-10-26
 w:1543750,予約,よやく,N4,"đặt trước, đặt chỗ, hẹn trước",reservation,claude-fable-5-1,2026-10-26
 w:1374550,凄い,すごい,N4,"ghê gớm, tuyệt vời, kinh khủng; rất, cực kỳ","terrific, great",claude-fable-5-1,2026-10-26
-w:jlpt:入学|にゅうがくする,入学,にゅうがくする,N4,"nhập học, vào trường",entry to school or university,claude-fable-5-1,2026-10-26
+w:1465850,入学,にゅうがくする,N4,"nhập học, vào trường",entry to school or university,claude-fable-5-1,2026-10-26
 w:1511790,片付ける,かたづける,N4,"dọn dẹp, thu dọn, sắp xếp; giải quyết xong","to (clean) tidy up (v.t.), to put away",claude-fable-5-1,2026-10-26
 w:1588320,写す,うつす,N4,"chép, sao chép; chụp (ảnh)",to copy (v.t.); to photograph,claude-fable-5-1,2026-10-26
 w:1101570,パソコン,パソコン,N4,máy tính cá nhân,(personal) computer,claude-fable-5-1,2026-10-26
@@ -6940,7 +6940,7 @@ w:1165660,いっぱい,一杯,N4,"đầy, tràn đầy; nhiều; một cốc, m�
 w:1149830,アメリカ,アメリカ,N4,"(địa danh) Mỹ, Hoa Kỳ; châu Mỹ","America, U.S.A.",claude-fable-5-1,2026-10-26
 w:1420160,男性,だんせい,N4,"nam giới, đàn ông",man; male,claude-fable-5-1,2026-10-26
 w:1550140,理由,りゆう,N4,"lý do, nguyên do",reason,claude-fable-5-1,2026-10-26
-w:jlpt:生産|せいさんする,生産,せいさんする,N4,"sản xuất, sản lượng",production; to produce,claude-fable-5-1,2026-10-26
+w:1378990,生産,せいさんする,N4,"sản xuất, sản lượng",production; to produce,claude-fable-5-1,2026-10-26
 w:1423240,着物,きもの,N4,"kimono, trang phục truyền thống Nhật Bản; quần áo",kimono; Japanese traditional dress,claude-fable-5-1,2026-10-26
 w:1217070,おもちゃ,おもちゃ,N4,đồ chơi,a toy,claude-fable-5-1,2026-10-26
 w:1514960,暮れる,くれる,N4,"tối dần, xế chiều; hết (năm), tàn (năm)","to get dark, to come to an end",claude-fable-5-1,2026-10-26
@@ -6986,7 +6986,7 @@ w:1145130,レジ,レジ,N4,"quầy thu ngân, máy tính tiền",register,claude
 w:1304420,しばらく,しばらく,N4,"một lúc, chốc lát; một thời gian, lâu rồi",little while,claude-fable-5-1,2026-10-26
 w:1454670,特に,とくに,N4,"đặc biệt, nhất là",particularly,claude-fable-5-1,2026-10-26
 w:1586270,空く,あく,N4,"mở ra; trống, rỗng, có chỗ trống; rảnh","to open, to become empty (vacant)",claude-fable-5-1,2026-10-26
-w:jlpt:計画|けいかくする,計画,けいかくする,N4,"kế hoạch, lập kế hoạch, dự án","plan, project, schedule",claude-fable-5-1,2026-10-26
+w:1252090,計画,けいかくする,N4,"kế hoạch, lập kế hoạch, dự án","plan, project, schedule",claude-fable-5-1,2026-10-26
 w:1432920,通り,とおり,N4,"đường phố, phố; đúng như, theo như","~ Street, ~ Avenue",claude-fable-5-1,2026-10-26
 w:1185930,下着,したぎ,N4,"quần áo lót, đồ lót",underwear,claude-fable-5-1,2026-10-26
 w:1251320,経済,けいざい,N4,kinh tế,"economics, finance, economy",claude-fable-5-1,2026-10-26
@@ -7002,7 +7002,7 @@ w:1096870,ハンバーグ,ハンバーグ,N4,"thịt băm viên áp chảo, bít
 w:1308090,市,し,N4,"thành phố, thị xã",city,claude-fable-5-1,2026-10-26
 w:1601650,引き出し,ひきだし,N4,ngăn kéo; rút tiền,drawer,claude-fable-5-1,2026-10-26
 w:1542070,遊び,あそび,N4,"trò chơi, sự vui chơi, chơi đùa",play,claude-fable-5-1,2026-10-26
-w:jlpt:支度|したくする,支度,したくする,N4,"chuẩn bị, sửa soạn (bữa ăn, trang phục, đi ra ngoài)",preparation,claude-fable-5-1,2026-10-26
+w:1310260,支度,したくする,N4,"chuẩn bị, sửa soạn (bữa ăn, trang phục, đi ra ngoài)",preparation,claude-fable-5-1,2026-10-26
 w:1307550,～始める,～はじめる,N4,(hậu tố) bắt đầu (làm gì),to start doing ~,claude-fable-5-1,2026-10-26
 w:1259140,見える,みえる,N4,"nhìn thấy, trông thấy; trông có vẻ; (kính ngữ) đến",to be visible; -- polite verb meaning 来る (くる) --,claude-fable-5-1,2026-10-26
 w:1335080,十分,じゅうぶん,N4,"đủ, đầy đủ, thỏa đáng; mười phút",enough,claude-fable-5-1,2026-10-26
@@ -7049,7 +7049,7 @@ w:1402730,送る,おくる,N4,"gửi, gửi đi; tiễn, đưa (ai về); trải
 w:1352320,あげる,あげる,N4,"cho, tặng; nâng lên; làm cho (ai)",to give,claude-fable-5-1,2026-10-26
 w:1403040,騒ぐ,さわぐ,N4,"làm ồn, ồn ào, náo loạn; nhốn nháo","to make noise, to clamor",claude-fable-5-1,2026-10-26
 w:1369940,尋ねる,たずねる,N4,"hỏi, hỏi thăm; tìm kiếm",to inquire (same as 質問する),claude-fable-5-1,2026-10-26
-w:jlpt:放送|ほうそうする,放送,ほうそうする,N4,"phát sóng, phát thanh, truyền hình",broadcasting,claude-fable-5-1,2026-10-26
+w:1516750,放送,ほうそうする,N4,"phát sóng, phát thanh, truyền hình",broadcasting,claude-fable-5-1,2026-10-26
 w:1375970,政治,せいじ,N4,chính trị,politics,claude-fable-5-1,2026-10-26
 w:1308690,市民,しみん,N4,"thị dân, người dân thành phố, công dân",citizen,claude-fable-5-1,2026-10-26
 w:1108180,ファックス,ファックス,N4,"máy fax, bản fax, gửi fax",fax,claude-fable-5-1,2026-10-26
@@ -7065,7 +7065,7 @@ w:1519230,忘れ物,わすれもの,N4,"đồ bỏ quên, đồ để quên","lo
 w:1589500,下りる,おりる,N4,"xuống, đi xuống; xuống (xe, núi); (màn) hạ xuống","to get down, to go; come down",claude-fable-5-1,2026-10-26
 w:1562850,腕,うで,N4,"cánh tay; tay nghề, năng lực",arm (in reference to body),claude-fable-5-1,2026-10-26
 w:1538330,訳,わけ,N4,"lý do, nguyên cớ; ý nghĩa; lẽ, lý lẽ",reason; explanation,claude-fable-5-1,2026-10-26
-w:jlpt:承知|しょうちする,承知,しょうちする,N4,"biết, hiểu rõ, nắm được; đồng ý, chấp thuận","consent, acceptance",claude-fable-5-1,2026-10-26
+w:1349480,承知,しょうちする,N4,"biết, hiểu rõ, nắm được; đồng ý, chấp thuận","consent, acceptance",claude-fable-5-1,2026-10-26
 w:1463930,日記,にっき,N4,nhật ký,"diary, journal",claude-fable-5-1,2026-10-26
 w:1283500,高校; 高等学校,こうこう; こうとうがっこう,N4,"trường trung học phổ thông, trường cấp ba",high school; senior high school,claude-fable-5-1,2026-10-26
 w:1314600,似る,にる,N4,"giống, giống nhau, tương tự","to resemble, to be similar",claude-fable-5-1,2026-10-26
@@ -7101,7 +7101,7 @@ w:1284430,合う,あう,N4,"hợp, phù hợp, vừa (vặn); khớp, đúng; (h
 w:1982860,～代,～だい,N4,"(hậu tố) tiền ..., phí; độ tuổi (những năm ... tuổi); thời, đời",~ age; period,claude-fable-5-1,2026-10-26
 w:1293810,最後,さいご,N4,"cuối cùng, sau cùng, kết thúc","last, end",claude-fable-5-1,2026-10-26
 w:1600160,値段,ねだん,N4,"giá, giá cả, giá tiền",price,claude-fable-5-1,2026-10-26
-w:jlpt:退院|たいいんする,退院,たいいんする,N4,"xuất viện, ra viện",leaving hospital,claude-fable-5-1,2026-10-26
+w:1411300,退院,たいいんする,N4,"xuất viện, ra viện",leaving hospital,claude-fable-5-1,2026-10-26
 w:1440660,展覧会,てんらんかい,N4,"triển lãm, cuộc triển lãm",exhibition,claude-fable-5-1,2026-10-26
 w:1227370,久しぶり,ひさしぶり,N4,"lâu rồi (mới), đã lâu không (gặp), lâu ngày",it has been a long time; for the first time in a long time,claude-fable-5-1,2026-10-26
 w:1036290,カーテン,カーテン,N4,"rèm, màn cửa",curtain,claude-fable-5-1,2026-10-26
@@ -7122,7 +7122,7 @@ w:1599390,直す,なおす,N4,"sửa, sửa chữa, chữa; sửa lại, làm l�
 w:1405790,続く,つづく,N4,"tiếp tục, tiếp diễn, kéo dài; nối tiếp",to be continued,claude-fable-5-1,2026-10-26
 w:1388410,先輩,せんぱい,N4,"tiền bối, đàn anh, đàn chị, người đi trước",senior members of a group,claude-fable-5-1,2026-10-26
 w:1538130,約束,やくそく,N4,"lời hứa, hẹn, giao ước, cam kết","arrangement, appointment, promise",claude-fable-5-1,2026-10-26
-w:jlpt:世話|せわする,世話,せわする,N4,"chăm sóc, trông nom, giúp đỡ; làm phiền",looking after; to look after,claude-fable-5-1,2026-10-26
+w:1374300,世話,せわする,N4,"chăm sóc, trông nom, giúp đỡ; làm phiền",looking after; to look after,claude-fable-5-1,2026-10-26
 w:1242350,近所,きんじょ,N4,"hàng xóm, khu lân cận, gần nhà",neighborhood,claude-fable-5-1,2026-10-26
 w:1347710,将来,しょうらい,N4,"tương lai, mai sau; triển vọng",(in the) future; prospects,claude-fable-5-1,2026-10-26
 w:1182620,億,おく,N4,trăm triệu (đơn vị đếm),hundred million,claude-fable-5-1,2026-10-26
@@ -7140,8 +7140,8 @@ w:1279680,かまう,,N4,"bận tâm, để ý, quan tâm; chăm sóc; (không) s
 w:1405800,続ける,つづける,N4,"tiếp tục, duy trì, kéo dài","to continue, to keep up",claude-fable-5-1,2026-10-26
 w:1589260,落す,おとす,N4,"làm rơi, đánh rơi; đánh mất; hạ, giảm (tốc độ); loại (bỏ)","to drop, to lose",claude-fable-5-1,2026-10-26
 w:1584660,明日,あす,N4,ngày mai; tương lai gần,tomorrow,claude-fable-5-1,2026-10-26
-w:jlpt:出発|しゅっぱつする,出発,しゅっぱつする,N4,"xuất phát, khởi hành",departure,claude-fable-5-1,2026-10-26
-w:jlpt:拝見|はいけんする,拝見,はいけんする,N4,"(khiêm nhường ngữ) xem, đọc, nhìn","(humble) (polite) seeing, look at",claude-fable-5-1,2026-10-26
+w:1340000,出発,しゅっぱつする,N4,"xuất phát, khởi hành",departure,claude-fable-5-1,2026-10-26
+w:1472270,拝見,はいけんする,N4,"(khiêm nhường ngữ) xem, đọc, nhìn","(humble) (polite) seeing, look at",claude-fable-5-1,2026-10-26
 w:1208020,割れる,われる,N4,"vỡ, nứt, bị vỡ; chia hết; tách ra",to break,claude-fable-5-1,2026-10-26
 w:1472800,背中,せなか,N4,"lưng, sống lưng",back (of body),claude-fable-5-1,2026-10-26
 w:1362400,新聞社,しんぶんしゃ,N4,"tòa soạn báo, công ty báo chí",newspaper company,claude-fable-5-1,2026-10-26
@@ -7181,7 +7181,7 @@ w:1357250,植える,うえる,N4,"trồng (cây), gieo trồng",to plant,claude-
 w:1554010,両方,りょうほう,N4,"cả hai, hai bên, cả hai phía","both sides, both parties",claude-fable-5-1,2026-10-26
 w:1179005,汚れる,よごれる,N4,"bẩn, bị bẩn, dính bẩn",to become dirty,claude-fable-5-1,2026-10-26
 w:1371320,水泳,すいえい,N4,"bơi lội, môn bơi",swimming,claude-fable-5-1,2026-10-26
-w:jlpt:経験|けいけんする,経験,けいけんする,N4,"kinh nghiệm, trải nghiệm, từng trải",experience,claude-fable-5-1,2026-10-26
+w:1251270,経験,けいけんする,N4,"kinh nghiệm, trải nghiệm, từng trải",experience,claude-fable-5-1,2026-10-26
 w:1346150,勝つ,かつ,N4,"thắng, chiến thắng; vượt qua",to win,claude-fable-5-1,2026-10-26
 w:1291500,砂,すな,N4,cát,sand,claude-fable-5-1,2026-10-26
 w:1252390,警察,けいさつ,N4,"cảnh sát; đồn cảnh sát, sở cảnh sát",police; police station,claude-fable-5-1,2026-10-26
@@ -7206,20 +7206,20 @@ w:1518070,訪ねる,たずねる,N4,"thăm, đến thăm, viếng thăm",to visi
 w:1184170,下げる,さげる,N4,"hạ xuống, hạ thấp; treo, đeo; lùi; dọn (bát đĩa)",to lower (v.t.); to hang,claude-fable-5-1,2026-10-26
 w:1194660,花見,はなみ,N4,"ngắm hoa anh đào, hội ngắm hoa",cherry-blossom viewing,claude-fable-5-1,2026-10-26
 w:1582200,途中,とちゅう,N4,"giữa đường, dọc đường; giữa chừng, đang dở","on the way, midway",claude-fable-5-1,2026-10-26
-w:jlpt:入院|にゅういんする,入院,にゅういんする,N4,"nhập viện, nằm viện",hospitalization,claude-fable-5-1,2026-10-26
+w:1465720,入院,にゅういんする,N4,"nhập viện, nằm viện",hospitalization,claude-fable-5-1,2026-10-26
 w:1600470,乗り換える,のりかえる,N4,"chuyển (tàu, xe), đổi tuyến, chuyển tàu","to transfer (trains), to change (bus, train, etc.)",claude-fable-5-1,2026-10-26
 w:1606590,別れる,わかれる,N4,"chia tay, chia ly, chia lìa; tách ra","to part from, to separate",claude-fable-5-1,2026-10-26
 w:2853569,～町,～ちょう,N4,"(hậu tố) phố, khu phố, thị trấn (đơn vị hành chính)",the town of ~,claude-fable-5-1,2026-10-26
 w:1153930,安全,あんぜん,N4,"an toàn, sự an toàn","safety, security",claude-fable-5-1,2026-10-26
 w:1213870,看護婦,かんごふ,N4,"y tá (nữ), nữ điều dưỡng",(female) nurse,claude-fable-5-1,2026-10-26
 w:1260000,見物,けんぶつ,N4,"tham quan, đi xem (cảnh vật, biểu diễn); ngắm cảnh",sightseeing,claude-fable-5-1,2026-10-26
-w:jlpt:相談|そうだんする,相談,そうだんする,N4,"bàn bạc, trao đổi, hỏi ý kiến, tư vấn",consultation,claude-fable-5-1,2026-10-26
+w:1401210,相談,そうだんする,N4,"bàn bạc, trao đổi, hỏi ý kiến, tư vấn",consultation,claude-fable-5-1,2026-10-26
 w:1040260,ガソリンスタンド,ガソリンスタンド,N4,"trạm xăng, cây xăng","gas station, service station",claude-fable-5-1,2026-10-26
 w:1080000,テニス,テニス,N4,"quần vợt, môn ten-nít",tennis,claude-fable-5-1,2026-10-26
 w:1529390,眠る,ねむる,N4,"ngủ, ngủ say",to sleep,claude-fable-5-1,2026-10-26
 w:1352290,上がる,あがる,N4,"lên, đi lên, tăng lên; vào nhà; xong; hồi hộp; (kính ngữ) ăn, uống","to rise, to go up",claude-fable-5-1,2026-10-26
 w:1523400,翻訳,ほんやく,N4,"dịch, phiên dịch (văn bản), bản dịch",translation,claude-fable-5-1,2026-10-26
-w:jlpt:食事|しょくじする,食事,しょくじする,N4,"bữa ăn, ăn cơm, dùng bữa",meal,claude-fable-5-1,2026-10-26
+w:1358490,食事,しょくじする,N4,"bữa ăn, ăn cơm, dùng bữa",meal,claude-fable-5-1,2026-10-26
 w:1001640,おかげ,お陰,N4,"nhờ, nhờ ơn, nhờ có (ai); tại, do (nguyên nhân, mỉa mai)",thanks or owing to,claude-fable-5-1,2026-10-26
 w:1531190,娘,むすめ,N4,con gái (của mình); cô gái trẻ,daughter (humble),claude-fable-5-1,2026-10-26
 w:1448580,湯,ゆ,N4,"nước nóng, nước sôi; bồn tắm nước nóng, suối nước nóng",hot water,claude-fable-5-1,2026-10-26
@@ -7228,7 +7228,7 @@ w:1198360,会議,かいぎ,N4,"hội nghị, cuộc họp",business meeting; con
 w:1267280,湖,みずうみ,N4,"hồ, hồ nước",lake,claude-fable-5-1,2026-10-26
 w:1333550,集まる,あつまる,N4,"tập trung, tụ họp, tập hợp, gom lại","to gather (v.i.), to collect",claude-fable-5-1,2026-10-26
 w:1403390,～にくい,～にくい,N4,"(hậu tố) khó (làm gì), không dễ",difficult to do ~,claude-fable-5-1,2026-10-26
-w:jlpt:生活|せいかつする,生活,せいかつする,N4,"sinh hoạt, cuộc sống, đời sống; sống, sinh sống","living, life; to live",claude-fable-5-1,2026-10-26
+w:1378860,生活,せいかつする,N4,"sinh hoạt, cuộc sống, đời sống; sống, sinh sống","living, life; to live",claude-fable-5-1,2026-10-26
 w:1311450,糸,いと,N4,"sợi chỉ, chỉ, sợi, dây (đàn)",thread,claude-fable-5-1,2026-10-26
 w:1215810,関係,かんけい,N4,"quan hệ, mối liên hệ, liên quan","relation(ship), connection",claude-fable-5-1,2026-10-26
 w:1106400,ピアノ,ピアノ,N4,"đàn piano, dương cầm",piano,claude-fable-5-1,2026-10-26
@@ -7237,7 +7237,7 @@ w:1482340,番組,ばんぐみ,N4,"chương trình (truyền hình, phát thanh)"
 w:1228560,急,きゅう,N4,"gấp, khẩn cấp; đột ngột, bất ngờ; dốc đứng, gấp (khúc)","urgent, sudden; steep",claude-fable-5-1,2026-10-26
 w:1416700,棚,たな,N4,"kệ, giá, ngăn để đồ","shelves, rack",claude-fable-5-1,2026-10-26
 w:1534870,木綿,もめん,N4,"vải bông, sợi bông",cotton,claude-fable-5-1,2026-10-26
-w:jlpt:輸出|ゆしゅつする,輸出,ゆしゅつする,N4,xuất khẩu,export,claude-fable-5-1,2026-10-26
+w:1538820,輸出,ゆしゅつする,N4,xuất khẩu,export,claude-fable-5-1,2026-10-26
 w:1075940,タイプ,タイプ,N4,"kiểu, loại, dạng; đánh máy; mẫu người (ưa thích)","type, style",claude-fable-5-1,2026-10-26
 w:1567450,すり,すり,N4,kẻ móc túi,pickpocket,claude-fable-5-1,2026-10-26
 w:1219510,うれしい,嬉しい,N4,"vui, vui mừng, mừng rỡ",to be happy; to be glad,claude-fable-5-1,2026-10-26
