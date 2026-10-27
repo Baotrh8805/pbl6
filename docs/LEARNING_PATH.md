@@ -270,6 +270,19 @@ trên vẫn đúng cho luồng tạo → nháp → kích hoạt, trừ chỗ ghi
   activate mới hơn. `dayIndexFor(start, today, totalDays, mask?)` 1.0 nay đếm theo mặt nạ (qua `dayIndexForMask`) cho các chỗ dự
   phòng. Hàm thuần + selfcheck: `roadmapUtils.ts` (`scripts/selfCheck.ts` mục 21–24). Đã kiểm tay 1280 / 375 px trên trình duyệt (20/10 chiều, 26–27/10); bố cục dùng flex-wrap / 1 cột trên di động, biểu đồ cuộn trong khung riêng.
 
+## 12. Mô hình trí nhớ HLR trong ôn tập (27/10 đêm, D32; spec [Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md](Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md) §8)
+
+- **SM-2 vẫn lập lịch** (`SrsService.schedule`). Sau mỗi lượt chấm thật (không cram), `ReviewService.apply` cập nhật `reviews.seen /
+  correct / last_reviewed_at` (V38, lấp từ `review_logs`) và gọi `HlrClient.predict` (ai-service `/api/hlr/predict`, numpy, timeout 3 s) với
+  số liệu **trước** lượt chấm (→ `recall_p`, hiện "trước khi ôn bạn được dự đoán nhớ x %") và **sau** lượt chấm; nếu model dự đoán "quên"
+  (p < 0,8235) dù vừa chấm không phải Lại → `SrsService.brake`: khoảng ôn **không tăng** (giữ ≤ khoảng trước, ≥ 1 ngày), `hlr_brake = true`.
+  Thẻ mới (seen < 2) hoặc ai-service lỗi → SM-2 thuần (`scheduler = sm2`). Hoàn tác tính lại ba cột từ nhật ký.
+- Vì sao không lập lịch bằng khoảng ôn của model: bản portable gần phẳng theo thời gian (p giảm ~0,08 sau 9 tháng) nên "thời điểm p chạm
+  mục tiêu" cực nhạy (0 ↔ 95 ngày); model có giá trị ở xếp hạng nhớ / quên theo lịch sử đúng / sai.
+- Hiển thị: `GET /api/decks/{id}/recall` (độ nhớ trung bình + số thẻ p < 0,7, chip ở chi tiết bộ; 503 khi ai-service lỗi → ẩn), phiên lộ
+  trình xếp thẻ đến hạn p thấp trước (`SessionResponse.Card.recall`), tín hiệu điểm yếu `low_recall` (≤ 300 thẻ học gần nhất). "Thành
+  thạo" giữ `interval ≥ 21 ngày`. Test: `ReviewHlrIT`, `SrsBrakeTest`, `test_hlr.py`.
+
 ## 11. Bản 2.0 — điểm yếu, bổ khuyết, nhắc học (19/10, backend)
 
 Mọi endpoint: vai trò USER (staff 403), cần Bearer (thiếu → 401), DTO `@JsonInclude(NON_NULL)` nên trường null bị bỏ khỏi JSON.

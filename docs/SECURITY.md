@@ -49,6 +49,17 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
 - Mọi Cypher tham số hoá (không ghép chuỗi người dùng), có `LIMIT`; câu hỏi GraphRAG ≤ 300 ký tự, Gemini chỉ nhận ngữ cảnh đã cắt
   (≤ 24 mẩu / 6 000 ký tự).
 
+## 3b. Kiểm duyệt bình luận bằng AI (27/10 đêm, V38)
+
+- Văn bản người dùng (bình luận từ điển, bình luận đánh giá, mẹo nhớ, tên hiển thị) chỉ đi backend → ai-service nội bộ (`X-Internal-Key`),
+  không gửi dịch vụ ngoài; model nằm ở `ai-service/models/` (không commit, `MANIFEST.json` có sha256).
+- Bình luận AI chặn **không mất**: chỉ chủ thấy, admin khôi phục được, tự xoá sau 30 ngày; bình luận gắn cờ che từ cho người khác tới khi
+  admin xử lý. Mọi thao tác admin ghi `admin_audit_logs` (`MOD_IGNORE / MOD_RESTORE / MOD_HIDE / MOD_DELETE / MOD_RESCAN`, `DICT_SENSITIVE`,
+  `USER_COMMENT_LOCK / UNLOCK`).
+- Khoá bình luận mềm (3 lần bị chặn / 24 giờ → 24 giờ) không khoá tài khoản, không thu hồi phiên; admin mở sớm ở chi tiết người dùng.
+- ai-service lỗi không chặn người dùng: bình luận ở `PENDING`, job quét lại; tên hiển thị cho qua. Ngưỡng cố định trong `ModerationPolicy`
+  (không nhận từ client).
+
 ## 4. Việc phải làm khi triển khai (không nằm trong mã)
 
 1. **Đổi ngay** mật khẩu Supabase và `JWT_SECRET` đã từng bị commit (21/10) — lịch sử git vẫn còn bản cũ.
@@ -60,3 +71,5 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
 5. Khi có nhiều instance: các bộ đếm trong RAM (đăng nhập sai, hạn mức) không chia sẻ — cần Redis nếu mở rộng.
 6. Neo4j: đổi mật khẩu mặc định, không mở cổng ra Internet, sao lưu volume `neo4jdata` (dựng lại được từ dữ liệu: Admin › Dựng lại
    đồ thị + Đồng bộ dữ liệu học).
+7. Model kiểm duyệt: chép `vihsd_cnn_lstm.npz` (+ `phobert_hatespeech_best.pt`, `phobert-base/` nếu máy ≥ 1 GB RAM trống) vào
+   `ai-service/models/` bằng `scripts/fetch_models.py`; thiếu → bình luận ở PENDING cho tới khi có model (xem cờ `moderation` ở health).

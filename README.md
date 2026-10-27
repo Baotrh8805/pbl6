@@ -191,6 +191,16 @@ pip install -r requirements.txt
 Thư viện chính: FastAPI, SudachiPy + từ điển `sudachidict_core`, python-docx, pypdf, pypdfium2, Pillow, pytesseract,
 wordfreq, google-genai. Lần cài đầu tải khoảng 300 MB.
 
+**2.1b. Model kiểm duyệt bình luận + trí nhớ (27/10, tuỳ chọn nhưng nên có)** — chép các file model tự huấn luyện vào
+`ai-service/models/` (không commit; danh sách + sha256 ở `ai-service/models/MANIFEST.json`, hướng dẫn ở `ai-service/models/README.md`):
+
+```bash
+python scripts/fetch_models.py --from "D:/thu-muc-co-file-model"   # hoặc điền url vào MANIFEST.json rồi chạy không tham số
+pip install -r requirements-ml.txt    # torch CPU + transformers cho PhoBERT đánh dấu từ (≈ 200 MB; bỏ qua thì chỉ có model 3 lớp)
+```
+
+Thiếu model → bình luận ở trạng thái "chưa kiểm" và được chấm lại khi có; HLR (file JSON đã commit) luôn chạy.
+
 **2.2. Tải dữ liệu từ điển** (một lần, cần mạng, mất vài phút)
 
 ```bash

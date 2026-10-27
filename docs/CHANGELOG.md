@@ -1,5 +1,52 @@
 # Nhật ký thay đổi
 
+## 27/10/2026 (đêm): Kiểm duyệt bình luận bằng AI (ViHSD + ViHOS) và mô hình trí nhớ HLR trong ôn tập (D31, D32)
+Spec [Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md](Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md), kế hoạch
+[Plan/plans/2026-10-27-kiem-duyet-ai-va-hlr.md](Plan/plans/2026-10-27-kiem-duyet-ai-va-hlr.md). Một migration chỉ thêm cột / bảng:
+**V38** (`mod_*` trên `dict_comments` / `deck_ratings` / `kanji_mnemonics`, `users.comment_locked_until`, bảng `dict_sensitive`,
+`reviews.seen / correct / last_reviewed_at / recall_p / hlr_brake` lấp từ `review_logs`).
+
+**Model tự huấn luyện (ai-service)** — file lớn ở `ai-service/models/` (không commit, `scripts/fetch_models.py`), xác minh 27/10:
+- ViHSD 3 lớp (0 sạch / 1 xúc phạm / 2 thù ghét): dùng checkpoint tốt nhất epoch 12 (test 0,8437; file `hatespeech_model.pt` là epoch cuối,
+  quá khớp), tokenizer Keras dựng lại đúng (độ chính xác khớp notebook), chạy lại bằng **numpy** (`app/moderation/vihsd.py`, khớp Keras
+  trên 6 584 câu test, 12 ms/câu) — không cần TensorFlow / torch.
+- ViHOS đánh dấu từ vi phạm: PhoBERT-base + token classification (`app/moderation/vihos.py`, cần `requirements-ml.txt`: torch CPU +
+  transformers; ≈ 100 ms/câu, +400 MB RAM; `MODERATION_SPANS=0` tắt). Vị trí từ trả về theo ký tự gốc để backend che đúng chỗ.
+- HLR portable logistic (`app/hlr/model.py`, JSON trọng số đã commit, khớp bản torch qua fixture). Đo được đường cong gần phẳng theo thời
+  gian nên **không lập lịch bằng khoảng ôn của model** (D32 đổi): SM-2 lập lịch, HLR chỉ **phanh** (p < 0,8235 → khoảng ôn không tăng),
+  hiển thị độ nhớ và tín hiệu "sắp quên".
+- Endpoint mới `POST /api/moderation/check`, `GET /api/moderation/info`, `POST /api/hlr/predict`, `GET /api/hlr/info`; cờ health
+  `moderation`, `moderationSpans`, `hlr`. Test `test_moderation_*.py`, `test_hlr.py`.
+
+**Backend**
+- Bình luận từ điển (từ + chữ Hán) và bình luận đánh giá bộ thẻ được chấm **đồng bộ** lúc gửi (`ModerationService`, timeout 3 s):
+  `CLEAN` đăng; `FLAGGED` (nhãn 1, hoặc nhãn 2 chưa đủ điều kiện, hoặc từ đánh dấu rất chắc) đăng nhưng **người khác thấy bản che từ**
+  (`đ∗∗`) và vào hàng chờ admin; `BLOCKED` (nhãn 2 với p ≥ 0,8 **và** ≥ 1 từ đánh dấu, mục từ không nhạy cảm) **chỉ chủ thấy**, trả 201 với
+  `moderation.status`, sửa gửi lại được; ai-service lỗi → `PENDING`, `ModerationRescanJob` quét lại mỗi 5 phút (50 dòng). Mục từ
+  **nhạy cảm** (nhãn JMdict vulg / X / derog / sens / sl hoặc công tắc admin `dict_sensitive`) → thù ghét chỉ gắn cờ. 3 lần bị chặn / 24 giờ
+  → khoá bình luận mềm 24 giờ (429 `COMMENT_LOCKED`, thông báo `MOD_COMMENT_LOCKED`). Tên hiển thị hồ sơ có từ xấu → 400 `NAME_REJECTED`.
+  Mẹo nhớ kanji chỉ nhận nhãn AI cho hàng chờ duyệt. BLOCKED quá 30 ngày → `HousekeepingJob` xoá.
+- Admin: `GET /api/admin/moderation` (hàng chờ, lọc trạng thái / loại / tìm), `/counts`, `POST …/{kind}/{id}/ignore | restore | hide`,
+  `DELETE …/{kind}/{id}`, `POST /api/admin/moderation/rescan`, `GET/PUT /api/admin/dictionary/entries/{key}/sensitive`; `AdminStats.openModeration`
+  (badge); chi tiết người dùng có `commentLockedUntil` + `moderationBlocked30d`, PATCH `{commentLocked}`; audit `MOD_*`, `DICT_SENSITIVE`,
+  `USER_COMMENT_LOCK / UNLOCK`; thông báo `MOD_COMMENT_BLOCKED` (chặn muộn), `MOD_COMMENT_RESTORED`.
+- HLR: `ReviewService.apply` cập nhật `seen / correct / last_reviewed_at`, gọi `HlrClient` (timeout 3 s, lỗi → SM-2 thuần), ghi `recall_p`
+  (p trước lượt chấm) và `hlr_brake`; `ReviewResponse` thêm `recallBefore`, `hlrBrake`, `scheduler`; hoàn tác tính lại từ nhật ký;
+  `GET /api/decks/{id}/recall` (503 `HLR_UNAVAILABLE` khi ai-service lỗi); phiên lộ trình xếp thẻ đến hạn theo p tăng dần (`SessionResponse.Card.recall`);
+  tín hiệu điểm yếu `low_recall` (p < 0,7). `AiServiceClient.postJsonQuick` (kết nối 1 s, đọc 3 s).
+- Test: `ModerationPolicyTest`, `ModerationIT` (11 ca), `ReviewHlrIT` (5 ca), `SrsBrakeTest`.
+
+**Frontend**
+- Bình luận từ điển / đánh giá: dải trạng thái (chưa đăng + từ bị đánh dấu + sửa gửi lại; chờ admin; chưa kiểm), ghi chú "từ đang được che"
+  cho người khác; lỗi 429 / 400 hiện câu của server.
+- Admin › **Kiểm duyệt AI** (`/admin/moderation`, badge `openModeration`): tab Chờ xem / AI chặn / AI gắn cờ / Chưa kiểm / Đã xử lý, lọc
+  loại, tìm; từ bị đánh dấu tô đỏ (`ModerationText`), nhãn + p, tác giả (số lần bị chặn 24 h, đang khoá), đích (mục từ nhạy cảm / bộ thẻ);
+  Bỏ qua · Khôi phục · Ẩn (ghi chú) · Xoá; Quét lại. Công tắc "mục nhạy cảm" ở `DictEntryEditor`; badge AI ở Admin mẹo nhớ và tab bình luận
+  từ điển; chi tiết người dùng: khoá / mở khoá bình luận.
+- Học: sau mỗi lượt chấm "Ôn lại sau N ngày · trước khi ôn bạn được dự đoán nhớ x % · (phanh)"; chi tiết bộ thẻ chip "Độ nhớ ≈ x % · n thẻ
+  sắp quên" (`DeckRecallChip`, ẩn khi 503); Insights thêm lý do "Sắp quên"; thông báo `MOD_*`. Hàm thuần `lib/moderation.ts` + selfcheck
+  `moderation.ts`.
+
 ## 27/10/2026 (tối): B5–B9 của kế hoạch 26/10 — nợ kỹ thuật, failOrphans theo instance, độ phủ, smoke 2.0, tài liệu
 Hai migration chỉ thêm cột: **V36** `extraction_items.doc_level`, **V37** `extraction_jobs.instance_id` + `learning_paths.instance_id`.
 

@@ -54,3 +54,13 @@ Spec: [2026-10-27-do-thi-tri-thuc-neo4j-design.md](2026-10-27-do-thi-tri-thuc-ne
 | # | Câu hỏi | Quyết định | Hệ quả |
 |---|---|---|---|
 | D30 | UC-34 / UC-35 (19/10 ghi "ngoài phạm vi") | **Làm đúng đề cương**: Neo4j thật (`docker compose up -d neo4j`), đồng bộ Postgres → Neo4j qua ai-service, truy vấn Cypher, GraphRAG với Gemini (thiếu khoá → trả lời mẫu từ đồ thị) | Thêm một dịch vụ Docker khi triển khai; ai-service là tầng duy nhất nối Neo4j; không migration Postgres; nhánh "văn bản" của hợp nhất song song dùng FTS / tìm câu, không nhúng vector |
+
+## 27/10/2026 (đêm): Kiểm duyệt bình luận bằng AI + mô hình trí nhớ HLR
+
+Spec: [2026-10-27-kiem-duyet-ai-va-hlr-design.md](2026-10-27-kiem-duyet-ai-va-hlr-design.md); kế hoạch
+[../plans/2026-10-27-kiem-duyet-ai-va-hlr.md](../plans/2026-10-27-kiem-duyet-ai-va-hlr.md). Grill me 5 vòng, 16 câu; từ câu 16 người dùng giao tự quyết.
+
+| # | Câu hỏi | Quyết định | Hệ quả |
+|---|---|---|---|
+| D31 | Kiểm duyệt văn bản người dùng bằng ViHSD (3 lớp) + ViHOS (từ vi phạm) | Mục tốt + thù ghét → **chặn nhưng giữ hàng chờ admin** (tác giả thấy lý do, sửa gửi lại; admin khôi phục; tự xoá 30 ngày); nhãn 1 → đăng + cờ; "nhạy cảm" = **JMdict vulg/X/derog/sens/sl + công tắc admin** → đăng + cờ; chặn chỉ khi **hai model cùng đồng ý** (p2 ≥ 0,8 và ≥ 1 từ); chấm **đồng bộ 3 s, lỗi → PENDING + job 5 phút**; phạm vi bình luận từ điển + đánh giá bộ thẻ + mẹo nhớ (chỉ nhãn) + tên hồ sơ (400); FLAGGED công khai **che từ**; 3 lần chặn / 24 h → **khoá bình luận 24 h** | V38 cột `mod_*`, bảng `dict_sensitive`, trang `/admin/moderation`, badge `openModeration`; model chạy ở ai-service (`models/`, không commit; PhoBERT cần `requirements-ml.txt`) |
+| D32 | HLR (`best-halflife-portable.pt`) trong lịch ôn | Ban đầu "HLR lập lịch chính, SM-2 dự phòng"; sau khi đo đường cong gần phẳng theo thời gian (khoảng ôn suy biến 0 ↔ 95 ngày) đổi thành **SM-2 lập lịch, HLR phanh + hiển thị**: p < 0,8235 → khoảng ôn không tăng; độ nhớ, "sắp quên" (p < 0,7), thẻ đến hạn xếp p thấp trước; bỏ cài đặt mục tiêu p; thành thạo giữ ≥ 21 ngày; numpy trong ai-service | V38 `reviews.seen/correct/last_reviewed_at/recall_p/hlr_brake`, `/api/hlr/predict`, `GET /api/decks/{id}/recall`, tín hiệu `low_recall` |
