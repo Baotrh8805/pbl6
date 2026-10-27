@@ -144,7 +144,33 @@
 					</includes>
 				</configuration>
 			</plugin>
-            
+			<!-- B6 (kế hoạch 26/10): độ phủ test bằng JaCoCo, không đặt ngưỡng; báo cáo HTML ở target/site/jacoco sau mvn test,
+			     CI tải lên làm artifact. Agent chỉ đo lớp của dự án (bytecode Java 17), JDK chạy test là gì cũng được. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.13</version>
+				<configuration>
+					<includes>
+						<include>com/pbl6/**</include>
+					</includes>
+				</configuration>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 </project>

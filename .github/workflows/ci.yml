@@ -20,6 +20,13 @@ jobs:
           java-version: "17"
           cache: maven
       - run: mvn -B test
+      # B6: báo cáo độ phủ JaCoCo (target/site/jacoco/index.html) kèm theo lần chạy; không đặt ngưỡng
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: backend-core/target/site/jacoco
+          if-no-files-found: ignore
 
   frontend:
     runs-on: ubuntu-latest
