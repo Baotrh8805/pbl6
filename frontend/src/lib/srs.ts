@@ -13,6 +13,9 @@ export interface Review {
     intervalDays: number;
     ease: number;
     dueAt: string; // ISO
+    /** HLR (V38): p nhớ dự đoán trước lượt chấm gần nhất; hlrBrake = lượt đó giữ khoảng ôn. Thiếu với server cũ. */
+    recallBefore?: number | null;
+    hlrBrake?: boolean;
 }
 
 export const isDue = (review: Review | undefined, now: Date = new Date()) =>

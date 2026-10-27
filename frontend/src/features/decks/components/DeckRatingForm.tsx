@@ -19,6 +19,7 @@ export const DeckRatingForm: React.FC<DeckRatingFormProps> = ({ deckId, initial,
     const [comment, setComment] = useState(initial?.comment ?? "");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
 
     const left = commentCharsLeft(comment);
     const canSubmit = stars >= 1 && left >= 0 && !busy;
@@ -29,6 +30,9 @@ export const DeckRatingForm: React.FC<DeckRatingFormProps> = ({ deckId, initial,
         try {
             const result = await action();
             after?.();
+            // V38: AI gắn cờ / chặn bình luận -> nói rõ cho người gửi (sao vẫn được lưu)
+            const m = result.moderation;
+            setNotice(m && (m.status === "BLOCKED" || m.status === "FLAGGED" || m.status === "PENDING") ? m.message : null);
             onChanged(result);
         } catch (err) {
             setError(extractErrorMessage(err));
@@ -87,6 +91,11 @@ export const DeckRatingForm: React.FC<DeckRatingFormProps> = ({ deckId, initial,
             {error && (
                 <p role="alert" className="text-xs text-error">
                     {error}
+                </p>
+            )}
+            {notice && (
+                <p role="status" className="text-xs text-[#B45309]">
+                    {notice}
                 </p>
             )}
         </form>

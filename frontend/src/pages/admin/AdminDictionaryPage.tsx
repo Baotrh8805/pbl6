@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { MODERATION_STATUS_LABELS } from "@/lib/moderation";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
@@ -236,7 +237,7 @@ const CommentsTab: React.FC<{ q: Q; reload: number; onOpen: (k: DictKey) => void
       <ul className="flex flex-col gap-1.5">
         {(data?.items ?? []).map((c) => (
           <li key={c.id} className={`rounded-xl border p-3 text-body-sm ${c.hidden ? "border-error/40" : "border-surface-container-high"}`}>
-            <p className="text-xs text-on-surface-variant">{c.displayName} ({c.email}) · {time(c.createdAt)} · 👍 {c.helpfulCount}{c.hidden ? ` · đã ẩn: ${c.hiddenNote ?? ""}` : ""}</p>
+            <p className="text-xs text-on-surface-variant">{c.displayName} ({c.email}) · {time(c.createdAt)} · 👍 {c.helpfulCount}{c.hidden ? ` · đã ẩn: ${c.hiddenNote ?? ""}` : ""}{c.modStatus && c.modStatus !== "CLEAN" && c.modStatus !== "REVIEWED" ? ` · AI: ${MODERATION_STATUS_LABELS[c.modStatus]}${c.modSpans?.length ? ` (${c.modSpans.join(", ")})` : ""}` : ""}</p>
             <p className="whitespace-pre-line">{c.content}</p>
             <button type="button" onClick={() => onOpen(c.entryKey)} className="text-xs text-primary hover:underline">Mở mục {c.entryKey}</button>
           </li>

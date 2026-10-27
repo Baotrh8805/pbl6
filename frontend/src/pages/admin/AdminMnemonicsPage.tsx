@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { aiLabelText } from "@/lib/moderation";
 import { isAxiosError } from "axios";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/useAuth";
@@ -278,7 +279,15 @@ export const AdminMnemonicsPage: React.FC = () => {
                         </div>
                       </form>
                     ) : (
-                      <p className="whitespace-pre-line break-words max-w-md text-on-surface">{m.mnemonicVi}</p>
+                      <div className="flex flex-col gap-1">
+                        <p className="whitespace-pre-line break-words max-w-md text-on-surface">{m.mnemonicVi}</p>
+                        {m.modLabel != null && m.modLabel > 0 && (
+                          <span className={`inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-semibold ${m.modLabel === 2 ? "bg-error/10 text-error" : "bg-[#FEF3C7] text-[#B45309]"}`} title="Nhãn của model kiểm duyệt (ViHSD); mẹo vẫn chờ bạn duyệt tay">
+                            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">shield</span>
+                            AI: {aiLabelText(m.modLabel)}{m.modSpans && m.modSpans.length > 0 ? ` · ${m.modSpans.join(", ")}` : ""}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td>

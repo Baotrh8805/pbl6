@@ -141,6 +141,8 @@ export interface DictComment {
     hidden: boolean;
     createdAt: string;
     updatedAt: string;
+    /** V38 kiểm duyệt AI: null / thiếu = sạch; BLOCKED chỉ chủ thấy; người khác thấy masked khi content là bản che từ. */
+    moderation?: import("./moderation.types.ts").ModerationInfo | null;
 }
 
 export interface DictPage<T> {
@@ -221,10 +223,15 @@ export interface DictAdminComment {
     hidden: boolean;
     hiddenNote?: string | null;
     createdAt: string;
+    /** V38 */
+    modStatus?: import("./moderation.types.ts").ModerationStatus;
+    modSpans?: string[];
 }
 
 export interface DictAdminEntry extends DictEntry {
     missing?: boolean;
+    /** V38: mục từ nhạy cảm (công tắc admin / nhãn JMdict) — bình luận thù ghét ở mục này chỉ gắn cờ, không chặn. */
+    sensitive?: import("./moderation.types.ts").ModerationSensitive;
     admin: {
         meaningVi: string | null;
         status?: "MACHINE" | "VERIFIED";

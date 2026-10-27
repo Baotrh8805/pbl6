@@ -33,6 +33,7 @@ const REASON_TONE: Record<WeaknessReason, string> = {
   low_ease: "bg-tertiary-fixed text-on-tertiary-fixed-variant",
   slow: "bg-[#FEF3C7] text-[#B45309]",
   quiz_wrong: "bg-primary-fixed text-on-primary-fixed",
+  low_recall: "bg-error/10 text-error",
 };
 
 const tabId = (base: string, key: WeaknessGroupBy) => `${base}-tab-${key}`;

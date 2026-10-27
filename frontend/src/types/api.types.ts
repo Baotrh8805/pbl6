@@ -122,6 +122,8 @@ export interface LibraryRating {
     rating: number | null;
     ratingsCount: number;
     myRating: number;
+    /** V38: kết quả kiểm duyệt AI của bình luận vừa gửi (thiếu / null = sạch hoặc không có bình luận). */
+    moderation?: import("./moderation.types.ts").ModerationInfo | null;
 }
 
 /** DeckRatingsResponse.Item */
@@ -131,6 +133,8 @@ export interface DeckRatingItem {
     comment: string | null;
     updatedAt: string;
     mine: boolean;
+    /** V38: chủ thấy {status, spans, message}; người khác chỉ {masked} khi comment là bản che từ. */
+    moderation?: import("./moderation.types.ts").ModerationInfo | null;
 }
 
 /** DeckRatingsResponse: tổng hợp + đánh giá của mình (null nếu chưa chấm) + một trang đánh giá */
@@ -605,6 +609,8 @@ export interface SessionCard {
     level: string | null;
     kind: CardKind;
     mode: SessionCardMode;
+    /** HLR (V38): p nhớ dự đoán lúc mở phiên (chỉ thẻ đến hạn, khi ai-service trả được). */
+    recall?: number | null;
 }
 
 export interface SessionCounts {
@@ -695,6 +701,8 @@ export interface AdminStats {
     openQuestionFlags?: number;
     /** Báo cáo từ điển đang mở (V32). */
     openDictReports?: number;
+    /** Bình luận AI gắn cờ + chặn chờ admin (V38). */
+    openModeration?: number;
     /** Hiệu suất AI theo engine đọc văn bản + bước dịch nghĩa (G6). */
     ai?: AdminAiStats;
     /** Chuỗi OCR theo ngày, đủ `days` phần tử như series. */
@@ -819,10 +827,16 @@ export interface AdminUserDetail extends AdminUserRow {
     premiumUntil: string | null;
     /** §3 (A1): thiếu khi backend chưa có xác thực email -> trang chi tiết ẩn dòng này. */
     emailVerified?: boolean;
+    /** V38: đang bị khoá bình luận mềm tới mốc này (null = không). */
+    commentLockedUntil?: string | null;
+    /** V38: số bình luận bị AI chặn trong 30 ngày. */
+    moderationBlocked30d?: number;
 }
 
 /** Trường bỏ trống = giữ nguyên; clearLimit = bỏ hạn mức riêng. */
 export interface AdminUserPatch {
+    /** V38: false = mở khoá bình luận sớm; true = khoá bình luận 24 giờ. */
+    commentLocked?: boolean;
     locked?: boolean;
     /** Chỉ dùng khi locked = true; người bị khoá thấy lý do lúc đăng nhập. */
     lockedReason?: string;
@@ -1012,7 +1026,7 @@ export interface HanVietSuggestion {
 export type LearningPathSourceType = ExtractionSourceType | "remedial";
 
 /** lapses = hay quên (≥ 3 lần "again" / 14 ngày hoặc ease < 1.8); low_ease = khó nhớ; slow = phản xạ chậm; quiz_wrong = sai quiz ≥ 2 lần. */
-export type WeaknessReason = "lapses" | "low_ease" | "slow" | "quiz_wrong";
+export type WeaknessReason = "lapses" | "low_ease" | "slow" | "quiz_wrong" | "low_recall";
 
 /** Cách gom thẻ yếu thành chương của lộ trình bổ khuyết (cũng là các nhóm của GET /weaknesses). */
 export type WeaknessGroupBy = "level" | "kind" | "kanji" | "deck";
@@ -1034,6 +1048,8 @@ export interface WeakCard {
     /** Chỉ có khi thẻ đủ 5 lần đo phản xạ. */
     medianReactionMs: number | null;
     quizWrong: number;
+    /** HLR (V38): p nhớ dự đoán bây giờ; có khi lý do low_recall. */
+    recall?: number | null;
 }
 
 /** Một nhóm: level "N5".."N1" | "Khác"; kind vocab | grammar; kanji một chữ Hán | "Khác"; deck = deckId (+ title). */

@@ -105,6 +105,14 @@ export const DeckRatings: React.FC<DeckRatingsProps> = ({ deckId, isOwner, onCha
                                         {r.comment}
                                     </p>
                                 )}
+                                {r.moderation?.masked && (
+                                    <p className="text-label-sm text-outline">Một vài từ đang được che chờ quản trị viên xem lại.</p>
+                                )}
+                                {r.mine && r.moderation && !r.moderation.masked && r.moderation.message && (
+                                    <p className={`text-label-sm ${r.moderation.status === "BLOCKED" ? "text-error" : "text-[#B45309]"}`}>
+                                        {r.moderation.message}
+                                    </p>
+                                )}
                             </div>
                         </li>
                     ))}

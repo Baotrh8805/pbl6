@@ -25,6 +25,7 @@ import { DataSourcesPage } from "@/pages/DataSourcesPage";
 import { SharedDeckLinkPage } from "@/pages/SharedDeckLinkPage";
 import { DeckPrintPage } from "@/pages/DeckPrintPage";
 import { AdminDictionaryPage } from "@/pages/admin/AdminDictionaryPage";
+import { AdminModerationPage } from "@/pages/admin/AdminModerationPage";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
@@ -161,6 +162,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="settings" element={<AdminSettingsPage />} />
         {/* Hồ sơ của staff: đổi mật khẩu sau lần bắt buộc ở /setup (staff không dùng /profile của người học) */}
         <Route path="dictionary" element={<AdminDictionaryPage />} />
+        <Route path="moderation" element={<AdminModerationPage />} />
         <Route path="account" element={<AdminAccountPage />} />
       </Route>
 

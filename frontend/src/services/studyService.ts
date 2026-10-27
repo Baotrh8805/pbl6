@@ -14,6 +14,9 @@ import type {
     TypedQuizQuestion,
 } from "../types/quiz.types.ts";
 import { isQuestionType, parseCapabilities, parseDistractorResult } from "../features/quiz/quizUtils.ts";
+import { parseReviewOutcome } from "../lib/moderation.ts";
+import type { DeckRecall, ReviewOutcome } from "../types/moderation.types.ts";
+import { isAxiosError } from "axios";
 
 export const fetchReviews = async (): Promise<Record<string, Review>> =>
     parseReviews((await apiClient.get("/reviews")).data);
@@ -34,7 +37,7 @@ export const submitReview = async (
     cardId: string,
     grade: Grade,
     options: boolean | SubmitReviewOptions = false
-): Promise<void> => {
+): Promise<ReviewOutcome | null> => {
     const opts: SubmitReviewOptions = typeof options === "boolean" ? { cram: options } : options;
     const body: ReviewRequest = { cardId, grade, cram: opts.cram ?? false };
     if (
@@ -46,7 +49,26 @@ export const submitReview = async (
         body.reactionMs = Math.round(opts.reactionMs);
     }
     if (opts.pathId) body.pathId = opts.pathId;
-    await apiClient.post("/reviews", body);
+    // HLR (V38): response mang khoảng ôn + p nhớ trước lượt chấm + cờ phanh để StudyPage hiện một dòng; server cũ -> null
+    return parseReviewOutcome((await apiClient.post("/reviews", body)).data);
+};
+
+/** Độ nhớ dự đoán của bộ thẻ (HLR): 503 (ai-service lỗi / tắt) hoặc response hỏng -> null, giao diện ẩn chip. */
+export const fetchDeckRecall = async (deckId: string): Promise<DeckRecall | null> => {
+    try {
+        const d = (await apiClient.get(`/decks/${encodeURIComponent(deckId)}/recall`)).data as Partial<DeckRecall> | null;
+        if (!d || typeof d.studied !== "number" || typeof d.cards !== "number") return null;
+        return {
+            cards: d.cards,
+            studied: d.studied,
+            avgRecall: typeof d.avgRecall === "number" ? d.avgRecall : null,
+            forgettingSoon: typeof d.forgettingSoon === "number" ? d.forgettingSoon : 0,
+            items: Array.isArray(d.items) ? (d.items as DeckRecall["items"]) : [],
+        };
+    } catch (err) {
+        if (isAxiosError(err) && (err.response?.status === 503 || err.response?.status === 404)) return null;
+        throw err;
+    }
 };
 
 /**

@@ -21,6 +21,8 @@ import {
   type DictOverrideField,
 } from "@/services/adminDictionaryService";
 import type { DictAdminEntry, DictKey } from "@/types/dictionary.types";
+import { setDictSensitive } from "@/services/moderationService";
+import { MODERATION_STATUS_LABELS } from "@/lib/moderation";
 import { REPORT_FIELD_LABELS, headOf, isKanjiKey, kanjiKey } from "@/features/dictionary/dictUtils";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -276,6 +278,27 @@ export const DictEntryEditor: React.FC<{ entryKey: DictKey; onClose: () => void;
             </ul>
           </section>
 
+          <section className={box} aria-label="Mục từ nhạy cảm">
+            <h3 className="font-semibold">Kiểm duyệt bình luận</h3>
+            <p className="text-xs text-on-surface-variant">
+              {entry.sensitive?.value
+                ? `Mục từ nhạy cảm (${entry.sensitive.source === "admin" ? "admin đánh dấu" : "nhãn JMdict: tục / miệt thị / nhạy cảm / lóng"}): bình luận bị AI xếp 'thù ghét' vẫn được đăng, chỉ gắn cờ để bạn xem lại.`
+                : `Mục từ bình thường${entry.sensitive?.source === "admin" ? " (admin tắt nhạy cảm)" : ""}: bình luận thù ghét có từ bị đánh dấu sẽ bị chặn.`}
+              {entry.sensitive?.note ? ` Ghi chú: ${entry.sensitive.note}` : ""}
+            </p>
+            <Button type="button" size="sm" variant="outline" className="w-fit" onClick={async () => {
+              const next = !entry.sensitive?.value;
+              const note = await askNote(next ? "Ghi chú (vì sao mục này nhạy cảm)" : "Ghi chú (vì sao không nhạy cảm)", false);
+              if (note === null) return;
+              void act("sensitive", async () => {
+                const sensitive = await setDictSensitive(entry.key, next, note || undefined);
+                setEntry({ ...entry, sensitive });
+              }, next ? "Đã đánh dấu mục nhạy cảm." : "Đã bỏ đánh dấu nhạy cảm.");
+            }}>
+              {entry.sensitive?.value ? "Bỏ đánh dấu nhạy cảm" : "Đánh dấu mục nhạy cảm"}
+            </Button>
+          </section>
+
           <section className={box} aria-label="Bình luận">
             <h3 className="font-semibold">Bình luận mới ({entry.admin.comments.length})</h3>
             <ul className="flex flex-col gap-1.5">
@@ -283,6 +306,9 @@ export const DictEntryEditor: React.FC<{ entryKey: DictKey; onClose: () => void;
                 <li key={c.id} className={`text-xs rounded-lg p-2 ${c.hidden ? "bg-error/5" : "bg-surface-container-low"}`}>
                   <p className="text-on-surface-variant">{c.displayName} ({c.email}) · {time(c.createdAt)}{c.hidden ? ` · đã ẩn: ${c.hiddenNote ?? ""}` : ""}</p>
                   <p className="whitespace-pre-line text-body-sm">{c.content}</p>
+                  {c.modStatus && c.modStatus !== "CLEAN" && c.modStatus !== "REVIEWED" && (
+                    <p className="text-error">AI: {MODERATION_STATUS_LABELS[c.modStatus]}{c.modSpans?.length ? ` — ${c.modSpans.join(", ")}` : ""}</p>
+                  )}
                   <div className="flex gap-2 mt-1">
                     {c.hidden ? (
                       <button type="button" className="text-primary hover:underline" onClick={() => void act(`unhide:${c.id}`, async () => { await unhideDictComment(c.id); })}>Hiện lại</button>

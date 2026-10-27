@@ -50,6 +50,7 @@ import {
 import { useSwipe } from "@/features/study/useSwipe";
 import { StudyProgress } from "@/features/study/components/StudyProgress";
 import { StudySummary } from "@/features/study/components/StudySummary";
+import { reviewOutcomeText } from "@/lib/moderation";
 import { ShortcutHelpModal } from "@/features/study/components/ShortcutHelpModal";
 import { StudyDictButton } from "@/features/dictionary/components/StudyDictButton";
 
@@ -143,6 +144,8 @@ export const StudyPage: React.FC = () => {
     const [revealed, setRevealed] = useState(false);
     const [saveError, setSaveError] = useState("");
     const [notice, setNotice] = useState("");
+    // HLR (V38): "Ôn lại sau N ngày · trước khi ôn bạn được dự đoán nhớ x %" sau mỗi lượt chấm thật (không cram)
+    const [hlrNote, setHlrNote] = useState("");
     const [saving, setSaving] = useState(false);
     const [practice, setPractice] = useState<Practice>(null);
     const [helpOpen, setHelpOpen] = useState(false);
@@ -260,9 +263,10 @@ export const StudyPage: React.FC = () => {
                 sessionCard?.mode === "cram" ||
                 (range !== null && rangeCram(data?.reviews[current.id], new Date()));
             // Lưu từng thẻ: thoát giữa chừng không mất tiến độ. pathId để review_logs gắn lượt ôn với lộ trình.
-            await submitReview(current.id, g, { cram: cramThis, reactionMs, pathId: pathId ?? undefined });
+            const outcome = await submitReview(current.id, g, { cram: cramThis, reactionMs, pathId: pathId ?? undefined });
             setSaveError("");
             setNotice("");
+            setHlrNote(cramThis ? "" : (reviewOutcomeText(outcome) ?? ""));
             setRevealed(false);
             const entry: UndoEntry = { cardId: current.id, term: current.term, ids: live.ids, stats: live.stats };
             setQueueState((s) =>
@@ -449,6 +453,9 @@ export const StudyPage: React.FC = () => {
             )}
             <p aria-live="polite" className="text-on-surface-variant text-label-md text-center empty:hidden">
                 {notice}
+            </p>
+            <p className="text-outline text-label-sm text-center empty:hidden" title="Theo mô hình trí nhớ HLR (chỉ tham khảo; lịch ôn vẫn do SM-2 quyết)">
+                {hlrNote}
             </p>
         </>
     );

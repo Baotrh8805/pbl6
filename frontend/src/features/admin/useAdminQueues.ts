@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 
-export type QueueKey = "openReports" | "pendingMnemonics" | "openQuestionFlags" | "openAppeals" | "openDictReports";
+export type QueueKey = "openReports" | "pendingMnemonics" | "openQuestionFlags" | "openAppeals" | "openDictReports" | "openModeration";
 export type QueueCounts = Record<QueueKey, number | null>;
 
 /**

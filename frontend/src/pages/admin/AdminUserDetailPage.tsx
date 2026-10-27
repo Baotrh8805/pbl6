@@ -134,6 +134,22 @@ export const AdminUserDetailPage: React.FC = () => {
     }
   };
 
+  // V38: khoá / mở khoá bình luận mềm
+  const toggleCommentLock = async (u: AdminUserDetail) => {
+    const locking = !u.commentLockedUntil;
+    const ok = await dialog.confirm({
+      title: locking ? `Khoá bình luận của ${u.email} trong 24 giờ?` : `Mở khoá bình luận cho ${u.email}?`,
+      message: locking ? "Người này không bình luận / đánh giá được trong 24 giờ; tài khoản vẫn đăng nhập và học bình thường." : "Người này bình luận lại được ngay.",
+      confirmLabel: locking ? "Khoá bình luận" : "Mở khoá",
+      tone: locking ? "danger" : "info",
+      action: () => patchAdminUser(u.id, { commentLocked: locking }),
+    });
+    if (ok) {
+      setStatus({ ok: true, text: locking ? "Đã khoá bình luận 24 giờ." : "Đã mở khoá bình luận." });
+      setReload((n) => n + 1);
+    }
+  };
+
   // B5.5: đổi lý do khoá của tài khoản đang khoá (PATCH {locked: true, lockedReason}); người dùng thấy lý do mới khi đăng nhập
   const updateLockReason = async (u: AdminUserDetail) => {
     const body = lockReasonPatch(lockReason);
@@ -486,6 +502,32 @@ export const AdminUserDetailPage: React.FC = () => {
                   </Button>
                 </div>
               )}
+            </AdminDetailCard>
+          )}
+
+          {/* V38: khoá bình luận mềm (3 lần bị AI chặn / 24 giờ) — admin mở sớm hoặc khoá tay 24 giờ */}
+          {canAct && !isDeleted && (
+            <AdminDetailCard
+              title="Kiểm duyệt bình luận"
+              icon="shield"
+              description={
+                user.commentLockedUntil
+                  ? `Đang bị khoá bình luận / đánh giá tới ${formatShort(user.commentLockedUntil)} (bị AI chặn ${user.moderationBlocked30d ?? 0} lần trong 30 ngày).`
+                  : `Không bị khoá bình luận. Bị AI chặn ${user.moderationBlocked30d ?? 0} bình luận trong 30 ngày.`
+              }
+            >
+              <div className="flex justify-end pt-1">
+                <Button
+                  variant={user.commentLockedUntil ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => toggleCommentLock(user)}
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                    {user.commentLockedUntil ? "lock_open" : "speaker_notes_off"}
+                  </span>
+                  <span>{user.commentLockedUntil ? "Mở khoá bình luận" : "Khoá bình luận 24 giờ"}</span>
+                </Button>
+              </div>
             </AdminDetailCard>
           )}
 

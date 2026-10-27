@@ -14,6 +14,7 @@ import {
   toggleDictHelpful,
 } from "@/services/dictionaryService";
 import type { DictComment, DictKey } from "@/types/dictionary.types";
+import type { ModerationInfo } from "@/types/moderation.types";
 
 const MAX = 1000;
 const PAGE = 20;
@@ -153,6 +154,7 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
               <span>{timeOf(c.createdAt)}{c.updatedAt !== c.createdAt && " · đã sửa"}</span>
             </div>
             {c.hidden && <p className="mt-1 text-xs text-error">Bình luận này đã bị quản trị viên ẩn, chỉ bạn thấy.</p>}
+            <ModerationNotice info={c.moderation} />
             {editing?.id === c.id ? (
               <div className="mt-2 flex flex-col gap-2">
                 <textarea
@@ -206,6 +208,24 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
       )}
       {reporting && <ReportCommentModal comment={reporting} onClose={() => setReporting(null)} />}
     </section>
+  );
+};
+
+/**
+ * Dải kiểm duyệt AI (V38): chủ thấy BLOCKED (chưa đăng, sửa gửi lại) / FLAGGED (chờ admin) / PENDING (chưa kiểm); người khác chỉ
+ * thấy ghi chú "từ nhạy cảm đang được che" khi content là bản che.
+ */
+const ModerationNotice: React.FC<{ info?: ModerationInfo | null }> = ({ info }) => {
+  if (!info) return null;
+  if (info.masked) {
+    return <p className="mt-1 text-xs text-on-surface-variant">Một vài từ trong bình luận đang được che chờ quản trị viên xem lại.</p>;
+  }
+  const tone = info.status === "BLOCKED" ? "text-error" : info.status === "FLAGGED" ? "text-[#B45309]" : "text-on-surface-variant";
+  const title = info.status === "BLOCKED" ? "Chưa được đăng" : info.status === "FLAGGED" ? "Đang chờ quản trị viên xem lại" : "Chưa kiểm duyệt";
+  return (
+    <p role={info.status === "BLOCKED" ? "alert" : undefined} className={`mt-1 text-xs ${tone}`}>
+      <span className="font-semibold">{title}.</span> {info.message}
+    </p>
   );
 };
 

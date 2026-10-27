@@ -18,6 +18,7 @@ import { canEditDeck, deckSourceLabel } from "@/lib/deckUtils";
 import { useDialog } from "@/components/ui/dialogContext";
 import { CardContent } from "@/features/decks/components/CardContent";
 import { DeckRatings } from "@/features/decks/components/DeckRatings";
+import { DeckRecallChip } from "@/features/decks/components/DeckRecallChip";
 import { ReportDeckModal } from "@/features/library/components/ReportDeckModal";
 import { useReportedByMe } from "@/features/library/useReportedByMe";
 import { Modal } from "@/components/ui/Modal";
@@ -180,8 +181,9 @@ export const DeckDetailPage: React.FC = () => {
                             {deck.description}
                         </p>
                     )}
-                    <p className="mt-2 text-label-sm text-outline font-medium">
-                        {deck.cards.length} thẻ · {dueCount} thẻ đến hạn · thành thạo {masteryPct}%
+                    <p className="mt-2 text-label-sm text-outline font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span>{deck.cards.length} thẻ · {dueCount} thẻ đến hạn · thành thạo {masteryPct}%</span>
+                        {learnedCount > 0 && <DeckRecallChip deckId={deck.id} />}
                     </p>
                 </div>
 

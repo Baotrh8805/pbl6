@@ -22,13 +22,14 @@ export const WEAKNESS_DAYS = 30;
 /** Số thẻ yếu hiện trước trên thẻ "Điểm yếu" (danh sách đầy đủ nằm trong lộ trình bổ khuyết). */
 export const WEAK_PREVIEW_COUNT = 8;
 
-export const REASON_ORDER: readonly WeaknessReason[] = ["lapses", "low_ease", "slow", "quiz_wrong"];
+export const REASON_ORDER: readonly WeaknessReason[] = ["lapses", "low_ease", "slow", "quiz_wrong", "low_recall"];
 
 export const REASON_LABELS: Record<WeaknessReason, string> = {
     lapses: "Hay quên",
     low_ease: "Khó nhớ",
     slow: "Phản xạ chậm",
     quiz_wrong: "Sai khi kiểm tra",
+    low_recall: "Sắp quên",
 };
 
 /**
@@ -41,6 +42,7 @@ export const REASON_HINTS: Record<WeaknessReason, string> = {
     low_ease: "Hệ số dễ nhớ (ease) tụt dưới 1.8 vì thường bị chấm Khó / Lại",
     slow: "Thời gian phản xạ trung vị (≥ 5 lần đo) vượt cả 4 giây lẫn gấp đôi mức thường của bạn",
     quiz_wrong: "Trả lời sai từ 2 lần trở lên trong các bài kiểm tra",
+    low_recall: "Mô hình trí nhớ (HLR) dự đoán xác suất còn nhớ dưới 70 % dựa trên số lần đúng / sai và thời gian từ lần ôn trước",
 };
 
 export const GROUP_TABS: readonly { key: WeaknessGroupBy; label: string }[] = [

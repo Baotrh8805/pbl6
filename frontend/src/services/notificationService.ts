@@ -17,6 +17,9 @@ export type NotificationType =
     | "MNEMONIC_REVIEWED"
     | "DICT_REPORT_RESOLVED"
     | "DICT_COMMENT_HIDDEN"
+    | "MOD_COMMENT_BLOCKED"
+    | "MOD_COMMENT_RESTORED"
+    | "MOD_COMMENT_LOCKED"
     | (string & {});
 
 export interface AppNotification {
@@ -130,6 +133,24 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
             return {
                 text: `Một bình luận từ điển của bạn đã bị ẩn.${str(p.note) ? ` Lý do: ${str(p.note)}` : ""}`,
                 to: key ? `/dictionary?e=${encodeURIComponent(key)}` : "/dictionary",
+            };
+        }
+        // Kiểm duyệt AI (V38): chặn muộn bởi job quét lại, admin khôi phục, khoá bình luận 24 giờ
+        case "MOD_COMMENT_BLOCKED": {
+            const to = str(p.entryKey) ? `/dictionary?e=${encodeURIComponent(str(p.entryKey))}` : str(p.deckId) ? `/decks/${encodeURIComponent(str(p.deckId))}` : "/dictionary";
+            return {
+                text: `Một bình luận của bạn bị hệ thống kiểm duyệt tự động chặn vì nội dung thù ghét${str(p.words) ? ` (từ bị đánh dấu: ${str(p.words)})` : ""}. Bạn có thể sửa lại; quản trị viên có thể khôi phục nếu AI nhầm.`,
+                to,
+            };
+        }
+        case "MOD_COMMENT_RESTORED": {
+            const to = str(p.entryKey) ? `/dictionary?e=${encodeURIComponent(str(p.entryKey))}` : str(p.deckId) ? `/decks/${encodeURIComponent(str(p.deckId))}` : "/dictionary";
+            return { text: "Quản trị viên đã khôi phục một bình luận của bạn từng bị AI chặn; bình luận đã công khai.", to };
+        }
+        case "MOD_COMMENT_LOCKED": {
+            const until = str(p.until) ? new Date(str(p.until)).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "";
+            return {
+                text: `Bạn tạm thời không thể bình luận / đánh giá${until ? ` tới ${until}` : " trong 24 giờ"}${p.byAdmin ? " (quản trị viên khoá)" : " (bị AI chặn 3 lần trong 24 giờ)"}.`,
             };
         }
         default:

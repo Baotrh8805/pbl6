@@ -28,6 +28,10 @@ export interface AdminMnemonic {
     reviewedByEmail: string | null;
     reviewedAt: string | null;
     reviewNote: string | null;
+    /** V38: nhãn AI 0 sạch / 1 xúc phạm / 2 thù ghét + từ bị đánh dấu (chỉ mẹo người dùng viết). */
+    modLabel?: number | null;
+    modScore?: number | null;
+    modSpans?: string[];
 }
 
 // ---------- §5 Nguồn tri thức chuẩn (G4) ----------
