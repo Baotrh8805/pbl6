@@ -132,6 +132,27 @@ _LEVEL_FIXES: dict[tuple[str, str], tuple[str, str]] = {   # (expression, readin
 }
 
 
+# B5.3 (26/10 plan): lỗi dữ liệu thô của elzup/jlpt-word-list sửa lúc nạp, không sửa CSV (tải lại bằng build_dicts là mất)
+_ROW_FIXES: dict[tuple[str, str], tuple[str, str]] = {   # (expression, reading) sai → đúng
+    ("下る", "さがる"): ("下がる", "さがる"),               # n4: さがる là 下がる; 下る đọc くだる (n3)
+}
+_SURU_PAREN = re.compile(r"\s*[（(]\s*する\s*[)）]\s*$")
+
+
+def clean_row(expression: str, reading: str) -> tuple[str, str]:
+    """Sửa ô expression / reading thô của một dòng CSV JLPT (B5.3): "(する)" thừa ở cách đọc (結婚 けっこん (する)), hai cột
+    đảo (あいさつする,挨拶), đuôi する lẫn vào cách đọc của danh từ (運動 うんどうする → うんどう; động từ đọc する như 擦る / 刷る
+    giữ nguyên vì cách viết tận cùng る), và vài cặp sai hẳn (_ROW_FIXES). Dòng sạch trả về nguyên văn (đã strip)."""
+    from app.extract.jachars import has_kanji  # noqa: PLC0415
+    expr, rd = (expression or "").strip(), (reading or "").strip()
+    rd = _SURU_PAREN.sub("", rd)
+    if rd and has_kanji(rd) and not has_kanji(expr):
+        expr, rd = rd, expr
+    if rd.endswith("する") and len(rd) > 2 and "する" not in expr and not expr.endswith("る"):
+        rd = rd[:-2]
+    return _ROW_FIXES.get((expr, rd), (expr, rd))
+
+
 def _read_rows() -> dict[str, list[tuple[str, str, str]]]:
     """Cấp → các mục (expression, reading hiragana, meaning) theo thứ tự CSV; dòng nhiều biến thể tách thành nhiều mục
     liền nhau cùng cấp, cùng nghĩa (_split_variants). Đã áp _LEVEL_FIXES: mục CSV của một cặp được sửa bị bỏ, mục sửa
@@ -148,7 +169,8 @@ def _read_rows() -> dict[str, list[tuple[str, str, str]]]:
         with open(path, encoding="utf-8", newline="") as fh:
             for row in csv.DictReader(fh):
                 meaning = (row.get("meaning") or "").strip()
-                for expr, reading in _split_variants(row.get("expression") or "", row.get("reading") or ""):
+                cell_expr, cell_reading = clean_row(row.get("expression") or "", row.get("reading") or "")
+                for expr, reading in _split_variants(cell_expr, cell_reading):
                     if (expr, reading) in _LEVEL_FIXES:
                         if meaning:
                             fixed_meaning.setdefault((expr, reading), meaning)

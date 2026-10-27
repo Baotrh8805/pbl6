@@ -213,3 +213,39 @@ def test_real_overrides_file_rows_hit_real_csv_entries():
     assert classifier.entries_of("中学校") == [("ちゅうがっこう", "junior high school", "N4")]
     with open(classifier.OVERRIDE_FILE, encoding="utf-8", newline="") as fh:
         assert next(csv.reader(fh)) == ["expression", "reading", "meaning"]
+
+
+# ----------------------------------------------------------------------------- B5.3: làm sạch CSV JLPT lúc nạp
+
+@pytest.mark.parametrize("expr, reading, expected", [
+    ("結婚", "けっこん (する)", ("結婚", "けっこん")),        # "(する)" thừa ở n5
+    ("散歩", "さんぽ(する)", ("散歩", "さんぽ")),
+    ("あいさつする", "挨拶", ("挨拶", "あいさつ")),          # hai cột đảo (n4.csv dòng 255) + đuôi する
+    ("運動", "うんどうする", ("運動", "うんどう")),           # đuôi する lẫn vào cách đọc danh từ
+    ("擦る", "する", ("擦る", "する")),                      # động từ đọc する: giữ nguyên
+    ("刷る", "する", ("刷る", "する")),
+    ("勉強する", "べんきょうする", ("勉強する", "べんきょうする")),   # cách viết có する → không cắt
+    ("下る", "さがる", ("下がる", "さがる")),                # cặp sai hẳn
+    ("下る", "くだる", ("下る", "くだる")),
+    (" 学校 ", " がっこう ", ("学校", "がっこう")),           # dòng sạch chỉ strip
+])
+def test_clean_row_rules(expr, reading, expected):
+    assert classifier.clean_row(expr, reading) == expected
+
+
+def _readings(expr):
+    return [r for r, _, _ in classifier.entries_of(expr)]
+
+
+def test_clean_row_applied_to_real_lists():
+    """Trên dữ liệu thật đã commit: không còn cách đọc nào mang "(する)" hay đuôi する của danh từ, cột đảo và cặp sai đã sửa."""
+    assert _readings("結婚") == ["けっこん"] and _readings("勉強") == ["べんきょう"]
+    assert _readings("運動") == ["うんどう"] and _readings("出席") == ["しゅっせき"]
+    assert "あいさつ" in _readings("挨拶") and classifier.entries_of("あいさつする") == []
+    assert "さがる" in _readings("下がる") and "さがる" not in _readings("下る") and "くだる" in _readings("下る")
+    assert "する" in _readings("擦る") and "する" in _readings("刷る")
+    classifier._load()
+    # ngoặc khác ("(を) とお", "パート (タイム)") là biến thể hợp lệ, chỉ "(する)" và đuôi する của danh từ mới là lỗi
+    bad = [(e, r) for e, r, _, _ in classifier._entries if classifier._SURU_PAREN.search(r)
+           or (r.endswith("する") and len(r) > 2 and "する" not in e and not e.endswith("る"))]
+    assert bad == [], bad[:10]
