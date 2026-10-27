@@ -1,5 +1,50 @@
 # Nhật ký thay đổi
 
+## 27/10/2026: Sửa theo danh sách lỗi của người kiểm thử + siết bảo mật
+Một migration mới: **V35** (`decks.created_at / updated_at / share_password_hash`, `flashcards.created_at`, chỉ thêm cột). Tổng hợp các
+lớp bảo vệ ở [SECURITY.md](SECURITY.md).
+
+**Đăng ký / bảo mật tài khoản**
+- Mật khẩu phải 8–72 ký tự, có chữ, số và ký tự đặc biệt (`PasswordPolicy`, `@StrongPassword`): đăng ký, đổi, đặt lại mật khẩu,
+  `/setup` của staff; frontend báo sớm cùng quy tắc (`lib/passwordRules.ts`). Mật khẩu đã đặt trước đó không bị ép đổi.
+- Tài khoản đăng ký mà chưa bấm link xác thực: **đăng ký lại cùng email được** (nhận mật khẩu / họ tên mới, gửi lại link; dòng
+  người dùng giữ nguyên id), và **tự xoá sau 48 giờ** (`HousekeepingJob`, 03:30 mỗi đêm). Admin > Người dùng có bộ lọc + nhãn
+  "Chưa xác thực" (`?verified=false`, cột `emailVerified`). Quyết định logic: tài khoản chưa xác thực vẫn tồn tại trong 48 giờ để
+  người thật kịp bấm link / gửi lại, sau đó coi như chưa từng đăng ký.
+- Email xác thực "không nhận được": máy chủ chưa cấu hình SMTP thì link chỉ ghi log — dashboard admin hiện chấm đỏ
+  "Email (chưa cấu hình SMTP)", `GET /api/admin/health` thêm `mail`. Cách cấu hình: [SUPABASE_SETUP.md §5](SUPABASE_SETUP.md).
+- Khoá đăng nhập theo email: sai mật khẩu 20 lần / 15 phút từ mọi IP → 429 kể cả khi sau đó nhập đúng (thêm vào lớp 5 lần / phút
+  theo IP + email). Header bảo mật cho mọi phản hồi API: `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`,
+  `Content-Security-Policy` (trừ Swagger), HSTS khi HTTPS.
+
+**Tổng quan**
+- Badge ở mục "Bộ Thẻ Của Tôi" đếm **bộ thẻ** có thẻ đến hạn ("N bộ cần ôn") và bấm vào mở danh sách bộ thẻ cần ôn
+  (`/decks?filter=due`); nút "Ôn tập ngay" của banner cũng vậy; banner ghi "trong N bộ thẻ". Số liệu `metrics.dueDecks`.
+
+**Bộ thẻ của tôi**
+- Danh sách bộ thẻ: sắp xếp (mặc định **mới cập nhật trước**, rồi mới tạo / tên / cấp / nhiều thẻ), lọc theo thời gian cập nhật
+  (hôm nay / 7 / 30 ngày), nút "Cần ôn (N)". Thẻ bộ thẻ bản gọn theo đề xuất: hàng chip (cấp, số thẻ, "Hôm nay / Hôm qua / N ngày
+  trước", nợ ôn, nguồn) + menu ⋯ (Ôn, Kiểm tra, Sửa, Chia sẻ, Đưa ra khỏi thư mục, Xoá), tiêu đề và mô tả 2 dòng (`DeckCard`).
+  Thẻ thư mục ở Thư mục học cùng dáng (`FolderCard`).
+- Trang bộ thẻ: sắp xếp thẻ (thứ tự / mới thêm / cũ nhất) và lọc thẻ thêm trong hôm nay / 7 / 30 ngày (`flashcards.created_at`).
+- Tạo / sửa bộ thẻ: khối **Quyền truy cập** (Riêng tư / Công khai) + ô "sau khi lưu mở hộp Chia sẻ" để mời theo email hoặc tạo link.
+  Link riêng **có thể đặt mật khẩu** (4–72 ký tự, BCrypt): người mở link phải nhập đúng (`403 SHARE_PASSWORD_REQUIRED /
+  SHARE_PASSWORD_WRONG`, sai 10 lần / 15 phút → 429); chủ và người đã có quyền không cần. Trang `/d/<token>` hỏi mật khẩu.
+- Nhập dữ liệu: thêm phần thứ ba **"Giữa thuật ngữ và cách đọc"** (cột riêng cùng dấu / trong ngoặc 食べる（たべる） / sau dấu `/` /
+  tuỳ chỉnh / không có cách đọc); ô "Tùy chỉnh" để trống với gợi ý mờ thay vì điền sẵn `\n\n`; trống thì dùng dấu mặc định.
+- Thêm bộ thẻ vào thư mục > "Tạo bộ thẻ mới": mở trình tạo bộ thẻ đầy đủ với thư mục đã chọn sẵn (trước đây tạo một bộ rỗng).
+
+**Học**
+- Bộ đã học xong (không còn thẻ đến hạn): nút chính thành **"Ôn lại cả bộ"** (chế độ học nhanh, không đổi lịch) thay vì mở phiên
+  rỗng; thêm **"Học lại từ đầu"** = `DELETE /api/decks/{id}/progress` xoá lịch ôn của mình với bộ đó (nhật ký giữ). Màn kết thúc
+  phiên có link "Ôn lại cả bộ ngay".
+- Xuất CSV: **mặc định không có dòng tiêu đề cột**; menu Xuất có ô "CSV kèm dòng tên cột" (`?header=true`).
+
+**Test**: backend `AccountHardeningIT` 5 (mật khẩu yếu, đăng ký lại email chưa xác thực, dọn tài khoản 48 giờ + lọc admin, khoá theo
+email từ nhiều IP, header + health), `PasswordPolicyTest`, `DeckShareLinkIT` +2 (mật khẩu link; mốc thời gian + đặt lại tiến độ),
+`AuthValidationIT` / `HousekeepingIT` cập nhật; mật khẩu dùng trong test / smoke đổi sang `Secret123!`. Frontend selfcheck
+`qa2710.ts` (chính sách mật khẩu, nhãn thời gian, sắp xếp / lọc bộ thẻ và thẻ, nhập dữ liệu với dấu cách đọc riêng).
+
 ## 26/10/2026: Từ điển — tra dạng chia, câu ví dụ tiếng Việt, tab Câu, vẽ chữ, mở rộng nghĩa
 Năm cải tiến sau khi rà từ điển (Phần A). Không có migration.
 

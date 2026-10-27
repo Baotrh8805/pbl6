@@ -27,7 +27,7 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 *Mục tiêu: Hoàn thiện luồng tạo tài khoản, upload tài liệu đơn giản, trích xuất từ vựng và hiển thị flashcard có âm Hán-Việt.*
 
 ### Phân hệ 1: Quản lý tài khoản (Auth & Profiles)
-- [~] UC-01: Đăng ký tài khoản (Email / Google OAuth). *(Email + xác thực email (đợt 2): link 24 giờ dùng 1 lần, chưa xác thực thì đăng nhập 403 `EMAIL_NOT_VERIFIED`, gửi lại 5 lần / 15 phút ngay trên form đăng nhập, admin xác thực hộ, bật/tắt bằng khoá `email_verification_required` (mặc định bật); gửi mail thật khi cấu hình SMTP, chưa cấu hình thì link ghi vào log backend. **Chưa có Google OAuth** (ngoài phạm vi))*
+- [~] UC-01: Đăng ký tài khoản (Email / Google OAuth). *(Email + xác thực email (đợt 2): link 24 giờ dùng 1 lần, chưa xác thực thì đăng nhập 403 `EMAIL_NOT_VERIFIED`, gửi lại 5 lần / 15 phút ngay trên form đăng nhập, admin xác thực hộ, bật/tắt bằng khoá `email_verification_required` (mặc định bật); gửi mail thật khi cấu hình SMTP, chưa cấu hình thì link ghi vào log backend. **Chưa có Google OAuth** (ngoài phạm vi); 27/10: chính sách mật khẩu 27/10 (8–72 ký tự, chữ + số + ký tự đặc biệt), email chưa xác thực đăng ký lại được và tự xoá sau 48 giờ, khoá đăng nhập theo email khi dò mật khẩu)*
 - [x] UC-02: Đăng nhập & cấp JWT Access/Refresh Token. *(access token 15 phút + refresh token hạn trượt 3 ngày: không vào web quá 3 ngày thì tự đăng xuất; có đăng xuất thu hồi phiên; chống dò mật khẩu theo IP + email)*
 - [x] UC-03: Quản lý thông tin cá nhân & trình độ JLPT hiện tại. *(kèm tự xoá tài khoản ở tab Bảo mật)*
 - [x] UC-04: Đổi mật khẩu / Khôi phục tài khoản. *(quên mật khẩu gửi email thật khi đã cấu hình SMTP, xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md#5-gửi-email-quên-mật-khẩu-smtp); chưa cấu hình thì link chỉ ghi vào log backend. Tài khoản bị khoá gửi khiếu nại từ trang đăng nhập, admin mở khoá / bác ở `/admin/appeals` (đợt 2))*
@@ -70,9 +70,9 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [x] UC-26: Thuật toán lặp lại ngắt quãng (Spaced Repetition System - SRS) nhắc ôn từ vựng. *(SM-2 cải tiến; đo thời gian phản xạ mỗi lần chấm (Lộ trình 2.0); dashboard có thẻ đến hạn, chuỗi ngày học)*
 
 ### Tiếp nối Phân hệ 4:
-- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(Thư viện cộng đồng + chấm sao / bình luận; chia sẻ bộ thẻ / thư mục qua email (xem & học hoặc sửa), link thư mục công khai. Link riêng cho từng bộ thẻ `/d/<token>` (`share_token`, quyết định D9): người đã đăng nhập mở link được quyền xem; chủ tạo / đổi / tắt ở hộp Chia sẻ (26/10))*
+- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(Thư viện cộng đồng + chấm sao / bình luận; chia sẻ bộ thẻ / thư mục qua email (xem & học hoặc sửa), link thư mục công khai. Link riêng cho từng bộ thẻ `/d/<token>` (`share_token`, quyết định D9): người đã đăng nhập mở link được quyền xem; chủ tạo / đổi / tắt ở hộp Chia sẻ (26/10); link đặt được mật khẩu (27/10))*
 - [x] UC-28: Tìm kiếm và sao chép bộ thẻ của người khác về tài khoản mình.
-- [x] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF). *(menu Xuất ở trang bộ thẻ: CSV UTF-8 cho Excel, tệp TSV nhập vào Anki, trang in `/decks/:id/print` để lưu PDF bằng trình duyệt (26/10))*
+- [x] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF). *(menu Xuất ở trang bộ thẻ: CSV UTF-8 cho Excel, tệp TSV nhập vào Anki, trang in `/decks/:id/print` để lưu PDF bằng trình duyệt (26/10); CSV mặc định không dòng tiêu đề, tuỳ chọn kèm (27/10))*
 
 ---
 
