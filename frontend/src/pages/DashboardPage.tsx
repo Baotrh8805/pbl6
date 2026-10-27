@@ -67,7 +67,7 @@ export const DashboardPage: React.FC = () => {
           srsDueCount={metrics.srsDueCount}
           currentLevel={currentLevel}
           onDismiss={() => setIsBannerVisible(false)}
-          onStartSrs={() => navigate("/decks")}
+          onStartSrs={() => navigate(metrics.dueDecks > 0 ? "/decks?filter=due" : "/decks")}
         />
       )}
 

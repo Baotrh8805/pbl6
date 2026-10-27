@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchDeck, createDeck, updateDeck, addCardsBatch } from "@/services/deckService";
 import { fetchFolders } from "@/services/folderService";
-import type { CardDto, Deck } from "@/types/api.types";
+import type { CardDto, Deck, DeckVisibility } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
 import { Button } from "@/components/ui/Button";
 import { ImportCardsModal } from "@/features/decks/components/ImportCardsModal";
@@ -101,10 +101,11 @@ function initialCards(deck: Deck | null, isAddCardsMode: boolean): EditorCard[] 
 
 function infoChanged(
   deck: Deck,
-  info: { title: string; level: string; description?: string; folderId: string | null }
+  info: { title: string; level: string; description?: string; folderId: string | null; visibility?: DeckVisibility }
 ): boolean {
   return (
     deck.title !== info.title ||
+    (info.visibility !== undefined && deck.visibility !== info.visibility) ||
     deck.level !== info.level ||
     (deck.description || undefined) !== info.description ||
     // Người không phải chủ không thấy thư mục (folderId luôn null) và cũng không đổi được
@@ -127,6 +128,10 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   const [level, setLevel] = useState(deck?.level || "N5");
   const [description, setDescription] = useState(deck?.description || "");
   const [folderId, setFolderId] = useState(deck ? deck.folderId || "" : initialFolderId);
+  // Quyền truy cập (27/10): chỉ chủ bộ thẻ đổi; người được chia sẻ quyền sửa không thấy khối này
+  const ownsAccess = !deck || deck.access === "owner";
+  const [visibility, setVisibility] = useState<DeckVisibility>(deck?.visibility ?? "private");
+  const [openShareAfter, setOpenShareAfter] = useState(false);
   const [cards, setCards] = useState<EditorCard[]>(() => initialCards(deck, isAddCardsMode));
 
   const [isSaving, setIsSaving] = useState(false);
@@ -217,6 +222,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       level,
       description: description.trim() || undefined,
       folderId: folderId || null,
+      ...(ownsAccess ? { visibility } : {}),
     };
 
     setIsSaving(true);
@@ -241,7 +247,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       if (shouldStudyImmediately && savedDeckId) {
         navigate(`/decks/${encodeURIComponent(savedDeckId)}/study`);
       } else if (savedDeckId) {
-        navigate(`/decks/${encodeURIComponent(savedDeckId)}`);
+        navigate(`/decks/${encodeURIComponent(savedDeckId)}${openShareAfter && ownsAccess ? "?share=1" : ""}`);
       } else {
         navigate("/decks");
       }
@@ -330,6 +336,9 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
         level={level}
         onLevelChange={setLevel}
         folderId={folderId}
+        {...(ownsAccess && !isAddCardsMode
+          ? { visibility, onVisibilityChange: setVisibility, openShareAfter, onOpenShareAfterChange: setOpenShareAfter }
+          : {})}
         onFolderIdChange={setFolderId}
         folders={folders}
       />

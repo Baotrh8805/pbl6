@@ -28,6 +28,7 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
   const shell = useOutletContext<ShellContext | undefined>();
   const due = dueToday ?? shell?.metrics.dueToday ?? srsDueCount;
   const fresh = newCards ?? shell?.metrics.newCards ?? 0;
+  const dueDecks = shell?.metrics.dueDecks ?? 0;
   const hasWork = due > 0 || fresh > 0;
   const buttonLabel = due > 0 ? "Ôn tập ngay" : fresh > 0 ? "Học thẻ mới" : "Học thêm từ mới";
   const buttonCount = due > 0 ? due : fresh;
@@ -63,7 +64,7 @@ export const SrsBanner: React.FC<SrsBannerProps> = ({
                 <p className="font-headline-sm text-headline-sm text-on-tertiary leading-snug">
                   Hôm nay:{" "}
                   <span className="text-secondary-fixed font-bold underline decoration-secondary-fixed/40 underline-offset-4">
-                    {due} thẻ đến hạn
+                    {due} thẻ đến hạn{dueDecks > 0 ? ` trong ${dueDecks} bộ thẻ` : ""}
                   </span>{" "}
                   · <span className="font-bold">{fresh} thẻ mới</span>
                 </p>

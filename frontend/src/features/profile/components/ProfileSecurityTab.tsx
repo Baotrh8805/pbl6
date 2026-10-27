@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { SectionCard, StatusMessage, type Status } from "./ProfileUi";
 import { useDialog } from "@/components/ui/dialogContext";
-import { PASSWORD_MIN, passwordChangeError } from "@/lib/passwordRules";
+import { PASSWORD_MIN, passwordChangeError, PASSWORD_HINT } from "@/lib/passwordRules";
 
 export const ProfileSecurityTab: React.FC = () => {
     const { login, logout, userEmail } = useAuth();
@@ -102,7 +102,7 @@ export const ProfileSecurityTab: React.FC = () => {
                         required
                         minLength={PASSWORD_MIN}
                         autoComplete="new-password"
-                        helperText={`Tối thiểu ${PASSWORD_MIN} ký tự.`}
+                        helperText={PASSWORD_HINT}
                     />
                     <Input
                         name="confirmPassword"

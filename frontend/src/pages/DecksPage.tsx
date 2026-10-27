@@ -1,13 +1,16 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { fetchDecks, deleteDeck, moveDeckToFolder } from "@/services/deckService";
 import { fetchFolders, createFolder, updateFolder, deleteFolder } from "@/services/folderService";
-import { canEditDeck, deckSourceLabel, moveTargets, JLPT_LEVELS as LEVELS } from "@/lib/deckUtils";
+import { moveTargets, JLPT_LEVELS as LEVELS } from "@/lib/deckUtils";
 import type { Deck, FolderNode, FolderDto } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
 import { Button } from "@/components/ui/Button";
 import { FolderModal } from "@/features/decks/components/DeckModals";
 import { AddExistingDeckModal } from "@/features/decks/components/AddExistingDeckModal";
+import { DeckCard } from "@/features/decks/components/DeckCard";
+import { DECK_PERIODS, DECK_SORTS, dueByDeck, filterDecks, isDeckPeriod, isDeckSort, sortDecks } from "@/features/decks/deckListUtils";
+import { useShell } from "@/components/layout/shellContext";
 import { useDialog } from "@/components/ui/dialogContext";
 import { findFolder, getBreadcrumbs } from "@/features/folders/components/folderTree";
 
@@ -19,6 +22,13 @@ export const DecksPage: React.FC = () => {
     const level = params.get("level") ?? "";
     const q = params.get("q") ?? "";
     const folderId = params.get("folderId") ?? "";
+    // Rà soát 27/10: sắp xếp (mặc định mới cập nhật trước), lọc theo thời gian, lọc "cần ôn" (?filter=due từ badge / banner)
+    const sortParam = params.get("sort");
+    const sort = isDeckSort(sortParam) ? sortParam : "updated";
+    const periodParam = params.get("period") ?? "";
+    const period = isDeckPeriod(periodParam) ? periodParam : "";
+    const dueOnly = params.get("filter") === "due";
+    const { reviews } = useShell();
 
     // Refetch pattern: bump index to trigger useAsync reload
     const [refreshIndex, setRefreshIndex] = useState(0);
@@ -41,11 +51,9 @@ export const DecksPage: React.FC = () => {
     const breadcrumbs = folderId ? getBreadcrumbs(tree, folderId) : [];
     const subfolders = currentFolder ? currentFolder.children || [] : tree;
 
-    const decks = (decksData ?? []).filter(
-        (d) =>
-            (!level || d.level === level) &&
-            (!q || (d.title + (d.description ?? "")).toLowerCase().includes(q.toLowerCase()))
-    );
+    const dueMap = useMemo(() => dueByDeck(decksData ?? [], reviews), [decksData, reviews]);
+    const dueDeckCount = Object.values(dueMap).filter((n) => n > 0).length;
+    const decks = sortDecks(filterDecks(decksData ?? [], { q, level, period, dueOnly }, dueMap), sort);
 
     const setParam = (name: string, value: string) => {
         const next = new URLSearchParams(params);
@@ -87,9 +95,7 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
         setRefreshIndex((n) => n + 1);
     };
 
-    const handleDeleteDeck = async (e: React.MouseEvent, deck: Deck) => {
-        e.preventDefault();
-        e.stopPropagation();
+    const handleDeleteDeck = async (deck: Deck) => {
         const ok = await dialog.confirm({
             title: "Xoá bộ thẻ?",
             message: `Bộ thẻ "${deck.title}" và toàn bộ thẻ từ vựng bên trong sẽ bị xoá vĩnh viễn.`,
@@ -100,9 +106,7 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
         if (ok) setRefreshIndex((n) => n + 1);
     };
 
-    const handleRemoveFromFolder = async (e: React.MouseEvent, deck: Deck, folder: FolderNode) => {
-        e.preventDefault();
-        e.stopPropagation();
+    const handleRemoveFromFolder = async (deck: Deck, folder: FolderNode) => {
         const ok = await dialog.confirm({
             title: "Đưa bộ thẻ ra khỏi thư mục?",
             message: `Bộ thẻ "${deck.title}" sẽ được chuyển từ thư mục "${folder.title}" về danh sách ngoài cùng.`,
@@ -225,7 +229,8 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
                         </h2>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {/* Cùng số cột với lưới bộ thẻ: 4 cột làm ô thư mục quá hẹp, tên bị ép mất (27/10) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {subfolders.map((f) => (
                             <div
                                 key={f.id}
@@ -316,6 +321,50 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
                         </option>
                     ))}
                 </select>
+                <label className="sr-only" htmlFor="deck-period">
+                    Lọc theo thời gian cập nhật
+                </label>
+                <select
+                    id="deck-period"
+                    value={period}
+                    onChange={(e) => setParam("period", e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-surface-container-lowest border border-surface-container-high text-body-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                    {DECK_PERIODS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                            {o.label}
+                        </option>
+                    ))}
+                </select>
+                <label className="sr-only" htmlFor="deck-sort">
+                    Sắp xếp
+                </label>
+                <select
+                    id="deck-sort"
+                    value={sort}
+                    onChange={(e) => setParam("sort", e.target.value === "updated" ? "" : e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-surface-container-lowest border border-surface-container-high text-body-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                    {DECK_SORTS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                            Xếp: {o.label}
+                        </option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    aria-pressed={dueOnly}
+                    onClick={() => setParam("filter", dueOnly ? "" : "due")}
+                    title="Chỉ hiện bộ thẻ có thẻ đã học đến hạn ôn"
+                    className={`inline-flex items-center gap-1 px-3 py-2 rounded-lg border text-label-md font-semibold transition-colors cursor-pointer ${
+                        dueOnly
+                            ? "bg-error/10 border-error/40 text-error"
+                            : "bg-surface-container-lowest border-surface-container-high text-on-surface-variant hover:text-on-surface"
+                    }`}
+                >
+                    <span aria-hidden="true" className="material-symbols-outlined text-[18px]">event_repeat</span>
+                    Cần ôn{dueDeckCount > 0 ? ` (${dueDeckCount})` : ""}
+                </button>
             </div>
 
             {/* State messages */}
@@ -326,7 +375,9 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
                     <div className="p-8 text-center rounded-2xl bg-surface-container-lowest border border-dashed border-surface-container-high flex flex-col items-center gap-3">
                         <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">style</span>
                         <p className="text-body-md text-on-surface-variant">
-                            {currentFolder
+                            {dueOnly
+                                ? "Không có bộ thẻ nào cần ôn lúc này. Tuyệt vời!"
+                                : currentFolder
                                 ? subfolders.length === 0
                                     ? `Thư mục "${currentFolder.title}" đang trống.`
                                     : `Chưa có bộ thẻ nào trong thư mục "${currentFolder.title}".`
@@ -373,122 +424,18 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
                 )}
             </div>
 
-            {/* Decks Grid */}
+            {/* Decks Grid: thẻ gọn (đề xuất 27/10), thao tác trong menu ⋯ của từng thẻ */}
             {decks.length > 0 && (
                 <ul className="grid gap-space-md sm:grid-cols-2 lg:grid-cols-3">
                     {decks.map((deck) => (
-                        // Link "kéo giãn" (after:inset-0) phủ cả thẻ; nút thao tác nằm trên (z-10) -> không lồng button trong <a>
-                        <li
+                        <DeckCard
                             key={deck.id}
-                            className="relative flex flex-col justify-between h-full p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high hover:shadow-md transition-shadow group"
-                        >
-                            <div>
-                                <div className="flex items-center justify-between">
-                                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary text-label-sm font-semibold">
-                                        {deck.level}
-                                    </span>
-                                    {deck.access === "owner" ? (
-                                        <span className="px-2 py-0.5 rounded-full bg-secondary-container/40 text-secondary text-label-sm font-medium">
-                                            Cá nhân
-                                        </span>
-                                    ) : (
-                                        <span className="px-2 py-0.5 rounded-full bg-surface-container text-outline text-label-sm font-medium">
-                                            {deckSourceLabel(deck)}
-                                        </span>
-                                    )}
-                                </div>
-                                <h2 className="mt-2 font-title-md text-title-md font-semibold text-on-surface group-hover:text-primary transition-colors">
-                                    <Link
-                                        to={`/decks/${deck.id}`}
-                                        className="focus:outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-primary"
-                                    >
-                                        {deck.title}
-                                    </Link>
-                                </h2>
-                                <p className="mt-1 text-body-sm text-on-surface-variant line-clamp-2">
-                                    {deck.description || "Chưa có mô tả"}
-                                </p>
-                            </div>
-
-                            <div className="mt-4 pt-3 border-t border-surface-container-high/60 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-label-sm text-outline font-medium">
-                                        {deck.cards.length} thẻ
-                                    </span>
-                                    {deck.cards.length > 0 && (
-                                        <div className="relative z-10 flex items-center gap-1">
-                                            <button
-                                                type="button"
-                                                title="Ôn tập SRS"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    navigate(`/decks/${encodeURIComponent(deck.id)}/study`);
-                                                }}
-                                                className="px-2 py-0.5 rounded bg-primary-container text-on-primary text-[11px] font-semibold flex items-center gap-0.5 hover:brightness-110 cursor-pointer"
-                                            >
-                                                <span aria-hidden="true" className="material-symbols-outlined text-[13px]">play_arrow</span>
-                                                Học
-                                            </button>
-                                            <button
-                                                type="button"
-                                                title="Kiểm tra Quiz"
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    navigate(`/decks/${encodeURIComponent(deck.id)}/quiz`);
-                                                }}
-                                                className="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-primary text-[11px] font-semibold flex items-center gap-0.5 cursor-pointer"
-                                            >
-                                                <span aria-hidden="true" className="material-symbols-outlined text-[13px]">quiz</span>
-                                                Quiz
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="relative z-10 flex items-center gap-1">
-                                    {currentFolder && deck.access === "owner" && (
-                                        <button
-                                            type="button"
-                                            title="Đưa ra khỏi thư mục này (chuyển về gốc)"
-                                            aria-label={`Đưa bộ thẻ "${deck.title}" ra khỏi thư mục này`}
-                                            onClick={(e) => void handleRemoveFromFolder(e, deck, currentFolder)}
-                                            className="p-1.5 rounded-lg text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
-                                        >
-                                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">folder_off</span>
-                                        </button>
-                                    )}
-
-                                    {canEditDeck(deck) && (
-                                        <button
-                                            type="button"
-                                            title="Chỉnh sửa bộ thẻ"
-                                            aria-label={`Chỉnh sửa bộ thẻ "${deck.title}"`}
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                navigate(`/decks/${encodeURIComponent(deck.id)}/edit`);
-                                            }}
-                                            className="p-1.5 rounded-lg text-outline hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
-                                        >
-                                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
-                                        </button>
-                                    )}
-                                    {deck.access === "owner" && (
-                                        <button
-                                            type="button"
-                                            title="Xoá bộ thẻ"
-                                            aria-label={`Xoá bộ thẻ "${deck.title}"`}
-                                            onClick={(e) => handleDeleteDeck(e, deck)}
-                                            className="p-1.5 rounded-lg text-outline hover:text-error hover:bg-surface-container transition-colors cursor-pointer"
-                                        >
-                                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        </li>
+                            deck={deck}
+                            dueCount={dueMap[deck.id] ?? 0}
+                            inFolder={!!currentFolder}
+                            onDelete={(d) => void handleDeleteDeck(d)}
+                            onRemoveFromFolder={currentFolder ? (d) => void handleRemoveFromFolder(d, currentFolder) : undefined}
+                        />
                     ))}
                 </ul>
             )}

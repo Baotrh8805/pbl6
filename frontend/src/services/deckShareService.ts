@@ -1,21 +1,33 @@
-// Link chia sẻ bộ thẻ (D9) + xuất bộ thẻ (UC-29), kế hoạch 2026-10-26 B1 / B2.
+// Link chia sẻ bộ thẻ (D9) + xuất bộ thẻ (UC-29), kế hoạch 2026-10-26 B1 / B2; mật khẩu link + CSV không tiêu đề (rà soát 27/10).
 import { apiClient } from "./apiClient.ts";
 
 const enc = encodeURIComponent;
 
-export const fetchShareLink = async (deckId: string): Promise<string | null> =>
-    (await apiClient.get<{ token: string | null }>(`/decks/${enc(deckId)}/share-link`)).data.token;
+/** token null = chưa có link; hasPassword = người mới mở link phải nhập mật khẩu. */
+export interface ShareLinkInfo {
+    token: string | null;
+    hasPassword: boolean;
+}
 
-/** Tạo link mới (có rồi thì đổi token, link cũ hết hiệu lực). */
-export const rotateShareLink = async (deckId: string): Promise<string> =>
-    (await apiClient.post<{ token: string }>(`/decks/${enc(deckId)}/share-link`)).data.token;
+export const fetchShareLink = async (deckId: string): Promise<ShareLinkInfo> => {
+    const d = (await apiClient.get<Partial<ShareLinkInfo>>(`/decks/${enc(deckId)}/share-link`)).data;
+    return { token: d.token ?? null, hasPassword: d.hasPassword === true };
+};
+
+/** Tạo link mới (có rồi thì đổi token, link cũ hết hiệu lực); password rỗng = link không cần mật khẩu. */
+export const rotateShareLink = async (deckId: string, password?: string): Promise<ShareLinkInfo> => {
+    const body = password && password.trim() ? { password: password.trim() } : {};
+    const d = (await apiClient.post<Partial<ShareLinkInfo>>(`/decks/${enc(deckId)}/share-link`, body)).data;
+    return { token: d.token ?? null, hasPassword: d.hasPassword === true };
+};
 
 export const revokeShareLink = async (deckId: string): Promise<void> => {
     await apiClient.delete(`/decks/${enc(deckId)}/share-link`);
 };
 
-export const acceptShareLink = async (token: string): Promise<{ deckId: string; access: string }> =>
-    (await apiClient.post<{ deckId: string; access: string }>(`/decks/share-link/${enc(token)}/accept`)).data;
+/** 403 code SHARE_PASSWORD_REQUIRED / SHARE_PASSWORD_WRONG khi link có mật khẩu (SharedDeckLinkPage hỏi rồi gửi lại). */
+export const acceptShareLink = async (token: string, password?: string): Promise<{ deckId: string; access: string }> =>
+    (await apiClient.post<{ deckId: string; access: string }>(`/decks/share-link/${enc(token)}/accept`, password ? { password } : {})).data;
 
 /** URL đầy đủ của link chia sẻ. */
 export const shareLinkUrl = (origin: string, token: string): string => `${origin.replace(/\/+$/, "")}/d/${enc(token)}`;
@@ -35,9 +47,12 @@ export const fileNameFromDisposition = (header: string | null | undefined, fallb
     return plain ? plain[1].trim() : fallback;
 };
 
-/** Tải tệp xuất về máy (csv: mở bằng Excel; anki: File → Import trong Anki). */
-export const downloadDeckExport = async (deckId: string, format: "csv" | "anki"): Promise<string> => {
-    const res = await apiClient.get<Blob>(`/decks/${enc(deckId)}/export`, { params: { format }, responseType: "blob" });
+/** Tải tệp xuất về máy (csv: mở bằng Excel; anki: File → Import trong Anki). header: CSV kèm dòng tên cột (mặc định không). */
+export const downloadDeckExport = async (deckId: string, format: "csv" | "anki", opts: { header?: boolean } = {}): Promise<string> => {
+    const res = await apiClient.get<Blob>(`/decks/${enc(deckId)}/export`, {
+        params: { format, ...(opts.header ? { header: true } : {}) },
+        responseType: "blob",
+    });
     const name = fileNameFromDisposition(res.headers["content-disposition"] as string | undefined, `bo-the.${format === "csv" ? "csv" : "txt"}`);
     const url = URL.createObjectURL(res.data);
     const a = document.createElement("a");

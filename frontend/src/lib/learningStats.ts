@@ -23,6 +23,8 @@ export interface LearningStats {
     dueToday: number;
     /** Thẻ trong các bộ của mình chưa học lần nào. */
     newCards: number;
+    /** Số bộ thẻ có thẻ đã học đến hạn (badge "N bộ cần ôn", danh sách ?filter=due; rà soát 27/10). */
+    dueDecks: number;
     /** Lượt ôn hôm nay (server: mỗi lần chấm một lượt; suy luận: thẻ có lần chấm gần nhất hôm nay). */
     reviewedToday: number;
     /** Lượt ôn theo ngày, 7 phần tử từ 6 ngày trước tới hôm nay. */
@@ -182,6 +184,7 @@ export const calcLearningStats = (
     const latest = [...quizResults].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
     const localNew = cards.filter((c) => !reviews[c.id]).length;
     const localDue = cards.filter((c) => !!reviews[c.id] && isDue(reviews[c.id], now)).length;
+    const dueDecks = decks.filter((d) => d.cards.some((c) => !!reviews[c.id] && isDue(reviews[c.id], now))).length;
 
     let streaks = calcStreaks(activeDays, now);
     let last7Counts = reviewsLast7Days;
@@ -200,6 +203,7 @@ export const calcLearningStats = (
         srsDueCount: dueToday + newCards,
         dueToday,
         newCards,
+        dueDecks,
         reviewedToday: last7Counts[6],
         reviewsLast7Days: last7Counts,
         quizAccuracy: calcQuizAccuracy(quizResults),
@@ -217,6 +221,7 @@ export const EMPTY_STATS: LearningStats = {
     srsDueCount: 0,
     dueToday: 0,
     newCards: 0,
+    dueDecks: 0,
     reviewedToday: 0,
     reviewsLast7Days: [0, 0, 0, 0, 0, 0, 0],
     quizAccuracy: null,

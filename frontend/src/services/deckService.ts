@@ -23,6 +23,10 @@ export const createDeck = async (dto: DeckDto): Promise<Deck> =>
 export const updateDeck = async (deckId: string, dto: DeckDto): Promise<Deck> =>
     (await apiClient.put<Deck>(deckUrl(deckId), dto)).data;
 
+/** Đặt lại tiến độ học của mình với bộ này (xoá lịch ôn, giữ nhật ký) để học lại từ đầu (rà soát 27/10). */
+export const resetDeckProgress = async (deckId: string): Promise<number> =>
+    (await apiClient.delete<{ reset: number }>(`${deckUrl(deckId)}/progress`)).data.reset;
+
 export const deleteDeck = async (deckId: string): Promise<void> => {
     await apiClient.delete(deckUrl(deckId));
 };

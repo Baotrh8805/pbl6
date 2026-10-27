@@ -312,21 +312,26 @@ const LinkSection: React.FC<{ deckId: string; isPublic: boolean }> = ({ deckId, 
 const PrivateLinkSection: React.FC<{ deckId: string }> = ({ deckId }) => {
   const [reload, setReload] = useState(0);
   const current = useAsync(() => fetchShareLink(deckId), [deckId], reload);
-  const [override, setOverride] = useState<{ token: string | null } | null>(null);
+  const [override, setOverride] = useState<{ token: string | null; hasPassword: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mật khẩu mở link (27/10, tuỳ chọn): gửi khi tạo / đổi link; để trống = link không cần mật khẩu
+  const [linkPassword, setLinkPassword] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const { copied, copy } = useCopyToClipboard();
   const linkId = useId();
-  const token = override ? override.token : (current.data ?? null);
+  const pwId = useId();
+  const token = override ? override.token : (current.data?.token ?? null);
+  const hasPassword = override ? override.hasPassword : (current.data?.hasPassword ?? false);
   const url = token ? shareLinkUrl(window.location.origin, token) : "";
 
-  const run = async (action: () => Promise<string | null>) => {
+  const run = async (action: () => Promise<{ token: string | null; hasPassword: boolean }>) => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      setOverride({ token: await action() });
+      setOverride(await action());
+      setLinkPassword("");
       setReload((n) => n + 1);
     } catch (e) {
       setError(extractErrorMessage(e));
@@ -345,7 +350,8 @@ const PrivateLinkSection: React.FC<{ deckId: string }> = ({ deckId }) => {
         <h3 className="font-semibold text-sm">Link riêng (chỉ xem)</h3>
         {token && (
           <span className="text-[11px] font-semibold text-secondary flex items-center gap-1">
-            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">link</span>Đang bật
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">{hasPassword ? "lock" : "link"}</span>
+            {hasPassword ? "Đang bật · có mật khẩu" : "Đang bật"}
           </span>
         )}
       </div>
@@ -377,27 +383,53 @@ const PrivateLinkSection: React.FC<{ deckId: string }> = ({ deckId }) => {
               <span>{copied ? "Đã chép!" : "Sao chép"}</span>
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(() => rotateShareLink(deckId))}>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-[11px] text-on-surface-variant min-w-[12rem]">
+              <span>Mật khẩu cho link mới (tuỳ chọn, 4–72 ký tự)</span>
+              <input
+                id={pwId}
+                type="text"
+                value={linkPassword}
+                onChange={(e) => setLinkPassword(e.target.value)}
+                placeholder="Trống = không cần mật khẩu"
+                autoComplete="off"
+                className="px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/50 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(() => rotateShareLink(deckId, linkPassword))}>
               <span aria-hidden="true" className="material-symbols-outlined text-[16px]">autorenew</span>
               Đổi link
             </Button>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void run(async () => (await revokeShareLink(deckId), null))}>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void run(async () => (await revokeShareLink(deckId), { token: null, hasPassword: false }))}>
               <span aria-hidden="true" className="material-symbols-outlined text-[16px]">link_off</span>
               Tắt link
             </Button>
           </div>
           <p className="text-[11px] text-outline">
-            Ai đã đăng nhập mở link này sẽ được thêm vào danh sách với quyền Chỉ xem, kể cả khi bộ thẻ để riêng tư. Đổi link thì link cũ hết hiệu lực.
+            Ai đã đăng nhập mở link này sẽ được thêm vào danh sách với quyền Chỉ xem, kể cả khi bộ thẻ để riêng tư{hasPassword ? " (phải nhập đúng mật khẩu)" : ""}. Đổi link thì link cũ hết hiệu lực; muốn đổi mật khẩu hãy đổi link.
           </p>
         </>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] text-outline">Tạo link để gửi cho người chưa có trong danh sách, không cần biết email của họ.</p>
-          <Button size="sm" disabled={busy} onClick={() => void run(() => rotateShareLink(deckId))}>
-            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">add_link</span>
-            Tạo link
-          </Button>
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] text-outline">Tạo link để gửi cho người chưa có trong danh sách, không cần biết email của họ. Có thể đặt mật khẩu để chỉ người được bạn báo mới mở được.</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-[11px] text-on-surface-variant min-w-[12rem]">
+              <span>Mật khẩu (tuỳ chọn, 4–72 ký tự)</span>
+              <input
+                id={pwId}
+                type="text"
+                value={linkPassword}
+                onChange={(e) => setLinkPassword(e.target.value)}
+                placeholder="Trống = không cần mật khẩu"
+                autoComplete="off"
+                className="px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/50 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+            <Button size="sm" disabled={busy} onClick={() => void run(() => rotateShareLink(deckId, linkPassword))}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">add_link</span>
+              Tạo link
+            </Button>
+          </div>
         </div>
       )}
       <p aria-live="polite" className="sr-only">{copied ? "Đã chép link riêng" : ""}</p>

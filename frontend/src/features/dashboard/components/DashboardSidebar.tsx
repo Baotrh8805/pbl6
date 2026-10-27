@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { fetchLibrary } from "@/services/libraryService";
 import { todaySummaryTotal } from "@/features/roadmap/roadmapUtils";
 import { useTodaySummary } from "@/features/roadmap/useTodaySummary";
@@ -66,6 +66,46 @@ const RoadmapTodayBadge: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   );
 };
 
+/** Badge "N bộ cần ôn" của mục Bộ Thẻ Của Tôi: bấm là tới danh sách bộ thẻ cần ôn (span role=link vì đang nằm trong NavLink). */
+const DueDecksBadge: React.FC<{ isActive: boolean; metrics?: UserMetrics }> = ({ isActive, metrics }) => {
+  const navigate = useNavigate();
+  const dueDecks = metrics?.dueDecks ?? 0;
+  const due = metrics?.dueToday ?? 0;
+  const fresh = metrics?.newCards ?? 0;
+  if (dueDecks <= 0 && fresh <= 0) return null;
+  if (dueDecks <= 0) {
+    return (
+      <span
+        title={`${fresh} thẻ mới chưa học`}
+        className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
+          isActive ? "bg-white/20 text-white" : "bg-surface-container text-on-surface-variant border border-outline-variant/60"
+        }`}
+      >
+        {fresh} mới
+      </span>
+    );
+  }
+  const go = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate("/decks?filter=due");
+  };
+  return (
+    <span
+      role="link"
+      tabIndex={0}
+      onClick={go}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && go(e)}
+      title={`${due} thẻ đã học đến hạn ôn trong ${dueDecks} bộ thẻ — bấm để xem danh sách`}
+      className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full transition-colors cursor-pointer ${
+        isActive ? "bg-white/20 text-white hover:bg-white/30" : "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+      }`}
+    >
+      {dueDecks} bộ cần ôn
+    </span>
+  );
+};
+
 const SECTIONS: NavSectionConfig[] = [
   {
     id: "personal",
@@ -78,40 +118,9 @@ const SECTIONS: NavSectionConfig[] = [
         to: "/decks",
         icon: "style",
         label: "Bộ Thẻ Của Tôi",
-        // srsDueCount giờ = đến hạn + thẻ mới; badge "cần ôn" chỉ đếm thẻ đã học đến hạn (dueToday). Không có thẻ đến hạn
-        // mà còn thẻ mới thì nhắc nhẹ "{m} mới" (màu trung tính, không phải việc trễ).
-        renderBadge: ({ isActive, metrics }) => {
-          const due = metrics?.dueToday ?? 0;
-          const fresh = metrics?.newCards ?? 0;
-          if (due <= 0 && fresh <= 0) return null;
-          const title = `${due} thẻ đến hạn ôn, ${fresh} thẻ mới chưa học`;
-          if (due <= 0) {
-            return (
-              <span
-                title={title}
-                className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
-                  isActive
-                    ? "bg-white/20 text-white"
-                    : "bg-surface-container text-on-surface-variant border border-outline-variant/60"
-                }`}
-              >
-                {fresh} mới
-              </span>
-            );
-          }
-          return (
-            <span
-              title={title}
-              className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full transition-colors ${
-                isActive
-                  ? "bg-white/20 text-white"
-                  : "bg-red-50 text-red-600 border border-red-200"
-              }`}
-            >
-              {due} cần ôn
-            </span>
-          );
-        },
+        // Rà soát 27/10: badge đếm BỘ THẺ có thẻ đã học đến hạn (không phải số thẻ) và bấm vào mở thẳng danh sách bộ thẻ cần
+        // ôn (/decks?filter=due). Không có bộ nào đến hạn mà còn thẻ mới thì nhắc nhẹ "{m} mới".
+        renderBadge: ({ isActive, metrics }) => <DueDecksBadge isActive={isActive} metrics={metrics} />,
       },
       { to: "/folders", icon: "folder", label: "Thư Mục Học" },
       { to: "/extractions", icon: "document_scanner", label: "Bóc Tách AI" },

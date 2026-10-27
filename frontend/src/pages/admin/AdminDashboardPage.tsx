@@ -78,6 +78,7 @@ export const AdminDashboardPage: React.FC = () => {
               <>
                 <Dot ok={health.data.db === "ok"} label="DB" />
                 <Dot ok={health.data.aiService === "ok"} label="AI" />
+                {health.data.mail && <Dot ok={health.data.mail === "ok"} label={health.data.mail === "ok" ? "Email" : "Email (chưa cấu hình SMTP)"} />}
                 {engineFlags.length > 0 && (
                   <a
                     href="#admin-ai-perf-title"

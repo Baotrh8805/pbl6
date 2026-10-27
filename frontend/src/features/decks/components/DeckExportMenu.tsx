@@ -11,6 +11,8 @@ export const DeckExportMenu: React.FC<{ deckId: string }> = ({ deckId }) => {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 27/10: CSV mặc định chỉ có dữ liệu (tiêu đề cột không hợp mọi nơi nhập); ai cần thì tick
+  const [header, setHeader] = useState(false);
   // Neo menu theo chỗ trống lúc mở: nút nằm sát trái (điện thoại) thì mở sang phải, ngược lại mở sang trái.
   const [alignLeft, setAlignLeft] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -32,7 +34,7 @@ export const DeckExportMenu: React.FC<{ deckId: string }> = ({ deckId }) => {
     setBusy(format);
     setError(null);
     try {
-      await downloadDeckExport(deckId, format);
+      await downloadDeckExport(deckId, format, { header: format === "csv" && header });
       setOpen(false);
     } catch (e) {
       setError(extractErrorMessage(e));
@@ -59,6 +61,10 @@ export const DeckExportMenu: React.FC<{ deckId: string }> = ({ deckId }) => {
             <span><span className="font-semibold block">{busy === "csv" ? "Đang tải…" : "CSV (Excel)"}</span>
               <span className="text-xs text-on-surface-variant">Thuật ngữ, cách đọc, nghĩa, cấp, Hán-Việt</span></span>
           </button>
+          <label className="flex items-center gap-2 px-3 py-1 text-xs text-on-surface-variant cursor-pointer select-none">
+            <input type="checkbox" checked={header} onChange={(e) => setHeader(e.target.checked)} className="accent-primary" />
+            CSV kèm dòng tên cột (term, reading, meaning…)
+          </label>
           <button type="button" role="menuitem" className={item} onClick={() => void download("anki")} disabled={!!busy}>
             <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-primary">style</span>
             <span><span className="font-semibold block">{busy === "anki" ? "Đang tải…" : "Anki (.txt)"}</span>

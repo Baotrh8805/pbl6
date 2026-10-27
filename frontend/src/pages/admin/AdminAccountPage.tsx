@@ -6,7 +6,7 @@ import { authService } from "@/features/auth/services/authService";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 import { AdminDetailCard } from "@/features/admin/components/AdminDetailCard";
 import { RoleStatusBadge } from "@/features/admin/components/AdminStatusBadge";
-import { PASSWORD_MAX, PASSWORD_MIN, passwordChangeError } from "@/lib/passwordRules";
+import { PASSWORD_MAX, PASSWORD_MIN, passwordChangeError, PASSWORD_HINT } from "@/lib/passwordRules";
 import { extractErrorMessage } from "@/services/apiClient";
 
 /**
@@ -100,7 +100,7 @@ export const AdminAccountPage: React.FC = () => {
             minLength={PASSWORD_MIN}
             maxLength={PASSWORD_MAX}
             autoComplete="new-password"
-            helperText={`Từ ${PASSWORD_MIN} đến ${PASSWORD_MAX} ký tự.`}
+            helperText={`${PASSWORD_HINT} Tối đa ${PASSWORD_MAX} ký tự.`}
           />
           <Input name="confirmPassword" label="Xác nhận mật khẩu mới" type={type} required autoComplete="new-password" />
           {status && (

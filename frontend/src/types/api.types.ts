@@ -15,6 +15,8 @@ export interface Card {
     /** Furigana từng đoạn kanji; null = chưa tách, Ruby hiện cách đọc cho cả từ. */
     readingSegments?: ReadingSegment[] | null;
     hanViet?: string | null;
+    /** V35 (27/10): mốc thêm thẻ (sắp xếp "mới thêm trước"). */
+    createdAt?: string | null;
 }
 
 export type CardKind = "vocab" | "grammar";
@@ -38,6 +40,9 @@ export interface Deck {
     /** Quyền của người đang đăng nhập trên bộ thẻ này. */
     access: DeckAccess;
     visibility: DeckVisibility;
+    /** V35 (27/10): mốc tạo / cập nhật (thêm, sửa, xoá thẻ cũng cập nhật); response cũ không có. */
+    createdAt?: string | null;
+    updatedAt?: string | null;
     category?: string | null;
 }
 
@@ -153,6 +158,9 @@ export interface FolderNode {
     access?: "owner" | "viewer";
     /** Tên chủ thư mục, chỉ có khi access = viewer. */
     ownerName?: string | null;
+    /** Mốc tạo / cập nhật nếu backend trả (thẻ thư mục hiện "Hôm nay"...). */
+    createdAt?: string | null;
+    updatedAt?: string | null;
 }
 
 /** FolderShareRepository.Member: người được xem thư mục. */
@@ -758,6 +766,8 @@ export type AdminEngineFlags = Record<string, boolean>;
 export interface AdminHealth {
     db: string;
     aiService: "ok" | "down";
+    /** 27/10: SMTP đã cấu hình chưa (thiếu -> email xác thực / quên mật khẩu / nhắc học chỉ ghi log). */
+    mail?: "ok" | "missing";
     version: string;
     /** Sao lưu (file LAST_OK của scripts/backup.*): unmonitored = chưa cấu hình app.backup.marker. */
     backup: "ok" | "stale" | "missing" | "unmonitored";
@@ -783,6 +793,8 @@ export interface AdminUserRow {
     lockedAt: string | null;
     createdAt: string | null;
     deckCount: number;
+    /** 27/10: đã bấm link xác thực email chưa (badge "Chưa xác thực", lọc ?verified=false). */
+    emailVerified?: boolean;
     /**
      * Tài khoản đã tự xoá (email ẩn danh, khoá vĩnh viễn): backend luôn trả (boolean nguyên thuỷ) và trả 409 cho mở khoá /
      * Premium / hạn mức / vai trò -> hiện nhãn "Đã xoá" thay "Bị khoá" và ẩn các nút đó (adminAccountStatus).

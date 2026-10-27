@@ -505,6 +505,12 @@ export const StudyPage: React.FC = () => {
                 <Link to={exitTo} className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold">
                     {pathId ? "Về lộ trình" : "Về chi tiết bộ thẻ"}
                 </Link>
+                {/* Rà soát 27/10: bộ đã học xong vẫn ôn lại được ngay (cram không đổi lịch; học lại từ đầu ở trang bộ thẻ) */}
+                {!pathId && !range && deck && !cram && (
+                    <Link to={`/decks/${deck.id}/study?cram=1`} className="text-primary hover:underline text-label-md">
+                        Ôn lại cả bộ ngay (không đổi lịch ôn)
+                    </Link>
+                )}
                 {pathId && deck && (
                     <Link to={`/decks/${deck.id}`} className="text-primary hover:underline text-label-md">
                         Xem bộ thẻ

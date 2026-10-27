@@ -32,7 +32,7 @@ import {
   pathStatusLabel,
   todayNewTasksLine,
 } from "../../src/features/roadmap/roadmapUtils.ts";
-import { passwordChangeError } from "../../src/lib/passwordRules.ts";
+import { PASSWORD_POLICY_MESSAGE, passwordChangeError } from "../../src/lib/passwordRules.ts";
 import { STAFF_ACCOUNT_PATH, staffRedirectFor } from "../../src/lib/roles.ts";
 import {
   AUDIT_RANGE_ERROR,
@@ -238,12 +238,13 @@ export function runManualChecks(assert: (cond: boolean, msg: string) => void): v
 
   // ---------- STAFF-02/13: mật khẩu staff ----------
   assert(staffRedirectFor("/profile") === STAFF_ACCOUNT_PATH && staffRedirectFor("/decks") === "/admin", "STAFF-02: staff mở /profile -> Hồ sơ trong Admin Panel");
-  assert(passwordChangeError("old", "abc", "abc") === "Mật khẩu mới phải từ 6 đến 72 ký tự.", "STAFF-13: mật khẩu 3 ký tự bị chặn ở máy khách");
+  assert(passwordChangeError("old", "abc", "abc") === PASSWORD_POLICY_MESSAGE, "STAFF-13: mật khẩu 3 ký tự bị chặn ở máy khách (chính sách 27/10)");
   assert(
-    passwordChangeError("", "abcdef", "abcdef") === "Vui lòng nhập mật khẩu hiện tại." &&
-      passwordChangeError("old", "abcdef", "abcdeg") === "Mật khẩu xác nhận không khớp." &&
-      passwordChangeError("abcdef", "abcdef", "abcdef", "khác mặc định") === "khác mặc định" &&
-      passwordChangeError("old", "abcdef", "abcdef") === null &&
+    passwordChangeError("", "Abcdef-1", "Abcdef-1") === "Vui lòng nhập mật khẩu hiện tại." &&
+      passwordChangeError("old", "Abcdef-1", "Abcdef-2") === "Mật khẩu xác nhận không khớp." &&
+      passwordChangeError("Abcdef-1", "Abcdef-1", "Abcdef-1", "khác mặc định") === "khác mặc định" &&
+      passwordChangeError("old", "Abcdef-1", "Abcdef-1") === null &&
+      passwordChangeError("old", "abcdefgh", "abcdefgh") === PASSWORD_POLICY_MESSAGE &&
       passwordChangeError("old", "x".repeat(73), "x".repeat(73)) !== null,
     "STAFF-13: thứ tự kiểm tra như Hồ sơ > Bảo mật"
   );

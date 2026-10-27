@@ -1,3 +1,4 @@
+import { PASSWORD_HINT } from "@/lib/passwordRules";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { User, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, MailCheck } from "lucide-react";
@@ -126,11 +127,11 @@ export const RegisterForm: React.FC = () => {
         name="password"
         type={showPassword ? "text" : "password"}
         label="Mật khẩu"
-        placeholder="Tối thiểu 6 ký tự"
+        placeholder="Ít nhất 8 ký tự, có chữ, số và ký tự đặc biệt"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         error={errors.password}
-        helperText="Mật khẩu phải có ít nhất 6 ký tự để bảo mật tài khoản"
+        helperText={PASSWORD_HINT}
         leftIcon={<Lock className="w-4 h-4" />}
         autoComplete="new-password"
         required

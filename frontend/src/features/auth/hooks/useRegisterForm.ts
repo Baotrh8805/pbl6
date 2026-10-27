@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
 import { extractErrorMessage } from "@/services/apiClient";
+import { passwordPolicyError } from "@/lib/passwordRules";
 
 export const useRegisterForm = () => {
   const navigate = useNavigate();
@@ -52,13 +53,9 @@ export const useRegisterForm = () => {
       newErrors.email = "Email không đúng định dạng";
     }
 
-    if (!password) {
-      newErrors.password = "Mật khẩu không được để trống";
-    } else if (password.length < 6) {
-      newErrors.password = "Mật khẩu phải có ít nhất 6 ký tự";
-    } else if (password.length > 72) {
-      newErrors.password = "Mật khẩu tối đa 72 ký tự";
-    }
+    // Cùng chính sách với PasswordPolicy của backend (27/10): 8–72 ký tự, có chữ, số, ký tự đặc biệt
+    const policy = passwordPolicyError(password);
+    if (policy) newErrors.password = policy;
 
     if (!confirmPassword) {
       newErrors.confirmPassword = "Vui lòng xác nhận mật khẩu";

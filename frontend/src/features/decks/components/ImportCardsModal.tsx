@@ -2,7 +2,7 @@ import React, { useState, useMemo, useId } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import type { CardDto } from "@/types/api.types";
-import { parseImportText, unescapeDelimiter } from "@/features/decks/editor/importParser";
+import { parseImportText, unescapeDelimiter, type ReadingRule } from "@/features/decks/editor/importParser";
 
 export interface ImportCardsModalProps {
   isOpen: boolean;
@@ -12,6 +12,16 @@ export interface ImportCardsModalProps {
 
 type TermDefDelimiter = "tab" | "comma" | "custom";
 type CardDelimiter = "newline" | "semicolon" | "custom";
+type ReadingDelimiter = "same" | "paren" | "slash" | "custom" | "none";
+
+// Rà soát 27/10: phần thứ ba — cách đọc tách khỏi thuật ngữ thế nào (mặc định cùng dấu với trên: cột 2 là cách đọc khi có ≥ 3 cột)
+const READING_OPTIONS: { value: ReadingDelimiter; label: string }[] = [
+  { value: "same", label: "Cột riêng (cùng dấu trên)" },
+  { value: "paren", label: "Trong ngoặc 食べる（たべる）" },
+  { value: "slash", label: "Sau dấu /" },
+  { value: "custom", label: "Tùy chỉnh" },
+  { value: "none", label: "Không có cách đọc" },
+];
 
 const TERM_DEF_OPTIONS: { value: TermDefDelimiter; label: string }[] = [
   { value: "tab", label: "Tab" },
@@ -36,9 +46,12 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
 }) => {
   const [rawText, setRawText] = useState("");
   const [termDefDelimType, setTermDefDelimType] = useState<TermDefDelimiter>("tab");
-  const [customTermDefDelim, setCustomTermDefDelim] = useState("-");
+  // Ô "Tùy chỉnh" để trống + gợi ý mờ (27/10: không điền sẵn ký hiệu, khỏi phải xoá); trống thì dùng dấu mặc định
+  const [customTermDefDelim, setCustomTermDefDelim] = useState("");
   const [cardDelimType, setCardDelimType] = useState<CardDelimiter>("newline");
-  const [customCardDelim, setCustomCardDelim] = useState("\\n\\n");
+  const [customCardDelim, setCustomCardDelim] = useState("");
+  const [readingDelimType, setReadingDelimType] = useState<ReadingDelimiter>("same");
+  const [customReadingDelim, setCustomReadingDelim] = useState("");
 
   const rawTextId = useId();
 
@@ -54,9 +67,20 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
     return unescapeDelimiter(customCardDelim) || "\n";
   }, [cardDelimType, customCardDelim]);
 
+  const readingRule = useMemo<ReadingRule>(() => {
+    if (readingDelimType === "paren") return { kind: "paren" };
+    if (readingDelimType === "slash") return { kind: "delim", value: "/" };
+    if (readingDelimType === "none") return { kind: "none" };
+    if (readingDelimType === "custom") {
+      const v = unescapeDelimiter(customReadingDelim);
+      return v ? { kind: "delim", value: v } : { kind: "same" };
+    }
+    return { kind: "same" };
+  }, [readingDelimType, customReadingDelim]);
+
   const parsedCards: CardDto[] = useMemo(
-    () => parseImportText(rawText, effectiveTermDefDelim, effectiveCardDelim),
-    [rawText, effectiveTermDefDelim, effectiveCardDelim]
+    () => parseImportText(rawText, effectiveTermDefDelim, effectiveCardDelim, readingRule),
+    [rawText, effectiveTermDefDelim, effectiveCardDelim, readingRule]
   );
   // Dòng thiếu định nghĩa vẫn được đưa vào trình soạn để bổ sung, nhưng chưa lưu được nếu để trống
   const incompleteCount = parsedCards.filter((c) => !c.meaning).length;
@@ -119,7 +143,7 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
         </div>
 
         {/* Delimiter Settings */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl bg-surface-container-low/30 border border-surface-container-high/60 text-body-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-4 rounded-xl bg-surface-container-low/30 border border-surface-container-high/60 text-body-sm">
           {/* Between term and definition */}
           <fieldset className="space-y-2.5">
             <legend className={legendClass}>Giữa thuật ngữ và định nghĩa</legend>
@@ -144,7 +168,36 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
                 aria-label="Ký tự phân cách giữa thuật ngữ và định nghĩa"
                 value={customTermDefDelim}
                 onChange={(e) => setCustomTermDefDelim(e.target.value)}
-                placeholder="Ký tự phân cách (vd: - hoặc |)"
+                placeholder="Ví dụ: - hoặc | (trống = Tab)"
+                className={customDelimClass}
+              />
+            )}
+          </fieldset>
+
+          {/* Between term and reading */}
+          <fieldset className="space-y-2.5">
+            <legend className={legendClass}>Giữa thuật ngữ và cách đọc</legend>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {READING_OPTIONS.map((opt) => (
+                <label key={opt.value} className="inline-flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="radio"
+                    name="readingDelim"
+                    checked={readingDelimType === opt.value}
+                    onChange={() => setReadingDelimType(opt.value)}
+                    className="accent-primary w-4 h-4 cursor-pointer"
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+            {readingDelimType === "custom" && (
+              <input
+                type="text"
+                aria-label="Ký tự phân cách giữa thuật ngữ và cách đọc"
+                value={customReadingDelim}
+                onChange={(e) => setCustomReadingDelim(e.target.value)}
+                placeholder="Ví dụ: | hoặc : (trống = cột riêng)"
                 className={customDelimClass}
               />
             )}
@@ -174,7 +227,7 @@ export const ImportCardsModal: React.FC<ImportCardsModalProps> = ({
                 aria-label="Ký tự phân cách giữa các thẻ"
                 value={customCardDelim}
                 onChange={(e) => setCustomCardDelim(e.target.value)}
-                placeholder="Ký tự phân cách thẻ (\n = xuống dòng)"
+                placeholder="Ví dụ: \n\n = một dòng trống (trống = xuống dòng)"
                 className={customDelimClass}
               />
             )}

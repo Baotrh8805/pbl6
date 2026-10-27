@@ -6,9 +6,8 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { authService } from "@/features/auth/services/authService";
 import { extractErrorMessage } from "@/services/apiClient";
+import { PASSWORD_HINT, PASSWORD_MAX, passwordPolicyError } from "@/lib/passwordRules";
 
-const PW_MIN = 6; // ResetPasswordRequest (backend)
-const PW_MAX = 72;
 
 // Mở từ link trong email: /reset-password?token=...
 export const ResetPasswordPage: React.FC = () => {
@@ -22,12 +21,8 @@ export const ResetPasswordPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const clientError =
-      password.length < PW_MIN || password.length > PW_MAX
-        ? `Mật khẩu mới phải từ ${PW_MIN} đến ${PW_MAX} ký tự.`
-        : password !== confirm
-          ? "Mật khẩu xác nhận không khớp."
-          : null;
+    // Cùng chính sách với ResetPasswordRequest / PasswordPolicy của backend (27/10)
+    const clientError = passwordPolicyError(password) ?? (password !== confirm ? "Mật khẩu xác nhận không khớp." : null);
     setError(clientError);
     if (clientError) return;
 
@@ -71,8 +66,9 @@ export const ResetPasswordPage: React.FC = () => {
             id="reset-password"
             type="password"
             label="Mật khẩu mới"
+            helperText={PASSWORD_HINT}
             autoComplete="new-password"
-            maxLength={PW_MAX}
+            maxLength={PASSWORD_MAX}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             leftIcon={<Lock className="w-4 h-4" />}
@@ -82,7 +78,7 @@ export const ResetPasswordPage: React.FC = () => {
             type="password"
             label="Nhập lại mật khẩu mới"
             autoComplete="new-password"
-            maxLength={PW_MAX}
+            maxLength={PASSWORD_MAX}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             leftIcon={<Lock className="w-4 h-4" />}

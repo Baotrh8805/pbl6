@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
-import { fetchDeck, deleteDeck, addCard, updateCard, deleteCard } from "@/services/deckService";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { fetchDeck, deleteDeck, addCard, updateCard, deleteCard, resetDeckProgress } from "@/services/deckService";
+import { CARD_SORTS, sortCards, type CardSort } from "@/features/decks/deckListUtils";
+import { withinDays } from "@/lib/timeLabel";
 import { fetchReviews } from "@/services/studyService";
 import type { Card, CardDto } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
@@ -42,7 +44,11 @@ export const DeckDetailPage: React.FC = () => {
     // Modal states
     const [isCardModalOpen, setIsCardModalOpen] = useState(false);
     const [editingCard, setEditingCard] = useState<Card | null>(null);
-    const [isShareOpen, setIsShareOpen] = useState(false);
+    // ?share=1 (từ menu thẻ / sau khi tạo bộ với ô "mở hộp Chia sẻ"): mở hộp Chia sẻ ngay khi vào trang
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [isShareOpen, setIsShareOpen] = useState(searchParams.get("share") === "1");
+    const [cardSort, setCardSort] = useState<CardSort>("position");
+    const [cardPeriod, setCardPeriod] = useState<0 | 1 | 7 | 30>(0);
     const [isSaveCopyOpen, setIsSaveCopyOpen] = useState(false);
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [reported, markReported] = useReportedByMe(
@@ -77,8 +83,25 @@ export const DeckDetailPage: React.FC = () => {
     const canEdit = canEditDeck(deck);
     const now = new Date();
     const dueCount = deck.cards.filter((c) => isDue(reviews[c.id], now)).length;
+    const learnedCount = deck.cards.filter((c) => !!reviews[c.id]).length;
     const mastered = deck.cards.filter((c) => (reviews[c.id]?.intervalDays ?? 0) >= 21).length;
     const masteryPct = deck.cards.length ? Math.round((mastered / deck.cards.length) * 100) : 0;
+    const visibleCards = sortCards(
+        cardPeriod ? deck.cards.filter((c) => withinDays(c.createdAt ?? null, cardPeriod, now)) : deck.cards,
+        cardSort
+    );
+
+    // Rà soát 27/10: bộ đã học xong vẫn học lại được — xoá lịch ôn của mình với bộ này (nhật ký giữ), rồi học lại từ đầu.
+    const handleResetProgress = async () => {
+        const ok = await dialog.confirm({
+            title: "Học lại từ đầu?",
+            message: `Lịch ôn của bạn với ${learnedCount} thẻ trong bộ "${deck.title}" sẽ được đặt lại: mọi thẻ thành thẻ mới, nhật ký ôn vẫn giữ cho thống kê.`,
+            confirmLabel: "Đặt lại và học",
+            tone: "warning",
+            action: () => resetDeckProgress(deck.id),
+        });
+        if (ok) navigate(`/decks/${encodeURIComponent(deck.id)}/study`);
+    };
 
     const handleDeleteDeck = async () => {
         const ok = await dialog.confirm({
@@ -166,19 +189,34 @@ export const DeckDetailPage: React.FC = () => {
                     {/* Study & Quiz Actions */}
                     {deck.cards.length > 0 && (
                         <>
+                            {/* Không còn thẻ đến hạn: "Học" đưa vào chế độ ôn cả bộ (không đổi lịch) thay vì phiên rỗng (lỗi 27/10) */}
                             <Link
-                                to={`/decks/${deck.id}/study`}
+                                to={`/decks/${deck.id}/study${dueCount > 0 ? "" : "?cram=1"}`}
+                                title={dueCount > 0 ? "Ôn các thẻ đến hạn hôm nay" : "Ôn lại toàn bộ thẻ, không đổi lịch ôn dài hạn"}
                                 className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-xs transition-opacity"
                             >
-                                Học {dueCount > 0 ? `(${dueCount})` : "lại"}
+                                {dueCount > 0 ? `Học (${dueCount})` : "Ôn lại cả bộ"}
                             </Link>
-                            <Link
-                                to={`/decks/${deck.id}/study?cram=1`}
-                                title="Ôn lại toàn bộ thẻ ngay, không đổi lịch ôn dài hạn"
-                                className="px-4 py-2.5 rounded-lg bg-surface-container-high text-on-surface font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-opacity"
-                            >
-                                Học nhanh
-                            </Link>
+                            {dueCount > 0 ? (
+                                <Link
+                                    to={`/decks/${deck.id}/study?cram=1`}
+                                    title="Ôn lại toàn bộ thẻ ngay, không đổi lịch ôn dài hạn"
+                                    className="px-4 py-2.5 rounded-lg bg-surface-container-high text-on-surface font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-opacity"
+                                >
+                                    Học nhanh
+                                </Link>
+                            ) : (
+                                learnedCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleResetProgress()}
+                                        title="Xoá lịch ôn của bạn với bộ này để học lại từ đầu như thẻ mới"
+                                        className="px-4 py-2.5 rounded-lg bg-surface-container-high text-on-surface font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-opacity cursor-pointer"
+                                    >
+                                        Học lại từ đầu
+                                    </button>
+                                )
+                            )}
                             <Link
                                 to={`/decks/${deck.id}/quiz`}
                                 className="px-4 py-2.5 rounded-lg bg-surface-container-high text-on-surface font-label-md font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-opacity"
@@ -265,9 +303,38 @@ export const DeckDetailPage: React.FC = () => {
             {/* Flashcards List Section */}
             <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                    <h2 className="font-title-md text-title-md font-bold text-on-surface">
-                        Danh sách thẻ ({deck.cards.length})
-                    </h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="font-title-md text-title-md font-bold text-on-surface">
+                            Danh sách thẻ ({visibleCards.length === deck.cards.length ? deck.cards.length : `${visibleCards.length}/${deck.cards.length}`})
+                        </h2>
+                        {deck.cards.length > 1 && (
+                            <>
+                                <label className="sr-only" htmlFor="card-sort">Sắp xếp thẻ</label>
+                                <select
+                                    id="card-sort"
+                                    value={cardSort}
+                                    onChange={(e) => setCardSort(e.target.value as CardSort)}
+                                    className="px-2 py-1 rounded-lg bg-surface-container-lowest border border-surface-container-high text-label-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                >
+                                    {CARD_SORTS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <label className="sr-only" htmlFor="card-period">Lọc thẻ theo thời gian thêm</label>
+                                <select
+                                    id="card-period"
+                                    value={cardPeriod}
+                                    onChange={(e) => setCardPeriod(Number(e.target.value) as 0 | 1 | 7 | 30)}
+                                    className="px-2 py-1 rounded-lg bg-surface-container-lowest border border-surface-container-high text-label-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                >
+                                    <option value={0}>Mọi thời gian</option>
+                                    <option value={1}>Thêm hôm nay</option>
+                                    <option value={7}>Thêm 7 ngày qua</option>
+                                    <option value={30}>Thêm 30 ngày qua</option>
+                                </select>
+                            </>
+                        )}
+                    </div>
                     {canEdit && (
                         <Button
                             variant="primary"
@@ -300,7 +367,7 @@ export const DeckDetailPage: React.FC = () => {
                     </div>
                 ) : (
                     <ul className="flex flex-col gap-2">
-                        {deck.cards.map((card) => (
+                        {visibleCards.map((card) => (
                             <li
                                 key={card.id}
                                 className="flex items-center justify-between gap-space-md p-space-sm sm:p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant transition-colors"
@@ -498,12 +565,17 @@ export const DeckDetailPage: React.FC = () => {
                 />
             )}
 
-            {isShareOpen && (
+            {isShareOpen && isOwner && (
                 <ShareDeckModal
                     deck={deck}
                     // Tải lại khi đóng (không phải ngay khi lưu): tải lại giữa chừng sẽ unmount modal
                     onClose={() => {
                         setIsShareOpen(false);
+                        if (searchParams.get("share")) {
+                            const next = new URLSearchParams(searchParams);
+                            next.delete("share");
+                            setSearchParams(next, { replace: true });
+                        }
                         setRefreshIndex((n) => n + 1);
                     }}
                 />

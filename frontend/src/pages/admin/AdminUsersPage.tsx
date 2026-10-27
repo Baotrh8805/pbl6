@@ -35,7 +35,7 @@ export const AdminUsersPage: React.FC = () => {
   // ?role=STAFF (tab "Đội ngũ Staff"): backend chỉ lọc một vai trò mỗi lần -> tải đủ ADMIN và SUPER_ADMIN (đội staff
   // ít người) rồi gộp, phân trang ở máy khách. Vai trò khác: gọi thẳng như trước.
   const isStaffFilter = q.get("role") === STAFF_ROLE_FILTER;
-  const baseFilter = () => ({ q: q.get("q"), premium: q.get("premium"), locked: q.get("locked") });
+  const baseFilter = () => ({ q: q.get("q"), premium: q.get("premium"), locked: q.get("locked"), verified: q.get("verified") });
   const fetchAllStaff = async () =>
     (
       await Promise.all(
@@ -91,6 +91,7 @@ export const AdminUsersPage: React.FC = () => {
   const currentRole = q.get("role");
   const currentPremium = q.get("premium");
   const currentLocked = q.get("locked");
+  const currentVerified = q.get("verified");
   const hasFilters = Boolean(q.get("q") || currentRole || currentPremium || currentLocked);
 
   return (
@@ -116,9 +117,9 @@ export const AdminUsersPage: React.FC = () => {
       <div className="flex items-center gap-1.5 p-1 bg-surface-container-low rounded-xl border border-surface-container-high w-fit flex-wrap">
         <button
           type="button"
-          onClick={() => q.set({ role: undefined, premium: undefined, locked: undefined })}
+          onClick={() => q.set({ role: undefined, premium: undefined, locked: undefined, verified: undefined })}
           className={`px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
-            !currentRole && !currentPremium && !currentLocked
+            !currentRole && !currentPremium && !currentLocked && !currentVerified
               ? "bg-surface-container-lowest text-primary shadow-xs"
               : "text-on-surface-variant hover:text-on-surface"
           }`}
@@ -127,7 +128,7 @@ export const AdminUsersPage: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => q.set({ premium: "true", role: undefined, locked: undefined })}
+          onClick={() => q.set({ premium: "true", role: undefined, locked: undefined, verified: undefined })}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
             currentPremium === "true"
               ? "bg-surface-container-lowest text-primary shadow-xs"
@@ -139,7 +140,7 @@ export const AdminUsersPage: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => q.set({ locked: "true", premium: undefined, role: undefined })}
+          onClick={() => q.set({ locked: "true", premium: undefined, role: undefined, verified: undefined })}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
             currentLocked === "true"
               ? "bg-surface-container-lowest text-error shadow-xs"
@@ -151,7 +152,7 @@ export const AdminUsersPage: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => q.set({ role: STAFF_ROLE_FILTER, premium: undefined, locked: undefined })}
+          onClick={() => q.set({ role: STAFF_ROLE_FILTER, premium: undefined, locked: undefined, verified: undefined })}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
             currentRole === STAFF_ROLE_FILTER
               ? "bg-surface-container-lowest text-primary shadow-xs"
@@ -160,6 +161,19 @@ export const AdminUsersPage: React.FC = () => {
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">shield</span>
           <span>Đội ngũ Staff</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => q.set({ verified: "false", role: undefined, premium: undefined, locked: undefined })}
+          title="Tài khoản đã đăng ký nhưng chưa bấm link xác thực email (tự xoá sau 48 giờ)"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-body-sm font-semibold transition-all cursor-pointer ${
+            currentVerified === "false"
+              ? "bg-surface-container-lowest text-primary shadow-xs"
+              : "text-on-surface-variant hover:text-on-surface"
+          }`}
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">mark_email_unread</span>
+          <span>Chưa xác thực</span>
         </button>
       </div>
 
@@ -230,7 +244,7 @@ export const AdminUsersPage: React.FC = () => {
               size="sm"
               onClick={() => {
                 setDraft("");
-                q.set({ q: undefined, role: undefined, premium: undefined, locked: undefined });
+                q.set({ q: undefined, role: undefined, premium: undefined, locked: undefined, verified: undefined });
               }}
             >
               Đặt lại
@@ -312,6 +326,9 @@ export const AdminUsersPage: React.FC = () => {
                       <AdminStatusBadge label="Đã xoá" tone="neutral" icon="person_off" />
                     ) : (
                       u.lockedAt && <AdminStatusBadge label="Khoá" tone="error" icon="lock" />
+                    )}
+                    {adminAccountStatus(u) !== "deleted" && u.emailVerified === false && (
+                      <AdminStatusBadge label="Chưa xác thực" tone="warn" icon="mark_email_unread" />
                     )}
                   </div>
                 </td>
