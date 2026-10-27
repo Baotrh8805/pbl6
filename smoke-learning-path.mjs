@@ -141,6 +141,10 @@ await section("phiên hôm nay có thẻ; chấm một thẻ với reactionMs + 
     sessionCard = r.data.cards[0];
     const g = await api("POST", "/reviews", { cardId: sessionCard.cardId, grade: "good", reactionMs: 1500, pathId });
     assert.ok([200, 201].includes(g.status), `chấm: ${g.status} ${g.text}`);
+    // HLR (V38, D32): response luôn có scheduler (sm2 khi ai-service tắt / thẻ mới); recallBefore / hlrBrake chỉ khi HLR chạy
+    assert.ok(["sm2", "sm2+hlr"].includes(g.data.scheduler), `scheduler = ${g.data.scheduler}`);
+    const recall = await api("GET", `/decks/${encodeURIComponent(sessionCard.deckId)}/recall`);
+    assert.ok([200, 503].includes(recall.status), `recall: ${recall.status} ${recall.text}`);
     const bad = await api("POST", "/reviews", { cardId: sessionCard.cardId, grade: "good", reactionMs: 999999, pathId });
     assert.equal(bad.status, 400, "reactionMs ngoài 0..600000 -> 400");
 });

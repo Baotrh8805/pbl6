@@ -330,6 +330,34 @@ await section("từ điển admin: thống kê / hàng chờ / tìm (tìm cần 
     assert.equal((await api(s.alice.token, "GET", "/admin/dictionary/stats")).status, 403);
 });
 
+await section("kiểm duyệt AI (V38): hàng chờ / counts / bình luận -> trạng thái / quét lại / công tắc nhạy cảm / badge (ai-service tắt -> PENDING)", async () => {
+    let r = await api(s.adminToken, "GET", "/admin/moderation?status=OPEN&size=5");
+    assert.equal(r.status, 200, `hàng chờ: ${r.status} ${r.text}`);
+    assert.ok(Array.isArray(r.data.items), "hàng chờ phải có items");
+    r = await api(s.adminToken, "GET", "/admin/moderation/counts");
+    assert.equal(r.status, 200, r.text);
+    assert.ok(typeof r.data.open === "number" && typeof r.data.pending === "number", "counts {open, flagged, blocked, pending}");
+    // bình luận ở mục chữ Hán (không cần JMdict): ai-service tắt -> PENDING, bật -> CLEAN / FLAGGED / BLOCKED
+    r = await api(s.alice.token, "POST", "/dictionary/entries/k:%E9%A3%9F/comments", { content: "Chữ này nghĩa là ăn, dễ nhớ" });
+    assert.equal(r.status, 201, `bình luận: ${r.status} ${r.text}`);
+    const st = r.data.moderation?.status ?? "CLEAN";
+    assert.ok(["PENDING", "CLEAN", "FLAGGED", "BLOCKED"].includes(st), `moderation.status = ${st}`);
+    r = await api(s.adminToken, "POST", "/admin/moderation/rescan");
+    assert.equal(r.status, 200, `quét lại: ${r.status} ${r.text}`);
+    assert.ok(typeof r.data.scanned === "number", "rescan {scanned, pending}");
+    r = await api(s.adminToken, "PUT", "/admin/dictionary/entries/k:%E9%A3%9F/sensitive", { sensitive: true, note: "smoke" });
+    assert.equal(r.status, 200, `nhạy cảm: ${r.status} ${r.text}`);
+    assert.equal(r.data.value, true); assert.equal(r.data.source, "admin");
+    r = await api(s.adminToken, "GET", "/admin/dictionary/entries/k:%E9%A3%9F/sensitive");
+    assert.equal(r.data.value, true, "đọc lại công tắc");
+    r = await api(s.adminToken, "PUT", "/admin/dictionary/entries/k:%E9%A3%9F/sensitive", { sensitive: false });
+    assert.equal(r.data.value, false);
+    r = await api(s.adminToken, "GET", "/admin/stats?days=7");
+    assert.equal(typeof r.data.openModeration, "number", "badge openModeration");
+    assert.equal((await api(s.alice.token, "GET", "/admin/moderation")).status, 403, "USER bị 403");
+    assert.equal((await api(s.adminToken, "GET", "/admin/moderation?status=XYZ")).status, 400, "status lạ -> 400");
+});
+
 await section("tự xoá tài khoản: Bob xoá -> ẩn danh, token vô hiệu; staff bị 403", async () => {
     assert.equal((await api(s.adminToken, "DELETE", "/auth/me", { password: "x" })).status, 403);
     assert.equal((await api(s.bob.token, "DELETE", "/auth/me", { password: "sai" })).status, 400);
