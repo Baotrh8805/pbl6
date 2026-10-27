@@ -37,6 +37,18 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
 - ai-service chỉ nhận request có `X-Internal-Key` (`AI_SERVICE_KEY`); thiếu khoá chỉ chấp nhận localhost.
 - Nhật ký admin (`audit_logs`) cho mọi thao tác quản trị.
 
+## 3a. Đồ thị tri thức (Neo4j, 27/10)
+
+- Neo4j chỉ ai-service nối tới (`NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD`); backend đi qua `/api/graph/*` với khoá nội bộ. **Không
+  mở cổng 7474 / 7687 ra ngoài**; đổi `NEO4J_AUTH` trong `docker-compose.yml` khi triển khai (mật khẩu mặc định `password123` chỉ
+  cho dev — ai-service cảnh báo khi URI không phải localhost mà vẫn dùng mặc định).
+- Trong Neo4j **không có PII**: node `User` chỉ có id + cấp JLPT; thẻ cắt `meaning` 200 ký tự; staff và tài khoản đã xoá không đồng bộ.
+- `userId` của mọi truy vấn lấy từ JWT ở backend; Cypher chỉ trả thẻ / bộ thẻ / lộ trình có `ownerId` trùng người hỏi; đường nối
+  ngắn nhất chỉ đi qua quan hệ lớp tham chiếu. Hạn mức: hỏi đáp 20 / giờ, khám phá 120 / phút, tự đồng bộ 1 / phút / người;
+  build / sync toàn bộ chỉ ADMIN và ghi `audit_logs`.
+- Mọi Cypher tham số hoá (không ghép chuỗi người dùng), có `LIMIT`; câu hỏi GraphRAG ≤ 300 ký tự, Gemini chỉ nhận ngữ cảnh đã cắt
+  (≤ 24 mẩu / 6 000 ký tự).
+
 ## 4. Việc phải làm khi triển khai (không nằm trong mã)
 
 1. **Đổi ngay** mật khẩu Supabase và `JWT_SECRET` đã từng bị commit (21/10) — lịch sử git vẫn còn bản cũ.
@@ -45,3 +57,5 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
 3. Chạy sau reverse proxy HTTPS; đặt `FORWARD_HEADERS_STRATEGY` đúng để IP thật tới các bộ giới hạn.
 4. Sao lưu DB (`scripts/backup.*`, `app.backup.marker`) và xoay vòng `AI_SERVICE_KEY`.
 5. Khi có nhiều instance: các bộ đếm trong RAM (đăng nhập sai, hạn mức) không chia sẻ — cần Redis nếu mở rộng.
+6. Neo4j: đổi mật khẩu mặc định, không mở cổng ra Internet, sao lưu volume `neo4jdata` (dựng lại được từ dữ liệu: Admin › Dựng lại
+   đồ thị + Đồng bộ dữ liệu học).

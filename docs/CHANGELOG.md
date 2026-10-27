@@ -1,5 +1,50 @@
 # Nhật ký thay đổi
 
+## 27/10/2026 (chiều): Đồ thị tri thức trên Neo4j + GraphRAG (UC-34, UC-35) — quyết định D30
+Thay quyết định 19/10 ("GraphRAG / Neo4j ngoài phạm vi") bằng **D30: làm đúng đề cương** — Neo4j thật, đồng bộ Postgres → Neo4j,
+truy vấn Cypher, hỏi đáp GraphRAG. Spec [Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md),
+kế hoạch [Plan/plans/2026-10-27-do-thi-tri-thuc-neo4j.md](Plan/plans/2026-10-27-do-thi-tri-thuc-neo4j.md). **Không migration Postgres**
+(đồng bộ chỉ đọc). Neo4j chạy bằng `docker compose up -d neo4j` (dịch vụ có sẵn, `neo4j:5-community` ≥ 5.23); tắt Neo4j thì mọi API
+đồ thị trả 503 `GRAPH_UNAVAILABLE`, phần còn lại của app không ảnh hưởng.
+
+**ai-service** (`app/graph/`, tầng duy nhất nối Neo4j; driver `neo4j` 5.x trong `requirements.txt`)
+- `builder.py` dựng **lớp tham chiếu** từ dữ liệu sẵn có: `Word` (JLPT + JMdict common), `Kanji`, `Radical` (214), `Component`
+  (KRADFILE), `HanViet`, `Grammar` (`patterns.yaml`), `Sentence` (câu ví dụ + bản dịch Việt); quan hệ `CONTAINS`, `HAS_RADICAL`,
+  `HAS_COMPONENT`, `READ_AS`, `HOMOPHONE_OF`, `LOOKS_LIKE`, `EXAMPLE_OF`, `USES_GRAMMAR` (tokenizer + matcher chạy trên từng câu).
+  Dựng thật trên máy dev: **73 giây** (101 giây khi máy đang chạy bộ test backend) — 23 202 từ (dạng viết theo JMdict: ご飯 chứ
+  không phải 御飯 của danh sách JLPT), 2 652 chữ Hán, 1 455 âm Hán-Việt, 121 mẫu ngữ pháp, 15 571 câu; 35 932 CONTAINS, ~9 100
+  HAS_COMPONENT, ~5 800 LOOKS_LIKE, 17 932 EXAMPLE_OF, 11 301 USES_GRAMMAR, 1 225 HOMOPHONE_OF. Chạy nền
+  (`POST /api/graph/build`), ghi node `Meta`.
+- `sync.py` nhận **lớp người học** từ backend theo lô 2 000 dòng cùng mã `run` (`POST /api/graph/sync`) rồi `POST /sync/finish`
+  xoá node / quan hệ không thuộc run (toàn bộ hoặc chỉ của một người): `User` (chỉ id + cấp, **không PII**), `Deck`, `Card`
+  (khớp mục từ qua `dictionary.key_for`, lưu `wordKey` + `kanji` để dựng lại lớp tham chiếu nối lại được bằng Cypher), `REVIEWS`
+  (lịch ôn + số lần quên 30 ngày), `Path` / `Chapter` / `SCHEDULES`, nghĩa Việt từ `dict_meanings` đặt lên `Word.vi`.
+- `queries.py` Cypher tham số hoá: `resolve` (id có tiền tố / một chữ Hán / mẫu ngữ pháp / âm Hán-Việt kể cả không dấu / từ theo
+  dạng viết, cách đọc, **dạng gốc** 食べました → 食べる, tiền tố), `explore` (lân cận hai bậc theo kế hoạch từng loại tâm, thẻ của
+  người khác không bao giờ lộ, gắn `learner {cards, reviewed, due, again30d}`), `path` (`shortestPath` ≤ 6 bước chỉ qua quan hệ lớp
+  tham chiếu), `recommend` (từ mới từ chữ đã học, chữ Hán hay sai kèm bộ thủ + chữ giống hình, từ đồng âm dễ nhầm), `conflicts`
+  (cùng thuật ngữ khác cách đọc / trỏ hai mục từ khác giữa các bộ của mình), `status`.
+- `rag.py` GraphRAG: nhận diện thực thể (Sudachi + chữ Hán + âm Hán-Việt viết hoa + `〜mẫu`), nhánh đồ thị (lân cận + ngữ cảnh học
+  của người hỏi) ⊕ nhánh văn bản (FTS gloss, tìm câu theo tiếng Việt, tìm Nhật) → `fuse` (cộng điểm khi cùng xuất hiện) → Gemini
+  với prompt tiếng Việt trích nguồn `[n]`; không có khoá / hết quota → `template_answer` ghép từ ngữ cảnh (`model: "template"`).
+- Router `app/api/graph_router.py` (`/api/graph/*`, X-Internal-Key); `GET /api/extract/health` thêm cờ `graph`. Test: `test_graph_builder_sync.py`,
+  `test_graph_queries_rag.py`, `test_graph_router.py` (FakeGraph, 45 test, không cần Neo4j) + `test_graph_live.py` chạy trên Neo4j
+  riêng khi đặt `NEO4J_TEST_URI` (đã chạy xanh trên `neo4j:5-community` cổng 7688).
+
+**backend-core** (`service/graph/`): `GraphAiClient`, `GraphSyncService` (JDBC theo trang → lô; staff và tài khoản đã xoá không
+đồng bộ), `GraphService` (userId từ JWT; hạn mức hỏi 20 / giờ, khám phá 120 / phút, tự đồng bộ 1 / phút; đồng bộ **lười** dữ liệu
+của người xem khi cũ hơn 10 phút; 503 `GRAPH_UNAVAILABLE`), `GraphSyncJob` (`app.graph.sync-cron`, mặc định 03:50 giờ VN),
+`controller/GraphController.java` (`GET /api/graph/explore|path|recommend|conflicts`, `POST /api/graph/ask`, `POST /api/graph/sync/me`),
+`controller/AdminGraphController.java` (`GET /api/admin/graph/status`, `POST /build`, `POST /sync`, audit `GRAPH_BUILD` /
+`GRAPH_SYNC`), `GET /api/admin/health` thêm `graph`. Test `GraphIT` (5).
+
+**frontend**: trang **`/graph` "Đồ thị tri thức"** (mục mới trong thanh bên): tab Khám phá (ô tìm + đồ thị SVG bố cục lực tất định
+`lib/graphLayout.ts`, màu theo loại node, viền theo tình trạng học, bảng chi tiết + quan hệ + "Khám phá từ đây" / "Mở trong từ
+điển" / "Thêm vào bộ thẻ"), Gợi ý cho bạn (ba nhóm + mâu thuẫn giữa bộ thẻ), Hỏi đáp (GraphRAG: trả lời với mốc `[n]` bấm nhảy tới
+nguồn, đồ thị con), Đường nối (shortestPath). Admin › Tổng quan: chấm "Đồ thị (Neo4j)" + hộp trạng thái với nút "Dựng lại đồ thị" /
+"Đồng bộ dữ liệu học". Tệp: `pages/KnowledgeGraphPage.tsx`, `features/graph/`, `services/graphService.ts`, `types/graph.types.ts`,
+`features/admin/components/AdminGraphCard.tsx`; selfcheck `scripts/selfcheck/graph.ts`.
+
 ## 27/10/2026: Sửa theo danh sách lỗi của người kiểm thử + siết bảo mật
 Một migration mới: **V35** (`decks.created_at / updated_at / share_password_hash`, `flashcards.created_at`, chỉ thêm cột). Tổng hợp các
 lớp bảo vệ ở [SECURITY.md](SECURITY.md).

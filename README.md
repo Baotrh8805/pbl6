@@ -107,10 +107,13 @@ Hệ thống được chia thành 3 phần độc lập (Service-oriented):
      (`app/extract/pitch.py`, `/api/audio/pitch-*`). Không dùng Praat / Parselmouth.
    - **Học liệu:** phương án nhiễu (KRADFILE + Unihan + JMdict / JLPT), chia động từ theo quy tắc, thẻ chữ Hán, bộ thủ + mẹo
      nhớ, khai thác câu i+1.
-   - **Mâu thuẫn tài liệu & đồ thị Hán-Việt — không dùng GraphRAG / Neo4j:** cảnh báo mâu thuẫn so trực tiếp với từ điển
-     (JMdict, danh sách JLPT, danh mục ngữ pháp) và nguồn tri thức chuẩn do quản trị tải lên (`app/extract/conflicts.py`);
-     bản đồ âm Hán-Việt → chữ → từ là chỉ mục trong bộ nhớ dựng từ Unihan + JLPT + JMdict (`app/extract/han_viet_graph.py`).
-     Dịch vụ Neo4j trong `docker-compose.yml` và các biến `NEO4J_*` trong `app/core/config.py` còn sót lại, không code nào dùng.
+   - **Mâu thuẫn tài liệu ↔ tham chiếu:** cảnh báo so trực tiếp với từ điển (JMdict, danh sách JLPT, danh mục ngữ pháp) và nguồn
+     tri thức chuẩn do quản trị tải lên (`app/extract/conflicts.py`); bản đồ âm Hán-Việt → chữ → từ là chỉ mục trong bộ nhớ
+     (`app/extract/han_viet_graph.py`).
+   - **Đồ thị tri thức + GraphRAG trên Neo4j (27/10, D30):** `app/graph/` dựng đồ thị từ – chữ Hán – bộ thủ – âm Hán-Việt – mẫu
+     ngữ pháp – câu ví dụ trên Neo4j (`docker compose up -d neo4j`), backend đồng bộ bộ thẻ / lịch ôn / lộ trình từ Postgres sang,
+     truy vấn Cypher (lân cận, đường nối, gợi ý, mâu thuẫn giữa bộ thẻ) và hỏi đáp GraphRAG (Gemini; thiếu khoá → trả lời mẫu từ
+     đồ thị). Trang `/graph`; Admin › Tổng quan dựng lại / đồng bộ. Spec `docs/Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md`.
 
 ---
 

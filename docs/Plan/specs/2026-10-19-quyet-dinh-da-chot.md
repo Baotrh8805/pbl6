@@ -18,7 +18,8 @@ Phạm vi: phủ đủ mục **1.2.1 Yêu cầu về chức năng** của "Yêu 
 | D11 | Ngân hàng câu hỏi (G3, C2, C3, C7) | **Lưu ngân hàng theo thẻ** | Bảng `question_bank` (loại: nghĩa / kanji giống hình / đồng âm / chia thể / on-kun); người học báo lỗi câu; admin xem/sửa/gỡ; quiz bốc từ ngân hàng, thiếu thì sinh thêm |
 | D12 | Lộ trình 2.0: ngày nghỉ trong tuần + trần thẻ/ngày | **Giữ cả hai** | Mặc định 7 ngày/tuần; trần mặc định **50** (đổi từ 30 ngày 19/10 chiều: trần tính cả thẻ ôn dự báo nên 30 chỉ còn ~5–8 thẻ mới/ngày; admin chỉnh được qua `learning_path_daily_cap_default`); hiện ở bản nháp và cài đặt lộ trình |
 
-Ngoài phạm vi (không nằm trong 1.2.1): thanh toán (UC-40), Google OAuth, GraphRAG/Neo4j thật, ASR/Praat phía server.
+Ngoài phạm vi (không nằm trong 1.2.1): thanh toán (UC-40), Google OAuth, ASR/Praat phía server. ~~GraphRAG/Neo4j thật~~ → làm
+đúng đề cương từ 27/10 (**D30**, xem cuối tài liệu).
 
 ## 26/10/2026: Từ điển Nhật–Việt cộng đồng (grill me 4 vòng, 16 câu)
 
@@ -43,3 +44,12 @@ Spec: [2026-10-26-tu-dien-design.md](2026-10-26-tu-dien-design.md) (bảng đầ
 | D27 | Việc cũ đưa vào plan | **Cả 4 nhóm** (D9 + UC-29; hiệu quả lộ trình + nhắc email; nợ nhỏ + trang ghi nguồn; CI / smoke / failOrphans / tài liệu) | Phần B của kế hoạch |
 | D28 | Hạn, cách viết plan | **Từ điển ~2 tuần; plan chỉ liệt kê việc, không chia ngày** | — |
 | D29 | Chữ Hán | **Bình luận / báo cáo cho cả từ vựng và từng chữ Hán** | Khoá `w:` và `k:` |
+
+## 27/10/2026: Đồ thị tri thức Neo4j + GraphRAG (UC-34, UC-35)
+
+Spec: [2026-10-27-do-thi-tri-thuc-neo4j-design.md](2026-10-27-do-thi-tri-thuc-neo4j-design.md); kế hoạch
+[../plans/2026-10-27-do-thi-tri-thuc-neo4j.md](../plans/2026-10-27-do-thi-tri-thuc-neo4j.md).
+
+| # | Câu hỏi | Quyết định | Hệ quả |
+|---|---|---|---|
+| D30 | UC-34 / UC-35 (19/10 ghi "ngoài phạm vi") | **Làm đúng đề cương**: Neo4j thật (`docker compose up -d neo4j`), đồng bộ Postgres → Neo4j qua ai-service, truy vấn Cypher, GraphRAG với Gemini (thiếu khoá → trả lời mẫu từ đồ thị) | Thêm một dịch vụ Docker khi triển khai; ai-service là tầng duy nhất nối Neo4j; không migration Postgres; nhánh "văn bản" của hợp nhất song song dùng FTS / tìm câu, không nhúng vector |
