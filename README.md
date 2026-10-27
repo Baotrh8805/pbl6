@@ -154,7 +154,7 @@ Nếu chạy offline cục bộ (không dùng cloud):
 docker compose up -d postgres
 ```
 
-Lệnh trên khởi tạo **PostgreSQL** ở cổng `5432`. `docker-compose.yml` còn khai báo Redis (`6379`) và Neo4j (`7474` / `7687`)
+Lệnh trên khởi tạo **PostgreSQL** ở cổng `5432`. `docker-compose.yml` còn khai báo Neo4j (`7474` / `7687`, đồ thị tri thức — B5.7 đã bỏ Redis vì không code nào dùng)
 từ thiết kế ban đầu, nhưng hiện không code nào dùng tới; `docker compose up -d` (không tên dịch vụ) sẽ bật cả hai, chỉ tốn RAM.
 
 Trỏ backend vào Postgres cục bộ bằng file `backend-core/src/main/resources/application-local.properties`
@@ -195,7 +195,7 @@ wordfreq, google-genai. Lần cài đầu tải khoảng 300 MB.
 
 ```bash
 python scripts/build_dicts.py                  # dựng tất cả
-python scripts/build_dicts.py --only kanjivg   # chỉ một nguồn: jlpt | unihan | unihan_rs | jmdict | kanjivg | kradfile | pitch
+python scripts/build_dicts.py --only kanjivg   # chỉ một nguồn: jlpt | unihan | unihan_rs | unihan_def | jmdict | kanjivg | kradfile | pitch
 ```
 
 Script tải vào cache `scripts/.download_cache/` (đã gitignore) rồi dựng vào `app/extract/data/`. Một phần dữ liệu đã commit
@@ -206,7 +206,8 @@ sẵn, phần còn lại phải tự tải vì dung lượng hoặc giấy phép
 | `jlpt/n5.csv … n1.csv` | Có | `jlpt` | Danh sách từ vựng JLPT (elzup/jlpt-word-list, gốc tanos.co.uk) | CC BY 4.0 |
 | `unihan_vietnamese.csv`, `unihan_japanese.csv` | Có | `unihan` | Unicode Unihan (`kVietnamese`, `kJapanese`) | Unicode License |
 | `unihan_rs.csv` | Có | `unihan_rs` | Unihan (`kRSUnicode`, `kTotalStrokes`: bộ thủ + số nét) | Unicode License |
-| `radicals_214.csv`, `han_viet_overrides.csv`, `heteronyms.yaml` | Có | — (biên soạn tay, sửa trực tiếp) | Nhóm tự biên soạn | — |
+| `unihan_definitions.csv` | Có | `unihan_def` | Unihan (`kDefinition`: nghĩa EN của từng chữ, chỉ chữ có âm Nhật) | Unicode License |
+| `radicals_214.csv`, `han_viet_overrides.csv`, `kanji_meaning_overrides.csv`, `jlpt_meaning_overrides.csv`, `heteronyms.yaml` | Có | — (biên soạn tay, sửa trực tiếp) | Nhóm tự biên soạn | — |
 | `jmdict.sqlite` (~4 MB) | **Không** | `jmdict` | JMdict (bản `jmdict-eng-common` của scriptin/jmdict-simplified) | EDRDG licence (CC BY-SA 4.0) |
 | `kanji_strokes.json` (~9 MB) | **Không** | `kanjivg` | KanjiVG © Ulrich Apel, chỉ giữ kanji trong từ vựng JLPT | **CC BY-SA 3.0** |
 | `kradfile.csv` (~300 KB) | **Không** | `kradfile` | KRADFILE / kradfile-u của EDRDG | **EDRDG licence** (CC BY-SA 4.0) |

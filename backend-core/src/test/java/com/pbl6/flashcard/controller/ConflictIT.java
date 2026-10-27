@@ -409,6 +409,38 @@ class ConflictIT extends IntegrationTest {
         }
     }
 
+    /**
+     * B5.2 (V36): item đã lưu docLevel -> kiểm tra lại đánh giá lại cả cấp (vocab) lẫn ngữ pháp (grammar) và gửi docLevel sang
+     * ai-service; cảnh báo cấp cũ bị thay bằng kết quả mới. Item không có docLevel vẫn giữ cảnh báo cấp như trước.
+     */
+    @Test
+    void recheck_reevaluates_level_and_grammar_when_doc_level_is_stored() throws Exception {
+        String token = newUser();
+        String id = doneJob(token);
+        UUID sourceId = source(KnowledgeSource.KIND_VOCAB, KnowledgeSource.ACTIVE, null, List.of(entry("学校", null, "nghiên cứu", null)));
+        jdbc.update("UPDATE extraction_items SET doc_level = 'N1', doc_reading = NULL, doc_meaning_en = NULL, conflicts = CAST(? AS jsonb) WHERE id = ?",
+                json.writeValueAsString(List.of(levelConflict())), itemIdByTerm(id, "勉強"));
+        jdbc.update("UPDATE extraction_items SET doc_level = 'N2' WHERE id = ?", itemIdByTerm(id, "〜ます"));
+        try {
+            stubRecheck("学校", sourceId.toString());   // ai-service giả: mọi item khác [] -> cảnh báo cấp cũ của 勉強 được thay
+            JsonNode job = read(call(post("/api/extractions/" + id + "/recheck-conflicts"), token, null).andExpect(status().isOk()));
+            List<Map<String, Object>> sent = capturedRecheckItems();
+            assertEquals(3, sent.size(), "cả mẫu ngữ pháp có docLevel cũng được gửi");
+            Map<String, Object> study = sentItem(sent, "勉強");
+            assertEquals("N1", study.get("docLevel"), "cấp tài liệu đã lưu được gửi để ai-service so lại");
+            assertNull(study.get("docReading"));
+            Map<String, Object> masu = sentItem(sent, "〜ます");
+            assertEquals("grammar", masu.get("kind"));
+            assertEquals("N2", masu.get("docLevel"));
+            assertEquals("N5", masu.get("level"), "cấp của mẫu (danh mục ngữ pháp) để ai-service tính độ lệch");
+            assertEquals(0, itemByTerm(token, id, "勉強").get("conflicts").size(), "level đánh giá lại: cảnh báo cũ thay bằng kết quả mới (rỗng)");
+            assertEquals(0, job.get("stats").get("conflictsByField").get("level").asInt());
+            assertEquals(1, job.get("stats").get("conflictsByField").get("meaning").asInt(), "学校 vẫn có cảnh báo nghĩa");
+        } finally {
+            sources.deleteById(sourceId);
+        }
+    }
+
     /** Job F2 mà không item nào còn khai báo của tài liệu: không gọi ai-service, mọi cảnh báo lúc phân tích giữ nguyên. */
     @Test
     void recheck_without_declarations_keeps_analysis_warnings_and_skips_ai_service() throws Exception {

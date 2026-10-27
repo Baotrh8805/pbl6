@@ -19,7 +19,7 @@ public final class AiDtos {
     /**
      * conflicts (F2, hợp đồng đợt 2 §5): cảnh báo mâu thuẫn ai-service gắn cho item (khoá note_vi như Python, ConflictSupport chuẩn
      * hoá thành noteVi khi lưu); ai-service cũ không trả = null. docReading / docMeaningEn: cách đọc / nghĩa EN TÀI LIỆU khai báo —
-     * item /extract/analyze luôn mang hai khoá này (và docLevel, backend không lưu nên không khai ở đây), null = tài liệu không ghi
+     * item /extract/analyze luôn mang hai khoá này và docLevel (B5.2: lưu vào doc_level), null = tài liệu không ghi
      * (hoặc ai-service cũ chưa trả). ExtractionWorker lưu chúng để kiểm tra lại mâu thuẫn; KnowledgeSourceService lấy cách đọc từ đây.
      */
     public record Item(String kind, Integer position, String term, String surface, String reading,
@@ -27,7 +27,19 @@ public final class AiDtos {
                        String meaningEn, String meaningVi, String level, Double levelConfidence,
                        List<String> levelSources, Integer frequency, String example, String exampleVi,
                        Boolean suspect, Integer chapter, List<Map<String, Object>> conflicts,
-                       String docReading, String docMeaningEn, String dictKey) {
+                       String docReading, String docMeaningEn, String dictKey, String docLevel) {
+
+        /** Dạng trước B5.2 (22 tham số, chưa có docLevel): mã và test đang dựng item với dictKey. */
+        public Item(String kind, Integer position, String term, String surface, String reading,
+                    List<Map<String, String>> readingSegments, String hanViet, String pos,
+                    String meaningEn, String meaningVi, String level, Double levelConfidence,
+                    List<String> levelSources, Integer frequency, String example, String exampleVi,
+                    Boolean suspect, Integer chapter, List<Map<String, Object>> conflicts,
+                    String docReading, String docMeaningEn, String dictKey) {
+            this(kind, position, term, surface, reading, readingSegments, hanViet, pos, meaningEn, meaningVi, level,
+                    levelConfidence, levelSources, frequency, example, exampleVi, suspect, chapter, conflicts, docReading,
+                    docMeaningEn, dictKey, null);
+        }
 
         /** Dạng F2 trước từ điển (21 tham số, chưa có dictKey "w:<id JMdict>" của spec 2026-10-26 §9.3). */
         public Item(String kind, Integer position, String term, String surface, String reading,

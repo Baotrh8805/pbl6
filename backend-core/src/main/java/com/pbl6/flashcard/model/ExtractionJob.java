@@ -91,6 +91,10 @@ public class ExtractionJob {
     @Column(name = "finished_at")
     private Instant finishedAt;
 
+    /** B8 (V37): instance backend đang / đã xử lý job; failOrphans lúc khởi động chỉ đụng job của chính instance mình. */
+    @Column(name = "instance_id", length = 64)
+    private String instanceId;
+
     public ExtractionJob() {}
 
     public boolean isTerminal() {
@@ -131,4 +135,7 @@ public class ExtractionJob {
     public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
     public void setFinishedAt(Instant finishedAt) { this.finishedAt = finishedAt; }
+
+    public String getInstanceId() { return instanceId; }
+    public void setInstanceId(String instanceId) { this.instanceId = instanceId; }
 }

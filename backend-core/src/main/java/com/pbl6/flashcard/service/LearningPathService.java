@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.config.InstanceId;
 import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.deck.DeckResponse;
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
@@ -125,6 +126,7 @@ public class LearningPathService {
     private final UserRepository users;
     private final SettingsService settings;
     private final NotificationService notifications;
+    private final InstanceId instance;
     // Bài kiểm tra chương dùng lại lượt quiz exam của bộ thẻ chương
     private final QuizAttemptService quizAttempts;
     private final TransactionTemplate tx;
@@ -137,9 +139,10 @@ public class LearningPathService {
                                ExtractionItemRepository items, ExtractionService extraction, DeckService deckService,
                                FolderService folderService, FolderRepository folders, FlashcardRepository flashcards,
                                UserRepository users, SettingsService settings, NotificationService notifications,
-                               QuizAttemptService quizAttempts, PlatformTransactionManager txm,
+                               QuizAttemptService quizAttempts, PlatformTransactionManager txm, InstanceId instance,
                                @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone) {
         this.notifications = notifications;
+        this.instance = instance;
         this.quizAttempts = quizAttempts;
         this.paths = paths;
         this.chapters = chapters;
@@ -192,6 +195,7 @@ public class LearningPathService {
         path.setId(UUID.randomUUID());
         path.setUserId(user.getId());
         path.setStatus(LearningPath.PROCESSING);
+        path.setInstanceId(instance.value());   // B8
         path.setTitle(pathTitle(title, filename));
         path.setStartDate(startDate != null ? startDate : today(null));
         path.setTotalDays(days);
@@ -669,7 +673,12 @@ public class LearningPathService {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void failOrphans() {
-        List<LearningPath> stuck = paths.findByStatus(LearningPath.PROCESSING);
+        // B8: chỉ lộ trình của chính instance này (hoặc chưa ghi instance — trước V37 — và quá ORPHAN_GRACE)
+        Instant cutoff = Instant.now().minus(ExtractionService.ORPHAN_GRACE);
+        List<LearningPath> stuck = paths.findByStatus(LearningPath.PROCESSING).stream()
+                .filter(p -> instance.value().equals(p.getInstanceId())
+                        || (p.getInstanceId() == null && p.getCreatedAt() != null && p.getCreatedAt().isBefore(cutoff)))
+                .toList();
         for (LearningPath p : stuck) fail(p, "Máy chủ đã khởi động lại trong lúc xử lý. Hãy tạo lại lộ trình.");
         if (!stuck.isEmpty()) log.warn("Đánh dấu {} lộ trình dở dang là FAILED sau khi khởi động", stuck.size());
     }
@@ -1116,7 +1125,7 @@ public class LearningPathService {
             chosen.stream().filter(i -> ExtractionItem.GRAMMAR.equals(i.getKind())).forEach(ordered::add);
             DeckRequest deckReq = new DeckRequest(c.getTitle(), ExtractionService.dominantLevel(ordered, job),
                     ExtractionWorker.cut("Chương " + c.getPosition() + " của lộ trình " + path.getTitle(), 1000),
-                    folderId, null, "goi", ordered.stream().map(ExtractionService::toCard).toList());
+                    folderId, null, "goi", ordered.stream().map(ExtractionService::toCard).toList(), true);
             deckIds.add(createChapterDeck(uid, c, deckReq, user.getJlptLevel(), plan).id());
         }
         // UPDATE một cột, không sửa entity job: flush entity là UPDATE cả dòng mang status / stage / stats đọc ở đầu giao dịch này
@@ -1259,7 +1268,7 @@ public class LearningPathService {
             }
             DeckRequest deckReq = new DeckRequest(c.getTitle(), dominantLevel(group, user),
                     ExtractionWorker.cut("Chương " + c.getPosition() + " của lộ trình " + title, 1000), path.getFolderId(),
-                    null, remedialCategory(group, groupBy), cardReqs);
+                    null, remedialCategory(group, groupBy), cardReqs, true);
             copyDistractors(createChapterDeck(uid, c, deckReq, user.getJlptLevel(), plan), copied);
         }
         PlanResult r = writeSchedule(path, rows, plan);

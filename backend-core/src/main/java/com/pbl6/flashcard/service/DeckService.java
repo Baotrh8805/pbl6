@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.config.CodedStatusException;
 import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.deck.DeckResponse;
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
@@ -26,6 +27,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.text.Normalizer;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -208,7 +211,9 @@ public class DeckService {
         if (req.visibility() != null) deck.setVisibility(req.visibility());
         deck.setCategory(req.category());
         int pos = 1;
-        for (DeckRequest.Card c : complete(req.cards())) {
+        List<DeckRequest.Card> cards = complete(req.cards());
+        rejectDuplicates(List.of(), cards, Boolean.TRUE.equals(req.allowDuplicate()));
+        for (DeckRequest.Card c : cards) {
             deck.getCards().add(newCard(deck, c, pos++));
         }
         return DeckResponse.of(deckRepository.save(deck), Access.OWNER.json());
@@ -262,6 +267,9 @@ public class DeckService {
             // Khớp theo id thẻ (không theo vị trí): thẻ giữ id thì giữ lịch sử SRS của mọi người học;
             // xoá/chèn/đổi chỗ ở giữa không làm review "nhảy" sang thẻ khác.
             List<DeckRequest.Card> incoming = complete(req.cards());
+            // B5.1: chỉ thẻ MỚI bị soát trùng (thẻ giữ id là thẻ cũ, kể cả bộ cũ vốn đã có thuật ngữ trùng vẫn sửa được)
+            rejectDuplicates(incoming.stream().filter(c -> c.id() != null).map(DeckRequest.Card::term).toList(),
+                    incoming.stream().filter(c -> c.id() == null).toList(), Boolean.TRUE.equals(req.allowDuplicate()));
             List<Flashcard> existing = deck.getCards();
             Map<String, Flashcard> byId = existing.stream()
                     .collect(Collectors.toMap(Flashcard::getId, Function.identity()));
@@ -344,7 +352,14 @@ public class DeckService {
 
     @Transactional
     public List<CardResponse> addCards(Long uid, String deckId, List<DeckRequest.Card> reqs) {
+        return addCards(uid, deckId, reqs, false);
+    }
+
+    /** B5.1: thêm thẻ; trùng thuật ngữ (NFKC + trim) với thẻ đang có hoặc trong lô → 409 DUPLICATE_TERM trừ khi allowDuplicate. */
+    @Transactional
+    public List<CardResponse> addCards(Long uid, String deckId, List<DeckRequest.Card> reqs, boolean allowDuplicate) {
         Deck deck = writable(uid, deckId);
+        rejectDuplicates(deck.getCards().stream().map(Flashcard::getTerm).toList(), complete(reqs), allowDuplicate);
         // max + 1 (không phải size + 1): sau khi xoá thẻ ở giữa, size + 1 có thể trùng position đang có
         int pos = deck.getCards().stream().map(Flashcard::getPosition)
                 .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(0);
@@ -486,9 +501,37 @@ public class DeckService {
         return card;
     }
 
+    /** B5.1 (LC-04): thuật ngữ / cách đọc lưu và so trùng sau khi chuẩn hoá NFKC (ｶﾀｶﾅ → カタカナ, chữ số full-width → ASCII) + trim. */
+    static String normalizeTerm(String s) {
+        if (s == null) return null;
+        // Giữ dấu ngã toàn chiều rộng "～" (U+FF5E) của mẫu ngữ pháp (～ている): NFKC đổi nó thành "~" ASCII, mất dáng tiếng Nhật
+        String n = Normalizer.normalize(s.replace('～', ''), Normalizer.Form.NFKC).replace('', '～').strip();
+        return n.isEmpty() ? null : n;
+    }
+
+    /**
+     * Thuật ngữ trùng (sau chuẩn hoá) với thẻ đang có hoặc với thẻ khác trong cùng lô → 409 {@code DUPLICATE_TERM} kèm thuật ngữ, để
+     * giao diện hỏi "Vẫn thêm?" rồi gửi lại với allowDuplicate = true.
+     */
+    static void rejectDuplicates(Collection<String> existingTerms, List<DeckRequest.Card> incoming, boolean allowDuplicate) {
+        if (allowDuplicate) return;
+        Set<String> seen = new HashSet<>();
+        for (String t : existingTerms) {
+            String n = normalizeTerm(t);
+            if (n != null) seen.add(n);
+        }
+        for (DeckRequest.Card c : incoming) {
+            String n = normalizeTerm(c.term());
+            if (n != null && !seen.add(n)) {
+                throw new CodedStatusException(HttpStatus.CONFLICT, "DUPLICATE_TERM",
+                        "Thuật ngữ «" + n + "» đã có trong bộ thẻ. Chọn \"Vẫn thêm\" nếu bạn muốn giữ thẻ trùng.");
+            }
+        }
+    }
+
     private static void apply(Flashcard card, DeckRequest.Card c) {
-        String term = c.term().trim();
-        String reading = c.reading() != null ? c.reading().trim() : null;
+        String term = normalizeTerm(c.term());
+        String reading = normalizeTerm(c.reading());
         // Phương án nhiễu sinh theo term / reading cũ: đổi một trong hai thì bỏ, để quiz không hỏi chữ giống hình / từ đồng âm
         // của một từ khác (null = "chưa sinh", người dùng bấm sinh lại).
         if (!Objects.equals(term, card.getTerm()) || !Objects.equals(reading, card.getReading())) card.setDistractors(null);

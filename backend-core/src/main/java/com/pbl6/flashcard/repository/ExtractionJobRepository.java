@@ -146,11 +146,16 @@ public interface ExtractionJobRepository extends JpaRepository<ExtractionJob, UU
             + "WHERE j.id = :id AND j.status IN ('DONE','FAILED','CANCELLED')")
     int claimIdle(@Param("id") UUID id);
 
-    /** Backend khởi động lại: worker trong RAM đã mất -> mọi job dở dang coi như thất bại. */
+    /**
+     * Backend khởi động lại: worker trong RAM đã mất -> job dở dang coi như thất bại. B8: chỉ job của chính instance này, hoặc job
+     * chưa ghi instance (trước V37) tạo trước {@code cutoff} (30 phút) — job của instance khác đang chạy không bị đụng.
+     */
     @Modifying
     @Query("UPDATE ExtractionJob j SET j.status = 'FAILED', j.errorMessage = :message, j.finishedAt = :now "
-            + "WHERE j.status IN ('QUEUED', 'RUNNING')")
-    int failUnfinished(@Param("message") String message, @Param("now") Instant now);
+            + "WHERE j.status IN ('QUEUED', 'RUNNING') "
+            + "AND (j.instanceId = :instance OR (j.instanceId IS NULL AND j.createdAt < :cutoff))")
+    int failUnfinished(@Param("message") String message, @Param("now") Instant now, @Param("instance") String instance,
+                       @Param("cutoff") Instant cutoff);
 
     /**
      * Kích hoạt lộ trình ghi deck_ids bằng UPDATE đúng một cột thay vì sửa entity đã nạp: giao dịch kích hoạt dài (thư mục, bộ

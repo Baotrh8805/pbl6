@@ -99,6 +99,10 @@ public class ExtractionItem {
     @Column(name = "doc_meaning_en", length = 1000)
     private String docMeaningEn;
 
+    /** B5.2 (V36): cấp JLPT tài liệu khai báo (ai-service docLevel), để kiểm tra lại đánh giá lại level / grammar; null = không ghi. */
+    @Column(name = "doc_level", length = 2)
+    private String docLevel;
+
     public ExtractionItem() {}
 
     public UUID getId() { return id; }
@@ -147,6 +151,8 @@ public class ExtractionItem {
     public void setDocReading(String docReading) { this.docReading = docReading; }
     public String getDocMeaningEn() { return docMeaningEn; }
     public void setDocMeaningEn(String docMeaningEn) { this.docMeaningEn = docMeaningEn; }
+    public String getDocLevel() { return docLevel; }
+    public void setDocLevel(String docLevel) { this.docLevel = docLevel; }
     public boolean isSelected() { return selected; }
     public void setSelected(boolean selected) { this.selected = selected; }
 }

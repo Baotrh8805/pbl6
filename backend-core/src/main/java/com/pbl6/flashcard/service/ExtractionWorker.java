@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.config.InstanceId;
 import com.pbl6.flashcard.config.AsyncConfig;
 import com.pbl6.flashcard.dto.extraction.AiDtos;
 import com.pbl6.flashcard.dto.extraction.AiDtos.AnalyzeResult;
@@ -41,6 +42,7 @@ public class ExtractionWorker {
     private final ExtractionItemRepository items;
     private final AiServiceClient ai;
     private final TransactionTemplate tx;
+    private final InstanceId instance;
     private final ApplicationEventPublisher events;
     // F2: mục tham chiếu của nguồn tri thức chuẩn ACTIVE + ngưỡng cảnh báo gửi kèm mỗi lượt phân tích (analyzeOptions)
     private final KnowledgeSourceService knowledge;
@@ -52,8 +54,9 @@ public class ExtractionWorker {
     public ExtractionWorker(ExtractionJobRepository jobs, ExtractionItemRepository items, AiServiceClient ai,
                             PlatformTransactionManager txManager, ApplicationEventPublisher events,
                             KnowledgeSourceService knowledge, SettingsService settings,
-                            com.pbl6.flashcard.service.dictionary.DictionaryStore dictionary) {
+                            com.pbl6.flashcard.service.dictionary.DictionaryStore dictionary, InstanceId instance) {
         this.dictionary = dictionary;
+        this.instance = instance;
         this.events = events;
         this.knowledge = knowledge;
         this.settings = settings;
@@ -73,6 +76,7 @@ public class ExtractionWorker {
         try {
             update(jobId, j -> {
                 j.setStatus(ExtractionJob.RUNNING);
+                j.setInstanceId(instance.value());   // B8
                 j.setStage(ExtractionJob.STAGE_TEXT);
                 j.setStartedAt(Instant.now());
                 j.setErrorMessage(null);
@@ -103,6 +107,7 @@ public class ExtractionWorker {
         try {
             update(jobId, j -> {
                 j.setStatus(ExtractionJob.RUNNING);
+                j.setInstanceId(instance.value());   // B8
                 j.setStartedAt(Instant.now());
                 j.setFinishedAt(null);
                 j.setErrorMessage(null);
@@ -205,6 +210,7 @@ public class ExtractionWorker {
         try {
             update(jobId, j -> {
                 j.setStatus(ExtractionJob.RUNNING);
+                j.setInstanceId(instance.value());   // B8
                 j.setStage(ExtractionJob.STAGE_ENRICH);
                 j.setStartedAt(Instant.now());
                 j.setFinishedAt(null);
@@ -354,6 +360,8 @@ public class ExtractionWorker {
         e.setConflicts(ConflictSupport.normalize(it.conflicts()));
         e.setDocReading(cut(it.docReading(), 200));
         e.setDocMeaningEn(cut(it.docMeaningEn(), 1000));
+        // B5.2: cấp tài liệu khai báo (N5..N1) để kiểm tra lại đánh giá lại level / grammar; giá trị lạ -> coi như không ghi
+        e.setDocLevel(it.docLevel() != null && it.docLevel().matches("N[1-5]") ? it.docLevel() : null);
         return e;
     }
 

@@ -17,8 +17,16 @@ public record DeckRequest(
         @Pattern(regexp = "private|public") String visibility,
         @Pattern(regexp = CATEGORIES) String category,
         // @Valid trên phần tử: thiếu nó thì @Size của thẻ lồng không được kiểm -> tràn cột -> 500
-        @Size(max = 1000) List<@Valid Card> cards
+        @Size(max = 1000) List<@Valid Card> cards,
+        // B5.1 (LC-04): true = người dùng đã xác nhận giữ thuật ngữ trùng (sau 409 DUPLICATE_TERM); null / false = chặn trùng
+        Boolean allowDuplicate
 ) {
+    /** Dạng 7 tham số cho mã nội bộ (bóc tách, lộ trình) — chưa có cờ trùng; caller truyền cờ qua dạng đầy đủ khi cần. */
+    public DeckRequest(String title, String level, String description, UUID folderId, String visibility, String category,
+                       List<Card> cards) {
+        this(title, level, description, folderId, visibility, category, cards, null);
+    }
+
     public static final String CATEGORIES = "dokkai|goi|kanji|bunpou|kaiwa|it|business";
 
     /** id: có = sửa thẻ đó (giữ lịch sử SRS), null = thẻ mới. Chỉ dùng khi PUT deck. */

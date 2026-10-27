@@ -47,7 +47,8 @@ import java.util.UUID;
  *       không được đánh giá lại: giữ nguyên cảnh báo lúc phân tích thay vì bịa thêm hay xoá oan.</li>
  *   <li>Job cũ (trước F2, không có khoá trên): reading / furigana / meaning của thẻ được coi là của tài liệu như ai-service quy ước
  *       cho ConflictItem thiếu khoá doc* — đó là mục đích kiểm tra lại job cũ.</li>
- *   <li>level / grammar không bao giờ được đánh giá lại (cần docLevel mà backend không lưu): cảnh báo lúc phân tích được giữ.</li>
+ *   <li>level / grammar chỉ được đánh giá lại khi item đã lưu docLevel (B5.2, V36 — job phân tích sau 27/10); job cũ không có
+ *       cấp tài liệu nên giữ nguyên cảnh báo lúc phân tích.</li>
  * </ul>
  * Item không có trường nào đánh giá lại được thì không gửi; không còn item nào thì không gọi ai-service.
  * <p>
@@ -172,10 +173,13 @@ public class ConflictService {
     }
 
     /**
-     * Trường kiểm tra lại đánh giá được cho item (xem Javadoc lớp). Mẫu ngữ pháp chỉ có luật grammar (cần docLevel) nên luôn rỗng.
+     * Trường kiểm tra lại đánh giá được cho item (xem Javadoc lớp). Mẫu ngữ pháp chỉ có luật grammar (cần docLevel đã lưu).
      */
     static Set<String> evaluatedFields(ExtractionItem i, boolean declaredOnly) {
-        if (!ExtractionItem.VOCAB.equals(i.getKind())) return Set.of();
+        if (!ExtractionItem.VOCAB.equals(i.getKind())) {
+            // B5.2: mẫu ngữ pháp chỉ có luật grammar, cần cấp tài liệu đã lưu (doc_level, V36); job cũ không có -> giữ cảnh báo cũ
+            return declaredOnly && i.getDocLevel() != null ? Set.of("grammar") : Set.of();
+        }
         if (!declaredOnly) return LEGACY_FIELDS;
         Set<String> fields = new LinkedHashSet<>();
         if (i.getDocReading() != null) {
@@ -183,6 +187,7 @@ public class ConflictService {
             fields.add("furigana");
         }
         if (i.getDocMeaningEn() != null) fields.add("meaning");
+        if (i.getDocLevel() != null) fields.add("level");   // B5.2
         return fields;
     }
 
@@ -228,9 +233,11 @@ public class ConflictService {
         if (declaredOnly) {
             m.put("docReading", i.getDocReading());
             m.put("docMeaningEn", i.getDocMeaningEn());
+            m.put("docLevel", i.getDocLevel());   // B5.2: null = tài liệu không ghi cấp -> ai-service không so level / grammar
         } else {
             if (i.getDocReading() != null) m.put("docReading", i.getDocReading());
             if (i.getDocMeaningEn() != null) m.put("docMeaningEn", i.getDocMeaningEn());
+            if (i.getDocLevel() != null) m.put("docLevel", i.getDocLevel());
         }
         return m;
     }

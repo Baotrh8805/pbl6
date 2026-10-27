@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.config.InstanceId;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -73,8 +74,9 @@ public class ExtractionService {
 
     public ExtractionService(ExtractionJobRepository jobs, ExtractionItemRepository items, ExtractionWorker worker,
                              DeckService deckService, ObjectMapper json, SettingsService settings,
-                             LearningPathRepository paths, PlatformTransactionManager txManager) {
+                             LearningPathRepository paths, PlatformTransactionManager txManager, InstanceId instance) {
         this.tx = new TransactionTemplate(txManager);
+        this.instance = instance;
         this.jobs = jobs;
         this.items = items;
         this.worker = worker;
@@ -84,11 +86,20 @@ public class ExtractionService {
         this.paths = paths;
     }
 
-    /** Worker sống trong RAM: sau restart mọi job QUEUED/RUNNING không bao giờ chạy tiếp -> báo FAILED rõ ràng. */
+    /** B8: job chưa ghi instance (trước V37) chỉ bị coi là mồ côi khi quá lâu như vậy. */
+    public static final Duration ORPHAN_GRACE = Duration.ofMinutes(30);
+
+    private final InstanceId instance;
+
+    /**
+     * Worker sống trong RAM: sau restart job QUEUED/RUNNING của instance này không bao giờ chạy tiếp -> báo FAILED rõ ràng. B8: job
+     * của instance khác (nhiều backend chung DB) không bị đụng; job chưa ghi instance chỉ bị đánh khi quá ORPHAN_GRACE.
+     */
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void failOrphans() {
-        int n = jobs.failUnfinished("Máy chủ đã khởi động lại trong lúc xử lý. Hãy chạy lại.", Instant.now());
+        Instant now = Instant.now();
+        int n = jobs.failUnfinished("Máy chủ đã khởi động lại trong lúc xử lý. Hãy chạy lại.", now, instance.value(), now.minus(ORPHAN_GRACE));
         if (n > 0) log.warn("Đánh dấu {} job bóc tách dở dang là FAILED sau khi khởi động", n);
     }
 
@@ -128,6 +139,7 @@ public class ExtractionService {
         enforceDailyLimit(user);
 
         ExtractionJob job = new ExtractionJob();
+        job.setInstanceId(instance.value());
         job.setId(UUID.randomUUID());
         job.setUserId(user.getId());
         job.setSourceType(sourceType);
@@ -318,6 +330,7 @@ public class ExtractionService {
         }
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
+        job.setInstanceId(instance.value());
         job.setErrorMessage(null);
         job.setFailureKind(null);
         jobs.save(job);
@@ -375,6 +388,7 @@ public class ExtractionService {
         claim(job);
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
+        job.setInstanceId(instance.value());
         job.setErrorMessage(null);
         job.setFailureKind(null);
         jobs.save(job);
@@ -419,6 +433,7 @@ public class ExtractionService {
         claim(job);
         job.setStatus(ExtractionJob.QUEUED);
         job.setStage(ExtractionJob.QUEUED);
+        job.setInstanceId(instance.value());
         job.setErrorMessage(null);
         jobs.save(job);
         dispatch(job, () -> worker.runEnrich(job.getId()));
@@ -542,7 +557,7 @@ public class ExtractionService {
         List<DeckRequest.Card> cards = chosen.stream().map(ExtractionService::toCard).toList();
         DeckRequest req = new DeckRequest(spec.title().trim(), level, "Tạo tự động từ "
                 + (job.getSourceName() != null ? job.getSourceName() : "văn bản dán") + ".",
-                spec.folderId(), null, category, cards);
+                spec.folderId(), null, category, cards, true);
         return deckService.create(uid, req);
     }
 

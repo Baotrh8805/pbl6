@@ -3364,12 +3364,18 @@ class LearningPathIT extends IntegrationTest {
     @Autowired
     LearningPathService pathService;
 
+    @Autowired
+    com.pbl6.flashcard.config.InstanceId instanceId;
+
     @Test
     void restart_marks_processing_paths_failed_and_notifies() throws Exception { // §4.4: mọi lần FAILED đều có thông báo
         String email = newEmail();
         String token = newUser(email);
         Long uid = userId(email);
         LearningPath stuck = bare(uid, "Dở dang", LearningPath.PROCESSING);
+        // B8 (V37): chỉ lộ trình dở dang CỦA CHÍNH instance này bị đánh FAILED khi khởi động lại (OrphanJobsIT kiểm các trường hợp khác)
+        stuck.setInstanceId(instanceId.value());
+        pathRepo.save(stuck);
         LearningPath fine = bare(uid, "Đang học", LearningPath.ACTIVE);
         String message = "Máy chủ đã khởi động lại trong lúc xử lý. Hãy tạo lại lộ trình.";
 

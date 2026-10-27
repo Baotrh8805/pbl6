@@ -174,8 +174,9 @@ public class DeckController {
     @PostMapping("/{deckId}/cards/batch")
     public ResponseEntity<List<CardResponse>> addCardsBatch(@AuthenticationPrincipal CustomUserDetails me,
                                                             @PathVariable String deckId,
-                                                            @RequestBody @Size(max = 1000) List<@Valid Card> reqList) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(deckService.addCards(uid(me), deckId, reqList));
+                                                            @RequestBody @Size(max = 1000) List<@Valid Card> reqList,
+                                                            @RequestParam(defaultValue = "false") boolean allowDuplicate) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(deckService.addCards(uid(me), deckId, reqList, allowDuplicate));
     }
 
     @PutMapping("/{deckId}/cards/{cardId}")

@@ -42,6 +42,10 @@ public class LearningPath {
     @Column(name = "job_id")
     private UUID jobId;
 
+    /** B8 (V37): instance backend đang dựng bản nháp (PROCESSING); failOrphans chỉ đánh FAILED lộ trình của chính instance mình. */
+    @Column(name = "instance_id", length = 64)
+    private String instanceId;
+
     @Column(name = "folder_id")
     private UUID folderId;
 
@@ -138,4 +142,7 @@ public class LearningPath {
     public void setLastRebalancedAt(Instant lastRebalancedAt) { this.lastRebalancedAt = lastRebalancedAt; }
     public LocalDate getLastRemindedOn() { return lastRemindedOn; }
     public void setLastRemindedOn(LocalDate lastRemindedOn) { this.lastRemindedOn = lastRemindedOn; }
+
+    public String getInstanceId() { return instanceId; }
+    public void setInstanceId(String instanceId) { this.instanceId = instanceId; }
 }
