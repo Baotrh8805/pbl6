@@ -389,19 +389,21 @@ const RoadmapDetail: React.FC<{ id: string }> = ({ id }) => {
   const handleStartQuiz = (cid: string) => runOnce(inFlight.current, "quiz", () => startQuiz(cid));
 
   // Cài đặt (trần / ngày học / nhắc / số ngày / ngày bắt đầu): PATCH ?date= trả lộ trình đã xếp lại; ném lỗi cho hộp thoại.
-  const handleSaveSettings = async (patch: LearningPathPatch) => {
-    setBusyAction("settings");
-    try {
-      const next = await updateLearningPath(id, patch);
-      refreshSeq.current++;
-      setPath(next);
-      setActionError(null);
-      setNotice(next.overflow ? `Đã lưu cài đặt. ${OVERFLOW_WARNING}` : "Đã lưu cài đặt lộ trình.");
-      void refreshPath(); // forecast[] chỉ có ở GET /{id}
-    } finally {
-      setBusyAction(null);
-    }
-  };
+  // B5.4: hai lần bấm Lưu liên tiếp (Enter + click) chỉ gửi một PATCH, như activate / rebalance
+  const handleSaveSettings = (patch: LearningPathPatch) =>
+    runOnce(inFlight.current, "settings", async () => {
+      setBusyAction("settings");
+      try {
+        const next = await updateLearningPath(id, patch);
+        refreshSeq.current++;
+        setPath(next);
+        setActionError(null);
+        setNotice(next.overflow ? `Đã lưu cài đặt. ${OVERFLOW_WARNING}` : "Đã lưu cài đặt lộ trình.");
+        void refreshPath(); // forecast[] chỉ có ở GET /{id}
+      } finally {
+        setBusyAction(null);
+      }
+    });
 
   if (loadError && !path)
     return (
