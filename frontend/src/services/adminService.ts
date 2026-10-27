@@ -1,7 +1,6 @@
 // Gọi API Admin Panel (/api/admin/*) + báo cáo bộ thẻ + thông báo hệ thống. Khớp spec docs/Plan/specs/2026-10-17
 // và hợp đồng đợt 2 docs/Plan/specs/2026-10-19-hop-dong-api-dot-2.md (mẹo nhớ, nguồn tri thức, khiếu nại, xác thực email).
 import { apiClient } from "./apiClient.ts";
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "../lib/apiErrorInfo.ts";
 import { normalizeAppeal, queueCounts } from "../features/admin/moderationUtils.ts";
 import type {
     AccountAppeal,
@@ -139,21 +138,6 @@ export const updateSettings = async (body: AdminSettings): Promise<AdminSettings
 export const fetchAnnouncement = async (): Promise<string> =>
     (await apiClient.get<{ text: string }>("/announcement")).data.text;
 
-// ---------- đợt 2: endpoint có thể chưa triển khai ----------
-
-/**
- * Backend đợt 2 làm song song: endpoint chưa có -> 404 (Spring "No static resource…") hoặc 405. Đổi thành lỗi mang câu
- * bình tĩnh SERVER_PENDING_MESSAGE để trang hiện "đang cập nhật" thay vì lỗi đỏ. Quy tắc nhận diện dùng chung
- * (lib/apiErrorInfo): 404 chỉ tính khi body là của Spring / trống, để "không tìm thấy bản ghi" thật vẫn hiện đúng.
- */
-const pendingAware = async <T>(request: Promise<T>): Promise<T> => {
-    try {
-        return await request;
-    } catch (e) {
-        throw isEndpointMissing(e) ? new Error(SERVER_PENDING_MESSAGE) : e;
-    }
-};
-
 /**
  * Số việc chờ cho badge điều hướng admin (mẹo chờ duyệt, khiếu nại mở, báo lỗi câu hỏi, báo cáo mở).
  * Lấy từ /admin/stats (days=7 cho nhẹ); trường null = backend chưa trả -> không hiện badge.
@@ -164,36 +148,32 @@ export const fetchAdminQueueCounts = async () => queueCounts(await fetchAdminSta
 
 /** Admin xác thực thủ công email của người dùng (audit USER_VERIFY_EMAIL); trả chi tiết người dùng. */
 export const verifyUserEmail = async (id: number): Promise<AdminUserDetail> =>
-    pendingAware(apiClient.post<AdminUserDetail>(`/admin/users/${enc(id)}/verify-email`).then((r) => r.data));
+    apiClient.post<AdminUserDetail>(`/admin/users/${enc(id)}/verify-email`).then((r) => r.data);
 
 // ---------- §4 mẹo nhớ bộ thủ ----------
 
 export const fetchAdminMnemonics = async (params: Params): Promise<AdminPage<AdminMnemonic>> =>
-    pendingAware(apiClient.get<AdminPage<AdminMnemonic>>("/admin/mnemonics", { params: clean(params) }).then((r) => r.data));
+    apiClient.get<AdminPage<AdminMnemonic>>("/admin/mnemonics", { params: clean(params) }).then((r) => r.data);
 
 /** Chỉ khi PENDING (409 nếu đã duyệt / từ chối). */
 export const patchAdminMnemonic = async (id: string, mnemonicVi: string): Promise<AdminMnemonic> =>
-    pendingAware(apiClient.patch<AdminMnemonic>(`/admin/mnemonics/${enc(id)}`, { mnemonicVi }).then((r) => r.data));
+    apiClient.patch<AdminMnemonic>(`/admin/mnemonics/${enc(id)}`, { mnemonicVi }).then((r) => r.data);
 
 /** Duyệt: mẹo APPROVED cũ của cùng chữ tự chuyển REJECTED ("Thay bằng mẹo mới"). */
 export const approveMnemonic = async (id: string, note?: string): Promise<AdminMnemonic> =>
-    pendingAware(
-        apiClient.post<AdminMnemonic>(`/admin/mnemonics/${enc(id)}/approve`, note ? { note } : {}).then((r) => r.data)
-    );
+    apiClient.post<AdminMnemonic>(`/admin/mnemonics/${enc(id)}/approve`, note ? { note } : {}).then((r) => r.data);
 
 /** Từ chối: note bắt buộc (tác giả nhận thông báo MNEMONIC_REVIEWED kèm ghi chú). */
 export const rejectMnemonic = async (id: string, note: string): Promise<AdminMnemonic> =>
-    pendingAware(apiClient.post<AdminMnemonic>(`/admin/mnemonics/${enc(id)}/reject`, { note }).then((r) => r.data));
+    apiClient.post<AdminMnemonic>(`/admin/mnemonics/${enc(id)}/reject`, { note }).then((r) => r.data);
 
 // ---------- §5 nguồn tri thức chuẩn ----------
 
 export const fetchKnowledgeSources = async (params: Params): Promise<AdminPage<KnowledgeSourceRow>> =>
-    pendingAware(
-        apiClient.get<AdminPage<KnowledgeSourceRow>>("/admin/knowledge-sources", { params: clean(params) }).then((r) => r.data)
-    );
+    apiClient.get<AdminPage<KnowledgeSourceRow>>("/admin/knowledge-sources", { params: clean(params) }).then((r) => r.data);
 
 export const fetchKnowledgeSource = async (id: string): Promise<KnowledgeSourceDetail> =>
-    pendingAware(apiClient.get<KnowledgeSourceDetail>(`/admin/knowledge-sources/${enc(id)}`).then((r) => r.data));
+    apiClient.get<KnowledgeSourceDetail>(`/admin/knowledge-sources/${enc(id)}`).then((r) => r.data);
 
 /**
  * multipart `file` | `text` + title / kind / level. Như createExtraction: ghi đè Content-Type để axios không JSON hoá
@@ -212,42 +192,38 @@ const knowledgeForm = (input: KnowledgeUploadInput): FormData => {
 const MULTIPART = { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 };
 
 export const createKnowledgeSource = async (input: KnowledgeUploadInput): Promise<KnowledgeSourceDetail> =>
-    pendingAware(apiClient.post<KnowledgeSourceDetail>("/admin/knowledge-sources", knowledgeForm(input), MULTIPART).then((r) => r.data));
+    apiClient.post<KnowledgeSourceDetail>("/admin/knowledge-sources", knowledgeForm(input), MULTIPART).then((r) => r.data);
 
 /** Phiên bản mới (version + 1) thay nội dung của nguồn đang có. */
 export const updateKnowledgeSource = async (id: string, input: KnowledgeUploadInput): Promise<KnowledgeSourceDetail> =>
-    pendingAware(
-        apiClient
-            .put<KnowledgeSourceDetail>(`/admin/knowledge-sources/${enc(id)}`, knowledgeForm(input), MULTIPART)
-            .then((r) => r.data)
-    );
+    apiClient
+        .put<KnowledgeSourceDetail>(`/admin/knowledge-sources/${enc(id)}`, knowledgeForm(input), MULTIPART)
+        .then((r) => r.data);
 
 export const archiveKnowledgeSource = async (id: string): Promise<void> => {
-    await pendingAware(apiClient.post(`/admin/knowledge-sources/${enc(id)}/archive`));
+    await apiClient.post(`/admin/knowledge-sources/${enc(id)}/archive`);
 };
 
 export const activateKnowledgeSource = async (id: string): Promise<void> => {
-    await pendingAware(apiClient.post(`/admin/knowledge-sources/${enc(id)}/activate`));
+    await apiClient.post(`/admin/knowledge-sources/${enc(id)}/activate`);
 };
 
 /** SUPER_ADMIN; 204. */
 export const deleteKnowledgeSource = async (id: string): Promise<void> => {
-    await pendingAware(apiClient.delete(`/admin/knowledge-sources/${enc(id)}`));
+    await apiClient.delete(`/admin/knowledge-sources/${enc(id)}`);
 };
 
 // ---------- §6 khiếu nại tài khoản ----------
 
 /** Phần tử đi qua normalizeAppeal: backend bỏ trường null (NON_NULL) nên tài khoản đã xoá đến với userId undefined. */
 export const fetchAppeals = async (params: Params): Promise<AdminPage<AccountAppeal>> => {
-    const page = await pendingAware(
-        apiClient.get<AdminPage<AccountAppeal>>("/admin/appeals", { params: clean(params) }).then((r) => r.data)
-    );
+    const page = await apiClient.get<AdminPage<AccountAppeal>>("/admin/appeals", { params: clean(params) }).then((r) => r.data);
     return { ...page, items: (page.items ?? []).map(normalizeAppeal) };
 };
 
 /** UNLOCK đi qua quy tắc bậc của backend (ADMIN chỉ mở khoá USER). */
 export const resolveAppeal = async (id: number, body: { action: AppealAction; note?: string }): Promise<AccountAppeal> =>
-    pendingAware(apiClient.post<AccountAppeal>(`/admin/appeals/${enc(id)}/resolve`, body).then((r) => normalizeAppeal(r.data)));
+    apiClient.post<AccountAppeal>(`/admin/appeals/${enc(id)}/resolve`, body).then((r) => normalizeAppeal(r.data));
 
 export const dismissAppeal = async (id: number, body: { note?: string }): Promise<AccountAppeal> =>
-    pendingAware(apiClient.post<AccountAppeal>(`/admin/appeals/${enc(id)}/dismiss`, body).then((r) => normalizeAppeal(r.data)));
+    apiClient.post<AccountAppeal>(`/admin/appeals/${enc(id)}/dismiss`, body).then((r) => normalizeAppeal(r.data));

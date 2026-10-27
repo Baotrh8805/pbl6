@@ -2,7 +2,6 @@ import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Ruby } from "@/lib/ja";
 import { useAsync } from "@/lib/useAsync";
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 import { applyIPlusOne, fetchIPlusOne } from "@/services/extractionService";
 import { LevelChip } from "@/features/hanviet/components/HanVietBits";
@@ -58,18 +57,8 @@ export const IPlusOnePanel: React.FC<IPlusOnePanelProps> = ({ jobId, items, user
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
-  const result = useAsync<IPlusOneResponse | "unavailable">(
-    async () => {
-      try {
-        return await fetchIPlusOne(jobId, { assumeLevelKnown });
-      } catch (e) {
-        if (isEndpointMissing(e)) return "unavailable";
-        throw e;
-      }
-    },
-    [jobId, assumeLevelKnown, retryKey]
-  );
-  const data = result.data && result.data !== "unavailable" ? result.data : null;
+  const result = useAsync<IPlusOneResponse>(() => fetchIPlusOne(jobId, { assumeLevelKnown }), [jobId, assumeLevelKnown, retryKey]);
+  const data = result.data ?? null;
   const itemById = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
 
   const showToast = (text: string) => {
@@ -89,7 +78,7 @@ export const IPlusOnePanel: React.FC<IPlusOnePanelProps> = ({ jobId, items, user
       const term = updated?.term ?? itemById.get(s.itemId)?.term ?? s.target.lemma;
       showToast(`Đã dùng làm câu ví dụ cho «${term}».`);
     } catch (e) {
-      setApplyError({ key, text: isEndpointMissing(e) ? SERVER_PENDING_MESSAGE : extractErrorMessage(e) });
+      setApplyError({ key, text: extractErrorMessage(e) });
     } finally {
       setApplying(null);
     }
@@ -129,8 +118,6 @@ export const IPlusOnePanel: React.FC<IPlusOnePanelProps> = ({ jobId, items, user
             <div key={i} className="h-24 rounded-xl bg-surface-container-low animate-pulse" />
           ))}
         </div>
-      ) : result.data === "unavailable" ? (
-        <p className="p-3 rounded-xl bg-surface-container-low text-body-sm text-on-surface-variant">{SERVER_PENDING_MESSAGE}</p>
       ) : result.error ? (
         <div role="alert" className="flex flex-wrap items-center gap-2 p-3 rounded-xl bg-error/10 border border-error/20 text-body-sm text-error">
           <span>Không tải được câu i+1: {result.error}</span>

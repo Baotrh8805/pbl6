@@ -1,8 +1,7 @@
 // Self-check trang admin đợt 2 (hợp đồng API đợt 2: §3 xác thực email, §4 mẹo nhớ, §5 nguồn tri thức, §6 khiếu nại,
 // §8 thống kê AI). scripts/selfCheck.ts gọi runAdminChecks(assert). Chỉ hàm thuần; import tương đối + đuôi .ts để node
 // chạy trực tiếp (node --experimental-strip-types).
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "../../src/lib/apiErrorInfo.ts";
-import { adminAccountStatus } from "../../src/features/admin/adminUtils.ts";
+import { adminAccountStatus, lockReasonPatch } from "../../src/features/admin/adminUtils.ts";
 import type { AccountAppeal } from "../../src/types/adminModeration.types.ts";
 import {
   aiEngineRows,
@@ -18,7 +17,6 @@ import {
   filterKnowledgeEntries,
   formatPct,
   formatSeconds,
-  isPendingError,
   knowledgeUploadError,
   mnemonicSourceLabel,
   mnemonicTextError,
@@ -34,17 +32,6 @@ import {
 } from "../../src/features/admin/moderationUtils.ts";
 
 export function runAdminChecks(assert: (cond: boolean, msg: string) => void): void {
-  // ---------- endpoint chưa triển khai (quy tắc chung ở lib/apiErrorInfo, kiểm kỹ trong practice.ts) ----------
-  const httpErr = (status: number, message?: string) => ({ response: { status, data: message ? { status, message } : "" } });
-  assert(
-    isEndpointMissing(httpErr(404, "No static resource api/admin/knowledge-sources/1.")) &&
-      isEndpointMissing(httpErr(404)) &&
-      !isEndpointMissing(httpErr(404, "Không tìm thấy nguồn tri thức.")) &&
-      isEndpointMissing(httpErr(405, "Không tìm thấy")) &&
-      !isEndpointMissing(httpErr(500)),
-    "Admin: 404 chỉ coi là chưa triển khai khi thân lỗi là của Spring / rỗng; 405 luôn là chưa có"
-  );
-  assert(isPendingError(SERVER_PENDING_MESSAGE) && !isPendingError("Lỗi khác") && !isPendingError(undefined), "Nhận ra lỗi 'đang cập nhật'");
 
   // ---------- §3 tài khoản đã tự xoá (deleted) ----------
   const lockedAt = "2026-10-19T00:00:00Z";
@@ -211,4 +198,8 @@ export function runAdminChecks(assert: (cond: boolean, msg: string) => void): vo
       appealActionState({ status: "OPEN" }, null, "SUPER_ADMIN").canUnlock === false,
     "Khiếu nại chưa chuẩn hoá thiếu userId: vẫn là 'không còn tài khoản', không bật Mở khoá"
   );
+
+  // ---------- B5.5: đổi lý do khoá của tài khoản đang khoá ----------
+  assert(JSON.stringify(lockReasonPatch("  Lạm dụng bình luận ")) === JSON.stringify({ locked: true, lockedReason: "Lạm dụng bình luận" }), "Đổi lý do khoá: locked giữ true, lý do trim");
+  assert(JSON.stringify(lockReasonPatch("   ")) === JSON.stringify({ locked: true }), "Đổi lý do khoá: lý do rỗng -> không gửi lockedReason");
 }

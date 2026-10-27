@@ -2,7 +2,6 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { KanjiCanvas, type CanvasStroke } from "@/features/practice/components/KanjiCanvas";
 import { MAX_SCORE_STROKES, strokeChipsFor } from "@/features/practice/practiceUtils";
-import { SERVER_PENDING_MESSAGE } from "@/lib/apiErrorInfo";
 import { useAsync } from "@/lib/useAsync";
 import {
     normalizeGlyph,
@@ -285,16 +284,7 @@ export const KanjiWritePanel: React.FC<KanjiWritePanelProps> = ({
 
             {/* Kết quả */}
             <div aria-live="polite" className="flex flex-col gap-3">
-                {error &&
-                    (error === SERVER_PENDING_MESSAGE ? (
-                        // Máy chủ chưa có endpoint chấm: báo nhẹ nhàng, nét vẽ vẫn giữ để thử lại sau.
-                        <p className="flex items-start gap-1.5 text-body-sm text-on-surface-variant">
-                            <Icon name="info" className="text-[16px] mt-0.5 shrink-0" />
-                            {error}
-                        </p>
-                    ) : (
-                        <p className="text-body-sm text-error">{error}</p>
-                    ))}
+                {error && <p className="text-body-sm text-error">{error}</p>}
                 {result && tone && (
                     <section aria-label="Kết quả chấm điểm" className="flex flex-col gap-3 p-4 rounded-xl bg-surface-container-low border border-surface-container-high">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">

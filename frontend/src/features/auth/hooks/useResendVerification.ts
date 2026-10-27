@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { SERVER_PENDING_MESSAGE } from "@/lib/apiErrorInfo";
 import { authErrorMessage, authService } from "../services/authService";
 import { EMAIL_RE, cooldownSecondsLeft } from "../authUtils";
 
@@ -60,7 +59,7 @@ export const useResendVerification = () => {
         } catch (err) {
             if (!mounted.current) return;
             const text = authErrorMessage(err);
-            setStatus({ type: text === SERVER_PENDING_MESSAGE ? "info" : "error", text });
+            setStatus({ type: "error", text });
         } finally {
             if (mounted.current) setBusy(false);
         }

@@ -114,14 +114,3 @@ export const Modal: React.FC<ModalProps> = ({
   );
 };
 
-/** Nhãn "Sắp ra mắt" cho tính năng chưa có backend: hiển thị nhưng không cho thao tác. */
-export const ComingSoonBadge: React.FC<{ className?: string }> = ({ className = "" }) => (
-  <span
-    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-fixed text-tertiary text-[11px] font-semibold whitespace-nowrap ${className}`}
-  >
-    <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
-      schedule
-    </span>
-    Sắp ra mắt
-  </span>
-);

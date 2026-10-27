@@ -9,7 +9,6 @@ import { formatShort } from "@/features/admin/adminUtils";
 import {
   APPEAL_STATUS_LABELS,
   appealLockLabel,
-  isPendingError,
   parseAppealStatus,
   type AppealStatusKey,
 } from "@/features/admin/moderationUtils";
@@ -18,7 +17,6 @@ import { AdminTableShell } from "@/features/admin/components/AdminTableShell";
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { BreakableEmail } from "@/features/admin/components/BreakableEmail";
 import { AdminStatusTabs } from "@/features/admin/components/AdminStatusTabs";
-import { AdminPendingNotice } from "@/features/admin/components/AdminPendingNotice";
 import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
 import { ResolveAppealModal } from "@/features/admin/components/ResolveAppealModal";
 import { AppealReason } from "@/features/admin/components/AppealReason";
@@ -53,7 +51,6 @@ export const AdminAppealsPage: React.FC = () => {
   // Số khiếu nại mở cho tab lấy từ AdminLayout (đã tải cho badge), không gọi lại /admin/stats.
   const { queues } = useAdminQueues();
   const rows = data?.items ?? [];
-  const pending = isPendingError(error);
   const openCount = status === "OPEN" ? (data?.total ?? null) : (queues?.openAppeals ?? null);
 
   return (
@@ -78,9 +75,7 @@ export const AdminAppealsPage: React.FC = () => {
 
       <AdminFlash message={flash} onClose={() => setFlash(null)} />
 
-      {pending ? (
-        <AdminPendingNotice />
-      ) : (
+      {(
         <AdminTableShell
           caption={`Khiếu nại ${APPEAL_STATUS_LABELS[status].toLowerCase()}`}
           stickyActions={status === "OPEN"}
@@ -170,7 +165,7 @@ export const AdminAppealsPage: React.FC = () => {
           </tbody>
         </AdminTableShell>
       )}
-      {data && !pending && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
+      {data && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
 
       {/* key: mỗi khiếu nại một modal mới (lựa chọn / ghi chú không sót sang khiếu nại khác) */}
       <ResolveAppealModal

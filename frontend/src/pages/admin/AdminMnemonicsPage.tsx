@@ -15,7 +15,6 @@ import {
   MNEMONIC_DB_MAX,
   MNEMONIC_STATUS_LABELS,
   canReviewMnemonic,
-  isPendingError,
   mnemonicSourceLabel,
   mnemonicTextError,
   parseMnemonicStatus,
@@ -26,7 +25,6 @@ import { AdminFilterBar, adminFieldClass, adminLabelClass } from "@/features/adm
 import { AdminTableShell } from "@/features/admin/components/AdminTableShell";
 import { AdminStatusBadge, type BadgeTone } from "@/features/admin/components/AdminStatusBadge";
 import { AdminStatusTabs } from "@/features/admin/components/AdminStatusTabs";
-import { AdminPendingNotice } from "@/features/admin/components/AdminPendingNotice";
 import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
 import { RejectMnemonicModal } from "@/features/admin/components/RejectMnemonicModal";
 import { Pager } from "@/features/admin/components/Pager";
@@ -127,7 +125,6 @@ export const AdminMnemonicsPage: React.FC = () => {
   };
 
   const pendingCount = status === "PENDING" ? (data?.total ?? null) : (queues?.pendingMnemonics ?? null);
-  const pending = isPendingError(error);
 
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
@@ -187,9 +184,7 @@ export const AdminMnemonicsPage: React.FC = () => {
 
       <AdminFlash message={flash} onClose={() => setFlash(null)} />
 
-      {pending ? (
-        <AdminPendingNotice />
-      ) : (
+      {(
         <AdminTableShell
           caption={`Mẹo nhớ ${MNEMONIC_STATUS_LABELS[status].toLowerCase()}`}
           stickyActions={status === "PENDING"}
@@ -355,7 +350,7 @@ export const AdminMnemonicsPage: React.FC = () => {
           </tbody>
         </AdminTableShell>
       )}
-      {data && !pending && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
+      {data && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
 
       {/* key: mỗi mẹo một modal mới, ghi chú của lần từ chối trước không sót lại */}
       <RejectMnemonicModal

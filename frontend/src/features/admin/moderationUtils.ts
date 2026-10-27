@@ -1,18 +1,10 @@
 // Hàm thuần cho các trang admin đợt 2: dashboard AI (§8), mẹo nhớ (§4), nguồn tri thức (§5), khiếu nại (§6).
 // Không gọi API, không React; import tương đối + đuôi .ts để scripts/selfcheck/admin.ts chạy thẳng bằng node.
 import { RANK, atLeast, isStaff, type Role } from "../../lib/roles.ts";
-import { SERVER_PENDING_MESSAGE } from "../../lib/apiErrorInfo.ts";
 import type { AccountAppeal } from "../../types/adminModeration.types.ts";
 
 // Nhãn trạng thái mẹo nhớ dùng chung với phía người học (một bản đồ duy nhất, cùng chữ "Đã từ chối").
 export { MNEMONIC_STATUS_LABELS } from "../kanji/mnemonicUtils.ts";
-
-// ---------- endpoint chưa có trên máy chủ ----------
-// Nhận diện "chưa có endpoint" + câu thông báo bình tĩnh nằm ở src/lib/apiErrorInfo.ts (dùng chung mọi trang);
-// adminService đổi lỗi đó thành Error(SERVER_PENDING_MESSAGE) để trang hiện AdminPendingNotice thay vì lỗi đỏ.
-
-/** useAsync trả lỗi dạng chuỗi: so với câu chuẩn để biết đây là "chưa triển khai" chứ không phải lỗi thật. */
-export const isPendingError = (error: string | undefined | null): boolean => error === SERVER_PENDING_MESSAGE;
 
 // ---------- số liệu & định dạng ----------
 

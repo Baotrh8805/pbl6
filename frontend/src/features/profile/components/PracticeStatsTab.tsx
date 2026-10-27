@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
-import { SERVER_PENDING_MESSAGE } from "@/lib/apiErrorInfo";
 import { useAsync } from "@/lib/useAsync";
 import {
     DEFAULT_PRACTICE_STATS_DAYS,
@@ -90,12 +89,6 @@ export const PracticeStatsTab: React.FC = () => {
                         ))}
                     </div>
                     <div className="h-40 rounded-xl bg-surface-container animate-pulse" />
-                </div>
-            ) : error === SERVER_PENDING_MESSAGE ? (
-                // Backend đợt 2 chưa có endpoint: báo bình tĩnh, không phải lỗi của người dùng.
-                <div role="status" className="rounded-xl border border-dashed border-surface-container-high p-space-lg flex items-start gap-3 text-body-sm text-on-surface-variant">
-                    <Icon name="update" className="text-[24px] text-primary shrink-0" />
-                    <span>{SERVER_PENDING_MESSAGE}</span>
                 </div>
             ) : error || !data ? (
                 <div role="alert" className="rounded-xl border border-error/20 bg-error-container/30 p-space-lg flex flex-col items-start gap-space-sm">

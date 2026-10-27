@@ -1,10 +1,8 @@
 // Luyện tập (/api/practice, USER — hợp đồng API đợt 2 §2): nét mẫu + chấm viết kanji, mẫu + chấm trọng âm, ghi
 // nhật ký phát âm, thống kê. Response đi qua parse* (features/practice/practiceUtils) vì backend bỏ trường null.
 //
-// Backend đợt 2 làm song song: route chưa có (404 chung / 405) thì ném Error(SERVER_PENDING_MESSAGE) để nơi dùng hiện
-// thông báo bình tĩnh thay vì "Không tìm thấy dữ liệu"; useAsync / extractErrorMessage đọc được message của Error đó.
 import { apiClient } from "./apiClient.ts";
-import { SERVER_PENDING_MESSAGE, httpStatusOf, isEndpointMissing } from "../lib/apiErrorInfo.ts";
+import { httpStatusOf } from "../lib/apiErrorInfo.ts";
 import {
     DEFAULT_PRACTICE_STATS_DAYS,
     PRACTICE_TARGET_MAX,
@@ -28,11 +26,6 @@ import type {
     ServerStrokeScore,
 } from "../types/practice.types.ts";
 
-/** Lỗi "route chưa có" -> Error(SERVER_PENDING_MESSAGE); lỗi khác giữ nguyên để extractErrorMessage đọc body. */
-const rethrow = (err: unknown): never => {
-    throw isEndpointMissing(err) ? new Error(SERVER_PENDING_MESSAGE) : err;
-};
-
 /** Thêm cardId khi có: thẻ tay / trang tra cứu kanji không gắn thẻ nào. */
 const withCard = <T extends object>(body: T, cardId?: string | null): T & { cardId?: string } =>
     cardId ? { ...body, cardId } : body;
@@ -53,12 +46,8 @@ export const fetchKanjiStrokes = async (ch: string, signal?: AbortSignal): Promi
 
 /** POST /practice/kanji/score: chấm + ghi nhật ký `write`. null = máy chủ trả dữ liệu không đọc được. */
 export const scoreKanji = async (req: KanjiScoreRequest): Promise<ServerStrokeScore | null> => {
-    try {
-        const res = await apiClient.post("/practice/kanji/score", withCard({ kanji: req.kanji, strokes: req.strokes }, req.cardId));
-        return mapKanjiScore(res.data, req.kanji);
-    } catch (err) {
-        return rethrow(err);
-    }
+    const res = await apiClient.post("/practice/kanji/score", withCard({ kanji: req.kanji, strokes: req.strokes }, req.cardId));
+    return mapKanjiScore(res.data, req.kanji);
 };
 
 /**
@@ -84,11 +73,7 @@ export const scorePitch = async (req: PitchScoreRequest): Promise<ServerPitchSco
         ...(req.reading ? { reading: req.reading } : {}),
         ...(req.accentType != null ? { accentType: req.accentType } : {}),
     };
-    try {
-        return parsePitchScore((await apiClient.post("/practice/pitch/score", withCard(body, req.cardId))).data);
-    } catch (err) {
-        return rethrow(err);
-    }
+    return parsePitchScore((await apiClient.post("/practice/pitch/score", withCard(body, req.cardId))).data);
 };
 
 /** POST /practice/pronunciation -> 201: chỉ ghi nhật ký `speak` (điểm do trình duyệt chấm). */
@@ -99,18 +84,10 @@ export const logPronunciation = async (req: PronunciationLogRequest): Promise<vo
         transcript: clipText(req.transcript, PRACTICE_TRANSCRIPT_MAX),
         score: Math.round(Math.min(100, Math.max(0, req.score))),
     };
-    try {
-        await apiClient.post("/practice/pronunciation", withCard(body, req.cardId));
-    } catch (err) {
-        rethrow(err);
-    }
+    await apiClient.post("/practice/pronunciation", withCard(body, req.cardId));
 };
 
 /** GET /practice/stats?days=: số lượt + điểm trung bình từng loại, ≤ 20 lượt gần nhất. */
 export const fetchPracticeStats = async (days: number = DEFAULT_PRACTICE_STATS_DAYS): Promise<PracticeStats> => {
-    try {
-        return parsePracticeStats((await apiClient.get("/practice/stats", { params: { days } })).data);
-    } catch (err) {
-        return rethrow(err);
-    }
+    return parsePracticeStats((await apiClient.get("/practice/stats", { params: { days } })).data);
 };

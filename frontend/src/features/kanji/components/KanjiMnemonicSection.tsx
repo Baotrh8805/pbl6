@@ -2,7 +2,6 @@ import React, { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { mnemonicReasonLabel } from "@/lib/kanjiUtils";
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchKanjiMnemonics, generateKanjiMnemonics, submitKanjiMnemonic } from "@/services/mnemonicService";
 import {
@@ -84,28 +83,13 @@ export const KanjiMnemonicSection: React.FC<{ kanji: string }> = ({ kanji }) => 
   const [notice, setNotice] = useState<Notice | null>(null);
   const [showAll, setShowAll] = useState(false);
 
-  // 404 chung / 405 = backend chưa có endpoint (đợt 2 triển khai song song): trả cờ thay vì lỗi để hiện câu bình tĩnh.
-  const result = useAsync<KanjiMnemonics | "unavailable">(
-    async () => {
-      try {
-        return await fetchKanjiMnemonics(kanji);
-      } catch (e) {
-        if (isEndpointMissing(e)) return "unavailable";
-        throw e;
-      }
-    },
-    [kanji, retryKey],
-    version
-  );
-  const data = result.data && result.data !== "unavailable" ? result.data : null;
+  const result = useAsync<KanjiMnemonics>(() => fetchKanjiMnemonics(kanji), [kanji, retryKey], version);
+  const data = result.data ?? null;
   const mine = data?.mine ?? [];
   const pending = pendingCount(mine);
   const shownMine = showAll ? mine : mine.slice(0, MINE_PREVIEW);
   const approvedOrigin = data?.approved ? mnemonicOriginLabel(data.approved.source, false) : null;
   const left = mnemonicCharsLeft(draft);
-
-  // Máy chủ chưa có endpoint: báo trung tính (tone info), không tô đỏ như lỗi người học cần xử lý.
-  const pendingNotice: Notice = { tone: "info", text: SERVER_PENDING_MESSAGE };
 
   const generate = async () => {
     if (generating) return;
@@ -129,7 +113,7 @@ export const KanjiMnemonicSection: React.FC<{ kanji: string }> = ({ kanji }) => 
     } catch (e) {
       // 409 (đủ 50 mẹo chờ duyệt) / 429 (quá 10 lượt / giờ): câu của server nói đúng trần nào; 503: câu thân thiện.
       const text = mnemonicGenerateErrorMessage(e) ?? extractErrorMessage(e);
-      setNotice(text === SERVER_PENDING_MESSAGE ? pendingNotice : { tone: "error", text: `Không nhờ AI gợi ý được: ${text}` });
+      setNotice({ tone: "error", text: `Không nhờ AI gợi ý được: ${text}` });
     } finally {
       setGenerating(false);
     }
@@ -156,8 +140,7 @@ export const KanjiMnemonicSection: React.FC<{ kanji: string }> = ({ kanji }) => 
       // 409 có hai trần (3 mẹo chờ duyệt cho chữ này / 50 mẹo chờ duyệt tất cả): hiện đúng câu của server, không đoán.
       // Lỗi hiện dưới ô nhập và giữ nguyên bản nháp để người học gửi lại sau khi được duyệt bớt.
       const text = mnemonicSubmitErrorMessage(e2) ?? extractErrorMessage(e2);
-      if (text === SERVER_PENDING_MESSAGE) setNotice(pendingNotice);
-      else setInputError(text);
+      setInputError(text);
     } finally {
       setSubmitting(false);
     }
@@ -179,8 +162,6 @@ export const KanjiMnemonicSection: React.FC<{ kanji: string }> = ({ kanji }) => 
         <div aria-busy="true" className="h-10 rounded-lg bg-surface-container-low animate-pulse">
           <span className="sr-only">Đang tải mẹo nhớ...</span>
         </div>
-      ) : result.data === "unavailable" ? (
-        <p className="text-body-sm text-on-surface-variant">{SERVER_PENDING_MESSAGE}</p>
       ) : result.error ? (
         <div role="alert" className="flex flex-wrap items-center gap-2 text-body-sm text-error">
           <span>Không tải được mẹo nhớ: {result.error}</span>

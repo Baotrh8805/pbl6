@@ -1,15 +1,9 @@
 import { apiClient, extractErrorMessage } from "@/services/apiClient";
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
 import { parseRegisterResponse, type RegisterResult } from "../authUtils";
 import type { AuthRequest, AuthResponse, RegisterRequest, UserProfile, VerifyEmailResult } from "../types/auth.types";
 
-/**
- * Thông báo lỗi cho các endpoint công khai mới của đợt 2 (verify-email, resend-verification, appeals): máy chủ chưa
- * có route (404 chung / 405 / 401 body trống vì Spring Security chặn trước) -> câu "đang cập nhật" bình tĩnh thay vì
- * "Phiên đăng nhập đã hết hạn" gây hiểu lầm.
- */
-export const authErrorMessage = (err: unknown): string =>
-  isEndpointMissing(err, { publicEndpoint: true }) ? SERVER_PENDING_MESSAGE : extractErrorMessage(err);
+/** Câu lỗi của các API xác thực: body chuẩn {status, error, message} của backend qua extractErrorMessage. */
+export const authErrorMessage = (err: unknown): string => extractErrorMessage(err);
 
 export const authService = {
   /** Tự xoá tài khoản (ẩn danh hoá; bộ thẻ public giữ lại dưới tên ẩn danh). Sau đó mọi token vô hiệu. */

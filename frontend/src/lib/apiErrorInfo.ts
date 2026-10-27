@@ -2,12 +2,6 @@
 // để hàm thuần này chạy được trong scripts/selfcheck bằng node. Body lỗi chuẩn của backend: {status, error, message}
 // (+ `code` ở vài lỗi nghiệp vụ như EMAIL_NOT_VERIFIED, xem hợp đồng API đợt 2).
 
-/**
- * Thông báo bình tĩnh khi máy chủ chưa có endpoint (backend đợt 2 đang làm song song): người dùng không cần làm gì,
- * chỉ cần thử lại sau. Nơi dùng so sánh đúng chuỗi này để đổi màu đỏ "lỗi" sang màu trung tính "thông tin".
- */
-export const SERVER_PENDING_MESSAGE = "Tính năng đang được cập nhật trên máy chủ. Vui lòng thử lại sau.";
-
 interface ResponseLike {
     status?: unknown;
     data?: unknown;
@@ -57,27 +51,7 @@ export const errorMessageOf = (error: unknown): string | null => {
 
 // 404 của route chưa tồn tại: Spring trả NoResourceFoundException ("No static resource api/…") hoặc body trống;
 // còn 404 nghiệp vụ ("Chưa có nét mẫu cho chữ 書") luôn có câu tiếng Việt riêng -> không coi là thiếu endpoint.
-const GENERIC_NOT_FOUND = /^(no static resource|no endpoint|no handler|not found\b)/i;
-
-export interface EndpointMissingOptions {
-    /**
-     * Endpoint theo hợp đồng là permitAll (verify-email, resend-verification, appeals): khi backend chưa có route,
-     * Spring Security chặn trước bằng 401 body trống -> cũng là "chưa có", không phải "hết phiên".
-     */
-    publicEndpoint?: boolean;
-}
-
-/** Máy chủ chưa có endpoint này (404 chung / 405 / 501; 401 body trống với endpoint công khai). */
-export const isEndpointMissing = (error: unknown, opts: EndpointMissingOptions = {}): boolean => {
-    const status = httpStatusOf(error);
-    if (status === 405 || status === 501) return true;
-    if (status === 401) return !!opts.publicEndpoint && errorMessageOf(error) === null;
-    if (status !== 404) return false;
-    const msg = errorMessageOf(error);
-    return msg === null || GENERIC_NOT_FOUND.test(msg);
-};
-
-export interface ApiErrorTextOptions extends EndpointMissingOptions {
+export interface ApiErrorTextOptions {
     /**
      * Câu dự phòng theo mã HTTP, CHỈ dùng khi body không có message (proxy chặn, body trống). Không dùng để thay câu của
      * server: một mã có thể có nhiều lý do — vd. 409 của POST /kanji/mnemonics là "3 mẹo chờ duyệt cho chữ này" HOẶC
@@ -97,12 +71,11 @@ const realMessageOf = (error: unknown): string | null => {
 };
 
 /**
- * Câu lỗi cho người dùng, theo thứ tự: route chưa có -> SERVER_PENDING_MESSAGE; server có message -> đúng câu đó; không
+ * Câu lỗi cho người dùng, theo thứ tự: server có message -> đúng câu đó; không
  * có thì câu dự phòng theo mã HTTP. null = không có gì để nói (lỗi mạng, lỗi JS, mã không có câu dự phòng) -> nơi gọi
  * dùng extractErrorMessage (file này không import axios nên không gọi được nó).
  */
 export const apiErrorText = (error: unknown, opts: ApiErrorTextOptions = {}): string | null => {
-    if (isEndpointMissing(error, opts)) return SERVER_PENDING_MESSAGE;
     const message = realMessageOf(error);
     if (message !== null) return message;
     const status = httpStatusOf(error);

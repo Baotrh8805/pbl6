@@ -4,7 +4,6 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { fieldClass, labelClass } from "@/components/ui/formStyles";
-import { SERVER_PENDING_MESSAGE } from "@/lib/apiErrorInfo";
 import { authErrorMessage, authService } from "../services/authService";
 import { APPEAL_MAX, APPEAL_MIN, EMAIL_MAX, validateAppeal, type AppealErrors } from "../authUtils";
 
@@ -63,7 +62,6 @@ const AppealForm: React.FC<{ defaultEmail: string; onClose: () => void }> = ({ d
     }
 
     const length = message.trim().length;
-    const pending = apiError === SERVER_PENDING_MESSAGE;
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-left" noValidate>
@@ -73,10 +71,8 @@ const AppealForm: React.FC<{ defaultEmail: string; onClose: () => void }> = ({ d
 
             {apiError && (
                 <div
-                    role={pending ? "status" : "alert"}
-                    className={`p-3.5 rounded-lg text-xs border ${
-                        pending ? "bg-surface-container-low text-on-surface-variant border-outline-variant/30" : "bg-error-container text-error border-error/20"
-                    }`}
+                    role="alert"
+                    className="p-3.5 rounded-lg text-xs border bg-error-container text-error border-error/20"
                 >
                     {apiError}
                 </div>

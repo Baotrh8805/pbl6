@@ -4,7 +4,6 @@ import { CheckCircle2, Mail } from "lucide-react";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { SERVER_PENDING_MESSAGE } from "@/lib/apiErrorInfo";
 import { authErrorMessage, authService } from "@/features/auth/services/authService";
 import { ResendStatusLine } from "@/features/auth/components/ResendVerificationAction";
 import { useResendVerification } from "@/features/auth/hooks/useResendVerification";
@@ -119,15 +118,6 @@ export const VerifyEmailPage: React.FC = () => {
                         className="inline-flex items-center justify-center w-full px-6 py-3 rounded-lg bg-primary hover:bg-primary-deep text-white font-headline font-semibold text-base shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2"
                     >
                         Đăng nhập ngay
-                    </Link>
-                </div>
-            ) : error === SERVER_PENDING_MESSAGE ? (
-                <div className="flex flex-col gap-4">
-                    <p role="status" className="p-3.5 rounded-lg bg-surface-container-low text-on-surface-variant text-sm border border-outline-variant/30">
-                        {SERVER_PENDING_MESSAGE}
-                    </p>
-                    <Link to="/login" className="text-center text-xs text-primary font-semibold hover:underline">
-                        Quay lại trang Đăng nhập
                     </Link>
                 </div>
             ) : (

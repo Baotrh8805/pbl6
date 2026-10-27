@@ -20,7 +20,7 @@ import {
     type PitchPoint,
     type PitchScore,
 } from "@/lib/pitch";
-import { SERVER_PENDING_MESSAGE, httpStatusOf } from "@/lib/apiErrorInfo";
+import { httpStatusOf } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchPitchReference, logPronunciation, scorePitch } from "@/services/practiceService";
 import type { ServerPitchScore } from "@/types/practice.types";
@@ -55,14 +55,13 @@ export interface PronunciationPanelProps {
 type ServerSync =
     | { state: "saving" }
     | { state: "saved" }
-    | { state: "pending" }
     | { state: "error"; text: string };
 
 type ServerPitch = ServerSync | { state: "scored"; result: ServerPitchScore };
 
 const syncFromError = (err: unknown): ServerSync => {
     const text = extractErrorMessage(err);
-    return text === SERVER_PENDING_MESSAGE ? { state: "pending" } : { state: "error", text };
+    return { state: "error", text };
 };
 
 interface AsrOutcome {
@@ -121,8 +120,6 @@ const SyncNote: React.FC<{ sync: ServerSync | null }> = ({ sync }) => {
             ? { icon: "cloud_upload", text: "Đang lưu kết quả…" }
             : sync.state === "saved"
               ? { icon: "cloud_done", text: "Đã lưu vào thống kê luyện tập." }
-              : sync.state === "pending"
-                ? { icon: "info", text: `${SERVER_PENDING_MESSAGE} Kết quả lần này chưa được lưu.` }
                 : { icon: "cloud_off", text: `Chưa lưu được kết quả: ${sync.text}` };
     return (
         <p className="flex items-start gap-1.5 text-label-sm text-on-surface-variant">
@@ -370,8 +367,8 @@ export const PronunciationPanel: React.FC<PronunciationPanelProps> = ({ term, re
             }
         } catch (err) {
             if (!mounted.current || seq !== pitchSeq.current) return;
-            // Trình duyệt lẫn máy chủ đều không có mẫu (404 / 400 nghiệp vụ; route chưa có đã thành SERVER_PENDING_MESSAGE
-            // trong practiceService): không có điểm nào để lưu, câu "chưa có dữ liệu trọng âm" phía trên là đủ.
+            // Trình duyệt lẫn máy chủ đều không có mẫu (404 / 400 nghiệp vụ): không có điểm nào để lưu, câu "chưa có dữ liệu
+            // trọng âm" phía trên là đủ.
             const status = httpStatusOf(err);
             if (!clientScored && (status === 404 || status === 400)) setServerPitch(null);
             else setServerPitch(syncFromError(err));

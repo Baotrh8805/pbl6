@@ -5,7 +5,6 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { fetchDeck } from "@/services/deckService";
 import { fetchQuizCapabilities } from "@/services/studyService";
 import type { QuizCapabilities } from "@/types/quiz.types";
-import { isEndpointMissing } from "@/lib/apiErrorInfo";
 
 /**
  * idle: chưa hỏi (không ở màn bắt đầu) · ok: có số liệu · unavailable: server chưa có endpoint (404 chung / 405) hoặc response
@@ -43,8 +42,6 @@ export function useQuizCapabilities(deckId: string, enabled: boolean): QuizCapab
                 const caps = await fetchQuizCapabilities(deckId);
                 return caps ? { status: "ok", caps, error: null } : { status: "unavailable", caps: null, error: null };
             } catch (e) {
-                // Backend đợt 2 làm song song: endpoint chưa có thì im lặng lùi về câu nghĩa, không báo lỗi đỏ.
-                if (isEndpointMissing(e)) return { status: "unavailable", caps: null, error: null };
                 return { status: "error", caps: null, error: extractErrorMessage(e) };
             }
         },

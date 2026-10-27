@@ -17,13 +17,11 @@ import {
   KNOWLEDGE_STATUS_LABELS,
   canDeleteKnowledge,
   filterKnowledgeEntries,
-  isPendingError,
   knowledgeKindLabel,
 } from "@/features/admin/moderationUtils";
 import { AdminDetailCard } from "@/features/admin/components/AdminDetailCard";
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
 import { AdminJsonViewer } from "@/features/admin/components/AdminJsonViewer";
-import { AdminPendingNotice } from "@/features/admin/components/AdminPendingNotice";
 import { AdminFlash, type AdminFlashMessage } from "@/features/admin/components/AdminFlash";
 import { KnowledgeUploadModal } from "@/features/admin/components/KnowledgeUploadModal";
 import { adminFieldClass } from "@/features/admin/components/AdminFilterBar";
@@ -53,14 +51,6 @@ export const AdminKnowledgeDetailPage: React.FC = () => {
   const [showAll, setShowAll] = useState(false);
 
   if (loading) return <p className="text-on-surface-variant p-space-md">Đang tải nguồn tri thức...</p>;
-  if (isPendingError(error)) {
-    return (
-      <section className="flex flex-col gap-space-lg pb-space-xl">
-        <BackLink />
-        <AdminPendingNotice />
-      </section>
-    );
-  }
   if (error || !src) {
     return (
       <section className="flex flex-col gap-space-lg pb-space-xl">

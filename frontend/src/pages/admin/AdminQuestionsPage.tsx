@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
 import { atLeast } from "@/lib/roles";
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchAdminQuestions } from "@/services/adminQuestionService";
 import type { AdminQuestionPage, QuizQuestionKind, QuizQuestionStatus } from "@/types/quiz.types";
@@ -66,8 +65,6 @@ export const AdminQuestionsPage: React.FC = () => {
         });
         return { page, unavailable: false };
       } catch (e) {
-        // Backend đợt 2 làm song song: chưa có endpoint thì báo nhẹ nhàng, không hiện lỗi đỏ.
-        if (isEndpointMissing(e)) return { page: null, unavailable: true };
         return { page: null, unavailable: false, error: extractErrorMessage(e) };
       }
     },
@@ -189,17 +186,7 @@ export const AdminQuestionsPage: React.FC = () => {
         </Button>
       </AdminFilterBar>
 
-      {data?.unavailable ? (
-        <p
-          role="status"
-          className="flex items-start gap-2 p-space-md rounded-2xl bg-surface-container-lowest border border-dashed border-surface-container-high text-body-md text-on-surface-variant"
-        >
-          <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-outline">
-            construction
-          </span>
-          <span>{SERVER_PENDING_MESSAGE} Ngân hàng câu hỏi sẽ hiện ở đây khi máy chủ cập nhật xong.</span>
-        </p>
-      ) : (
+      {(
         <AdminTableShell
           caption="Ngân hàng câu hỏi quiz"
           stickyActions

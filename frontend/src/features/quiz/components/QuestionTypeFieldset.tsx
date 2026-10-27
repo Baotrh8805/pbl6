@@ -1,6 +1,5 @@
 import React, { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { SERVER_PENDING_MESSAGE } from "@/lib/apiErrorInfo";
 import { extractErrorMessage } from "@/services/apiClient";
 import { generateDistractors } from "@/services/studyService";
 import type { QuizQuestionType } from "@/types/quiz.types";
@@ -75,7 +74,7 @@ export const QuestionTypeFieldset: React.FC<QuestionTypeFieldsetProps> = ({
                     <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                         info
                     </span>
-                    <span>{SERVER_PENDING_MESSAGE} Tạm thời chỉ có câu hỏi về nghĩa.</span>
+                    <span>Bộ thẻ này chưa có số liệu loại câu hỏi. Tạm thời chỉ có câu hỏi về nghĩa.</span>
                 </p>
             )}
             {status === "error" && (

@@ -37,7 +37,6 @@ import {
     parseReviewActivity,
     streaksFromActivity,
 } from "../../src/lib/learningStats.ts";
-import { SERVER_PENDING_MESSAGE, isEndpointMissing } from "../../src/lib/apiErrorInfo.ts";
 import { JLPT_TARGET_WORDS, getTargetWordsByLevel } from "../../src/features/dashboard/lib/dashboardUtils.ts";
 
 export function runLearnerChecks(assert: (cond: boolean, msg: string) => void): void {
@@ -223,7 +222,6 @@ export function runLearnerChecks(assert: (cond: boolean, msg: string) => void): 
     assert(/3/.test(mnemonicSubmitErrorMessage(apiErr(409)) ?? "") && /50/.test(mnemonicSubmitErrorMessage(apiErr(409)) ?? ""), "Gửi mẹo: 409 body trống -> câu dự phòng nói cả hai trần");
     assert(/50/.test(mnemonicSubmitErrorMessage(apiErr(409, "Conflict")) ?? ""), "Gửi mẹo: message chỉ là reason phrase 'Conflict' -> câu dự phòng tiếng Việt");
     eq(mnemonicSubmitErrorMessage(apiErr(400, "Chỉ nhận đúng một chữ Hán.", "Bad Request")), "Chỉ nhận đúng một chữ Hán.", "Gửi mẹo: 400 -> câu của server");
-    eq(mnemonicSubmitErrorMessage(apiErr(404, "No static resource api/kanji/mnemonics.", "Not Found")), SERVER_PENDING_MESSAGE, "Gửi mẹo: route chưa có -> đang cập nhật");
     eq(mnemonicSubmitErrorMessage(new Error("Network Error")), null, "Gửi mẹo: lỗi mạng -> null (nơi gọi dùng extractErrorMessage)");
     const tooMany = "Bạn đã sinh mẹo nhớ quá nhiều lần, vui lòng thử lại sau.";
     eq(mnemonicGenerateErrorMessage(apiErr(429, tooMany, "Too Many Requests")), tooMany, "Sinh mẹo: 429 -> câu của server");
@@ -234,14 +232,5 @@ export function runLearnerChecks(assert: (cond: boolean, msg: string) => void): 
         MNEMONIC_AI_DOWN_MESSAGE,
         "Sinh mẹo: 503 -> câu thân thiện (message 503 viết cho người vận hành)"
     );
-    eq(mnemonicGenerateErrorMessage(apiErr(405, "Request method 'POST' is not supported", "Method Not Allowed")), SERVER_PENDING_MESSAGE, "Sinh mẹo: 405 -> đang cập nhật");
 
-    // ---- Endpoint đợt 2 chưa có trên server ----
-    eq(
-        [{ response: { status: 404 } }, { response: { status: 405 } }, { response: { status: 500 } }, null, new Error("x")]
-            .map((e) => isEndpointMissing(e))
-            .join(),
-        "true,true,false,false,false",
-        "404/405 = tính năng đang cập nhật; lỗi khác giữ nguyên"
-    );
 }

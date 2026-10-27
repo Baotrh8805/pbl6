@@ -10,14 +10,12 @@ import {
   KNOWLEDGE_KINDS,
   KNOWLEDGE_KIND_LABELS,
   KNOWLEDGE_STATUS_LABELS,
-  isPendingError,
   knowledgeKindLabel,
 } from "@/features/admin/moderationUtils";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
 import { AdminFilterBar, adminFieldClass, adminLabelClass } from "@/features/admin/components/AdminFilterBar";
 import { AdminTableShell } from "@/features/admin/components/AdminTableShell";
 import { AdminStatusBadge } from "@/features/admin/components/AdminStatusBadge";
-import { AdminPendingNotice } from "@/features/admin/components/AdminPendingNotice";
 import { KnowledgeUploadModal } from "@/features/admin/components/KnowledgeUploadModal";
 import { Pager } from "@/features/admin/components/Pager";
 import { useAdminQuery } from "@/features/admin/useAdminQuery";
@@ -45,7 +43,6 @@ export const AdminKnowledgePage: React.FC = () => {
     [q.key, retry]
   );
   const rows = data?.items ?? [];
-  const pending = isPendingError(error);
   const hasFilters = Boolean(q.get("q") || q.get("kind") || q.get("status"));
 
   return (
@@ -54,7 +51,7 @@ export const AdminKnowledgePage: React.FC = () => {
         title="Nguồn tri thức chuẩn"
         description="Tài liệu tham chiếu (từ vựng, ngữ pháp, chữ Hán) để AI đối chiếu và cảnh báo mâu thuẫn khi bóc tách."
         actions={
-          canAct && !pending ? (
+          canAct ? (
             <Button type="button" variant="primary" size="sm" onClick={() => setUploadOpen(true)}>
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">upload_file</span>
               Tải nguồn mới
@@ -121,9 +118,7 @@ export const AdminKnowledgePage: React.FC = () => {
         </div>
       </AdminFilterBar>
 
-      {pending ? (
-        <AdminPendingNotice />
-      ) : (
+      {(
         <AdminTableShell
           caption="Danh sách nguồn tri thức chuẩn"
           loading={loading}
@@ -181,7 +176,7 @@ export const AdminKnowledgePage: React.FC = () => {
           </tbody>
         </AdminTableShell>
       )}
-      {data && !pending && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
+      {data && <Pager page={data.page} size={data.size} total={data.total} onPage={q.setPage} />}
 
       <KnowledgeUploadModal
         key={uploadOpen ? "open" : "closed"}
