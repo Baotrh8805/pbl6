@@ -55,6 +55,19 @@ public class SecurityConfig {
                 .addFilterAt(corsFilter, CorsFilter.class)
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Rà soát 27/10: header bảo mật cho mọi phản hồi API (frontend là SPA ở origin khác nên CSP chặt không ảnh hưởng
+                // giao diện; Swagger UI cần script nên được miễn CSP). HSTS chỉ phát trên kết nối HTTPS (Spring tự kiểm).
+                .headers(h -> h
+                        .frameOptions(f -> f.deny())
+                        .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                        .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
+                        .addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter(
+                                "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"))
+                        .addHeaderWriter(new org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter(
+                                request -> !request.getRequestURI().startsWith("/swagger-ui")
+                                        && !request.getRequestURI().startsWith("/v3/api-docs"),
+                                new org.springframework.security.web.header.writers.StaticHeadersWriter(
+                                        "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"))))
                 .authorizeHttpRequests(auth -> auth
                         // Chỉ login/register là công khai. /me, /profile, /password, /jlpt-level thao
                         // tác

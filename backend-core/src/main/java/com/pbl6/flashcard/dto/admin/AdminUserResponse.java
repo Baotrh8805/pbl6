@@ -15,10 +15,10 @@ public final class AdminUserResponse {
      * mở khoá / Premium / vai trò (backend trả 409). boolean nguyên thuỷ: luôn có trong JSON, kể cả khi bật NON_NULL.
      */
     public record Row(Long id, String email, String fullName, Role role, Boolean isPremium, Instant lockedAt,
-                      LocalDateTime createdAt, long deckCount, boolean deleted) {
+                      LocalDateTime createdAt, long deckCount, boolean deleted, boolean emailVerified) {
         public static Row of(User u, long deckCount) {
             return new Row(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getIsPremium(), u.getLockedAt(),
-                    u.getCreatedAt(), deckCount, AccountDeletionService.isDeleted(u));
+                    u.getCreatedAt(), deckCount, AccountDeletionService.isDeleted(u), u.getEmailVerifiedAt() != null);
         }
     }
 

@@ -3,6 +3,7 @@ package com.pbl6.flashcard.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -47,6 +48,20 @@ public class Deck {
 
     @Column(name = "source_deck_id")
     private String sourceDeckId; // nhân bản từ bộ thẻ nào (đếm lượt tải)
+
+    /** V35 (rà soát 27/10): mốc tạo / cập nhật để sắp xếp "mới cập nhật" và lọc theo thời gian; thẻ đổi cũng gọi touch(). */
+    @org.hibernate.annotations.CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private Instant createdAt;
+
+    @org.hibernate.annotations.UpdateTimestamp
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    /** Thẻ thêm / sửa / xoá không làm Hibernate coi bộ thẻ là "đã đổi" -> đặt tay mốc cập nhật. */
+    public void touch() { this.updatedAt = Instant.now(); }
 
     @JsonIgnore // cắt vòng lặp Folder -> decks -> Folder khi serialize
     @ManyToOne(fetch = FetchType.LAZY)

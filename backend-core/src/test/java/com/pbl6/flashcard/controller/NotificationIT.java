@@ -74,12 +74,12 @@ class NotificationIT extends IntegrationTest {
         call(put("/api/admin/users/" + id + "/role"), root, Map.of("role", "ADMIN")).andExpect(status().isOk());
 
         // Vừa thành staff vẫn đọc được thông báo (matcher authenticated, không cần ROLE_USER)
-        JsonNode f = feed(read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123"))).get("accessToken").asText());
+        JsonNode f = feed(read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!"))).get("accessToken").asText());
         assertEquals(List.of("ROLE_CHANGED", "DECK_DELETED", "PREMIUM_CHANGED"), types(f));
         assertEquals(3, f.get("unread").asLong());
         assertEquals("Sẽ bị xoá", f.get("items").get(1).get("payload").get("deckTitle").asText());
 
-        String token = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123"))).get("accessToken").asText();
+        String token = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!"))).get("accessToken").asText();
         assertEquals(3, read(call(post("/api/notifications/read-all"), token, null)).get("updated").asInt());
         assertEquals(0, feed(token).get("unread").asLong());
     }

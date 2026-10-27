@@ -63,8 +63,8 @@ public class AdminUserService {
     }
 
     @Transactional(readOnly = true)
-    public AdminPage<Row> list(String q, Role role, Boolean premium, Boolean locked, int page, int size) {
-        Page<User> p = users.search(likePattern(q), role, premium, locked, PageRequest.of(page, size));
+    public AdminPage<Row> list(String q, Role role, Boolean premium, Boolean locked, Boolean verified, int page, int size) {
+        Page<User> p = users.search(likePattern(q), role, premium, locked, verified, PageRequest.of(page, size));
         Map<Long, Long> deckCounts = p.isEmpty() ? Map.of()
                 : decks.countByOwnerIds(p.getContent().stream().map(User::getId).toList()).stream()
                         .collect(Collectors.toMap(DeckRepository.OwnerCount::getOwnerId, DeckRepository.OwnerCount::getN));

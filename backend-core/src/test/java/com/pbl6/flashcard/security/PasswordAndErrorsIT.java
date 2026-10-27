@@ -26,7 +26,7 @@ class PasswordAndErrorsIT extends IntegrationTest {
         String old = newUser();
         Thread.sleep(1100); // iat của JWT tính theo giây: tách token cũ sang giây trước
         JsonNode res = read(call(put("/api/auth/password"), old,
-                Map.of("currentPassword", "secret123", "newPassword", "secret456")).andExpect(status().isOk()));
+                Map.of("currentPassword", "Secret123!", "newPassword", "Secret456!")).andExpect(status().isOk()));
         String fresh = res.get("accessToken").asText();
 
         call(get("/api/auth/me"), old, null).andExpect(status().isUnauthorized());
@@ -52,7 +52,7 @@ class PasswordAndErrorsIT extends IntegrationTest {
 
     @Test
     void missing_current_password_is_a_clear_400() throws Exception {
-        call(put("/api/auth/password"), newUser(), Map.of("newPassword", "secret456"))
+        call(put("/api/auth/password"), newUser(), Map.of("newPassword", "Secret456!"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("currentPassword: Mật khẩu hiện tại không được để trống"));
     }

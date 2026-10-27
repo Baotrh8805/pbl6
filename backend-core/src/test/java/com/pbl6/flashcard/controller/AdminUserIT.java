@@ -192,14 +192,14 @@ class AdminUserIT extends IntegrationTest {
         Account admin = staff(Role.ADMIN);
         String email = newEmail();
         newUser(email);
-        JsonNode tokens = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")));
+        JsonNode tokens = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")));
         Long id = userId(email);
         Thread.sleep(1100); // iat của JWT chỉ chính xác tới giây: mốc thu hồi phải sang giây mới (như đổi mật khẩu)
         call(post("/api/admin/users/" + id + "/revoke-sessions"), admin.token, null).andExpect(status().isNoContent());
         call(post("/api/auth/refresh"), null, Map.of("refreshToken", tokens.get("refreshToken").asText()))
                 .andExpect(status().isUnauthorized());
         call(get("/api/decks"), tokens.get("accessToken").asText(), null).andExpect(status().isUnauthorized());
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")).andExpect(status().isOk());
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")).andExpect(status().isOk());
     }
 
     @Test
@@ -305,7 +305,7 @@ class AdminUserIT extends IntegrationTest {
     @Test
     void self_deleted_account_is_flagged_and_cannot_be_revived() throws Exception {
         Account u = user();
-        call(delete("/api/auth/me"), u.token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        call(delete("/api/auth/me"), u.token, Map.of("password", "Secret123!")).andExpect(status().isNoContent());
         Account admin = staff(Role.ADMIN);
         Account root = staff(Role.SUPER_ADMIN);
         String anonymized = AccountDeletionService.anonymizedEmail(u.id);

@@ -60,13 +60,13 @@ class AdminAuthorizationIT extends IntegrationTest {
     void login_response_carries_role() throws Exception {
         String email = newEmail();
         newStaff(Role.ADMIN, email);
-        JsonNode admin = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123"))
+        JsonNode admin = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!"))
                 .andExpect(status().isOk()));
         assertEquals("ADMIN", admin.get("role").asText());
 
         String userEmail = newEmail();
         newUser(userEmail);
-        JsonNode user = read(call(post("/api/auth/login"), null, Map.of("email", userEmail, "password", "secret123")));
+        JsonNode user = read(call(post("/api/auth/login"), null, Map.of("email", userEmail, "password", "Secret123!")));
         assertEquals("USER", user.get("role").asText());
     }
 
@@ -87,7 +87,7 @@ class AdminAuthorizationIT extends IntegrationTest {
     }
 
     private String relogin(String email) throws Exception {
-        return read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")))
+        return read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")))
                 .get("accessToken").asText();
     }
 
@@ -126,7 +126,7 @@ class AdminAuthorizationIT extends IntegrationTest {
         Account root = staff(Role.SUPER_ADMIN);
         String email = newEmail();
         newUser(email);
-        JsonNode tokens = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")));
+        JsonNode tokens = read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")));
         Long id = userId(email);
         call(put("/api/admin/users/" + id + "/role"), root.token, Map.of("role", "ADMIN")).andExpect(status().isOk());
         JsonNode logs = read(call(get("/api/admin/audit-logs").param("actorId", root.id.toString()), root.token, null));

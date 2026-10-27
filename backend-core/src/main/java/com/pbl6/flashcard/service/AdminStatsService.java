@@ -31,6 +31,7 @@ public class AdminStatsService {
     private final LearningPathRepository paths;
     private final ReportService reports;
     private final AiServiceClient ai;
+    private final MailService mail;
     private final QuestionBankService questionBank;
     private final MnemonicService mnemonics;
     private final AppealService appeals;
@@ -46,7 +47,7 @@ public class AdminStatsService {
                              ReportService reports, AiServiceClient ai, QuestionBankService questionBank,
                              MnemonicService mnemonics, AppealService appeals,
                              com.pbl6.flashcard.service.dictionary.AdminDictionaryService dictionary,
-                             PathEffectService pathEffect,
+                             PathEffectService pathEffect, MailService mail,
                              @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone,
                              @Value("${app.version:dev}") String version,
                              @Value("${app.backup.marker:}") String backupMarker) {
@@ -62,6 +63,7 @@ public class AdminStatsService {
         this.mnemonics = mnemonics;
         this.dictionary = dictionary;
         this.pathEffect = pathEffect;
+        this.mail = mail;
         this.appeals = appeals;
         this.zone = ZoneId.of(zone);
         this.version = version;
@@ -150,6 +152,8 @@ public class AdminStatsService {
         java.util.Optional<JsonNode> body = ai.healthBody();
         m.put("db", "ok");
         m.put("aiService", body.isPresent() ? "ok" : "down");
+        // Rà soát 27/10: thiếu SMTP thì email xác thực / quên mật khẩu / nhắc học không đi, chỉ ghi log -> dashboard phải thấy
+        m.put("mail", mail.isConfigured() ? "ok" : "missing");
         m.put("version", version);
         java.nio.file.Path marker = backupMarker.isBlank() ? null : java.nio.file.Path.of(backupMarker);
         m.put("backup", backupStatus(marker, Instant.now()));

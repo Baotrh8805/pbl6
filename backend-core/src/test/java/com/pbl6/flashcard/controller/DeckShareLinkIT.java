@@ -83,6 +83,57 @@ class DeckShareLinkIT extends IntegrationTest {
     }
 
     @Test
+    void share_link_password_gates_new_viewers_only() throws Exception {
+        String owner = newUser();
+        String friend = newUser();
+        String deckId = privateDeck(owner);
+        call(post("/api/decks/{id}/share-link", deckId), owner, Map.of("password", "ab")).andExpect(status().isBadRequest());
+        JsonNode link = read(call(post("/api/decks/{id}/share-link", deckId), owner, Map.of("password", "mo-cua-1"))
+                .andExpect(status().isOk()));
+        String token = link.get("token").asText();
+        assertTrue(link.get("hasPassword").asBoolean());
+        assertTrue(read(call(get("/api/decks/{id}/share-link", deckId), owner, null)).get("hasPassword").asBoolean());
+
+        call(post("/api/decks/share-link/{t}/accept", token), friend, null).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SHARE_PASSWORD_REQUIRED"));
+        call(post("/api/decks/share-link/{t}/accept", token), friend, Map.of("password", "sai")).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SHARE_PASSWORD_WRONG"));
+        call(get("/api/decks/{id}", deckId), friend, null).andExpect(status().isNotFound());
+        call(post("/api/decks/share-link/{t}/accept", token), friend, Map.of("password", " mo-cua-1 ")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.access").value("viewer"));
+        // đã có quyền: mở lại không cần mật khẩu; chủ cũng không
+        call(post("/api/decks/share-link/{t}/accept", token), friend, null).andExpect(status().isOk());
+        call(post("/api/decks/share-link/{t}/accept", token), owner, null).andExpect(jsonPath("$.access").value("owner"));
+        // đổi link không mật khẩu -> hasPassword false, người mới vào thẳng
+        JsonNode plain = read(call(post("/api/decks/{id}/share-link", deckId), owner, null));
+        assertFalse(plain.get("hasPassword").asBoolean());
+        call(post("/api/decks/share-link/{t}/accept", plain.get("token").asText()), newUser(), null).andExpect(status().isOk());
+    }
+
+    @Test
+    void deck_and_cards_carry_timestamps_and_progress_can_be_reset() throws Exception {
+        String owner = newUser();
+        String stranger = newUser();
+        String deckId = privateDeck(owner);
+        JsonNode deck = read(call(get("/api/decks/{id}", deckId), owner, null).andExpect(status().isOk()));
+        assertTrue(deck.hasNonNull("createdAt") && deck.hasNonNull("updatedAt"), deck.toString());
+        assertTrue(deck.get("cards").get(0).hasNonNull("createdAt"));
+        String before = deck.get("updatedAt").asText();
+        Thread.sleep(5);
+        call(post("/api/decks/{id}/cards", deckId), owner, Map.of("term", "水", "meaning", "nước")).andExpect(status().is2xxSuccessful());
+        String after = read(call(get("/api/decks/{id}", deckId), owner, null)).get("updatedAt").asText();
+        assertTrue(after.compareTo(before) > 0, "thêm thẻ làm updatedAt tiến lên: " + before + " -> " + after);
+
+        String cardId = deck.get("cards").get(0).get("id").asText();
+        call(post("/api/reviews"), owner, Map.of("cardId", cardId, "grade", "good")).andExpect(status().isOk());
+        assertEquals(1, read(call(get("/api/reviews"), owner, null)).size());
+        call(delete("/api/decks/{id}/progress", deckId), stranger, null).andExpect(status().isNotFound());
+        call(delete("/api/decks/{id}/progress", deckId), owner, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.reset").value(1));
+        assertEquals(0, read(call(get("/api/reviews"), owner, null)).size(), "lịch ôn của bộ đã xoá, học lại từ đầu");
+    }
+
+    @Test
     void export_csv_and_anki_follow_view_access() throws Exception {
         String owner = newUser();
         String stranger = newUser();
@@ -91,7 +142,10 @@ class DeckShareLinkIT extends IntegrationTest {
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("bai-1-chao-hoi-")))
                 .andReturn();
         String body = new String(csv.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
-        assertTrue(body.startsWith("﻿term,reading,meaning,level,han_viet,pos\r\n"), body);
+        assertTrue(body.startsWith("﻿食べる,"), "mặc định không có dòng tiêu đề (27/10): " + body);
+        String withHeader = new String(call(get("/api/decks/{id}/export", deckId).param("header", "true"), owner, null)
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
+        assertTrue(withHeader.startsWith("﻿term,reading,meaning,level,han_viet,pos\r\n"), withHeader);
         assertTrue(body.contains("食べる,たべる,\"ăn, dùng bữa\""), body);
         assertTrue(body.contains("'=SUM(A1)"), "chặn công thức khi mở bằng bảng tính");
         String anki = new String(call(get("/api/decks/{id}/export", deckId).param("format", "anki"), owner, null)

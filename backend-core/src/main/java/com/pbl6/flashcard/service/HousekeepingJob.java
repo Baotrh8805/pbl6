@@ -27,6 +27,8 @@ import java.time.Instant;
 public class HousekeepingJob {
     private static final Logger log = LoggerFactory.getLogger(HousekeepingJob.class);
     static final Duration KEEP_FINISHED_JOBS = Duration.ofDays(90);
+    /** Tài khoản chưa xác thực email quá hạn này bị xoá (link xác thực chỉ sống 24 giờ; người thật đăng ký lại được ngay). */
+    static final Duration KEEP_UNVERIFIED = Duration.ofHours(48);
 
     private final RefreshTokenRepository refreshTokens;
     private final PasswordResetTokenRepository resetTokens;
@@ -76,9 +78,31 @@ public class HousekeepingJob {
         }
         // Thêm ở cuối mảng: chỉ số cũ (HousekeepingIT, log) giữ nguyên nghĩa
         int g = verificationTokens.deleteExpired(now);
+        int h = deleteStaleUnverified(now);
         log.info("Housekeeping: xoá {} refresh token, {} reset token, {} job bóc tách cũ; {} Premium hết hạn; "
-                + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi; xoá {} token xác thực email",
-                a, b, c, d, e, f, g);
-        return new int[] {a, b, c, d, e, f, g};
+                + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi; xoá {} token xác thực email; "
+                + "xoá {} tài khoản chưa xác thực quá 48 giờ",
+                a, b, c, d, e, f, g, h);
+        return new int[] {a, b, c, d, e, f, g, h};
+    }
+
+    /**
+     * Rà soát 27/10: tài khoản đăng ký mà không bấm link xác thực trong 48 giờ không nên tồn tại (admin thấy "ma", email bị chiếm).
+     * Xoá hẳn: tài khoản này chưa đăng nhập bao giờ nên không có dữ liệu học; token xác thực xoá theo (ON DELETE CASCADE, V24).
+     * users.createdAt là LocalDateTime theo múi giờ JVM (V1) -> so bằng cùng múi giờ. Một dòng lỗi (vd. FK lạ) không chặn dòng khác.
+     */
+    int deleteStaleUnverified(Instant now) {
+        java.time.LocalDateTime before = java.time.LocalDateTime.ofInstant(now.minus(KEEP_UNVERIFIED), java.time.ZoneId.systemDefault());
+        int n = 0;
+        for (User u : users.findStaleUnverified(before)) {
+            try {
+                verificationTokens.deleteByUserId(u.getId());
+                users.delete(u);
+                n++;
+            } catch (RuntimeException ex) {
+                log.warn("Housekeeping: không xoá được tài khoản chưa xác thực {}: {}", u.getId(), ex.getMessage());
+            }
+        }
+        return n;
     }
 }

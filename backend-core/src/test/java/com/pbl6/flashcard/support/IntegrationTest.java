@@ -50,7 +50,7 @@ public abstract class IntegrationTest {
      */
     protected String newUser(String email) throws Exception {
         String body = json.writeValueAsString(java.util.Map.of(
-                "email", email, "password", "secret123", "fullName", "IT"));
+                "email", email, "password", "Secret123!", "fullName", "IT"));
         mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(body));
         markEmailVerified(email);
         String res = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(body))
@@ -78,7 +78,7 @@ public abstract class IntegrationTest {
         com.pbl6.flashcard.model.User u = userRepository.findByEmail(email).orElseThrow();
         u.setRole(role);
         userRepository.save(u);
-        String body = json.writeValueAsString(java.util.Map.of("email", email, "password", "secret123"));
+        String body = json.writeValueAsString(java.util.Map.of("email", email, "password", "Secret123!"));
         String res = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andReturn().getResponse().getContentAsString();
         return json.readTree(res).get("accessToken").asText();

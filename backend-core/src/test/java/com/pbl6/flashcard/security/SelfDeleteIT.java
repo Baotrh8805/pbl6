@@ -42,12 +42,12 @@ class SelfDeleteIT extends IntegrationTest {
         call(put("/api/library/decks/" + pub + "/rating"), friend, Map.of("stars", 5, "comment", "hay")).andExpect(status().isOk());
 
         call(delete("/api/auth/me"), token, Map.of("password", "sai-mat-khau")).andExpect(status().isBadRequest());
-        call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        call(delete("/api/auth/me"), token, Map.of("password", "Secret123!")).andExpect(status().isNoContent());
 
         // Token cũ vô hiệu, đăng nhập cũ 401 (email đã đổi), email cũ đăng ký lại được
         call(get("/api/auth/me"), token, null).andExpect(status().isUnauthorized());
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")).andExpect(status().isUnauthorized());
-        call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "Lại")).andExpect(status().isOk());
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")).andExpect(status().isUnauthorized());
+        call(post("/api/auth/register"), null, Map.of("email", email, "password", "Secret123!", "fullName", "Lại")).andExpect(status().isOk());
 
         User u = userRepository.findById(uid).orElseThrow();
         assertEquals("deleted+" + uid + "@deleted.local", u.getEmail());
@@ -75,32 +75,32 @@ class SelfDeleteIT extends IntegrationTest {
     @Test
     void registration_rejects_the_reserved_deleted_domain() throws Exception {
         String malformed = read(call(post("/api/auth/register"), null,
-                Map.of("email", "khong-phai-email", "password", "secret123", "fullName", "X"))
+                Map.of("email", "khong-phai-email", "password", "Secret123!", "fullName", "X"))
                 .andExpect(status().isBadRequest())).get("message").asText();
         assertEquals("email: Email không đúng định dạng", malformed);
 
         String email = newEmail();
         String token = newUser(email);
         Long uid = userId(email);
-        call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        call(delete("/api/auth/me"), token, Map.of("password", "Secret123!")).andExpect(status().isNoContent());
 
         String unclaimed = "deleted+" + (uid + 1_000_000) + "@deleted.local";
         for (String reserved : List.of(unclaimed, "deleted+" + uid + "@deleted.local",
                 "IT-" + java.util.UUID.randomUUID() + "@Deleted.LOCAL")) {
             JsonNode err = read(call(post("/api/auth/register"), null,
-                    Map.of("email", reserved, "password", "secret123", "fullName", "X"))
+                    Map.of("email", reserved, "password", "Secret123!", "fullName", "X"))
                     .andExpect(status().isBadRequest()));
             assertEquals(malformed, err.get("message").asText(), reserved);
         }
         assertTrue(userRepository.findByEmail(unclaimed).isEmpty());
         // Email thật cũ vẫn đăng ký lại được (miền thường không bị ảnh hưởng)
-        call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "Lại"))
+        call(post("/api/auth/register"), null, Map.of("email", email, "password", "Secret123!", "fullName", "Lại"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void staff_cannot_delete_own_account() throws Exception {
         String admin = newStaff(Role.ADMIN);
-        call(delete("/api/auth/me"), admin, Map.of("password", "secret123")).andExpect(status().isForbidden());
+        call(delete("/api/auth/me"), admin, Map.of("password", "Secret123!")).andExpect(status().isForbidden());
     }
 }

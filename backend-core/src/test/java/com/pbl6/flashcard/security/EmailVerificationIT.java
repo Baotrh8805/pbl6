@@ -61,7 +61,7 @@ class EmailVerificationIT extends IntegrationTest {
     }
 
     private JsonNode register(String email) throws Exception {
-        return read(call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "EV"))
+        return read(call(post("/api/auth/register"), null, Map.of("email", email, "password", "Secret123!", "fullName", "EV"))
                 .andExpect(status().isOk()));
     }
 
@@ -106,7 +106,7 @@ class EmailVerificationIT extends IntegrationTest {
 
         // Sai mật khẩu vẫn là 401 chung, không mã: không lộ "email này đã đăng ký mà chưa xác thực"
         login(email, "sai-mat-khau").andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").doesNotExist());
-        login(email, "secret123").andExpect(status().isForbidden())
+        login(email, "Secret123!").andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.error").value("Forbidden"))
                 .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"))
@@ -117,7 +117,7 @@ class EmailVerificationIT extends IntegrationTest {
         assertEquals(email, v.get("email").asText());
         assertFalse(v.get("message").asText().isBlank());
 
-        String access = read(login(email, "secret123").andExpect(status().isOk())).get("accessToken").asText();
+        String access = read(login(email, "Secret123!").andExpect(status().isOk())).get("accessToken").asText();
         call(get("/api/auth/me"), access, null).andExpect(status().isOk()).andExpect(jsonPath("$.emailVerified").value(true));
         call(get("/api/decks"), access, null).andExpect(status().isOk());
 
@@ -192,7 +192,7 @@ class EmailVerificationIT extends IntegrationTest {
         verifyEmail("khong-ton-tai").andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value(INVALID));
         call(post("/api/auth/verify-email"), null, Map.of()).andExpect(status().isBadRequest());
         assertNull(userRepository.findByEmail(email).orElseThrow().getEmailVerifiedAt());
-        login(email, "secret123").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+        login(email, "Secret123!").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
     }
 
     @Test
@@ -204,12 +204,12 @@ class EmailVerificationIT extends IntegrationTest {
         assertNotNull(userRepository.findByEmail(email).orElseThrow().getEmailVerifiedAt());
         verify(mailSender, never()).send(any(SimpleMailMessage.class));
 
-        String access = read(login(email, "secret123").andExpect(status().isOk())).get("accessToken").asText();
+        String access = read(login(email, "Secret123!").andExpect(status().isOk())).get("accessToken").asText();
         call(get("/api/auth/me"), access, null).andExpect(jsonPath("$.emailVerified").value(true));
 
         // Bật lại: người đã xác thực không bị ảnh hưởng
         setRequired(true);
-        login(email, "secret123").andExpect(status().isOk());
+        login(email, "Secret123!").andExpect(status().isOk());
     }
 
     /** Token / refresh token có từ lúc admin tắt tính năng: bật lại thì JwtAuthenticationFilter và /refresh cùng chặn. */
@@ -218,7 +218,7 @@ class EmailVerificationIT extends IntegrationTest {
         String email = newEmail();
         register(email);
         setRequired(false);
-        JsonNode tokens = read(login(email, "secret123").andExpect(status().isOk()));
+        JsonNode tokens = read(login(email, "Secret123!").andExpect(status().isOk()));
         String access = tokens.get("accessToken").asText();
         String refresh = tokens.get("refreshToken").asText();
         call(get("/api/decks"), access, null).andExpect(status().isOk());
@@ -242,7 +242,7 @@ class EmailVerificationIT extends IntegrationTest {
         u.setRole(Role.ADMIN);
         userRepository.save(u);
 
-        String access = read(login(email, "secret123").andExpect(status().isOk())).get("accessToken").asText();
+        String access = read(login(email, "Secret123!").andExpect(status().isOk())).get("accessToken").asText();
         call(get("/api/admin/users"), access, null).andExpect(status().isOk());
         call(get("/api/auth/me"), access, null).andExpect(jsonPath("$.emailVerified").value(false));
 
@@ -250,7 +250,7 @@ class EmailVerificationIT extends IntegrationTest {
         u = userRepository.findByEmail(email).orElseThrow();
         u.setRole(Role.USER);
         userRepository.save(u);
-        login(email, "secret123").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+        login(email, "Secret123!").andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
     }
 
     @Test
@@ -270,7 +270,7 @@ class EmailVerificationIT extends IntegrationTest {
         assertEquals(email, d.get("email").asText());
         assertTrue(d.get("emailVerified").asBoolean());
         assertTrue(read(call(get("/api/admin/users/" + id), admin, null)).get("emailVerified").asBoolean());
-        login(email, "secret123").andExpect(status().isOk());
+        login(email, "Secret123!").andExpect(status().isOk());
         verifyEmail(pendingLink).andExpect(status().isBadRequest()); // link trong hộp thư bị huỷ
 
         String audit = "SELECT count(*) FROM admin_audit_logs WHERE action = 'USER_VERIFY_EMAIL' AND actor_id = ? AND target_id = ?";

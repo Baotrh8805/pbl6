@@ -23,6 +23,13 @@ public class Flashcard {
     @Column(nullable = false)
     private String term;
 
+    /** V35: mốc thêm thẻ (sắp xếp "mới thêm trước" ở trang bộ thẻ). */
+    @org.hibernate.annotations.CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private java.time.Instant createdAt;
+
+    public java.time.Instant getCreatedAt() { return createdAt; }
+
     private String reading;
 
     /** Nội dung nhiều dòng: dòng đầu = định nghĩa chính, các dòng sau = định nghĩa phụ / ví dụ / ghi chú. */

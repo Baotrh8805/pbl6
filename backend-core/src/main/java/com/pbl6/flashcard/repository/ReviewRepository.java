@@ -19,6 +19,12 @@ import java.util.UUID;
 public interface ReviewRepository extends JpaRepository<Review, Long> {
     List<Review> findByUserId(Long userId);
 
+    /** Đặt lại tiến độ một bộ thẻ cho một người (DeckService.resetProgress). */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM Review r WHERE r.userId = :uid AND r.cardId IN :ids")
+    int deleteByUserIdAndCardIdIn(@org.springframework.data.repository.query.Param("uid") Long uid,
+                                  @org.springframework.data.repository.query.Param("ids") java.util.Collection<String> ids);
+
     /**
      * Tạo bản ghi ôn nếu chưa có. ON CONFLICT: 2 lần chấm song song không vỡ unique (user_id, card_id). Trả về số dòng đã chèn:
      * 1 = trước đó chưa có (hoàn tác lượt này thì xoá dòng), 0 = đã có.

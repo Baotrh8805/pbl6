@@ -59,9 +59,14 @@ public class AuthService {
 
     /** ip: địa chỉ người gọi, dùng để giới hạn số lần đăng nhập sai theo (IP, email). */
     public AuthResponse login(AuthRequest request, String ip) {
-        String key = LoginAttemptLimiter.key(ip, User.normalizeEmail(request.getEmail()));
+        String email = User.normalizeEmail(request.getEmail());
+        String key = LoginAttemptLimiter.key(ip, email);
+        // Chặn cả khi lần này đúng mật khẩu: không cho kẻ dò biết đã trúng. Lớp theo email (mọi IP) chặn dò phân tán.
+        if (loginLimiter.isEmailBlocked(email)) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Tài khoản tạm khoá đăng nhập vì sai mật khẩu quá nhiều lần. Vui lòng thử lại sau 15 phút hoặc đặt lại mật khẩu.");
+        }
         if (loginLimiter.isBlocked(key)) {
-            // Chặn cả khi lần này đúng mật khẩu: không cho kẻ dò biết đã trúng
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "Bạn đã đăng nhập sai quá nhiều lần. Vui lòng thử lại sau 1 phút.");
         }
@@ -73,13 +78,13 @@ public class AuthService {
             if (verification.mustVerify(user)) {
                 // Kiểm SAU mật khẩu: sai mật khẩu vẫn là 401 chung, không lộ email nào đã đăng ký mà chưa xác thực.
                 // Mật khẩu đúng -> không tính là lần dò sai.
-                loginLimiter.reset(key);
+                loginLimiter.resetAll(ip, email);
                 throw new CodedStatusException(HttpStatus.FORBIDDEN, EmailVerificationService.NOT_VERIFIED_CODE,
                         EmailVerificationService.NOT_VERIFIED_MESSAGE);
             }
             SecurityContextHolder.getContext().setAuthentication(authentication);
             AuthResponse ok = refreshTokens.issueTokens(user);
-            loginLimiter.reset(key);
+            loginLimiter.resetAll(ip, email);
             return ok;
         } catch (LockedException e) {
             // Mật khẩu đúng nhưng admin đã khoá: 403 (không phải 401), không tính là lần dò sai; kèm lý do nếu admin ghi
@@ -88,7 +93,7 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     reason == null ? "Tài khoản đã bị khoá, vui lòng liên hệ hỗ trợ." : "Tài khoản đã bị khoá: " + reason);
         } catch (AuthenticationException e) {
-            loginLimiter.record(key);
+            loginLimiter.recordFailure(ip, email);
             // 401 (không phải 403) + thông báo chung: không lộ email tồn tại hay không
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng!");
         }
@@ -116,8 +121,26 @@ public class AuthService {
                     "Có quá nhiều tài khoản được tạo từ mạng của bạn. Vui lòng thử lại sau.");
         }
         String email = User.normalizeEmail(request.getEmail());
-        if (userRepository.existsByEmail(email)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, EMAIL_TAKEN);
+        User stale = userRepository.findByEmail(email).orElse(null);
+        if (stale != null) {
+            // Rà soát 27/10: tài khoản đăng ký trước nhưng chưa bao giờ xác thực email (link hết hạn, nhập nhầm...) không được
+            // chặn người thật sự giữ hộp thư: nhận đăng ký mới (mật khẩu, họ tên mới) và gửi lại link; ai bấm link mới là chủ.
+            // Chỉ khi tính năng xác thực đang bật (tắt thì tài khoản cũ có thể đang được dùng dù chưa xác thực).
+            boolean reclaimable = stale.getRole() == Role.USER && stale.getEmailVerifiedAt() == null
+                    && verification.required() && !AccountDeletionService.isDeleted(stale);
+            if (!reclaimable) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, EMAIL_TAKEN);
+            if (registerLimiter.isBlocked(ip)) {
+                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                        "Có quá nhiều tài khoản được tạo từ mạng của bạn. Vui lòng thử lại sau.");
+            }
+            stale.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+            stale.setFullName(request.getFullName().trim());
+            stale.setPasswordChangedAt(java.time.Instant.now());
+            userRepository.save(stale);
+            refreshTokens.revokeAll(stale.getId());
+            registerLimiter.record(ip);
+            verification.issue(stale);
+            return new RegisterResponse(REGISTERED_CHECK_MAIL, true);
         }
 
         User user = new User();

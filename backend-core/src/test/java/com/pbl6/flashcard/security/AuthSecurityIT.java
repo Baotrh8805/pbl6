@@ -36,7 +36,7 @@ class AuthSecurityIT extends IntegrationTest {
     }
 
     private String registerEmail(String email) throws Exception {
-        call(post("/api/auth/register"), null, Map.of("email", email, "password", "secret123", "fullName", "X"))
+        call(post("/api/auth/register"), null, Map.of("email", email, "password", "Secret123!", "fullName", "X"))
                 .andExpect(status().isOk());
         markEmailVerified(email); // xác thực email bật mặc định (V21): test này kiểm JWT / email, không kiểm bước bấm link
         return email;
@@ -64,9 +64,9 @@ class AuthSecurityIT extends IntegrationTest {
         registerEmail("Mixed-" + id + "@Test.com");
 
         call(post("/api/auth/register"), null,
-                Map.of("email", "MIXED-" + id.toUpperCase() + "@TEST.COM", "password", "secret123", "fullName", "Y"))
+                Map.of("email", "MIXED-" + id.toUpperCase() + "@TEST.COM", "password", "Secret123!", "fullName", "Y"))
                 .andExpect(status().isBadRequest());
-        call(post("/api/auth/login"), null, Map.of("email", "mixed-" + id + "@test.com", "password", "secret123"))
+        call(post("/api/auth/login"), null, Map.of("email", "mixed-" + id + "@test.com", "password", "Secret123!"))
                 .andExpect(status().isOk());
     }
 
@@ -89,7 +89,7 @@ class AuthSecurityIT extends IntegrationTest {
     @Test
     void cors_allows_vite_dev_origin_under_every_loopback_name() throws Exception {
         String email = registerEmail("cors-" + UUID.randomUUID() + "@test.com");
-        String body = json.writeValueAsString(Map.of("email", email, "password", "secret123"));
+        String body = json.writeValueAsString(Map.of("email", email, "password", "Secret123!"));
         for (String origin : List.of("http://localhost:5173", "http://127.0.0.1:5173", "http://[::1]:5173")) {
             mvc.perform(post("/api/auth/login").header("Origin", origin)
                             .contentType(MediaType.APPLICATION_JSON).content(body))

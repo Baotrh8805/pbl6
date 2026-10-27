@@ -134,10 +134,10 @@ class AdminSettingsIT extends IntegrationTest {
         String email = newEmail();
         newUser(email);
         call(put("/api/admin/settings"), root, with("registration_open", false)).andExpect(status().isOk());
-        call(post("/api/auth/register"), null, Map.of("email", newEmail(), "password", "secret123", "fullName", "X"))
+        call(post("/api/auth/register"), null, Map.of("email", newEmail(), "password", "Secret123!", "fullName", "X"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message", containsString("ngừng đăng ký")));
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")).andExpect(status().isOk());
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")).andExpect(status().isOk());
     }
 
     @Test

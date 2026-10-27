@@ -354,15 +354,18 @@ public class DeckService {
             deck.getCards().add(card);
             created.add(card);
         }
+        deck.touch();
         deckRepository.save(deck);
         return created.stream().map(CardResponse::of).toList();
     }
 
     @Transactional
     public CardResponse updateCard(Long uid, String deckId, String cardId, DeckRequest.Card req) {
-        Flashcard card = findCardIn(writable(uid, deckId), cardId)
+        Deck deck = writable(uid, deckId);
+        Flashcard card = findCardIn(deck, cardId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, CARD_NOT_FOUND));
         apply(card, req);
+        deck.touch();
         return CardResponse.of(card);
     }
 
@@ -373,6 +376,18 @@ public class DeckService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, CARD_NOT_FOUND));
         reviewRepository.deleteByCardIdIn(List.of(cardId));
         deck.getCards().remove(card);
+        deck.touch();
+    }
+
+    /**
+     * Rà soát 27/10: "học lại từ đầu" một bộ đã học xong — xoá lịch ôn (reviews) của chính người gọi với mọi thẻ trong bộ; nhật ký
+     * ôn (review_logs) giữ nguyên cho thống kê. Ai xem được bộ đều đặt lại được tiến độ của mình. Trả số thẻ đã đặt lại.
+     */
+    @Transactional
+    public int resetProgress(Long uid, String deckId) {
+        Deck deck = readable(uid, deckId);
+        List<String> ids = deck.getCards().stream().map(Flashcard::getId).toList();
+        return ids.isEmpty() ? 0 : reviewRepository.deleteByUserIdAndCardIdIn(uid, ids);
     }
 
     // ---------- quiz đa loại (hợp đồng đợt 2 §1.2) ----------

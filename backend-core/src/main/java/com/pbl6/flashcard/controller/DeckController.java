@@ -117,11 +117,15 @@ public class DeckController {
         return shareLinks.get(uid(me), deckId);
     }
 
-    /** Tạo link mới (có rồi thì đổi token, link cũ hết hiệu lực). */
+    /** Thân tuỳ chọn của tạo link / mở link: mật khẩu link (rà soát 27/10). */
+    public record ShareLinkBody(@jakarta.validation.constraints.Size(max = 72) String password) {}
+
+    /** Tạo link mới (có rồi thì đổi token, link cũ hết hiệu lực); body {password?} đặt mật khẩu mở link. */
     @PostMapping("/{deckId}/share-link")
     public com.pbl6.flashcard.service.DeckShareLinkService.ShareLink rotateShareLink(@AuthenticationPrincipal CustomUserDetails me,
-                                                                                  @PathVariable String deckId) {
-        return shareLinks.rotate(uid(me), deckId);
+                                                                                  @PathVariable String deckId,
+                                                                                  @jakarta.validation.Valid @RequestBody(required = false) ShareLinkBody body) {
+        return shareLinks.rotate(uid(me), deckId, body == null ? null : body.password());
     }
 
     @DeleteMapping("/{deckId}/share-link")
@@ -130,18 +134,29 @@ public class DeckController {
         return ResponseEntity.noContent().build();
     }
 
-    /** Mở link /d/<token>: nhận quyền xem, trả {deckId, access}. Token sai / đã thu hồi = 404. */
+    /**
+     * Mở link /d/<token>: nhận quyền xem, trả {deckId, access}. Token sai / đã thu hồi = 404; link có mật khẩu mà thiếu / sai =
+     * 403 code SHARE_PASSWORD_REQUIRED / SHARE_PASSWORD_WRONG (body {password}).
+     */
     @PostMapping("/share-link/{token}/accept")
     public com.pbl6.flashcard.service.DeckShareLinkService.Accepted acceptShareLink(@AuthenticationPrincipal CustomUserDetails me,
-                                                                                 @PathVariable String token) {
-        return shareLinks.accept(uid(me), token);
+                                                                                 @PathVariable String token,
+                                                                                 @jakarta.validation.Valid @RequestBody(required = false) ShareLinkBody body) {
+        return shareLinks.accept(uid(me), token, body == null ? null : body.password());
+    }
+
+    /** Đặt lại tiến độ học của chính mình với bộ này (xoá lịch ôn, giữ nhật ký) để học lại từ đầu. Trả {reset: số thẻ}. */
+    @DeleteMapping("/{deckId}/progress")
+    public java.util.Map<String, Integer> resetProgress(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String deckId) {
+        return java.util.Map.of("reset", deckService.resetProgress(uid(me), deckId));
     }
 
     /** Tệp CSV (Excel) hoặc TSV cho Anki; tên tệp ASCII + filename* UTF-8. */
     @GetMapping("/{deckId}/export")
     public ResponseEntity<byte[]> export(@AuthenticationPrincipal CustomUserDetails me, @PathVariable String deckId,
-                                         @RequestParam(defaultValue = "csv") String format) {
-        com.pbl6.flashcard.service.DeckExportService.Export e = exports.exportFor(uid(me), deckId, format);
+                                         @RequestParam(defaultValue = "csv") String format,
+                                         @RequestParam(defaultValue = "false") boolean header) {
+        com.pbl6.flashcard.service.DeckExportService.Export e = exports.exportFor(uid(me), deckId, format, header);
         return ResponseEntity.ok()
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
                         org.springframework.http.ContentDisposition.attachment().filename(e.fileName(), java.nio.charset.StandardCharsets.UTF_8)

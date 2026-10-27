@@ -28,7 +28,7 @@ class StaffSetupIT extends IntegrationTest {
         u.setMustChangePassword(true);
         userRepository.save(u);
 
-        JsonNode r = read(call(post("/api/auth/login"), null, login(email, "secret123")).andExpect(status().isOk()));
+        JsonNode r = read(call(post("/api/auth/login"), null, login(email, "Secret123!")).andExpect(status().isOk()));
         assertTrue(r.get("mustChangePassword").asBoolean());
         String token = r.get("accessToken").asText();
         call(get("/api/admin/stats"), token, null).andExpect(status().isForbidden());
@@ -36,7 +36,7 @@ class StaffSetupIT extends IntegrationTest {
         call(get("/api/auth/me"), token, null).andExpect(status().isOk());
 
         JsonNode fresh = read(call(put("/api/auth/password"), token,
-                Map.of("currentPassword", "secret123", "newPassword", "newsecret456")).andExpect(status().isOk()));
+                Map.of("currentPassword", "Secret123!", "newPassword", "New-Secret456!")).andExpect(status().isOk()));
         assertFalse(fresh.get("mustChangePassword").asBoolean());
         call(get("/api/admin/stats"), fresh.get("accessToken").asText(), null).andExpect(status().isOk());
         assertFalse(read(call(get("/api/auth/me"), fresh.get("accessToken").asText(), null)).get("mustChangePassword").asBoolean());
@@ -65,11 +65,11 @@ class StaffSetupIT extends IntegrationTest {
         JsonNode d = read(call(patch("/api/admin/users/" + id), admin, Map.of("locked", true, "lockedReason", "Spam bình luận"))
                 .andExpect(status().isOk()));
         assertEquals("Spam bình luận", d.get("lockedReason").asText());
-        String body = call(post("/api/auth/login"), null, login(email, "secret123"))
+        String body = call(post("/api/auth/login"), null, login(email, "Secret123!"))
                 .andExpect(status().isForbidden()).andReturn().getResponse().getContentAsString();
         assertTrue(body.contains("Spam bình luận"), body);
         d = read(call(patch("/api/admin/users/" + id), admin, Map.of("locked", false)).andExpect(status().isOk()));
         assertTrue(d.get("lockedReason").isNull());
-        call(post("/api/auth/login"), null, login(email, "secret123")).andExpect(status().isOk());
+        call(post("/api/auth/login"), null, login(email, "Secret123!")).andExpect(status().isOk());
     }
 }

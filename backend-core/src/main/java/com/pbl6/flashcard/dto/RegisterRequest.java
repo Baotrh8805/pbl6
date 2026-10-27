@@ -3,10 +3,12 @@ package com.pbl6.flashcard.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import com.pbl6.flashcard.security.StrongPassword;
+import com.pbl6.flashcard.security.PasswordPolicy;
 
 public class RegisterRequest {
     public static final int MAX_NAME = 100;
-    public static final int MIN_PASSWORD = 6;
+    public static final int MIN_PASSWORD = PasswordPolicy.MIN;
     /** BCrypt chỉ dùng 72 byte đầu (Spring Security từ chối mật khẩu dài hơn). */
     public static final int MAX_PASSWORD = 72;
     /** Dùng chung với AuthService.register (miền @deleted.local dành riêng): hai lỗi trông như nhau. */
@@ -18,7 +20,7 @@ public class RegisterRequest {
     private String email;
 
     @NotBlank(message = "Mật khẩu không được để trống")
-    @Size(min = MIN_PASSWORD, max = MAX_PASSWORD, message = "Mật khẩu phải từ 6 đến 72 ký tự")
+    @StrongPassword   // 8..72 ký tự + chữ, số, ký tự đặc biệt (PasswordPolicy); không thêm @Size để không báo hai lần cùng một câu
     private String password;
 
     @NotBlank(message = "Họ tên không được để trống")

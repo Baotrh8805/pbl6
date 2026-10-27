@@ -40,25 +40,34 @@ public class DeckExportService {
 
     /** Xuất bộ uid xem được (không xem được = 404 như mọi API bộ thẻ). Ngày trong tên tệp theo giờ Việt Nam. */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public Export exportFor(Long uid, String deckId, String format) {
-        return export(decks.readable(uid, deckId), format, LocalDate.now(VN));
+    public Export exportFor(Long uid, String deckId, String format, boolean header) {
+        return export(decks.readable(uid, deckId), format, LocalDate.now(VN), header);
     }
 
     public Export export(Deck deck, String format, LocalDate today) {
+        return export(deck, format, today, false);
+    }
+
+    /** header: CSV kèm dòng tên cột (mặc định không — người dùng 27/10: chỉ xuất dữ liệu, tiêu đề không hợp mọi nơi nhập). */
+    public Export export(Deck deck, String format, LocalDate today, boolean header) {
         List<Flashcard> cards = deck.getCards().stream()
                 .sorted(Comparator.comparing(Flashcard::getPosition, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
         String base = slug(deck.getTitle()) + "-" + today;
         return switch (format == null ? "csv" : format.toLowerCase(Locale.ROOT)) {
-            case "csv" -> new Export(csv(cards), "text/csv; charset=UTF-8", base + ".csv");
+            case "csv" -> new Export(csv(cards, header), "text/csv; charset=UTF-8", base + ".csv");
             case "anki" -> new Export(anki(cards).getBytes(StandardCharsets.UTF_8), "text/plain; charset=UTF-8", base + "-anki.txt");
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Định dạng xuất chỉ nhận csv hoặc anki.");
         };
     }
 
     static byte[] csv(List<Flashcard> cards) {
+        return csv(cards, false);
+    }
+
+    static byte[] csv(List<Flashcard> cards, boolean header) {
         StringBuilder sb = new StringBuilder("﻿");
-        sb.append("term,reading,meaning,level,han_viet,pos\r\n");
+        if (header) sb.append("term,reading,meaning,level,han_viet,pos\r\n");
         for (Flashcard c : cards) {
             sb.append(cell(c.getTerm())).append(',').append(cell(c.getReading())).append(',').append(cell(c.getMeaning()))
                     .append(',').append(cell(c.getLevel())).append(',').append(cell(c.getHanViet())).append(',')

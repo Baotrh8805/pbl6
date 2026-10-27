@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RegisterRateLimitIT extends IntegrationTest {
 
     private ResultActions registerFrom(String ip) throws Exception {
-        String body = json.writeValueAsString(Map.of("email", newEmail(), "password", "secret123", "fullName", "R"));
+        String body = json.writeValueAsString(Map.of("email", newEmail(), "password", "Secret123!", "fullName", "R"));
         return mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(body)
                 .with(req -> {
                     req.setRemoteAddr(ip);

@@ -35,9 +35,10 @@ public class AdminUserController {
                                @RequestParam(required = false) Role role,
                                @RequestParam(required = false) Boolean premium,
                                @RequestParam(required = false) Boolean locked,
+                               @RequestParam(required = false) Boolean verified,
                                @RequestParam(defaultValue = "0") @Min(0) int page,
                                @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return service.list(q, role, premium, locked, page, size);
+        return service.list(q, role, premium, locked, verified, page, size);
     }
 
     @GetMapping("/{id}")

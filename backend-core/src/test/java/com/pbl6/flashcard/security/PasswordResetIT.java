@@ -46,7 +46,7 @@ class PasswordResetIT extends IntegrationTest {
                 .andExpect(status().isOk());
         call(get("/api/auth/me"), oldToken, null).andExpect(status().isUnauthorized());
         call(post("/api/auth/login"), null, Map.of("email", email, "password", "moi-123456")).andExpect(status().isOk());
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")).andExpect(status().isUnauthorized());
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")).andExpect(status().isUnauthorized());
 
         // Dùng lại link -> không hợp lệ
         call(post("/api/auth/reset-password"), null, Map.of("token", resetToken, "newPassword", "khac-123456"))
@@ -62,7 +62,7 @@ class PasswordResetIT extends IntegrationTest {
     @Test
     void invalid_input_and_bad_tokens_are_rejected() throws Exception {
         call(post("/api/auth/forgot-password"), null, Map.of("email", "not-an-email")).andExpect(status().isBadRequest());
-        call(post("/api/auth/reset-password"), null, Map.of("token", "khong-ton-tai", "newPassword", "abcdef"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", "khong-ton-tai", "newPassword", "Abcdef-1"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."));
 
@@ -85,7 +85,7 @@ class PasswordResetIT extends IntegrationTest {
         }).when(mailSender).send(any(SimpleMailMessage.class));
         call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
         assertEquals(List.of(false), inTransaction);
-        call(post("/api/auth/reset-password"), null, Map.of("token", tokenFromLastMail(), "newPassword", "abcdef1"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", tokenFromLastMail(), "newPassword", "Abcdef-1"))
                 .andExpect(status().isOk());
     }
 
@@ -98,9 +98,9 @@ class PasswordResetIT extends IntegrationTest {
         call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
         String second = tokenFromLastMail();
         assertNotEquals(first, second);
-        call(post("/api/auth/reset-password"), null, Map.of("token", first, "newPassword", "abcdef1"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", first, "newPassword", "Abcdef-1"))
                 .andExpect(status().isBadRequest());
-        call(post("/api/auth/reset-password"), null, Map.of("token", second, "newPassword", "abcdef1"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", second, "newPassword", "Abcdef-1"))
                 .andExpect(status().isOk());
     }
 }

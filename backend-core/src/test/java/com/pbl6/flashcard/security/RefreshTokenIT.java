@@ -20,7 +20,7 @@ class RefreshTokenIT extends IntegrationTest {
     JdbcTemplate jdbc;
 
     private JsonNode login(String email) throws Exception {
-        return read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123"))
+        return read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!"))
                 .andExpect(status().isOk()));
     }
 
@@ -109,7 +109,7 @@ class RefreshTokenIT extends IntegrationTest {
         Thread.sleep(1100); // iat của JWT tính theo giây
 
         JsonNode fresh = read(call(put("/api/auth/password"), access,
-                Map.of("currentPassword", "secret123", "newPassword", "moi-123456")).andExpect(status().isOk()));
+                Map.of("currentPassword", "Secret123!", "newPassword", "moi-123456")).andExpect(status().isOk()));
 
         call(post("/api/auth/refresh"), null, Map.of("refreshToken", otherDevice)).andExpect(status().isUnauthorized());
         // Phiên vừa đổi mật khẩu nhận cặp token mới và dùng tiếp được

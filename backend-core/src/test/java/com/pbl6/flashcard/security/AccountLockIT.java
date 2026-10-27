@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AccountLockIT extends IntegrationTest {
 
     private JsonNode login(String email) throws Exception {
-        return read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")));
+        return read(call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")));
     }
 
     private void setLocked(String email, boolean locked) {
@@ -31,7 +31,7 @@ class AccountLockIT extends IntegrationTest {
         String email = newEmail();
         newUser(email);
         setLocked(email, true);
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123"))
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message", containsString("khoá")));
     }
@@ -60,6 +60,6 @@ class AccountLockIT extends IntegrationTest {
         newUser(email);
         setLocked(email, true);
         setLocked(email, false);
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")).andExpect(status().isOk());
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")).andExpect(status().isOk());
     }
 }

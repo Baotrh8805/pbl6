@@ -63,7 +63,7 @@ class AppealIT extends IntegrationTest {
     }
 
     private ResultActions login(String email) throws Exception {
-        return call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123"));
+        return call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!"));
     }
 
     private JsonNode findAppeal(String token, String status, String email) throws Exception {
@@ -164,7 +164,7 @@ class AppealIT extends IntegrationTest {
         String email = newEmail();
         String token = newUser(email);
         Long uid = userId(email);
-        call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        call(delete("/api/auth/me"), token, Map.of("password", "Secret123!")).andExpect(status().isNoContent());
         String anonymized = AccountDeletionService.anonymizedEmail(uid);
         assertNotNull(userRepository.findByEmail(anonymized).orElseThrow().getLockedAt());
 
@@ -230,7 +230,7 @@ class AppealIT extends IntegrationTest {
         assertEquals(r.get("createdAt").asText(), listed.get("createdAt").asText());
 
         // Tự xoá tài khoản xoá luôn khiếu nại (dữ liệu cá nhân)
-        call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        call(delete("/api/auth/me"), token, Map.of("password", "Secret123!")).andExpect(status().isNoContent());
         assertEquals(0, appealRows(email));
     }
 

@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 public record DeckResponse(String id, String title, String level, String description, Long ownerId,
                            UUID folderId, String access, String visibility, String category,
-                           List<CardResponse> cards) {
+                           List<CardResponse> cards, java.time.Instant createdAt, java.time.Instant updatedAt) {
 
     /**
      * pos (V22) bỏ hẳn khỏi JSON khi null: thẻ tay không có từ loại, và các trường cũ vẫn giữ "null" như trước để client hiện tại
@@ -24,10 +24,12 @@ public record DeckResponse(String id, String title, String level, String descrip
     public record CardResponse(String id, String term, String reading, String meaning,
                                Integer position, String level, String kind,
                                List<Map<String, String>> readingSegments, String hanViet,
-                               @JsonInclude(JsonInclude.Include.NON_NULL) String pos) {
+                               @JsonInclude(JsonInclude.Include.NON_NULL) String pos,
+                               @JsonInclude(JsonInclude.Include.NON_NULL) java.time.Instant createdAt) {
         public static CardResponse of(Flashcard c) {
             return new CardResponse(c.getId(), c.getTerm(), c.getReading(), c.getMeaning(),
-                    c.getPosition(), c.getLevel(), c.getKind(), c.getReadingSegments(), c.getHanViet(), c.getPos());
+                    c.getPosition(), c.getLevel(), c.getKind(), c.getReadingSegments(), c.getHanViet(), c.getPos(),
+                    c.getCreatedAt());
         }
     }
 
@@ -46,6 +48,6 @@ public record DeckResponse(String id, String title, String level, String descrip
                 access, d.getVisibility(), d.getCategory(), d.getCards().stream()
                         // fetch-join có thể không áp @OrderBy -> tự sắp theo position
                         .sorted(Comparator.comparing(Flashcard::getPosition, Comparator.nullsLast(Comparator.naturalOrder())))
-                        .map(CardResponse::of).toList());
+                        .map(CardResponse::of).toList(), d.getCreatedAt(), d.getUpdatedAt());
     }
 }

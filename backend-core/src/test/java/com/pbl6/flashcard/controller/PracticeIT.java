@@ -359,7 +359,7 @@ class PracticeIT extends IntegrationTest {
         call(post("/api/practice/pronunciation"), token, Map.of("term", "箸", "target", "はし", "transcript", "はし", "score", 80))
                 .andExpect(status().isCreated());
         assertEquals(1, logs(uid).size());
-        call(delete("/api/auth/me"), token, Map.of("password", "secret123")).andExpect(status().isNoContent());
+        call(delete("/api/auth/me"), token, Map.of("password", "Secret123!")).andExpect(status().isNoContent());
         assertTrue(logs(uid).isEmpty(), "dữ liệu luyện tập là dữ liệu cá nhân: xoá cùng tài khoản");
     }
 }
