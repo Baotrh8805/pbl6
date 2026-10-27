@@ -19,6 +19,7 @@ import { AdminStatusBadge, RoleStatusBadge } from "@/features/admin/components/A
 import { AdminDetailCard } from "@/features/admin/components/AdminDetailCard";
 import { AdminJsonViewer } from "@/features/admin/components/AdminJsonViewer";
 import { adminFieldClass } from "@/features/admin/components/AdminFilterBar";
+import { lockReasonPatch } from "@/features/admin/adminUtils";
 import {
   ASSIGNABLE_ROLES,
   adminAccountStatus,
@@ -130,6 +131,20 @@ export const AdminUserDetailPage: React.FC = () => {
       setLockReason("");
       setStatus({ ok: true, text: locking ? `Đã khoá tài khoản ${u.email}.` : `Đã mở khoá tài khoản ${u.email}.` });
       setReload((n) => n + 1);
+    }
+  };
+
+  // B5.5: đổi lý do khoá của tài khoản đang khoá (PATCH {locked: true, lockedReason}); người dùng thấy lý do mới khi đăng nhập
+  const updateLockReason = async (u: AdminUserDetail) => {
+    const body = lockReasonPatch(lockReason);
+    if (!body.lockedReason) return;
+    try {
+      await patchAdminUser(u.id, body);
+      setLockReason("");
+      setStatus({ ok: true, text: `Đã cập nhật lý do khoá của ${u.email}.` });
+      setReload((n) => n + 1);
+    } catch (e) {
+      setStatus({ ok: false, text: extractErrorMessage(e) });
     }
   };
 
@@ -434,7 +449,7 @@ export const AdminUserDetailPage: React.FC = () => {
               {/* Đã xoá: không có nút — mở khoá bị backend chặn (409), khoá lại thì đã khoá vĩnh viễn rồi */}
               {!isDeleted && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                  {!user.lockedAt && (
+                  {!user.lockedAt ? (
                     <input
                       value={lockReason}
                       onChange={(e) => setLockReason(e.target.value)}
@@ -443,6 +458,21 @@ export const AdminUserDetailPage: React.FC = () => {
                       aria-label="Lý do khoá"
                       className={`${adminFieldClass} flex-1`}
                     />
+                  ) : (
+                    // B5.5: tài khoản đang khoá vẫn đổi được lý do (vd. bổ sung căn cứ sau khi xem khiếu nại)
+                    <div className="flex flex-1 flex-col sm:flex-row sm:items-center gap-2">
+                      <input
+                        value={lockReason}
+                        onChange={(e) => setLockReason(e.target.value)}
+                        maxLength={200}
+                        placeholder="Lý do khoá mới (người dùng thấy khi đăng nhập)"
+                        aria-label="Lý do khoá mới"
+                        className={`${adminFieldClass} flex-1`}
+                      />
+                      <Button variant="outline" size="sm" onClick={() => updateLockReason(user)} disabled={!lockReason.trim()}>
+                        Cập nhật lý do
+                      </Button>
+                    </div>
                   )}
                   <Button
                     variant={user.lockedAt ? "secondary" : "danger"}

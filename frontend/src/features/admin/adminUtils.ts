@@ -440,3 +440,12 @@ export const xLabelStep = (points: number, width: number): number => {
   const maxLabels = Math.max(2, Math.min(6, Math.floor(width / 70)));
   return Math.max(1, Math.ceil(points / maxLabels));
 };
+
+/**
+ * B5.5: body PATCH /admin/users/{id} để đổi lý do của tài khoản ĐANG khoá (locked giữ true; backend ghi audit USER_LOCK_REASON).
+ * Lý do rỗng -> không gửi lockedReason (nút bị vô hiệu ở giao diện; gọi thẳng thì backend xoá lý do).
+ */
+export const lockReasonPatch = (reason: string): { locked: true; lockedReason?: string } => {
+    const r = reason.trim();
+    return r ? { locked: true, lockedReason: r } : { locked: true };
+};
