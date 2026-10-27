@@ -1,5 +1,6 @@
 // Link chia sẻ bộ thẻ (D9) + xuất bộ thẻ (UC-29), kế hoạch 2026-10-26 B1 / B2; mật khẩu link + CSV không tiêu đề (rà soát 27/10).
 import { apiClient } from "./apiClient.ts";
+import { datedFileName } from "../lib/dateFile.ts";
 
 const enc = encodeURIComponent;
 
@@ -53,7 +54,8 @@ export const downloadDeckExport = async (deckId: string, format: "csv" | "anki",
         params: { format, ...(opts.header ? { header: true } : {}) },
         responseType: "blob",
     });
-    const name = fileNameFromDisposition(res.headers["content-disposition"] as string | undefined, `bo-the.${format === "csv" ? "csv" : "txt"}`);
+    // B5.6: tên dự phòng (server không gửi Content-Disposition) cũng mang ngày theo giờ máy như tên server đặt
+    const name = fileNameFromDisposition(res.headers["content-disposition"] as string | undefined, datedFileName("bo-the", format === "csv" ? "csv" : "txt"));
     const url = URL.createObjectURL(res.data);
     const a = document.createElement("a");
     a.href = url;

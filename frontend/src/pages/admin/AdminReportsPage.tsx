@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { datedFileName } from "@/lib/dateFile";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
@@ -53,7 +54,7 @@ const DeckReportsPage: React.FC = () => {
         fetchReports({ status, deckId: q.get("deckId"), page, size })
       );
       downloadCsv(
-        `bao-cao-${status.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
+        datedFileName(`bao-cao-${status.toLowerCase()}`, "csv"),   // B5.6: ngày theo giờ máy, không phải UTC
         allRows.map((r) => ({
           id: r.id,
           bo_the: r.deckTitle ?? r.deckId,

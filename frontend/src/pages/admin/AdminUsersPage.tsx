@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { datedFileName } from "@/lib/dateFile";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
@@ -59,7 +60,7 @@ export const AdminUsersPage: React.FC = () => {
         ? mergeStaffPage(await fetchAllStaff(), 0, Number.MAX_SAFE_INTEGER).items
         : await fetchAllPages((page, size) => fetchAdminUsers({ ...baseFilter(), role: q.get("role"), page, size }));
       downloadCsv(
-        `nguoi-dung-${new Date().toISOString().slice(0, 10)}.csv`,
+        datedFileName("nguoi-dung", "csv"),   // B5.6: ngày theo giờ máy, không phải UTC
         rows.map((u) => ({
           id: u.id,
           email: u.email,
