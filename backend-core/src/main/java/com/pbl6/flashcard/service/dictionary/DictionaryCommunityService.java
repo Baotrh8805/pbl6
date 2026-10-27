@@ -2,13 +2,17 @@ package com.pbl6.flashcard.service.dictionary;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.pbl6.flashcard.dto.dictionary.DictDtos;
+import com.pbl6.flashcard.dto.moderation.ModerationDtos;
 import com.pbl6.flashcard.security.DictionaryRateLimiter;
 import com.pbl6.flashcard.security.ReportRateLimiter;
+import com.pbl6.flashcard.service.moderation.ModerationService;
+import com.pbl6.flashcard.service.moderation.ModerationStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
@@ -26,13 +30,15 @@ public class DictionaryCommunityService {
     private final DictionaryService dictionary;
     private final DictionaryRateLimiter limiter;
     private final ReportRateLimiter reportLimiter;
+    private final ModerationService moderation;
 
     public DictionaryCommunityService(DictionaryStore store, DictionaryService dictionary, DictionaryRateLimiter limiter,
-                                      ReportRateLimiter reportLimiter) {
+                                      ReportRateLimiter reportLimiter, ModerationService moderation) {
         this.store = store;
         this.dictionary = dictionary;
         this.limiter = limiter;
         this.reportLimiter = reportLimiter;
+        this.moderation = moderation;
     }
 
     // ------------------------------------------------------------ bình luận
@@ -45,24 +51,40 @@ public class DictionaryCommunityService {
         return new DictDtos.CommentPage(items, store.countComments(key, uid), p, s);
     }
 
+    /**
+     * Thêm bình luận rồi kiểm duyệt AI đồng bộ (spec 2026-10-27 đêm §4): BLOCKED vẫn trả 201 với moderation.status = BLOCKED (chỉ chủ
+     * thấy, sửa gửi lại được); FLAGGED đăng + chờ admin; ai-service lỗi → PENDING (job quét lại). Đang bị khoá bình luận → 429.
+     */
     @Transactional
     public DictDtos.Comment addComment(long uid, String rawKey, String content) {
-        String key = DictionaryKeys.parse(rawKey).raw();
+        DictionaryKeys.Key key = DictionaryKeys.parse(rawKey);
         String text = clean(content);
+        moderation.requireNotLocked(uid);
         if (store.commentsToday(uid) >= DAILY_COMMENT_CAP) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Bạn đã bình luận quá nhiều hôm nay.");
         }
         limiter.checkComment(uid);
-        long id = store.insertComment(key, uid, text);
+        long id = store.insertComment(key.raw(), uid, text);
+        screen(uid, id, key, text);
         return toDto(store.comment(id, uid).orElseThrow(), uid);
     }
 
+    /** Sửa = chấm lại từ đầu (bình luận AI chặn sửa được để gửi lại; admin ẩn thì vẫn 409). */
     @Transactional
     public DictDtos.Comment editComment(long uid, long id, String content) {
         DictionaryStore.Comment c = own(uid, id);
         if (c.hiddenAt() != null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Bình luận đã bị ẩn, không sửa được.");
-        store.updateComment(id, clean(content));
+        String text = clean(content);
+        moderation.requireNotLocked(uid);
+        store.updateComment(id, text);
+        screen(uid, id, DictionaryKeys.parse(c.entryKey()), text);
         return toDto(store.comment(id, uid).orElseThrow(), uid);
+    }
+
+    private void screen(long uid, long id, DictionaryKeys.Key key, String text) {
+        ModerationDtos.Screening s = moderation.screen(text, moderation.isSensitiveEntry(key));
+        moderation.store().apply(ModerationStore.KIND_COMMENT, id, s);
+        if (s.blocked()) moderation.afterBlocked(uid, Instant.now());
     }
 
     @Transactional
@@ -75,7 +97,7 @@ public class DictionaryCommunityService {
     public DictDtos.HelpfulResponse toggleHelpful(long uid, long id) {
         DictionaryStore.Comment c = store.comment(id, uid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bình luận."));
-        if (c.hiddenAt() != null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bình luận.");
+        if (c.invisibleToOthers()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bình luận.");
         if (c.userId() == uid) throw new ResponseStatusException(HttpStatus.CONFLICT, "Không thể đánh dấu hữu ích cho bình luận của mình.");
         int n = store.toggleVote(id, uid);
         boolean voted = store.comment(id, uid).map(DictionaryStore.Comment::votedByMe).orElse(false);
@@ -96,9 +118,12 @@ public class DictionaryCommunityService {
         return t;
     }
 
-    static DictDtos.Comment toDto(DictionaryStore.Comment c, long viewer) {
-        return new DictDtos.Comment(c.id(), c.entryKey(), c.userId(), c.displayName(), c.content(), c.helpfulCount(), c.votedByMe(),
-                c.userId() == viewer, c.hiddenAt() != null, c.createdAt(), c.updatedAt());
+    /** Người khác: FLAGGED → bản che từ + {masked}; chủ: nguyên văn + {status, spans, message}. */
+    DictDtos.Comment toDto(DictionaryStore.Comment c, long viewer) {
+        boolean mine = c.userId() == viewer;
+        return new DictDtos.Comment(c.id(), c.entryKey(), c.userId(), c.displayName(),
+                moderation.contentFor(c.content(), c.modStatus(), c.modSpans(), mine, false), c.helpfulCount(), c.votedByMe(),
+                mine, c.hiddenAt() != null, c.createdAt(), c.updatedAt(), moderation.infoFor(c.modStatus(), c.modSpans(), mine, false));
     }
 
     // ------------------------------------------------------------ báo cáo
@@ -167,7 +192,7 @@ public class DictionaryCommunityService {
     public DictDtos.Report reportComment(long uid, long commentId, DictDtos.CommentReportRequest req) {
         DictionaryStore.Comment c = store.comment(commentId, uid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bình luận."));
-        if (c.hiddenAt() != null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bình luận.");
+        if (c.invisibleToOthers()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bình luận.");
         if (c.userId() == uid) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể báo cáo bình luận của mình.");
         if (store.openCommentReportExists(uid, commentId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Bạn đã báo cáo bình luận này.");

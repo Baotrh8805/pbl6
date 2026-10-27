@@ -30,6 +30,13 @@ public class DeckRating {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    // Kiểm duyệt AI (V38): ghi bằng ModerationStore (JDBC); entity chỉ đọc
+    @Column(name = "mod_status", nullable = false, length = 8, insertable = false, updatable = false)
+    private String modStatus;
+
+    @Column(name = "mod_spans", insertable = false, updatable = false)
+    private String modSpans;
+
     public DeckRating() {}
 
     public Long getId() { return id; }
@@ -40,4 +47,6 @@ public class DeckRating {
     public void setComment(String comment) { this.comment = comment; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getModStatus() { return modStatus; }
+    public String getModSpans() { return modSpans; }
 }

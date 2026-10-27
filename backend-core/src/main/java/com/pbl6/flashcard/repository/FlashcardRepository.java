@@ -15,6 +15,9 @@ public interface FlashcardRepository extends JpaRepository<Flashcard, String> {
     /** Thẻ mẫu của bộ thẻ nổi bật. */
     Optional<Flashcard> findFirstByDeck_IdOrderByPositionAsc(String deckId);
 
+    /** HLR (V38): mọi thẻ của bộ theo vị trí (GET /api/decks/{id}/recall). */
+    List<Flashcard> findByDeck_IdOrderByPositionAsc(String deckId);
+
     long countByDeck_OwnerId(Long ownerId);
 
     /** Chỉ id + vị trí trong bộ (lộ trình: dựng fromPos/toPos của việc hôm nay cho nhiều lộ trình mà không nạp cả thẻ). */

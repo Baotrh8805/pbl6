@@ -48,10 +48,13 @@ public class AdminDictionaryService {
     private final AiRateLimiter aiLimiter;
     private final ApplicationEventPublisher events;
     private final ObjectMapper json;
+    private final com.pbl6.flashcard.service.moderation.ModerationService moderation;
 
     public AdminDictionaryService(DictionaryStore store, DictionaryService dictionary, DictionaryAiClient ai,
                                   DictionaryOverridePublisher publisher, AuditService audit, NotificationService notifications,
-                                  AiRateLimiter aiLimiter, ApplicationEventPublisher events, ObjectMapper json) {
+                                  AiRateLimiter aiLimiter, ApplicationEventPublisher events, ObjectMapper json,
+                                  com.pbl6.flashcard.service.moderation.ModerationService moderation) {
+        this.moderation = moderation;
         this.store = store;
         this.dictionary = dictionary;
         this.ai = ai;
@@ -137,7 +140,9 @@ public class AdminDictionaryService {
         admin.set("openReports", json.valueToTree(store.openEntryReports(key.raw()).stream()
                 .map(r -> DictionaryCommunityService.toDto(r, DictionaryCommunityService.termOf(json.createObjectNode(), key))).toList()));
         admin.set("comments", json.valueToTree(store.adminComments(null, null, key.raw(), 0, 20).stream()
-                .map(AdminDictionaryService::toDto).toList()));
+                .map(this::toDto).toList()));
+        // V38: mục từ nhạy cảm (công tắc admin hoặc nhãn JMdict) — bình luận thù ghét ở mục này chỉ gắn cờ, không chặn
+        e.set("sensitive", json.valueToTree(moderation.sensitiveInfo(key)));
         e.set("admin", admin);
         return e;
     }
@@ -405,7 +410,7 @@ public class AdminDictionaryService {
     public AdminPage<DictDtos.AdminComment> comments(String q, Boolean hidden, String entryKey, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, Math.min(size, 50));
-        return new AdminPage<>(store.adminComments(q, hidden, entryKey, p, s).stream().map(AdminDictionaryService::toDto).toList(),
+        return new AdminPage<>(store.adminComments(q, hidden, entryKey, p, s).stream().map(this::toDto).toList(),
                 store.adminCommentCount(q, hidden, entryKey), p, s);
     }
 
@@ -482,9 +487,10 @@ public class AdminDictionaryService {
                 h.reportId(), h.reason(), h.createdAt());
     }
 
-    static DictDtos.AdminComment toDto(DictionaryStore.AdminComment c) {
+    DictDtos.AdminComment toDto(DictionaryStore.AdminComment c) {
         return new DictDtos.AdminComment(c.id(), c.entryKey(), c.userId(), c.displayName(), c.email(), c.content(), c.helpfulCount(),
-                c.hiddenAt() != null, c.hiddenNote(), c.createdAt());
+                c.hiddenAt() != null, c.hiddenNote(), c.createdAt(), c.modStatus(),
+                moderation.store().parseSpans(c.modSpans()).stream().map(com.pbl6.flashcard.dto.moderation.ModerationDtos.Span::word).distinct().toList());
     }
 
     private static Map<String, Object> detail(String field, String old, String now) {

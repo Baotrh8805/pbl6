@@ -126,6 +126,7 @@ public class LearningPathService {
     private final UserRepository users;
     private final SettingsService settings;
     private final NotificationService notifications;
+    private final com.pbl6.flashcard.service.hlr.RecallService recall;
     private final InstanceId instance;
     // Bài kiểm tra chương dùng lại lượt quiz exam của bộ thẻ chương
     private final QuizAttemptService quizAttempts;
@@ -140,7 +141,9 @@ public class LearningPathService {
                                FolderService folderService, FolderRepository folders, FlashcardRepository flashcards,
                                UserRepository users, SettingsService settings, NotificationService notifications,
                                QuizAttemptService quizAttempts, PlatformTransactionManager txm, InstanceId instance,
+                               com.pbl6.flashcard.service.hlr.RecallService recall,
                                @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone) {
+        this.recall = recall;
         this.notifications = notifications;
         this.instance = instance;
         this.quizAttempts = quizAttempts;
@@ -1461,6 +1464,12 @@ public class LearningPathService {
             }
         }
         due.sort(Comparator.comparing(PathCard::dueAt).thenComparingInt(PathCard::seq));
+        // HLR (V38, D32): thẻ đến hạn xếp p nhớ thấp trước (một lời gọi theo lô); ai-service lỗi → giữ thứ tự dueAt
+        Map<String, Double> recallNow = due.isEmpty() ? Map.of() : recall.recallNow(uid, due.stream().map(PathCard::cardId).toList());
+        if (!recallNow.isEmpty()) {
+            due.sort(Comparator.comparingDouble((PathCard c) -> recallNow.getOrDefault(c.cardId(), 1.0))
+                    .thenComparing(PathCard::dueAt).thenComparingInt(PathCard::seq));
+        }
 
         List<PathCard> picked = new ArrayList<>();
         int nNew = 0;
@@ -1522,7 +1531,7 @@ public class LearningPathService {
             String mode = !c.learned() ? "new" : c.dueAt() != null && c.dueAt().isBefore(until) ? "due" : "cram";
             out.add(new SessionResponse.Card(f.getId(), deckId, c.chapterId(), ch != null ? ch.getTitle() : null,
                     f.getTerm(), f.getReading(), f.getReadingSegments(), f.getMeaning(), f.getHanViet(), f.getLevel(),
-                    f.getKind(), mode));
+                    f.getKind(), mode, recallNow.get(f.getId())));
         }
         return new SessionResponse(k, date, idx, ts.state(), new SessionResponse.Counts(nNew, nDue, nCatch, out.size()), out);
     }

@@ -34,6 +34,13 @@ public class Notification {
     public static final String DICT_REPORT_RESOLVED = "DICT_REPORT_RESOLVED";
     /** Từ điển (V32): bình luận của người học bị admin ẩn {commentId, entryKey, term, note}. */
     public static final String DICT_COMMENT_HIDDEN = "DICT_COMMENT_HIDDEN";
+    /**
+     * Kiểm duyệt AI (V38, spec 2026-10-27 đêm): bình luận bị chặn MUỘN bởi job quét lại {kind, id, entryKey | deckId, words};
+     * admin khôi phục bình luận AI đã chặn {kind, id, entryKey | deckId}; bị khoá bình luận 24 giờ {until}.
+     */
+    public static final String MOD_COMMENT_BLOCKED = "MOD_COMMENT_BLOCKED";
+    public static final String MOD_COMMENT_RESTORED = "MOD_COMMENT_RESTORED";
+    public static final String MOD_COMMENT_LOCKED = "MOD_COMMENT_LOCKED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

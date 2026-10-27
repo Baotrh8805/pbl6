@@ -299,13 +299,21 @@ public class DictionaryStore {
     // ------------------------------------------------------------------ bình luận
 
     public record Comment(long id, String entryKey, long userId, String displayName, String content, int helpfulCount,
-                          boolean votedByMe, Instant hiddenAt, String hiddenNote, Instant createdAt, Instant updatedAt) {}
+                          boolean votedByMe, Instant hiddenAt, String hiddenNote, Instant createdAt, Instant updatedAt,
+                          String modStatus, String modSpans) {
+        /** Người khác không thấy: admin ẩn hoặc AI chặn (V38). */
+        public boolean invisibleToOthers() { return hiddenAt != null || "BLOCKED".equals(modStatus); }
+    }
 
     private static RowMapper<Comment> commentMapper() {
         return (rs, i) -> new Comment(rs.getLong("id"), rs.getString("entry_key"), rs.getLong("user_id"),
                 rs.getString("display_name"), rs.getString("content"), rs.getInt("helpful_count"), rs.getBoolean("voted"),
-                inst(rs, "hidden_at"), rs.getString("hidden_note"), inst(rs, "created_at"), inst(rs, "updated_at"));
+                inst(rs, "hidden_at"), rs.getString("hidden_note"), inst(rs, "created_at"), inst(rs, "updated_at"),
+                rs.getString("mod_status"), rs.getString("mod_spans"));
     }
+
+    /** Điều kiện "người xem thấy được": không bị admin ẩn, không bị AI chặn (V38), hoặc là của chính mình. */
+    private static final String VISIBLE = "((c.hidden_at IS NULL AND c.mod_status <> 'BLOCKED') OR c.user_id = ?)";
 
     private static final String COMMENT_SELECT = "SELECT c.*, " + DISPLAY_NAME + " AS display_name, "
             + "EXISTS (SELECT 1 FROM dict_comment_votes v WHERE v.comment_id = c.id AND v.user_id = ?) AS voted "
@@ -314,18 +322,18 @@ public class DictionaryStore {
     /** Bình luận của một mục: ẩn thì chỉ chủ thấy; sort helpful | newest. */
     public List<Comment> comments(String key, long viewer, String sort, int page, int size) {
         String order = "helpful".equals(sort) ? "c.helpful_count DESC, c.created_at DESC" : "c.created_at DESC";
-        return jdbc.query(COMMENT_SELECT + "WHERE c.entry_key = ? AND (c.hidden_at IS NULL OR c.user_id = ?) ORDER BY " + order
+        return jdbc.query(COMMENT_SELECT + "WHERE c.entry_key = ? AND " + VISIBLE + " ORDER BY " + order
                 + ", c.id DESC LIMIT ? OFFSET ?", commentMapper(), viewer, key, viewer, size, (long) page * size);
     }
 
     public long countComments(String key, long viewer) {
-        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM dict_comments c WHERE c.entry_key = ? AND (c.hidden_at IS NULL "
-                + "OR c.user_id = ?)", Long.class, key, viewer);
+        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM dict_comments c WHERE c.entry_key = ? AND " + VISIBLE, Long.class, key, viewer);
         return n == null ? 0 : n;
     }
 
     public long countVisibleComments(String key) {
-        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM dict_comments WHERE entry_key = ? AND hidden_at IS NULL", Long.class, key);
+        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM dict_comments WHERE entry_key = ? AND hidden_at IS NULL "
+                + "AND mod_status <> 'BLOCKED'", Long.class, key);
         return n == null ? 0 : n;
     }
 
@@ -375,7 +383,8 @@ public class DictionaryStore {
     }
 
     public record AdminComment(long id, String entryKey, long userId, String displayName, String email, String content,
-                               int helpfulCount, Instant hiddenAt, String hiddenNote, Instant createdAt) {}
+                               int helpfulCount, Instant hiddenAt, String hiddenNote, Instant createdAt, String modStatus,
+                               String modSpans) {}
 
     public List<AdminComment> adminComments(String q, Boolean hidden, String entryKey, int page, int size) {
         StringBuilder where = new StringBuilder("WHERE 1=1");
@@ -387,7 +396,8 @@ public class DictionaryStore {
                 + "ON u.id = c.user_id " + where + " ORDER BY c.created_at DESC, c.id DESC LIMIT ? OFFSET ?",
                 (rs, i) -> new AdminComment(rs.getLong("id"), rs.getString("entry_key"), rs.getLong("user_id"),
                         rs.getString("display_name"), rs.getString("email"), rs.getString("content"), rs.getInt("helpful_count"),
-                        inst(rs, "hidden_at"), rs.getString("hidden_note"), inst(rs, "created_at")), args.toArray());
+                        inst(rs, "hidden_at"), rs.getString("hidden_note"), inst(rs, "created_at"), rs.getString("mod_status"),
+                        rs.getString("mod_spans")), args.toArray());
     }
 
     public long adminCommentCount(String q, Boolean hidden, String entryKey) {

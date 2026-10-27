@@ -25,9 +25,17 @@ public class ReviewService {
     private final FlashcardRepository flashcardRepository;
     private final DeckService deckService;
     private final LearningPathRepository paths;
+    private final com.pbl6.flashcard.service.hlr.HlrClient hlr;
+    private final com.pbl6.flashcard.service.hlr.RecallService recall;
+    private final com.pbl6.flashcard.repository.DeckRepository decks;
 
     public ReviewService(ReviewRepository reviewRepository, FlashcardRepository flashcardRepository,
-                         DeckService deckService, LearningPathRepository paths) {
+                         DeckService deckService, LearningPathRepository paths,
+                         com.pbl6.flashcard.service.hlr.HlrClient hlr, com.pbl6.flashcard.service.hlr.RecallService recall,
+                         com.pbl6.flashcard.repository.DeckRepository decks) {
+        this.hlr = hlr;
+        this.recall = recall;
+        this.decks = decks;
         this.reviewRepository = reviewRepository;
         this.flashcardRepository = flashcardRepository;
         this.deckService = deckService;
@@ -95,6 +103,8 @@ public class ReviewService {
             else reviewRepository.deleteOne(uid, cardId);
         }
         reviewRepository.deleteLog(last.getId());
+        // HLR (V38): số lượt / đúng / lượt gần nhất tính lại từ nhật ký còn lại (không cần cột prev_*)
+        if ("flip".equals(last.getSource()) && last.getPrevExists()) reviewRepository.recountFromLogs(uid, cardId);
     }
 
     private ReviewResponse apply(Long uid, String cardId, String grade, String source, Integer reactionMs, UUID pathId) {
@@ -120,6 +130,59 @@ public class ReviewService {
             reviewRepository.log(uid, cardId, grade, source, reactionMs, pathId, true, review.getReps(),
                     review.getIntervalDays(), review.getEase(), review.getDueAt());
         }
-        return ReviewResponse.of(SrsService.schedule(review, grade, now));
+        // HLR (V38, D32 — spec 2026-10-27 đêm §8.2): SM-2 lập lịch như cũ; model trí nhớ chỉ "phanh" (dự đoán quên dù vừa chấm
+        // không phải Lại → khoảng ôn không tăng) và cho p nhớ ngay trước lượt chấm để hiển thị. Số liệu seen / correct không tính cram.
+        int prevInterval = review.getIntervalDays();
+        int seenBefore = review.getSeen();
+        int correctBefore = review.getCorrect();
+        Instant lastBefore = review.getLastReviewedAt();
+        boolean again = "again".equals(grade);
+        SrsService.schedule(review, grade, now);
+        review.setSeen(seenBefore + 1);
+        review.setCorrect(correctBefore + (again ? 0 : 1));
+        review.setLastReviewedAt(now);
+        review.setHlrBrake(false);
+        review.setRecallP(null);
+        String scheduler = "sm2";
+        if (hlr.enabled() && review.getSeen() >= 2) {
+            double deltaBefore = com.pbl6.flashcard.service.hlr.RecallService.deltaDays(lastBefore, now);
+            List<com.pbl6.flashcard.service.hlr.HlrClient.Item> items = List.of(
+                    new com.pbl6.flashcard.service.hlr.HlrClient.Item("before", seenBefore, correctBefore, deltaBefore),
+                    new com.pbl6.flashcard.service.hlr.HlrClient.Item("after", review.getSeen(), review.getCorrect(), 0));
+            Optional<java.util.Map<String, com.pbl6.flashcard.service.hlr.HlrClient.Prediction>> res = hlr.tryPredict(items);
+            if (res.isPresent()) {
+                scheduler = "sm2+hlr";
+                com.pbl6.flashcard.service.hlr.HlrClient.Prediction before = res.get().get("before");
+                com.pbl6.flashcard.service.hlr.HlrClient.Prediction after = res.get().get("after");
+                if (before != null) review.setRecallP(before.recall());
+                if (after != null && after.forget() && !again) SrsService.brake(review, prevInterval, now);
+            }
+        }
+        return ReviewResponse.of(review, scheduler);
+    }
+
+    /**
+     * GET /api/decks/{id}/recall (V38): p nhớ dự đoán bây giờ của các thẻ đã học trong bộ (một lời gọi HLR theo lô ≤ 500 thẻ);
+     * ai-service lỗi / tắt → 503 HLR_UNAVAILABLE để giao diện ẩn chip.
+     */
+    @Transactional(readOnly = true)
+    public com.pbl6.flashcard.dto.deck.DeckRecallResponse deckRecall(Long uid, String deckId) {
+        com.pbl6.flashcard.model.Deck deck = decks.findById(deckId).filter(d -> deckService.canView(uid, d))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy bộ thẻ."));
+        List<String> cardIds = flashcardRepository.findByDeck_IdOrderByPositionAsc(deck.getId()).stream()
+                .map(com.pbl6.flashcard.model.Flashcard::getId).limit(com.pbl6.flashcard.service.hlr.HlrClient.MAX_BATCH).toList();
+        List<Review> rows = cardIds.isEmpty() ? List.of() : reviewRepository.findByUserIdAndCardIdIn(uid, cardIds);
+        int studied = (int) rows.stream().filter(r -> r.getSeen() > 0).count();
+        if (!recall.enabled()) throw new com.pbl6.flashcard.config.CodedStatusException(HttpStatus.SERVICE_UNAVAILABLE, "HLR_UNAVAILABLE", "Mô hình trí nhớ đang tắt.");
+        java.util.Map<String, com.pbl6.flashcard.service.hlr.HlrClient.Prediction> p = recall.predictNow(rows, Instant.now());
+        if (studied > 0 && p.isEmpty()) {
+            throw new com.pbl6.flashcard.config.CodedStatusException(HttpStatus.SERVICE_UNAVAILABLE, "HLR_UNAVAILABLE", "Dịch vụ AI chưa trả được dự đoán trí nhớ.");
+        }
+        List<com.pbl6.flashcard.dto.deck.DeckRecallResponse.Item> items = new java.util.ArrayList<>();
+        p.forEach((id, v) -> items.add(new com.pbl6.flashcard.dto.deck.DeckRecallResponse.Item(id, v.recall(), v.forget())));
+        items.sort(java.util.Comparator.comparingDouble(com.pbl6.flashcard.dto.deck.DeckRecallResponse.Item::recall));
+        Double avg = items.isEmpty() ? null : Math.round(items.stream().mapToDouble(com.pbl6.flashcard.dto.deck.DeckRecallResponse.Item::recall).average().orElse(0) * 1000) / 1000.0;
+        int soon = (int) items.stream().filter(i -> i.recall() < com.pbl6.flashcard.service.moderation.ModerationPolicy.FORGETTING_SOON).count();
+        return new com.pbl6.flashcard.dto.deck.DeckRecallResponse(cardIds.size(), studied, avg, soon, items);
     }
 }

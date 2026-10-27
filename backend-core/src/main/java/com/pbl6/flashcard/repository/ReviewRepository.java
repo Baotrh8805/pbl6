@@ -104,6 +104,25 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     @Query(value = "DELETE FROM reviews WHERE user_id = :uid AND card_id = :cardId", nativeQuery = true)
     int deleteOne(@Param("uid") Long uid, @Param("cardId") String cardId);
 
+    /**
+     * HLR (V38): tính lại seen / correct / last_reviewed_at từ nhật ký sau khi hoàn tác xoá một log (không cần cột prev_* mới);
+     * cờ phanh của lượt đã hoàn tác bỏ đi.
+     */
+    @Modifying
+    @Query(value = """
+            UPDATE reviews r
+            SET seen = l.seen, correct = l.correct, last_reviewed_at = l.last_at, hlr_brake = false
+            FROM (SELECT count(*) FILTER (WHERE source <> 'cram') AS seen,
+                         count(*) FILTER (WHERE source <> 'cram' AND grade <> 'again') AS correct,
+                         max(reviewed_at) FILTER (WHERE source <> 'cram') AS last_at
+                  FROM review_logs WHERE user_id = :uid AND card_id = :cardId) l
+            WHERE r.user_id = :uid AND r.card_id = :cardId
+            """, nativeQuery = true)
+    int recountFromLogs(@Param("uid") Long uid, @Param("cardId") String cardId);
+
+    /** HLR: thẻ đã học gần nhất của người dùng (insight "sắp quên", ≤ 300 thẻ). */
+    List<Review> findTop300ByUserIdAndSeenGreaterThanOrderByLastReviewedAtDesc(Long userId, int seen);
+
     @Modifying
     @Query(value = "DELETE FROM review_logs WHERE id = :logId", nativeQuery = true)
     int deleteLog(@Param("logId") long logId);

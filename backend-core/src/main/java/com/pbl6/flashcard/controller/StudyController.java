@@ -71,6 +71,13 @@ public class StudyController {
     }
 
     /** Hoàn tác lượt chấm mới nhất (lật / cram, trong 30 phút) của thẻ; 409 khi không còn gì để hoàn tác. */
+    /** HLR (V38): p nhớ dự đoán của thẻ đã học trong bộ; 503 HLR_UNAVAILABLE khi ai-service lỗi / tắt. */
+    @GetMapping("/decks/{deckId}/recall")
+    public com.pbl6.flashcard.dto.deck.DeckRecallResponse deckRecall(@AuthenticationPrincipal CustomUserDetails me,
+                                                                    @PathVariable String deckId) {
+        return reviewService.deckRecall(uid(me), deckId);
+    }
+
     @PostMapping("/reviews/undo")
     public ResponseEntity<Void> undoReview(@AuthenticationPrincipal CustomUserDetails me,
                                            @Valid @RequestBody UndoReviewRequest body) {

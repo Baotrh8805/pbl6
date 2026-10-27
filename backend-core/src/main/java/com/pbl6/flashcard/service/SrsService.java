@@ -36,6 +36,18 @@ public final class SrsService {
         return r;
     }
 
+    /**
+     * "Phanh" HLR (D32, spec 2026-10-27 đêm §8.2): gọi SAU {@link #schedule} khi model trí nhớ dự đoán "quên" (p &lt; 0,8235) dù vừa
+     * chấm không phải "Lại" — khoảng ôn không được tăng: giữ ≤ khoảng trước lượt chấm (tối thiểu 1 ngày). Không đổi ease / reps.
+     */
+    public static Review brake(Review review, int prevIntervalDays, Instant now) {
+        int days = Math.max(1, Math.min(review.getIntervalDays(), Math.max(1, prevIntervalDays)));
+        review.setIntervalDays(days);
+        review.setDueAt(now.plus(days, ChronoUnit.DAYS));
+        review.setHlrBrake(true);
+        return review;
+    }
+
     /** Cập nhật tại chỗ và trả về chính bản ghi đó. */
     public static Review schedule(Review review, String grade, Instant now) {
         boolean again = "again".equals(grade);

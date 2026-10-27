@@ -81,11 +81,13 @@ public class InsightService {
     private final QuizAttemptService quizAttempts;
     private final SettingsService settings;
     private final LearningPathService learningPaths;
+    private final com.pbl6.flashcard.service.hlr.RecallService recall;
     private final ZoneId zone;
 
     public InsightService(ReviewRepository reviews, FlashcardRepository flashcards, DeckRepository decks,
                           LearningPathRepository paths, UserRepository users, DeckService deckService,
                           QuizAttemptService quizAttempts, SettingsService settings, LearningPathService learningPaths,
+                          com.pbl6.flashcard.service.hlr.RecallService recall,
                           @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone) {
         this.reviews = reviews;
         this.flashcards = flashcards;
@@ -96,6 +98,7 @@ public class InsightService {
         this.quizAttempts = quizAttempts;
         this.settings = settings;
         this.learningPaths = learningPaths;
+        this.recall = recall;
         this.zone = ZoneId.of(zone);
     }
 
@@ -144,6 +147,8 @@ public class InsightService {
         Map<String, ReactionRow> reaction = new HashMap<>();
         for (ReactionRow r : reviews.medianReactionByCard(uid, since, SLOW_MIN_SAMPLES)) reaction.put(r.getCardId(), r);
         Map<String, Integer> quizWrong = quizAttempts.wrongAnswerCounts(uid, since);
+        // HLR (V38): "sắp quên" = p nhớ dự đoán < 0,7 trong 300 thẻ học gần nhất; ai-service lỗi → không có tín hiệu này
+        Map<String, Double> lowRecall = recall.lowRecall(uid);
 
         double slowLimit = slowLimit(personal);
         Set<String> ids = new LinkedHashSet<>();
@@ -151,6 +156,7 @@ public class InsightService {
         ids.addAll(lowEase.keySet());
         reaction.forEach((id, r) -> { if (r.getMedianMs() != null && r.getMedianMs() > slowLimit) ids.add(id); });
         quizWrong.forEach((id, n) -> { if (n >= QUIZ_MIN_WRONG) ids.add(id); });
+        ids.addAll(lowRecall.keySet());
         if (ids.isEmpty()) return List.of();
 
         Map<String, Review> state = new HashMap<>(lowEase);
@@ -166,10 +172,12 @@ public class InsightService {
             if (rr != null && rr.getMedianMs() != null && rr.getMedianMs() > slowLimit) reasons.add("slow");
             int wrong = quizWrong.getOrDefault(f.getId(), 0);
             if (wrong >= QUIZ_MIN_WRONG) reasons.add("quiz_wrong");
+            Double p = lowRecall.get(f.getId());
+            if (p != null) reasons.add("low_recall");
             out.add(new WeakCard(f.getId(), f.getDeck().getId(), f.getDeck().getTitle(), f.getTerm(), f.getReading(),
                     f.getMeaning(), f.getLevel(), f.getKind(), reasons, n, r == null ? null : r.getEase(),
                     r == null ? null : r.getIntervalDays(),
-                    rr == null || rr.getMedianMs() == null ? null : (int) Math.round(rr.getMedianMs()), wrong));
+                    rr == null || rr.getMedianMs() == null ? null : (int) Math.round(rr.getMedianMs()), wrong, p));
         }
         out.sort(Comparator.comparingInt((WeakCard c) -> c.reasons().size()).reversed()
                 .thenComparing(Comparator.comparingInt(WeakCard::againCount).reversed())

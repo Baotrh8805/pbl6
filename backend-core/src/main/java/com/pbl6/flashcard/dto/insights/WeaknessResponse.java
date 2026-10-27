@@ -21,7 +21,15 @@ public record WeaknessResponse(int total, List<WeakCard> cards, Groups groups, b
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record WeakCard(String cardId, String deckId, String deckTitle, String term, String reading, String meaning,
                            String level, String kind, List<String> reasons, int againCount, Double ease,
-                           Integer intervalDays, Integer medianReactionMs, int quizWrong) {}
+                           Integer intervalDays, Integer medianReactionMs, int quizWrong,
+                           /* HLR (V38): p nhớ dự đoán bây giờ; lý do low_recall khi &lt; 0,7 */ Double recall) {
+        public WeakCard(String cardId, String deckId, String deckTitle, String term, String reading, String meaning, String level,
+                        String kind, List<String> reasons, int againCount, Double ease, Integer intervalDays,
+                        Integer medianReactionMs, int quizWrong) {
+            this(cardId, deckId, deckTitle, term, reading, meaning, level, kind, reasons, againCount, ease, intervalDays,
+                    medianReactionMs, quizWrong, null);
+        }
+    }
 
     /** Nhóm theo khoá (level: "N5".."N1" | "Khác"; kind: vocab | grammar; kanji: một chữ Hán | "Khác"; deck: deckId + title). */
     @JsonInclude(JsonInclude.Include.NON_NULL)

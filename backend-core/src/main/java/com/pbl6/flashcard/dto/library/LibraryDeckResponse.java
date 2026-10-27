@@ -24,7 +24,12 @@ public record LibraryDeckResponse(String id, String title, String level, String 
     }
 
     /** Kết quả sau khi chấm sao. */
-    public record Rating(Double rating, long ratingsCount, int myRating) {}
+    /** moderation (V38): kết quả kiểm duyệt AI của bình luận vừa gửi (bỏ khi null: không có bình luận / sạch); rating vẫn trả null như trước. */
+    public record Rating(Double rating, long ratingsCount, int myRating,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         com.pbl6.flashcard.dto.moderation.ModerationDtos.Info moderation) {
+        public Rating(Double rating, long ratingsCount, int myRating) { this(rating, ratingsCount, myRating, null); }
+    }
 
     /** Bộ thẻ nổi bật + thẻ mẫu (thẻ đầu tiên) cho banner. */
     public record Featured(LibraryDeckResponse deck, CardResponse sampleCard) {}

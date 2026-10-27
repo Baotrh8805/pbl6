@@ -75,9 +75,13 @@ public class MnemonicService {
     private final MnemonicRateLimiter limiter;
     private final TransactionTemplate tx;
 
+    private final com.pbl6.flashcard.service.moderation.ModerationService moderation;
+
     public MnemonicService(KanjiMnemonicRepository repo, ContentAiClient ai, NlpService nlp, AuditService audit,
                            NotificationService notifications, MnemonicRateLimiter limiter,
-                           PlatformTransactionManager txManager) {
+                           PlatformTransactionManager txManager,
+                           com.pbl6.flashcard.service.moderation.ModerationService moderation) {
+        this.moderation = moderation;
         this.repo = repo;
         this.ai = ai;
         this.nlp = nlp;
@@ -151,7 +155,11 @@ public class MnemonicService {
         // Bộ của chữ lấy từ mẹo do ai-service sinh trước đó (nếu có) để hàng chờ duyệt hiện được bộ, không gọi thêm ai-service
         Integer radicalNo = repo.findFirstByKanjiAndRadicalNoIsNotNullOrderByCreatedAtDesc(ch)
                 .map(KanjiMnemonic::getRadicalNo).orElse(null);
-        return Mine.of(repo.save(new KanjiMnemonic(ch, radicalNo, body, KanjiMnemonic.SOURCE_USER, null, userId)));
+        KanjiMnemonic m = new KanjiMnemonic(ch, radicalNo, body, KanjiMnemonic.SOURCE_USER, null, userId);
+        // V38: AI chỉ gắn nhãn + từ đánh dấu cho hàng chờ admin (mẹo vốn đã duyệt tay), không tự từ chối; AI lỗi → chưa có nhãn
+        com.pbl6.flashcard.dto.moderation.ModerationDtos.Screening sc = moderation.screen(body, false);
+        if (sc.label() != null) m.setModeration(sc.label(), sc.score(), moderation.store().spansJson(sc.spans()), Instant.now());
+        return Mine.of(repo.save(m));
     }
 
     // ---------- admin ----------
@@ -261,7 +269,8 @@ public class MnemonicService {
         return rows.stream().map(m -> AdminItem.of(m,
                 m.getRadicalNo() == null ? null : radicals.getOrDefault(m.getRadicalNo(), new RadicalRef(m.getRadicalNo(), null, null)),
                 m.getCreatedBy() == null ? null : emails.get(m.getCreatedBy()),
-                m.getReviewedBy() == null ? null : emails.get(m.getReviewedBy()))).toList();
+                m.getReviewedBy() == null ? null : emails.get(m.getReviewedBy()),
+                moderation.store().parseSpans(m.getModSpans()).stream().map(com.pbl6.flashcard.dto.moderation.ModerationDtos.Span::word).distinct().toList())).toList();
     }
 
     /**

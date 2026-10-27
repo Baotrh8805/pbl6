@@ -84,6 +84,13 @@ public class AiServiceClient {
     /** Kiểm tra sức khoẻ cho dashboard admin: timeout ngắn, không dùng chung client đọc 3 phút. */
     private final RestClient healthHttp;
     private final RestClient nlpHttp;
+    /**
+     * Lời gọi "nhanh" (spec 2026-10-27 đêm): kiểm duyệt bình luận lúc gửi và dự đoán trí nhớ HLR lúc chấm thẻ — cả hai ≈ 0,1 s,
+     * có người dùng đang chờ và có đường dự phòng (PENDING / SM-2) nên không được treo tới 30 s.
+     */
+    static final Duration QUICK_CONNECT_TIMEOUT = Duration.ofSeconds(1);
+    static final Duration QUICK_READ_TIMEOUT = Duration.ofSeconds(3);
+    private final RestClient quickHttp;
     /** Nguồn ai_model_primary (Admin > Cấu hình); null = không đọc cấu hình, không bao giờ gửi model. */
     private final SettingsService settings;
 
@@ -115,6 +122,17 @@ public class AiServiceClient {
         interactive.setConnectTimeout(Duration.ofSeconds(5));
         interactive.setReadTimeout(readTimeout.compareTo(NLP_READ_TIMEOUT) < 0 ? readTimeout : NLP_READ_TIMEOUT);
         this.nlpHttp = b.clone().requestFactory(interactive).build();
+        SimpleClientHttpRequestFactory quickFactory = new SimpleClientHttpRequestFactory();
+        quickFactory.setConnectTimeout(QUICK_CONNECT_TIMEOUT);
+        quickFactory.setReadTimeout(readTimeout.compareTo(QUICK_READ_TIMEOUT) < 0 ? readTimeout : QUICK_READ_TIMEOUT);
+        this.quickHttp = b.clone().requestFactory(quickFactory).build();
+    }
+
+    /** POST JSON nhanh (kết nối 1 s, đọc 3 s): kiểm duyệt bình luận, dự đoán trí nhớ — caller luôn có đường dự phòng. */
+    public JsonNode postJsonQuick(String step, String path, Object body) {
+        return call(step, () -> quickHttp.post().uri(path)
+                .contentType(MediaType.APPLICATION_JSON).body(body)
+                .retrieve().body(JsonNode.class));
     }
 
     /**

@@ -31,7 +31,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
     public AuthService(AuthenticationManager authenticationManager, UserRepository userRepository, PasswordEncoder passwordEncoder,
                        RefreshTokenService refreshTokens, LoginAttemptLimiter loginLimiter, RegisterRateLimiter registerLimiter,
-                       SettingsService settings, EmailVerificationService verification) {
+                       SettingsService settings, EmailVerificationService verification,
+                       com.pbl6.flashcard.service.moderation.ModerationService moderation) {
+        this.moderation = moderation;
         this.settings = settings;
         this.verification = verification;
         this.authenticationManager = authenticationManager;
@@ -51,6 +53,7 @@ public class AuthService {
     private final RegisterRateLimiter registerLimiter;
     private final SettingsService settings;
     private final EmailVerificationService verification;
+    private final com.pbl6.flashcard.service.moderation.ModerationService moderation;
 
     public static final String EMAIL_TAKEN = "Email đã được sử dụng!";
     static final String REGISTERED = "Đăng ký tài khoản thành công!";
@@ -191,8 +194,10 @@ public class AuthService {
         return UserResponse.of(userRepository.save(user));
     }
 
+    /** V38: tên hiển thị công khai ở bình luận / đánh giá → AI gắn cờ hoặc chặn thì 400 NAME_REJECTED (AI lỗi thì cho qua). */
     public UserResponse updateProfile(String email, String fullName) {
         User user = findUser(email);
+        moderation.requireAcceptableName(fullName);
         user.setFullName(fullName);
         return UserResponse.of(userRepository.save(user));
     }

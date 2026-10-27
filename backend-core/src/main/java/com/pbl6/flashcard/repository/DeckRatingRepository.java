@@ -72,13 +72,17 @@ public interface DeckRatingRepository extends JpaRepository<DeckRating, Long> {
         String getComment();
         Instant getUpdatedAt();
         Boolean getMine();
+        /** V38: bình luận FLAGGED được che từ cho người khác; BLOCKED của người khác không có trong danh sách. */
+        String getModStatus();
+        String getModSpans();
     }
 
     /** Đánh giá của một bộ thẻ, mới nhất trước. Tên hiển thị = full_name, thiếu thì phần trước @ của email. */
     @Query(value = "SELECT COALESCE(NULLIF(trim(u.full_name), ''), split_part(u.email, '@', 1)) AS \"displayName\", "
             + "CAST(r.stars AS integer) AS \"stars\", r.comment AS \"comment\", r.updated_at AS \"updatedAt\", "
-            + "(r.user_id = :uid) AS \"mine\" "
+            + "(r.user_id = :uid) AS \"mine\", r.mod_status AS \"modStatus\", r.mod_spans AS \"modSpans\" "
             + "FROM deck_ratings r JOIN users u ON u.id = r.user_id WHERE r.deck_id = :deckId "
+            + "AND (r.mod_status <> 'BLOCKED' OR r.user_id = :uid) "
             + "ORDER BY r.updated_at DESC, r.id DESC LIMIT :limit OFFSET :offset", nativeQuery = true)
     List<Row> findRows(@Param("deckId") String deckId, @Param("uid") Long uid,
                        @Param("limit") int limit, @Param("offset") int offset);

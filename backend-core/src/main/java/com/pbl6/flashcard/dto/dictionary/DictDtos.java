@@ -28,8 +28,13 @@ public final class DictDtos {
 
     public record CommentRequest(@NotBlank @Size(max = 1000) String content) {}
 
+    /**
+     * moderation (V38): null khi CLEAN / đã admin xử lý; chủ thấy {status, spans, message}; người khác chỉ thấy {status FLAGGED,
+     * masked true} khi content là bản che từ. BLOCKED chỉ chủ thấy (người khác không nhận được bình luận).
+     */
     public record Comment(long id, String entryKey, long userId, String displayName, String content, int helpfulCount,
-                          boolean votedByMe, boolean mine, boolean hidden, Instant createdAt, Instant updatedAt) {}
+                          boolean votedByMe, boolean mine, boolean hidden, Instant createdAt, Instant updatedAt,
+                          com.pbl6.flashcard.dto.moderation.ModerationDtos.Info moderation) {}
 
     public record CommentPage(List<Comment> items, long total, int page, int size) {}
 
@@ -79,7 +84,9 @@ public final class DictDtos {
                           String actorEmail, Long reportId, String reason, Instant createdAt) {}
 
     public record AdminComment(long id, String entryKey, long userId, String displayName, String email, String content,
-                               int helpfulCount, boolean hidden, String hiddenNote, Instant createdAt) {}
+                               int helpfulCount, boolean hidden, String hiddenNote, Instant createdAt,
+                               /* V38: PENDING | CLEAN | FLAGGED | BLOCKED | REVIEWED + từ bị đánh dấu */
+                               String modStatus, List<String> modSpans) {}
 
     public record SyncResponse(long backendVersion, Long aiVersion, Integer aiCount, boolean ok) {}
 

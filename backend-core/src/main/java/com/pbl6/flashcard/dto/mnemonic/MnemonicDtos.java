@@ -44,10 +44,10 @@ public final class MnemonicDtos {
     /** Một mẹo của chính mình (cũng là response 201 của POST /api/kanji/mnemonics). */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Mine(UUID id, String kanji, String mnemonicVi, String source, String status, String reviewNote,
-                       Instant createdAt) {
+                       Instant createdAt, /* V38: nhãn AI 0 sạch / 1 xúc phạm / 2 thù ghét (null khi chưa chấm) */ Integer modLabel) {
         public static Mine of(KanjiMnemonic m) {
             return new Mine(m.getId(), m.getKanji(), m.getMnemonicVi(), m.getSource(), m.getStatus(), m.getReviewNote(),
-                    m.getCreatedAt());
+                    m.getCreatedAt(), m.getModLabel());
         }
     }
 
@@ -75,10 +75,14 @@ public final class MnemonicDtos {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record AdminItem(UUID id, String kanji, RadicalRef radical, String mnemonicVi, String source, String status,
                             String authorEmail, String generatedModel, Instant createdAt, String reviewedByEmail,
-                            Instant reviewedAt, String reviewNote) {
-        public static AdminItem of(KanjiMnemonic m, RadicalRef radical, String authorEmail, String reviewedByEmail) {
+                            Instant reviewedAt, String reviewNote,
+                            /* V38: nhãn AI + từ bị đánh dấu cho hàng chờ duyệt (null / rỗng khi chưa chấm) */
+                            Integer modLabel, Double modScore, java.util.List<String> modSpans) {
+        public static AdminItem of(KanjiMnemonic m, RadicalRef radical, String authorEmail, String reviewedByEmail,
+                                   java.util.List<String> modSpans) {
             return new AdminItem(m.getId(), m.getKanji(), radical, m.getMnemonicVi(), m.getSource(), m.getStatus(), authorEmail,
-                    m.getGeneratedModel(), m.getCreatedAt(), reviewedByEmail, m.getReviewedAt(), m.getReviewNote());
+                    m.getGeneratedModel(), m.getCreatedAt(), reviewedByEmail, m.getReviewedAt(), m.getReviewNote(),
+                    m.getModLabel(), m.getModScore(), modSpans);
         }
     }
 }

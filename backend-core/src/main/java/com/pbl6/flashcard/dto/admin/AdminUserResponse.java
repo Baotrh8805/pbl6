@@ -29,5 +29,7 @@ public final class AdminUserResponse {
                          /* hợp đồng API đợt 2 §3: false -> nút "Xác thực email" (POST /api/admin/users/{id}/verify-email) */
                          boolean emailVerified,
                          /* như Row.deleted */
-                         boolean deleted) {}
+                         boolean deleted,
+                         /* V38: khoá bình luận mềm tới mốc (null = không); số bình luận bị AI chặn 30 ngày */
+                         Instant commentLockedUntil, long moderationBlocked30d) {}
 }

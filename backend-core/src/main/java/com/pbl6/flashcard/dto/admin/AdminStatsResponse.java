@@ -19,7 +19,9 @@ public record AdminStatsResponse(Users users, Decks decks, long cards, Extractio
                                  /* Từ điển (V32): báo cáo từ điển đang mở (badge) + số liệu kho nghĩa Việt */
                                  long openDictReports, com.pbl6.flashcard.dto.dictionary.DictDtos.DictStats dict,
                                  /* B3: lượt ôn trong / ngoài lộ trình trong cửa sổ days (trừ học nhanh) */
-                                 PathEffect pathEffect) {
+                                 PathEffect pathEffect,
+                                 /* V38: bình luận AI gắn cờ + chặn chờ admin (badge Kiểm duyệt AI) */
+                                 long openModeration) {
 
     /** staffPendingSetup: staff chưa đổi mật khẩu seed (dashboard cảnh báo). */
     public record Users(long total, long new7d, long new30d, long locked, long premium, long active7d, long staffPendingSetup) {}

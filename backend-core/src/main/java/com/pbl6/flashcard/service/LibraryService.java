@@ -23,9 +23,12 @@ public class LibraryService {
     private final DeckRepository deckRepository;
     private final FlashcardRepository flashcardRepository;
     private final DeckRatingRepository ratingRepository;
+    private final com.pbl6.flashcard.service.moderation.ModerationService moderation;
 
     public LibraryService(DeckRepository deckRepository, FlashcardRepository flashcardRepository,
-                          DeckRatingRepository ratingRepository) {
+                          DeckRatingRepository ratingRepository,
+                          com.pbl6.flashcard.service.moderation.ModerationService moderation) {
+        this.moderation = moderation;
         this.deckRepository = deckRepository;
         this.flashcardRepository = flashcardRepository;
         this.ratingRepository = ratingRepository;
@@ -69,9 +72,23 @@ public class LibraryService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không thể tự đánh giá bộ thẻ của mình.");
         }
         String cleaned = comment == null || comment.isBlank() ? null : comment.strip();
+        if (cleaned != null) moderation.requireNotLocked(uid);
         ratingRepository.upsert(deckId, uid, (short) stars, cleaned);
+        // V38: kiểm duyệt AI bình luận (sao luôn được lưu); BLOCKED chỉ chủ thấy, FLAGGED che từ cho người khác
+        com.pbl6.flashcard.dto.moderation.ModerationDtos.Info info = null;
+        com.pbl6.flashcard.model.DeckRating mine = ratingRepository.findByDeckIdAndUserId(deckId, uid).orElse(null);
+        if (mine != null) {
+            if (cleaned == null) {
+                moderation.store().clearRating(mine.getId());
+            } else {
+                com.pbl6.flashcard.dto.moderation.ModerationDtos.Screening sc = moderation.screen(cleaned, false);
+                moderation.store().apply(com.pbl6.flashcard.service.moderation.ModerationStore.KIND_RATING, mine.getId(), sc);
+                if (sc.blocked()) moderation.afterBlocked(uid, java.time.Instant.now());
+                info = moderation.infoFor(sc.status(), moderation.store().spansJson(sc.spans()), true, false);
+            }
+        }
         DeckRatingRepository.Summary s = ratingRepository.summary(deckId);
-        return new LibraryDeckResponse.Rating(LibraryDeckResponse.round1(s.getRating()), s.getRatingsCount(), stars);
+        return new LibraryDeckResponse.Rating(LibraryDeckResponse.round1(s.getRating()), s.getRatingsCount(), stars, info);
     }
 
     /** Xoá đánh giá của chính mình; chưa đánh giá thì 404. */
@@ -92,8 +109,12 @@ public class LibraryService {
         DeckRatingRepository.Summary s = ratingRepository.summary(deckId);
         DeckRatingsResponse.Mine mine = ratingRepository.findByDeckIdAndUserId(deckId, uid)
                 .map(r -> new DeckRatingsResponse.Mine(r.getStars(), r.getComment())).orElse(null);
-        List<DeckRatingsResponse.Item> items = ratingRepository.findRows(deckId, uid, size, page * size)
-                .stream().map(DeckRatingsResponse.Item::of).toList();
+        List<DeckRatingsResponse.Item> items = ratingRepository.findRows(deckId, uid, size, page * size).stream().map(r -> {
+            DeckRatingsResponse.Item it = DeckRatingsResponse.Item.of(r);
+            if (r.getComment() == null) return it;
+            return it.withComment(moderation.contentFor(r.getComment(), r.getModStatus(), r.getModSpans(), it.mine(), false),
+                    moderation.infoFor(r.getModStatus(), r.getModSpans(), it.mine(), false));
+        }).toList();
         return new DeckRatingsResponse(LibraryDeckResponse.round1(s.getRating()), s.getRatingsCount(), mine, items,
                 page, size);
     }

@@ -70,6 +70,10 @@ public class User {
     @Column(name = "email_verified_at")
     private java.time.Instant emailVerifiedAt;
 
+    /** Khoá bình luận mềm (V38): 3 lần bị AI chặn / 24 giờ → không bình luận / đánh giá tới mốc này; admin mở sớm. */
+    @Column(name = "comment_locked_until")
+    private java.time.Instant commentLockedUntil;
+
     public User() {}
 
     /** Email so khớp không phân biệt hoa thường: lưu và tra cứu luôn ở dạng này. */
@@ -125,6 +129,8 @@ public class User {
     public void setLockedReason(String lockedReason) { this.lockedReason = lockedReason; }
     public java.time.Instant getEmailVerifiedAt() { return emailVerifiedAt; }
     public void setEmailVerifiedAt(java.time.Instant emailVerifiedAt) { this.emailVerifiedAt = emailVerifiedAt; }
+    public java.time.Instant getCommentLockedUntil() { return commentLockedUntil; }
+    public void setCommentLockedUntil(java.time.Instant commentLockedUntil) { this.commentLockedUntil = commentLockedUntil; }
 
     /** Staff còn phải đổi mật khẩu seed: chỉ được dùng /api/auth/** để hoàn tất. */
     @JsonIgnore

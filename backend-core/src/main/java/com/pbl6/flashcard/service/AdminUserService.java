@@ -37,11 +37,14 @@ public class AdminUserService {
     private final RefreshTokenService refreshTokens;
     private final AuditService audit;
     private final EmailVerificationTokenRepository verificationTokens;
+    private final com.pbl6.flashcard.service.moderation.ModerationStore moderationStore;
 
     public AdminUserService(UserRepository users, DeckRepository decks, FlashcardRepository cards,
                             ExtractionJobRepository jobs, QuizResultRepository quizzes, RefreshTokenRepository sessions,
                             RefreshTokenService refreshTokens, AuditService audit, NotificationService notifications,
-                            EmailVerificationTokenRepository verificationTokens) {
+                            EmailVerificationTokenRepository verificationTokens,
+                            com.pbl6.flashcard.service.moderation.ModerationStore moderationStore) {
+        this.moderationStore = moderationStore;
         this.notifications = notifications;
         this.verificationTokens = verificationTokens;
         this.users = users;
@@ -84,7 +87,9 @@ public class AdminUserService {
                 jobs.countByUserId(u.getId()), jobs.countByUserIdAndCreatedAtAfter(u.getId(), now.minus(Duration.ofHours(24))),
                 quizzes.countByUserId(u.getId()), users.lastReviewAt(u.getId()),
                 sessions.countByUserIdAndExpiresAtAfter(u.getId(), now), u.isMustChangePassword(), u.getEmailVerifiedAt() != null,
-                AccountDeletionService.isDeleted(u));
+                AccountDeletionService.isDeleted(u),
+                u.getCommentLockedUntil() != null && u.getCommentLockedUntil().isAfter(now) ? u.getCommentLockedUntil() : null,
+                moderationStore.countBlockedSince(u.getId(), now.minus(Duration.ofDays(30))));
     }
 
     /**
@@ -154,6 +159,20 @@ public class AdminUserService {
                 notifications.notify(target.getId(), com.pbl6.flashcard.model.Notification.PREMIUM_CHANGED, p);
             }
         }
+        // V38: khoá / mở khoá bình luận mềm (false = mở sớm; true = khoá 24 giờ từ bây giờ)
+        if (req.commentLocked() != null) {
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+            boolean lockedNow = target.getCommentLockedUntil() != null && target.getCommentLockedUntil().isAfter(now);
+            if (req.commentLocked() != lockedNow) {
+                Instant until = req.commentLocked() ? now.plus(com.pbl6.flashcard.service.moderation.ModerationPolicy.LOCK_FOR) : null;
+                changes.putAll(AuditService.diff("commentLocked", lockedNow, req.commentLocked()));
+                target.setCommentLockedUntil(until);
+                if (until != null) {
+                    notifications.notify(target.getId(), com.pbl6.flashcard.model.Notification.MOD_COMMENT_LOCKED,
+                            Map.of("until", until.toString(), "byAdmin", true));
+                }
+            }
+        }
         if (limitGiven && !Objects.equals(newLimit, target.getExtractionDailyLimit())) {
             changes.putAll(AuditService.diff("extractionDailyLimit", target.getExtractionDailyLimit(), newLimit));
             target.setExtractionDailyLimit(newLimit);
@@ -163,6 +182,7 @@ public class AdminUserService {
             users.save(target);
             String action = changes.containsKey("locked") ? (Boolean.TRUE.equals(req.locked()) ? "USER_LOCK" : "USER_UNLOCK")
                     : changes.containsKey("lockedReason") ? "USER_LOCK_REASON"
+                    : changes.containsKey("commentLocked") ? (Boolean.TRUE.equals(req.commentLocked()) ? "USER_COMMENT_LOCK" : "USER_COMMENT_UNLOCK")
                     : changes.containsKey("premium") ? "USER_PREMIUM" : "USER_LIMIT";
             audit.log(actor.getId(), action, "USER", String.valueOf(id), changes);
         }

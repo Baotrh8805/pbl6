@@ -36,10 +36,13 @@ public class HousekeepingJob {
     private final UserRepository users;
     private final NotificationService notifications;
     private final EmailVerificationTokenRepository verificationTokens;
+    private final com.pbl6.flashcard.service.moderation.ModerationStore moderation;
 
     public HousekeepingJob(RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
                            ExtractionJobRepository jobs, UserRepository users, NotificationService notifications,
-                           EmailVerificationTokenRepository verificationTokens) {
+                           EmailVerificationTokenRepository verificationTokens,
+                           com.pbl6.flashcard.service.moderation.ModerationStore moderation) {
+        this.moderation = moderation;
         this.verificationTokens = verificationTokens;
         this.refreshTokens = refreshTokens;
         this.resetTokens = resetTokens;
@@ -79,11 +82,15 @@ public class HousekeepingJob {
         // Thêm ở cuối mảng: chỉ số cũ (HousekeepingIT, log) giữ nguyên nghĩa
         int g = verificationTokens.deleteExpired(now);
         int h = deleteStaleUnverified(now);
+        // V38: bình luận AI chặn mà admin không xử lý quá 30 ngày (spec 2026-10-27 đêm §5): xoá bình luận từ điển, xoá trắng
+        // bình luận đánh giá (giữ sao)
+        int[] purged = moderation.purgeBlocked(now.minus(com.pbl6.flashcard.service.moderation.ModerationPolicy.BLOCKED_TTL));
+        int i = purged[0] + purged[1];
         log.info("Housekeeping: xoá {} refresh token, {} reset token, {} job bóc tách cũ; {} Premium hết hạn; "
                 + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi; xoá {} token xác thực email; "
-                + "xoá {} tài khoản chưa xác thực quá 48 giờ",
-                a, b, c, d, e, f, g, h);
-        return new int[] {a, b, c, d, e, f, g, h};
+                + "xoá {} tài khoản chưa xác thực quá 48 giờ; xoá {} bình luận AI chặn quá 30 ngày",
+                a, b, c, d, e, f, g, h, i);
+        return new int[] {a, b, c, d, e, f, g, h, i};
     }
 
     /**

@@ -33,6 +33,23 @@ public class Review {
     @Column(name = "due_at", nullable = false)
     private Instant dueAt;
 
+    // HLR (V38, spec 2026-10-27 đêm §8): số lượt đã chấm / đúng (không tính học nhanh), lượt gần nhất, p nhớ dự đoán ngay trước
+    // lượt chấm gần nhất (null khi chưa gọi được HLR), cờ "phanh" (lượt gần nhất giữ khoảng ôn vì HLR dự đoán quên)
+    @Column(nullable = false)
+    private int seen;
+
+    @Column(nullable = false)
+    private int correct;
+
+    @Column(name = "last_reviewed_at")
+    private Instant lastReviewedAt;
+
+    @Column(name = "recall_p")
+    private Float recallP;
+
+    @Column(name = "hlr_brake", nullable = false)
+    private boolean hlrBrake;
+
     public Review() {}
 
     public Long getId() { return id; }
@@ -55,4 +72,15 @@ public class Review {
 
     public Instant getDueAt() { return dueAt; }
     public void setDueAt(Instant dueAt) { this.dueAt = dueAt; }
+    public int getSeen() { return seen; }
+    public void setSeen(int seen) { this.seen = seen; }
+    public int getCorrect() { return correct; }
+    public void setCorrect(int correct) { this.correct = correct; }
+    public Instant getLastReviewedAt() { return lastReviewedAt; }
+    public void setLastReviewedAt(Instant lastReviewedAt) { this.lastReviewedAt = lastReviewedAt; }
+    /** Cột real (float4): làm tròn 4 chữ số để response trước và sau khi đọc lại từ DB cùng một giá trị (0,55 thay vì 0,5500000119). */
+    public Double getRecallP() { return recallP == null ? null : Math.round(recallP.doubleValue() * 10_000) / 10_000.0; }
+    public void setRecallP(Double recallP) { this.recallP = recallP == null ? null : recallP.floatValue(); }
+    public boolean isHlrBrake() { return hlrBrake; }
+    public void setHlrBrake(boolean hlrBrake) { this.hlrBrake = hlrBrake; }
 }

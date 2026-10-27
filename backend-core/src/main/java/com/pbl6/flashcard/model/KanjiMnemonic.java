@@ -60,6 +60,20 @@ public class KanjiMnemonic {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 
+    // Kiểm duyệt AI (V38, spec 2026-10-27 đêm): nhãn 0 sạch / 1 xúc phạm / 2 thù ghét + từ bị đánh dấu (JSON) cho hàng chờ admin;
+    // mẹo nhớ vốn đã duyệt tay nên AI không tự từ chối
+    @Column(name = "mod_label")
+    private Integer modLabel;
+
+    @Column(name = "mod_score")
+    private Float modScore;
+
+    @Column(name = "mod_spans")
+    private String modSpans;
+
+    @Column(name = "mod_at")
+    private Instant modAt;
+
     public KanjiMnemonic() {}
 
     public KanjiMnemonic(String kanji, Integer radicalNo, String mnemonicVi, String source, String generatedModel, Long createdBy) {
@@ -85,4 +99,14 @@ public class KanjiMnemonic {
     public String getReviewNote() { return reviewNote; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Integer getModLabel() { return modLabel; }
+    public Double getModScore() { return modScore == null ? null : modScore.doubleValue(); }
+    public String getModSpans() { return modSpans; }
+    public Instant getModAt() { return modAt; }
+    public void setModeration(Integer label, Double score, String spans, Instant at) {
+        this.modLabel = label;
+        this.modScore = score == null ? null : score.floatValue();
+        this.modSpans = spans;
+        this.modAt = at;
+    }
 }

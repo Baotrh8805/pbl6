@@ -24,5 +24,7 @@ public record SessionResponse(String kind, LocalDate date, int dayIndex, String 
      */
     public record Card(String cardId, String deckId, UUID chapterId, String chapterTitle, String term, String reading,
                        List<Map<String, String>> readingSegments, String meaning, String hanViet, String level,
-                       String kind, String mode) {}
+                       String kind, String mode,
+                       /* HLR (V38): p nhớ dự đoán lúc mở phiên, chỉ thẻ đến hạn và khi ai-service trả được; thẻ đến hạn xếp p thấp trước */
+                       Double recall) {}
 }

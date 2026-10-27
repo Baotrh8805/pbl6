@@ -40,6 +40,7 @@ public class AdminStatsService {
     private final ZoneId zone;
     private final String version;
     private final String backupMarker;
+    private final com.pbl6.flashcard.service.moderation.ModerationStore moderationStore;
     static final Duration BACKUP_STALE_AFTER = Duration.ofHours(48);
 
     public AdminStatsService(UserRepository users, DeckRepository decks, FlashcardRepository cards,
@@ -48,6 +49,7 @@ public class AdminStatsService {
                              MnemonicService mnemonics, AppealService appeals,
                              com.pbl6.flashcard.service.dictionary.AdminDictionaryService dictionary,
                              PathEffectService pathEffect, MailService mail,
+                             com.pbl6.flashcard.service.moderation.ModerationStore moderationStore,
                              @Value("${app.learning-path.zone:Asia/Ho_Chi_Minh}") String zone,
                              @Value("${app.version:dev}") String version,
                              @Value("${app.backup.marker:}") String backupMarker) {
@@ -68,6 +70,7 @@ public class AdminStatsService {
         this.zone = ZoneId.of(zone);
         this.version = version;
         this.backupMarker = backupMarker;
+        this.moderationStore = moderationStore;
     }
 
     @Transactional(readOnly = true)
@@ -103,7 +106,7 @@ public class AdminStatsService {
                         paths.countBySourceType(LearningPath.SOURCE_REMEDIAL), paths.countByStatus(LearningPath.DRAFT)),
                 questionBank.countOpenFlags(), mnemonics.countPending(), appeals.countOpen(),
                 aiStats(since), ocrSeries(since, from, days), dictionary.countOpenReports(), dictionary.stats(),
-                pathEffect.global(since));
+                pathEffect.global(since), moderationStore.counts().open());
     }
 
     /** G6: hiệu suất engine đọc văn bản + bước dịch nghĩa, job tạo trong cửa sổ {@code days}. */
