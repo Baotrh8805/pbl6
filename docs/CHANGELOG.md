@@ -1,5 +1,52 @@
 # Nhật ký thay đổi
 
+## 27/10/2026 (tối): B5–B9 của kế hoạch 26/10 — nợ kỹ thuật, failOrphans theo instance, độ phủ, smoke 2.0, tài liệu
+Hai migration chỉ thêm cột: **V36** `extraction_items.doc_level`, **V37** `extraction_jobs.instance_id` + `learning_paths.instance_id`.
+
+**B5 nợ kỹ thuật nhỏ** (mỗi mục một commit)
+- B5.1 (LC-04): thuật ngữ / cách đọc thẻ lưu và so trùng sau **NFKC + trim** (ｶﾀｶﾅ = カタカナ, " 学校 " = "学校"); thuật ngữ trùng
+  với thẻ đang có hoặc trong cùng lô → **409 `DUPLICATE_TERM`** ở tạo bộ, thêm lô (`?allowDuplicate=true`) và PUT bộ (chỉ soát thẻ
+  mới, bộ cũ vốn có thẻ trùng vẫn sửa được); `DeckRequest.allowDuplicate` cho qua. Bóc tách / lộ trình tạo bộ nội bộ luôn cho phép
+  trùng. Test `DeckCardsIT`.
+- B5.2: lưu **cấp tài liệu khai báo** `doc_level` (V36, từ `docLevel` của ai-service); "Kiểm tra lại" mâu thuẫn giờ đánh giá lại cả
+  **level** (từ vựng) và **grammar** (mẫu ngữ pháp) cho item có `doc_level`, gửi `docLevel` sang ai-service; job cũ không có cột
+  giữ cảnh báo cũ. Test `ConflictIT`.
+- B5.3 (ai-service): làm sạch CSV JLPT lúc nạp (`classifier.clean_row`): bỏ "(する)" thừa ở cách đọc n5 (結婚 けっこん), bỏ đuôi
+  する lẫn vào cách đọc danh từ (運動 うんどうする → うんどう, 30 dòng; động từ đọc する như 擦る giữ nguyên), đảo lại hai cột
+  `n4.csv:255` (あいさつする,挨拶), cặp sai 下る/さがる → 下がる. Test từng quy tắc + trên dữ liệu thật.
+- B5.4: "Lưu" cài đặt lộ trình đi qua `runOnce` (hai lần bấm chỉ một PATCH).
+- B5.5: Admin > Người dùng: tài khoản **đang khoá** có ô "Đổi lý do khoá" (PATCH `{locked: true, lockedReason}`, audit
+  `USER_LOCK_REASON`); hàm thuần `lockReasonPatch` + selfcheck.
+- B5.6: tên tệp CSV xuất (Admin báo cáo, người dùng; tên dự phòng khi xuất bộ thẻ) theo **giờ máy** (`lib/dateFile.ts`) thay vì
+  UTC của `toISOString` (23:30 giờ VN không còn thành ngày hôm sau); selfcheck chạy với `TZ=Asia/Saigon`.
+- B5.7: bỏ dịch vụ **Redis** khỏi `docker-compose.yml` (không code nào dùng); **Neo4j giữ lại** (D30 dùng thật, khác kế hoạch gốc);
+  backend ghi WARN lúc khởi động khi `AI_SERVICE_KEY` rỗng ở profile khác e2e / test (`config/AiServiceKeyWarning`).
+- B5.8: chương "chưa tới ngày" (sau khi cân lại lịch) mà có điểm kiểm tra trượt vẫn hiện dải **"Chưa đạt N% — Làm lại"**; dải LP-15
+  ở trang bộ thẻ so `chapters[].deckId` của mọi lộ trình ACTIVE (`activePathIds`) nên bộ **đã rời thư mục lộ trình** vẫn được nhắc.
+- B5.9: dọn lớp "endpoint chưa có" của đợt 2 (`SERVER_PENDING_MESSAGE`, `isEndpointMissing`, `pendingAware`, `rethrow`,
+  `AdminPendingNotice`, `isPendingError`) và `ComingSoonBadge` ở 24 tệp: backend đã đủ endpoint nên 404 / 405 là lỗi thật, hiện
+  đúng câu của server; selfcheck tương ứng rút gọn.
+
+**B8 `failOrphans` theo instance** (V37): mỗi backend có `app.instance-id` (biến `INSTANCE_ID`, mặc định hostname) ghi vào job bóc tách
+(lúc tạo, chạy lại, bắt đầu chạy) và lộ trình PROCESSING. Khởi động lại chỉ đánh FAILED việc dở dang **của chính instance** hoặc dòng
+chưa ghi instance (trước V37) quá **30 phút**; nhiều backend chung một DB không đánh hỏng việc đang chạy của nhau (trước đây mọi job
+QUEUED / RUNNING đều bị FAILED). Test `OrphanJobsIT` (job / lộ trình của mình, của instance khác, chưa ghi instance cũ / mới).
+
+**B6 CI, độ phủ**: `jacoco-maven-plugin` 0.8.13 (`prepare-agent` + `report` ở pha test, chỉ đo `com/pbl6/**`, không ngưỡng) → báo cáo
+`backend-core/target/site/jacoco/index.html`; CI tải lên artifact `jacoco-report` sau job backend. Lần đo đầu (598 test, 27/10):
+**90 % lệnh, 77 % nhánh, 92 % dòng**, 9/402 lớp chưa chạm — ghi ở tài liệu tổng kết 19/10 §4.1. Job ai-service trên CI đã có pytest từ trước.
+
+**B7 smoke / e2e 2.0**: `smoke-learning-path.mjs` kích hoạt có trần thẻ + ngày học → `/session` → chấm có `reactionMs` + `pathId`
+(ngoài khoảng → 400) → cân lại lịch → kiểm tra chương → `complete` 409 khi còn thẻ → `today-summary` + `/insights/next` → bổ khuyết
+(201 hoặc 400 khi chưa đủ thẻ yếu). `smoke-admin.mjs` thêm mẹo nhớ (gửi → hàng chờ → duyệt → mẹo công khai), ngân hàng câu hỏi, nguồn
+tri thức chuẩn (tải → list → chi tiết → lưu trữ → xoá), khiếu nại (khoá → khiếu nại → giải quyết UNLOCK → đăng nhập lại), từ điển
+admin (stats / hàng chờ / tìm). `npm run e2e` chạy thêm `smoke-admin.mjs`.
+
+**B9 tài liệu đi sau code**: mục 21/10 bên dưới (OCR hạ cấp, Gemini quá tải, sửa văn bản gốc lộ trình, V30, secret); `LEARNING_PATH.md`
+cập nhật lên 2.0 (trạng thái, hạn chế, kiểm tay, "Trống", `quizPassPct`, `LEARNING_PATH_CHAPTER_RETRY`); `CODEBASE_MAP.md`
+(`/admin/account`, `selfcheck/manual.ts`, mục B5–B8); `README.md` 2.2 (`--only unihan_def`, 3 file overrides); `Plan/README.md` cột trạng
+thái; tài liệu tổng kết 19/10 §7.3 đóng từng dòng; `quyet-dinh-da-chot.md` thêm D13, sửa D11; checklist bỏ câu "chưa kiểm tay".
+
 ## 27/10/2026 (chiều): Đồ thị tri thức trên Neo4j + GraphRAG (UC-34, UC-35) — quyết định D30
 Thay quyết định 19/10 ("GraphRAG / Neo4j ngoài phạm vi") bằng **D30: làm đúng đề cương** — Neo4j thật, đồng bộ Postgres → Neo4j,
 truy vấn Cypher, hỏi đáp GraphRAG. Spec [Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md),
@@ -210,6 +257,17 @@ Spec / kế hoạch: [Plan/specs/2026-10-25-thao-tac-hoc-the-design.md](Plan/spe
   hoàn tác (quá 30 phút, lượt quiz, lượt ghi trước V31, lượt của người khác). V31 thêm `review_logs.prev_*` (lịch ngay trước lượt chấm);
   hoàn tác ghi lại lịch cũ (hoặc xoá dòng `reviews` nếu là lượt đầu) và xoá log, nên heatmap / chuỗi ngày không đếm lượt đã bỏ.
 - Test: `ReviewSrsIT` thêm 3 test hoàn tác; `scripts/selfcheck/study.ts`.
+
+## 21/10/2026: OCR hạ cấp, Gemini quá tải, sửa văn bản gốc của lộ trình, V30 (ghi bù 27/10 theo `git show --stat`)
+- **ai-service** (`346f9bd`, `2bfa0ea`, `e74f235`): hồ sơ gọi Gemini riêng cho OCR (timeout 30 giây, 1 lần thử lại, hạn chót chung
+  của cả tài liệu); **OCR hạ cấp**: Tesseract chạy trước, Gemini Vision chỉ khi độ tin cậy thấp; Gemini quá tải / hết quota thì giữ
+  bản Tesseract và gắn `meta.ocrDegraded`, không có bản dự phòng thì 503 `aiOverloaded`.
+- **backend** (`245b670`, `93fbb44`, `9159357`): `AiServiceException` nhận biết 503 `aiOverloaded`; **V30** `extraction_jobs.failure_kind`
+  — `AI_OVERLOADED` không tính vào hạn mức bóc tách 24 giờ; sửa văn bản xoá `blocks` OCR cũ; lộ trình **sửa văn bản gốc rồi phân tích
+  lại** (`GET/PUT /api/learning-paths/{id}/text`), response thêm `job.ocrDegraded / failureKind`, thông báo kèm `ocrDegraded`.
+- **frontend** (`9224960`): lộ trình cảnh báo OCR hạ cấp, bảng sửa văn bản gốc (`PathSourceTextPanel`), thông điệp AI quá tải.
+- **docs** (`af73be8`): đưa toàn bộ tài liệu dự án lên nhánh. Commit này lỡ mang theo `application-local.properties` (mật khẩu Supabase,
+  `JWT_SECRET`): tệp đã được gỡ khỏi git, nhưng lịch sử vẫn còn → **phải đổi khoá** (SECURITY.md §4, việc 1).
 
 ## 20/10/2026 (chiều): hoàn tất phần còn thiếu của Lộ trình học tập / Admin
 Tổng kết và kế hoạch: [Progress/2026-10-19-tong-ket-va-ke-hoach.md](Progress/2026-10-19-tong-ket-va-ke-hoach.md) (§3, §5, §6.2, §10).

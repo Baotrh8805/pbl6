@@ -3,8 +3,8 @@
 > Trạng thái rà lại 19/10/2026 theo code thực tế (nhánh `backend-feature-learnmode`, sau khi tích hợp backend đợt 2 và khớp
 > frontend — hợp đồng [Plan/specs/2026-10-19-hop-dong-api-dot-2.md](Plan/specs/2026-10-19-hop-dong-api-dot-2.md)): `[x]` = đã chạy
 > được và có test tự động (backend `mvn test`, ai-service `pytest`, frontend `npm run selfcheck`); `[~]` = làm một phần (ghi chú nói
-> rõ phần thiếu); `[ ]` = chưa làm. Các mục đợt 2 có test backend (ai-service giả lập) và self-check frontend, **chưa kiểm tay trọn
-> luồng với ai-service thật**. Phạm vi theo [Plan/specs/2026-10-19-quyet-dinh-da-chot.md](Plan/specs/2026-10-19-quyet-dinh-da-chot.md):
+> rõ phần thiếu); `[ ]` = chưa làm. Các mục đợt 2 có test backend (ai-service giả lập) và self-check frontend; đã kiểm trực tiếp trên
+> trình duyệt với ai-service thật nhiều đợt (20/10, 26–27/10) và smoke e2e `npm run e2e` phủ auth / CRUD / bóc tách / lộ trình 2.0 / admin. Phạm vi theo [Plan/specs/2026-10-19-quyet-dinh-da-chot.md](Plan/specs/2026-10-19-quyet-dinh-da-chot.md):
 > thanh toán (UC-40), Google OAuth và ASR / Praat phía server nằm **ngoài phạm vi** (GraphRAG / Neo4j — UC-34, UC-35 — làm đúng đề cương từ 27/10 theo D30) — vẫn ghi
 > là chưa làm / làm một phần ở dưới cho trung thực, không tính là xong. Tiến trình gần nhất:
 > [Progress/2026-10-19-tien-trinh.md](Progress/2026-10-19-tien-trinh.md).

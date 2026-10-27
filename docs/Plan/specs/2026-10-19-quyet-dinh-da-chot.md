@@ -15,8 +15,9 @@ Phạm vi: phủ đủ mục **1.2.1 Yêu cầu về chức năng** của "Yêu 
 | D8 | Staff có học không | **Giữ nguyên: staff không học** | Không đổi SecurityConfig/AZ-10 |
 | D9 | Link chia sẻ bộ thẻ (D2) | **Người đã đăng nhập** mở được | `decks.share_token` (null = tắt); có token = xem + học + sao chép dù private; chủ tạo/đổi/thu hồi; chưa đăng nhập → login rồi quay lại `/d/<token>` |
 | D10 | Dữ liệu viết Kanji (E2) | **Dùng KanjiVG** (CC BY-SA 3.0) | `build_dicts.py --only kanjivg` tải và rút gọn thành `kanjivg_strokes.json` (không commit), DTW từng nét trong ai-service; ghi nguồn + giấy phép vào `data/README.md` |
-| D11 | Ngân hàng câu hỏi (G3, C2, C3, C7) | **Lưu ngân hàng theo thẻ** | Bảng `question_bank` (loại: nghĩa / kanji giống hình / đồng âm / chia thể / on-kun); người học báo lỗi câu; admin xem/sửa/gỡ; quiz bốc từ ngân hàng, thiếu thì sinh thêm |
+| D11 | Ngân hàng câu hỏi (G3, C2, C3, C7) | **Lưu ngân hàng theo thẻ** | Bảng `quiz_questions` + `question_flags` (V22; loại: nghĩa / kanji giống hình / đồng âm / cách đọc tự gõ / chia thể — không có loại on-kun; sửa 27/10 theo code); người học báo lỗi câu; admin xem/sửa/gỡ; quiz bốc từ ngân hàng, thiếu thì sinh thêm |
 | D12 | Lộ trình 2.0: ngày nghỉ trong tuần + trần thẻ/ngày | **Giữ cả hai** | Mặc định 7 ngày/tuần; trần mặc định **50** (đổi từ 30 ngày 19/10 chiều: trần tính cả thẻ ôn dự báo nên 30 chỉ còn ~5–8 thẻ mới/ngày; admin chỉnh được qua `learning_path_daily_cap_default`); hiện ở bản nháp và cài đặt lộ trình |
+| D13 | Dữ liệu chữ Hán ngoài JLPT / Unihan (E2, C2, C3) | **Được tải KRADFILE (EDRDG) và kanjium (CC BY-SA)** — người dùng đồng ý 19/10, ghi bù 27/10 | `build_dicts.py --only kradfile\|pitch`, file không commit; ghi nguồn ở `/about/data` |
 
 Ngoài phạm vi (không nằm trong 1.2.1): thanh toán (UC-40), Google OAuth, ASR/Praat phía server. ~~GraphRAG/Neo4j thật~~ → làm
 đúng đề cương từ 27/10 (**D30**, xem cuối tài liệu).

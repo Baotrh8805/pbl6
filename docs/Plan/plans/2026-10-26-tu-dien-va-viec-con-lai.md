@@ -1,6 +1,6 @@
 # Kế hoạch triển khai: Từ điển Nhật–Việt cộng đồng (phần A) + việc cũ còn lại (phần B)
 
-Ngày 26/10/2026 · nhánh `a` · trạng thái: **phần A (từ điển) đã code 26/10/2026; phần B chưa làm**. Spec:
+Ngày 26/10/2026 · nhánh `a` · trạng thái: **phần A (từ điển) code 26/10/2026; phần B: B1–B4 26/10, B5–B9 27/10 — xong hết** (B5.7 chỉ bỏ Redis + cảnh báo thiếu khoá: Neo4j giữ lại và dùng thật theo D30; B5.2 dùng V36, B8 dùng V37 vì V35 đã là mốc thời gian bộ thẻ). Spec:
 [specs/2026-10-26-tu-dien-design.md](../specs/2026-10-26-tu-dien-design.md) (quyết định D14–D29, K1–K10, schema, API, giao diện).
 Theo D28: kế hoạch **chỉ liệt kê việc, thứ tự và phụ thuộc, không chia theo ngày**; mục tiêu phần A xong trong khoảng 2 tuần.
 Mỗi task ghi: mục tiêu · tệp · bước · test · xong khi. Mọi commit theo [chính sách](../../TEAM_GUIDELINES.md): commit local sau khi test

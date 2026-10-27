@@ -54,7 +54,8 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
 1. **Đổi ngay** mật khẩu Supabase và `JWT_SECRET` đã từng bị commit (21/10) — lịch sử git vẫn còn bản cũ.
 2. Cấu hình SMTP (`SPRING_MAIL_*`, `MAIL_FROM`, `FRONTEND_URL`): thiếu thì email xác thực / quên mật khẩu / nhắc học không đi
    (dashboard admin hiện chấm đỏ "Email (chưa cấu hình SMTP)", `GET /api/admin/health` có `mail: missing`).
-3. Chạy sau reverse proxy HTTPS; đặt `FORWARD_HEADERS_STRATEGY` đúng để IP thật tới các bộ giới hạn.
+3. Chạy sau reverse proxy HTTPS; đặt `FORWARD_HEADERS_STRATEGY` đúng để IP thật tới các bộ giới hạn. Đặt `AI_SERVICE_KEY` ở cả
+   backend lẫn ai-service — thiếu thì backend ghi WARN lúc khởi động (B5.7) và ai-service chỉ nhận request từ localhost.
 4. Sao lưu DB (`scripts/backup.*`, `app.backup.marker`) và xoay vòng `AI_SERVICE_KEY`.
 5. Khi có nhiều instance: các bộ đếm trong RAM (đăng nhập sai, hạn mức) không chia sẻ — cần Redis nếu mở rộng.
 6. Neo4j: đổi mật khẩu mặc định, không mở cổng ra Internet, sao lưu volume `neo4jdata` (dựng lại được từ dữ liệu: Admin › Dựng lại

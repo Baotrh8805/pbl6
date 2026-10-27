@@ -3,7 +3,10 @@
 Người dùng nhập văn bản hoặc tải tài liệu + chọn số ngày → hệ thống bóc tách ([EXTRACTION.md](EXTRACTION.md)), **tách chương**,
 cho xem bản nháp để chỉnh, rồi tạo **một thư mục, mỗi chương một bộ thẻ** và **chia khối lượng học theo ngày**. Trang
 `/roadmap` là danh sách lộ trình + "hôm nay học gì"; `/roadmap/:id` là chi tiết (đang xử lý / bản nháp / đang học).
-Chưa cá nhân hoá theo điểm yếu của từng người (phần còn lại của UC-37 và GraphRAG vẫn chưa làm).
+Bản 2.0 (19/10, mục 9–11): lịch theo **từng thẻ** (`learning_path_cards`), phiên học gộp, trần thẻ / ngày và ngày học trong tuần, cân lại
+lịch, kiểm tra chương, hoàn thành, thẻ yếu + lộ trình bổ khuyết, nhắc học (trong app + email). Mục 1–8 là luồng tạo → nháp → kích hoạt
+(vẫn đúng), mục 9–11 là phần vận hành 2.0; chỗ nào hai bên khác nhau thì mục 9–11 thắng. GraphRAG gợi ý theo đồ thị tri thức: xem
+[Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md) (`/graph`, tab Gợi ý).
 
 Spec: [Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md](Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md) ·
 Kế hoạch: [Plan/plans/2026-10-14-lo-trinh-hoc-tap.md](Plan/plans/2026-10-14-lo-trinh-hoc-tap.md).
@@ -44,10 +47,10 @@ PROCESSING ──(job DONE)──▶ DRAFT ──(activate)──▶ ACTIVE
 
 | Trạng thái | Cho phép |
 |---|---|
-| PROCESSING | chỉ xem; `PATCH /{id}` → 409 |
-| DRAFT | đổi tên / số ngày / ngày bắt đầu, đổi tên chương, gộp chương, bỏ chọn thẻ, kích hoạt |
-| ACTIVE | đổi tên, đổi `startDate` / `totalDays` (tính lại dải ngày), xem lịch, học theo "Hôm nay" |
-| FAILED | chỉ xoá (`PATCH` → 400). Chưa có `rerun`; lượt hạn mức đã tính |
+| PROCESSING | chỉ xem; `PATCH /{id}` → 409; xoá → 409. Khởi động lại giữa chừng → FAILED (B8: chỉ lộ trình của chính instance) |
+| DRAFT | đổi tên / số ngày / ngày bắt đầu / trần thẻ / ngày học, đổi tên chương, gộp chương, bỏ chọn thẻ, "Dịch lại nghĩa", kích hoạt |
+| ACTIVE | đổi tên, `startDate` / `totalDays` / `dailyCap` / `studyDays` / nhắc học (xếp lại lịch theo thẻ), phiên học `/session`, cân lại lịch, kiểm tra chương, `POST /complete` khi học hết (`completedAt`) |
+| FAILED | "Chạy lại" (`POST /retry`, từ ANALYZE, **không tốn lượt**), tạo lại hoặc xoá (`PATCH` → 400) |
 
 Xoá lộ trình = xoá kế hoạch + job bóc tách ẩn; **thư mục / bộ thẻ / lịch sử ôn tập giữ nguyên**.
 
@@ -147,7 +150,7 @@ Trường 2.0 của `LearningPathResponse` (cũng NON_NULL, client 1.0 không th
 completedAt, lastRebalancedAt, completion{total, learned, mastered, learnedPct, masteredPct, chaptersPassed, chaptersTotal, done},
 forecast[{dayIndex, date, newCount, newWeight, predictedReviews, load, overCap}]` (chỉ `GET /{id}` ACTIVE), `suggestedDays, overCap`
 (chỉ `GET /{id}` DRAFT), `overflow` (chỉ response của activate / PATCH / rebalance vừa xếp lịch mà không giữ được trần).
-`chapters[]` ACTIVE thêm `learned, mastered, state (passed | review | current | locked | open), quizBestPct, quizPassedAt` và mọi số
+`chapters[]` ACTIVE thêm `learned, mastered, state (passed | review | current | locked | open | empty — "Trống": chương không còn thẻ trong lịch mà chưa qua kiểm tra, 20/10 chiều), quizBestPct, quizPassedAt` và mọi số
 đếm / dải ngày suy từ `learning_path_cards` (bộ thẻ bị xoá → `cardCount 0`, không dải ngày). `today` thêm `state = rest` (ngày nghỉ theo
 `studyDays`, `dayIndex` = ngày học gần nhất trước đó), `newCount` (thẻ chưa học xếp đúng hôm nay), `dueCount` (thẻ của lộ trình có
 `reviews.due_at` tới hết ngày theo múi giờ cấu hình), `behindCount` (thẻ chưa học xếp ở ngày đã qua); `tasks[]` giữ `fromPos / toPos`
@@ -173,13 +176,15 @@ ACTIVE đổi `totalDays`: chỉ chia lại cho chương còn bộ thẻ; chươ
 Ngữ nghĩa xoá: xoá bộ thẻ hoặc thư mục ngoài lộ trình → FK về NULL, API không vỡ (`deckDeleted = true`); xoá lộ trình →
 chương CASCADE, job bóc tách ẩn bị xoá, bộ thẻ / thư mục giữ nguyên. Thư mục tạo ra mang `metadata.learningPathId`.
 
-## 7. Hạn chế đã biết
+## 7. Hạn chế đã biết (cập nhật 27/10, bản 2.0)
 
 - Tên "Tuần k (ngày a–b)" / "Ngày N" **không tự đổi** khi người dùng sửa số ngày sau đó; UI luôn hiện `dayFrom–dayTo`.
-- Task theo **vị trí thẻ**: sửa / thêm / xoá thẻ trong bộ chương sau khi kích hoạt làm dải trôi; `sliceRange` kẹp biên, không vỡ.
-- Lộ trình FAILED chưa có "Chạy lại"; vẫn tốn một lượt hạn mức dùng chung với bóc tách.
-- Tiêu đề chương nhận sót / nhầm (xem mục 3); gộp trùng toàn tài liệu làm chương sau có thể ít thẻ → nhiều "ngày ôn tập".
-- Chưa cá nhân hoá theo điểm yếu, chưa nhắc học, chưa lưu file gốc.
+- Lịch 2.0 theo **id thẻ** nên sửa / thêm / xoá thẻ không làm lịch trôi; thẻ thêm sau kích hoạt **không vào lịch** (trang bộ thẻ có dải
+  LP-15 nhắc, kể cả khi bộ đã rời thư mục lộ trình — B5.8), thẻ xoá thì rời lịch (chương có thể thành "Trống").
+- Tiêu đề chương nhận sót / nhầm (xem mục 3); gộp trùng toàn tài liệu làm chương sau có thể ít thẻ.
+- Chưa lưu file gốc (chỉ giữ văn bản đã trích, sửa được bằng `PUT /{id}/text`); lộ trình FAILED chạy lại từ văn bản đó.
+- Cá nhân hoá: thẻ yếu + lộ trình bổ khuyết theo luật (mục 11) và gợi ý theo đồ thị tri thức (27/10, `/graph`); chưa có mô hình học máy
+  dự đoán.
 
 ## 8. Test
 
@@ -206,7 +211,9 @@ trên vẫn đúng cho luồng tạo → nháp → kích hoạt, trừ chỗ ghi
 - **Kiểm tra chương (D4 — chỉ gắn nhãn, không chặn học)**: `QuizAttemptService.close()` phát `QuizSubmittedEvent(uid, deckId,
   attemptId, score, total, mode)` trong cùng giao dịch; `LearningPathService.onQuizSubmitted` chỉ xét `mode = exam`, chương ACTIVE
   của chính người nộp có `deckId` trùng: `quizBestPct = max`, lần đầu `pct ≥ learning_path_quiz_pass_pct` (mặc định 80) →
-  `quizPassedAt` + thông báo `LEARNING_PATH_CHAPTER_PASSED`. Practice trên cùng bộ thẻ không tính. `chapters[].state = passed` khi
+  `quizPassedAt` + thông báo `LEARNING_PATH_CHAPTER_PASSED`; lượt đầu tiên của chương mà dưới ngưỡng → `LEARNING_PATH_CHAPTER_RETRY`
+  (D4 "nhắc làm lại", 20/10 chiều) và giao diện hiện dải "Chưa đạt N% — Làm lại" (kể cả chương đã bị cân lại về "chưa tới ngày", B5.8).
+  Ngưỡng `quizPassPct` nằm trong response (`learning_path_quiz_pass_pct`). Practice trên cùng bộ thẻ không tính. `chapters[].state = passed` khi
   có `quizPassedAt`.
 - **Hoàn thành**: đọc (`GET /{id}`, `/session`) không có tác dụng phụ — `completion.done = true` ngay khi học hết, UI gọi
   `POST /complete`. Tự chốt (spec §4.1 "qua ngày cuối và learnedPct = 100") chỉ ở lối ghi: `PATCH /{id}` (ACTIVE) và `POST /rebalance`
@@ -261,8 +268,7 @@ trên vẫn đúng cho luồng tạo → nháp → kích hoạt, trừ chỗ ghi
 - Trang chi tiết poll `GET /{id}` mỗi 2 s khi `isPathBusy` (PROCESSING hoặc job QUEUED/RUNNING, tức cả lúc dịch lại nghĩa trên bản
   nháp đang sửa); **mọi** lần tải (poll lẫn tải lại sau ghi) đi qua một bộ đếm `refreshSeq` nên phản hồi cũ không đè kết quả PATCH /
   activate mới hơn. `dayIndexFor(start, today, totalDays, mask?)` 1.0 nay đếm theo mặt nạ (qua `dayIndexForMask`) cho các chỗ dự
-  phòng. Hàm thuần + selfcheck: `roadmapUtils.ts` (`scripts/selfCheck.ts` mục 21–24). Chưa kiểm tay 375 px trên trình duyệt (cần
-  backend chạy); bố cục dùng flex-wrap / 1 cột trên di động, biểu đồ cuộn trong khung riêng.
+  phòng. Hàm thuần + selfcheck: `roadmapUtils.ts` (`scripts/selfCheck.ts` mục 21–24). Đã kiểm tay 1280 / 375 px trên trình duyệt (20/10 chiều, 26–27/10); bố cục dùng flex-wrap / 1 cột trên di động, biểu đồ cuộn trong khung riêng.
 
 ## 11. Bản 2.0 — điểm yếu, bổ khuyết, nhắc học (19/10, backend)
 

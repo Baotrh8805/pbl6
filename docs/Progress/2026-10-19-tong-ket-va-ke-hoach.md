@@ -440,7 +440,7 @@ Không nằm trong phạm vi được giao (chỉ 1.2.1), ghi lại để khỏi
 | Độ chính xác AI | OCR ≥ 95 % (CER ≤ 0,05); câu nhiễu sai < 3 %; NLI precision ≥ 90 % | Chưa đo (`ai-service/scripts/ocr_eval.py` có sẵn nhưng máy này không có `jpn`); không làm NLI |
 | Bảo mật | bcrypt, token có hạn + thu hồi, ghi âm mã hoá, RBAC; JWT ≤ 24 giờ | Đạt: bcrypt (`SecurityConfig`), JWT 15 phút (`jwt.expiration=900000`), thu hồi phiên, RBAC. Không lưu ghi âm. HTTPS là việc lúc triển khai |
 | Mở rộng, sẵn sàng | Vi dịch vụ; uptime ≥ 99,5 %; tự chuyển engine OCR / TTS | 3 dịch vụ tách; OCR dự phòng Gemini có; TTS là `speechSynthesis` của trình duyệt, không có dự phòng. Tải, uptime: chưa đo |
-| Bảo trì | Test tự động pipeline lõi; độ phủ ≥ 70 % | Có test (§6.1); độ phủ chưa đo (không có JaCoCo / coverage trong pom, `package.json`, CI) |
+| Bảo trì | Test tự động pipeline lõi; độ phủ ≥ 70 % | Có test (§6.1); độ phủ đo bằng JaCoCo (B6, 27/10): **90 % lệnh, 77 % nhánh, 92 % dòng** (598 test, 27/10/2026; 9/402 lớp chưa chạm) — dòng lệnh backend (`mvn test` → `target/site/jacoco`), ai-service / frontend chưa đo |
 | Dùng được, tương thích | Responsive ≥ 3 kích thước; IME tích hợp; Chrome / Edge / Safari | Kiểm 3 kích thước: 1280 và 375 px trên các trang chính; 1024 px chỉ ở các lượt kiểm trực tiếp 20/10, trên dashboard, lộ trình, thư viện và các trang admin tổng quan / nhật ký; chiều 20/10 dashboard và khung thông báo được đo thêm ở 320 / 414 / 640 / 768 / 900 px; IME romaji → kana có (`KanaInput.tsx`); Edge / Safari: chưa xác minh |
 | Quan sát | Metric từng bước pipeline; dashboard ≤ 1 phút / lần | G6 có số liệu theo engine và chuỗi OCR theo ngày; trang tổng quan chỉ làm mới khi bấm nút, không tự cập nhật |
 | Chi phí | Ưu tiên self-host; giảm ≥ 60 % lượt gọi API trả phí | SudachiPy / Tesseract chạy local, Gemini chỉ gọi khi cần; con số 60 %: chưa đo. Không dùng VOICEVOX |
@@ -808,6 +808,11 @@ Xem §8a a4.
 - `docs/Plan/specs/2026-10-19-quyet-dinh-da-chot.md`: chưa có D13 (KRADFILE, kanjium); D11 còn ghi `question_bank` và loại
   "on-kun".
 - `docs/USE_CASES_CHECKLIST.md`: câu mở đầu vẫn ghi "chưa kiểm tay trọn luồng với ai-service thật".
+
+**Đã đóng 27/10 (B9 của kế hoạch 26/10)**: `LEARNING_PATH.md` lên 2.0 (trạng thái, hạn chế, kiểm tay, Trống / `quizPassPct` /
+`LEARNING_PATH_CHAPTER_RETRY`); bảng số migration thực tế ghi ở `CODEBASE_MAP.md` §2 (V22 quiz, V28 knowledge_sources, V29 appeals…
+V37 instance_id); `README.md` 2.2 có `--only unihan_def` + 3 file overrides; `CODEBASE_MAP.md` có `/admin/account` và `selfcheck/manual.ts`;
+`quyet-dinh-da-chot.md` có D13 và D11 sửa (`quiz_questions`, không có loại on-kun); checklist bỏ câu "chưa kiểm tay".
 
 ## 8. Kế hoạch tiếp theo
 
