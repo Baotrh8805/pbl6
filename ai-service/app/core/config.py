@@ -17,6 +17,8 @@ class Settings(BaseModel):
     # Model thêm (phân tách dấu phẩy) mà backend được phép chọn theo từng request (Admin > Cấu hình > Model AI chính), ngoài
     # GEMINI_MODEL / GEMINI_FALLBACK_MODEL và các model đã đo trong gemini.KNOWN_MODELS; rỗng = chỉ các model đó
     GEMINI_ALLOWED_MODELS: str = os.getenv("GEMINI_ALLOWED_MODELS", "")
+    # Đồ thị tri thức (spec 2026-10-27): Neo4j trong docker-compose; mật khẩu mặc định chỉ cho dev (client.py cảnh báo
+    # khi URI không phải localhost mà vẫn dùng mặc định)
     NEO4J_URI: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER: str = os.getenv("NEO4J_USER", "neo4j")
     NEO4J_PASSWORD: str = os.getenv("NEO4J_PASSWORD", "password123")

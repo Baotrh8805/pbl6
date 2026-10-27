@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from app.core.config import settings
 from app.api import (nlp_router, kanji_dtw_router, ocr_router, audio_praat_router, extract_router, kanji_info_router,
-                     grammar_router, radical_router, mining_router, dict_router)
+                     grammar_router, radical_router, mining_router, dict_router, graph_router)
 
 _log = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ app.include_router(grammar_router.router, prefix=settings.API_V1_STR)      # C7 
 app.include_router(radical_router.router, prefix=settings.API_V1_STR)      # C4 thẻ bộ thủ + mẹo nhớ
 app.include_router(mining_router.router, prefix=settings.API_V1_STR)       # C6 khai thác câu i+1
 app.include_router(dict_router.router, prefix=settings.API_V1_STR)         # Từ điển Nhật–Việt (spec 2026-10-26)
+app.include_router(graph_router.router, prefix=settings.API_V1_STR)        # Đồ thị tri thức Neo4j + GraphRAG (spec 2026-10-27)
 
 @app.get("/")
 def health_check():

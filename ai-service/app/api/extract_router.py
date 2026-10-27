@@ -250,6 +250,14 @@ def extract_conflicts(req: ConflictRequest) -> dict:
     }
 
 
+def _graph_available() -> bool:
+    try:
+        from app.graph import client as graph_client  # noqa: PLC0415 (không ép nạp driver khi không dùng đồ thị)
+        return graph_client.get_graph().available()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @router.get("/health")
 def extract_health() -> dict:
     kanji_data = kanjidata.availability()
@@ -287,4 +295,6 @@ def extract_health() -> dict:
         "dictExamples": dictionary.has_examples(),
         "dictFts": dictionary.has_fts(),
         "dictOverridesVersion": overrides.version(),
+        # Đồ thị tri thức (spec 2026-10-27): Neo4j nối được không (lớp đã dựng chưa xem /graph/status)
+        "graph": _graph_available(),
     }
