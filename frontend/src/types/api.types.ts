@@ -768,6 +768,8 @@ export interface AdminHealth {
     aiService: "ok" | "down";
     /** 27/10: SMTP đã cấu hình chưa (thiếu -> email xác thực / quên mật khẩu / nhắc học chỉ ghi log). */
     mail?: "ok" | "missing";
+    /** Đồ thị tri thức (spec 2026-10-27): ai-service nối được Neo4j không; chi tiết ở /admin/graph/status. */
+    graph?: "ok" | "down";
     version: string;
     /** Sao lưu (file LAST_OK của scripts/backup.*): unmonitored = chưa cấu hình app.backup.marker. */
     backup: "ok" | "stale" | "missing" | "unmonitored";

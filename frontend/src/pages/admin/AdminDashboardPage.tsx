@@ -17,6 +17,7 @@ import { AdminOcrChart } from "@/features/admin/components/AdminOcrChart";
 import { AdminAiPerformance } from "@/features/admin/components/AdminAiPerformance";
 import { AdminBreakdown } from "@/features/admin/components/AdminBreakdown";
 import { AdminPageHeader } from "@/features/admin/components/AdminPageHeader";
+import { AdminGraphCard } from "@/features/admin/components/AdminGraphCard";
 
 const Dot: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
   <span className="inline-flex items-center gap-1 text-body-sm">
@@ -79,6 +80,7 @@ export const AdminDashboardPage: React.FC = () => {
                 <Dot ok={health.data.db === "ok"} label="DB" />
                 <Dot ok={health.data.aiService === "ok"} label="AI" />
                 {health.data.mail && <Dot ok={health.data.mail === "ok"} label={health.data.mail === "ok" ? "Email" : "Email (chưa cấu hình SMTP)"} />}
+                {health.data.graph && <Dot ok={health.data.graph === "ok"} label={health.data.graph === "ok" ? "Đồ thị (Neo4j)" : "Đồ thị (Neo4j tắt)"} />}
                 {engineFlags.length > 0 && (
                   <a
                     href="#admin-ai-perf-title"
@@ -112,6 +114,9 @@ export const AdminDashboardPage: React.FC = () => {
           {stats.error}
         </p>
       )}
+
+      {/* Đồ thị tri thức (spec 2026-10-27 §9): trạng thái Neo4j + dựng lại / đồng bộ */}
+      <AdminGraphCard />
 
       {s && (
         <>

@@ -19,6 +19,7 @@ import { DeckLibraryPage } from "@/pages/DeckLibraryPage";
 import { FoldersPage } from "@/pages/FoldersPage";
 import { ExtractionPage } from "@/pages/ExtractionPage";
 import { ExtractionsPage } from "@/pages/ExtractionsPage";
+import { KnowledgeGraphPage } from "@/pages/KnowledgeGraphPage";
 import { DictionaryPage } from "@/pages/DictionaryPage";
 import { DataSourcesPage } from "@/pages/DataSourcesPage";
 import { SharedDeckLinkPage } from "@/pages/SharedDeckLinkPage";
@@ -117,6 +118,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="/quiz" element={<QuizRoomPage />} />
         {/* Từ điển (spec 2026-10-26, D14): Từ vựng + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay */}
         <Route path="/dictionary" element={<DictionaryPage />} />
+        {/* Đồ thị tri thức Neo4j + GraphRAG (spec 2026-10-27): ?tab=explore&q= | suggest | ask | path */}
+        <Route path="/graph" element={<KnowledgeGraphPage />} />
         {/* Route cũ chuyển sang tab tương ứng, giữ tham số (link trong thông báo, bộ thẻ, bookmark vẫn đúng) */}
         <Route path="/han-viet" element={<LegacyRedirect tab="hanviet" />} />
         <Route path="/kanji" element={<LegacyRedirect tab="kanji" />} />
