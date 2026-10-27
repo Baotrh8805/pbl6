@@ -1,0 +1,31 @@
+{
+  "note": "Model do nhóm tự huấn luyện (spec docs/Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md §2). File lớn không commit: chạy `python scripts/fetch_models.py --from <thư mục có file>` (máy dev) hoặc điền `url` rồi chạy không tham số. sha256 kiểm sau khi tải.",
+  "files": [
+    {
+      "name": "vihsd_cnn_lstm.npz",
+      "sha256": "56ef2d1f5d664211a1f5508126b4c0f5bc191b849374a6c228f06beca2ec02f4",
+      "size": 25929169,
+      "url": "",
+      "note": "ViHSD 3 lớp: trọng số Keras best_model_12-0.85.keras (epoch 12, test acc 0,8437) xuất bằng scripts/export_vihsd.py; chạy numpy, bắt buộc cho kiểm duyệt"
+    },
+    {
+      "name": "phobert_hatespeech_best.pt",
+      "sha256": "e7d54c83f08bd78ef97464f03b97922a30f57702126462212b06d3093ac03e9c",
+      "size": 540089323,
+      "url": "",
+      "note": "ViHOS đánh dấu từ vi phạm: state_dict PhoBERT-base + classifier (vihos.ipynb, Sequence_0.6); cần requirements-ml.txt; tuỳ chọn"
+    },
+    {
+      "name": "best-halflife-portable.pt",
+      "sha256": "4e69addc5197db1f6695e9bbe384e93d485ddc65f4d9b719701785028d4bec2f",
+      "size": 2066497,
+      "url": "",
+      "note": "HLR portable logistic (halflife-regression-4.ipynb); bản chạy thật là app/hlr/data/hlr_portable.json (đã commit, xuất bằng scripts/export_hlr.py); chỉ cần khi xuất lại"
+    }
+  ],
+  "phobertTokenizer": {
+    "repo": "vinai/phobert-base",
+    "dir": "phobert-base",
+    "files": ["vocab.txt", "bpe.codes", "config.json"]
+  }
+}

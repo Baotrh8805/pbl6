@@ -22,3 +22,6 @@ google-genai>=1.0.0
 neo4j>=5.20.0
 httpx>=0.27.0
 pytest>=8.0.0
+# --- Kiểm duyệt bình luận ViHSD (app/moderation, numpy): tách từ pyvi + emoji → chữ như notebook huấn luyện ---
+pyvi>=0.1.1
+emoji-vietnamese>=0.6.0

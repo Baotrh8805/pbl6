@@ -237,7 +237,11 @@ def test_health():
     assert set(body) == {"sudachi", "jmdict", "jlpt", "unihan", "grammar", "tesseract", "gemini", "geminiModel", "geminiModels",
                          "radicals", "kradfile", "kanjivg", "pitch", "distractors",
                          "kanjiStrokes", "hanVietGraph", "kanjiCards", "conjugation", "conflicts",
-                         "radicalCards", "mining", "dictWords", "dictExamples", "dictFts", "dictOverridesVersion"}
+                         "radicalCards", "mining", "dictWords", "dictExamples", "dictFts", "dictOverridesVersion", "graph",
+                         # kiểm duyệt bình luận + HLR (spec 2026-10-27 đêm)
+                         "moderation", "moderationSpans", "hlr"}
+    assert body["hlr"] is True           # JSON trọng số HLR đã commit
+    assert isinstance(body["moderation"], bool) and isinstance(body["moderationSpans"], bool)
     assert body["conflicts"] is True     # F2: danh sách JLPT đã commit là đủ để so cách đọc / nghĩa / cấp
     # C4 thẻ bộ thủ (bảng radicals_214.csv đã commit; `radicals` ở trên là unihan_rs.csv) và C6 khai thác câu (Sudachi)
     assert body["radicalCards"] is True and body["mining"] is True

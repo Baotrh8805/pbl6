@@ -33,5 +33,9 @@ class Settings(BaseModel):
     # Ngân sách Gemini Vision cho CẢ một tài liệu (mọi trang) khi OCR, giây; hết thì các trang còn lại giữ bản Tesseract
     # (spec 21/10). Giữ dưới AI_SERVICE_READ_TIMEOUT của backend (3 phút) trừ thời gian Tesseract.
     OCR_GEMINI_BUDGET_S: int = int(os.getenv("OCR_GEMINI_BUDGET_S", "60"))
+    # Kiểm duyệt (spec 2026-10-27 đêm): PhoBERT đánh dấu từ vi phạm tốn ≈ 400 MB RAM — máy ít RAM đặt MODERATION_SPANS=0 để chỉ
+    # dùng model 3 lớp (numpy); MODERATION_THREADS = số luồng torch cho PhoBERT
+    MODERATION_SPANS: bool = os.getenv("MODERATION_SPANS", "1").lower() not in ("0", "false", "no")
+    MODERATION_THREADS: int = int(os.getenv("MODERATION_THREADS", "4"))
 
 settings = Settings()

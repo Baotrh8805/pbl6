@@ -15,6 +15,8 @@ from app.core.security import require_internal_key
 from app.extract import (conflicts, distractors, gemini, han_viet, han_viet_graph, jmdict, kanji_cards, kanjidata,
                          radicals, sentence_mining, tokenizer)
 from app.extract import dictionary, overrides  # cờ health của từ điển
+from app.hlr import model as hlr_model  # cờ health HLR (spec 2026-10-27 đêm)
+from app.moderation import preprocess as mod_preprocess, vihos, vihsd  # cờ health kiểm duyệt
 from app.extract.grammar import available as grammar_available
 from app.extract.jlpt import available as jlpt_available
 from app.extract.pipeline import analyze
@@ -297,4 +299,9 @@ def extract_health() -> dict:
         "dictOverridesVersion": overrides.version(),
         # Đồ thị tri thức (spec 2026-10-27): Neo4j nối được không (lớp đã dựng chưa xem /graph/status)
         "graph": _graph_available(),
+        # Kiểm duyệt bình luận + HLR (spec 2026-10-27 đêm): model 3 lớp numpy + pyvi; PhoBERT đánh dấu từ (torch, tuỳ chọn);
+        # JSON trọng số HLR
+        "moderation": mod_preprocess.available() and vihsd.available(),
+        "moderationSpans": vihos.available(),
+        "hlr": hlr_model.available(),
     }
