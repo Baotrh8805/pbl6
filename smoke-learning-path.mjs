@@ -108,10 +108,13 @@ await section("đổi tên lộ trình", async () => {
     assert.equal(r.data.title, "Smoke path");
 });
 
-await section("kích hoạt -> ACTIVE, mỗi chương có bộ thẻ, hôm nay có mảng tasks", async () => {
-    const r = await api("POST", `/learning-paths/${pathId}/activate`, { startDate: localToday() });
+await section("kích hoạt có trần thẻ / ngày và ngày học -> ACTIVE, mỗi chương có bộ thẻ, hôm nay có mảng tasks", async () => {
+    const r = await api("POST", `/learning-paths/${pathId}/activate`, { startDate: localToday(), dailyCap: 20, studyDays: "1111111" });
     assert.equal(r.status, 201, r.text);
     assert.equal(r.data.status, "ACTIVE");
+    assert.equal(r.data.dailyCap, 20, "trần thẻ / ngày được lưu");
+    assert.equal(r.data.studyDays, "1111111", "ngày học trong tuần được lưu");
+    assert.ok(r.data.completion && typeof r.data.completion.learnedPct === "number", "ACTIVE 2.0 có completion");
     assert.ok(r.data.chapters.length >= 1);
     assert.ok(r.data.chapters.every((c) => c.deckId != null), JSON.stringify(r.data.chapters));
     assert.ok(r.data.folderId != null, "thiếu folderId");
@@ -123,6 +126,65 @@ await section("kích hoạt -> ACTIVE, mỗi chương có bộ thẻ, hôm nay c
 await section("bộ thẻ của chương tồn tại", async () => {
     const r = await api("GET", `/decks/${deckId}`);
     assert.equal(r.status, 200, r.text);
+});
+
+// ---- Lộ trình 2.0 (B7): phiên học, chấm có reactionMs, cân lại lịch, kiểm tra chương, hoàn thành, tổng quan, học gì tiếp, bổ khuyết
+let sessionCard = null;
+let chapterId = null;
+
+await section("phiên hôm nay có thẻ; chấm một thẻ với reactionMs + pathId -> ghi nhật ký", async () => {
+    const r = await api("GET", `/learning-paths/${pathId}/session?kind=today&date=${localToday()}`);
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.kind, "today");
+    assert.ok(Array.isArray(r.data.cards) && r.data.cards.length >= 1, `phiên rỗng: ${JSON.stringify(r.data.counts)}`);
+    assert.ok(r.data.counts && typeof r.data.counts.new === "number", "counts {new, due, catchup, total}");
+    sessionCard = r.data.cards[0];
+    const g = await api("POST", "/reviews", { cardId: sessionCard.cardId, grade: "good", reactionMs: 1500, pathId });
+    assert.ok([200, 201].includes(g.status), `chấm: ${g.status} ${g.text}`);
+    const bad = await api("POST", "/reviews", { cardId: sessionCard.cardId, grade: "good", reactionMs: 999999, pathId });
+    assert.equal(bad.status, 400, "reactionMs ngoài 0..600000 -> 400");
+});
+
+await section("cân lại lịch (extend=false) -> 200, lastRebalancedAt", async () => {
+    const r = await api("POST", `/learning-paths/${pathId}/rebalance?date=${localToday()}`, { extend: false });
+    assert.equal(r.status, 200, r.text);
+    assert.ok(r.data.lastRebalancedAt, "thiếu lastRebalancedAt");
+    assert.equal(r.data.status, "ACTIVE");
+});
+
+await section("kiểm tra chương -> lượt quiz exam (AttemptState)", async () => {
+    const p = await api("GET", `/learning-paths/${pathId}?date=${localToday()}`);
+    assert.equal(p.status, 200, p.text);
+    chapterId = p.data.chapters.find((c) => c.deckId && c.cardCount > 0)?.id;
+    assert.ok(chapterId, "không có chương nào còn thẻ");
+    const r = await api("POST", `/learning-paths/${pathId}/chapters/${chapterId}/quiz?date=${localToday()}`);
+    assert.ok([200, 201].includes(r.status), `quiz chương: ${r.status} ${r.text}`);
+    assert.ok(r.data && typeof r.data === "object", "AttemptState rỗng");
+});
+
+await section("hoàn thành khi còn thẻ chưa học -> 409", async () => {
+    const r = await api("POST", `/learning-paths/${pathId}/complete?date=${localToday()}`);
+    assert.equal(r.status, 409, `${r.status} ${r.text}`);
+});
+
+await section("today-summary và /insights/next liệt kê lộ trình đang học", async () => {
+    let r = await api("GET", `/learning-paths/today-summary?date=${localToday()}`);
+    assert.equal(r.status, 200, r.text);
+    assert.ok(Array.isArray(r.data) && r.data.some((p) => p.pathId === pathId), JSON.stringify(r.data));
+    r = await api("GET", `/insights/next?date=${localToday()}`);
+    assert.equal(r.status, 200, r.text);
+    assert.ok(Array.isArray(r.data), "insights/next phải là mảng");
+    assert.ok(r.data.some((n) => n.kind === "path_today" || n.kind === "path_catchup" || String(n.to ?? "").includes(pathId)), `không thấy lộ trình trong "học gì tiếp": ${JSON.stringify(r.data)}`);
+});
+
+await section("lộ trình bổ khuyết: chưa đủ thẻ yếu -> 409 (đủ thì 201 và xoá được)", async () => {
+    const r = await api("POST", `/learning-paths/remedial?date=${localToday()}`, { days: 3, groupBy: "level" });
+    assert.ok([201, 409].includes(r.status), `${r.status} ${r.text}`);
+    if (r.status === 409) assert.ok(/thẻ yếu/.test(r.data?.message ?? ""), `409 phải nói rõ thiếu thẻ yếu: ${r.text}`);
+    if (r.status === 201) {
+        assert.equal(r.data.status, "ACTIVE");
+        assert.equal((await api("DELETE", `/learning-paths/${r.data.id}`)).status, 204);
+    }
 });
 
 await section("dọn: xoá lộ trình, bộ thẻ còn nguyên", async () => {

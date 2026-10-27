@@ -39,7 +39,7 @@ QUEUED / RUNNING đều bị FAILED). Test `OrphanJobsIT` (job / lộ trình c�
 **B7 smoke / e2e 2.0**: `smoke-learning-path.mjs` kích hoạt có trần thẻ + ngày học → `/session` → chấm có `reactionMs` + `pathId`
 (ngoài khoảng → 400) → cân lại lịch → kiểm tra chương → `complete` 409 khi còn thẻ → `today-summary` + `/insights/next` → bổ khuyết
 (201 hoặc 400 khi chưa đủ thẻ yếu). `smoke-admin.mjs` thêm mẹo nhớ (gửi → hàng chờ → duyệt → mẹo công khai), ngân hàng câu hỏi, nguồn
-tri thức chuẩn (tải → list → chi tiết → lưu trữ → xoá), khiếu nại (khoá → khiếu nại → giải quyết UNLOCK → đăng nhập lại), từ điển
+tri thức chuẩn (tải → list → chi tiết → lưu trữ → xoá: ADMIN 403, SUPER_ADMIN 204), khiếu nại (khoá → khiếu nại → giải quyết UNLOCK → đăng nhập lại), từ điển
 admin (stats / hàng chờ / tìm). `npm run e2e` chạy thêm `smoke-admin.mjs`.
 
 **B9 tài liệu đi sau code**: mục 21/10 bên dưới (OCR hạ cấp, Gemini quá tải, sửa văn bản gốc lộ trình, V30, secret); `LEARNING_PATH.md`

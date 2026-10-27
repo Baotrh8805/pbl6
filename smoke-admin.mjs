@@ -250,6 +250,86 @@ await section("thông báo trong app: Bob (báo cáo) và Alice (chủ bộ, Pre
     assert.equal((await api(s.adminToken, "GET", "/notifications")).status, 200, "staff cũng gọi được");
 });
 
+// ---- B7 (kế hoạch 26/10): mẹo nhớ (§4), ngân hàng câu hỏi (G3), nguồn tri thức (§5), khiếu nại (§6), từ điển (A9)
+
+await section("mẹo nhớ: người học gửi -> PENDING trong hàng chờ, admin duyệt -> thành mẹo công khai", async () => {
+    let r = await api(s.alice.token, "POST", "/kanji/mnemonics", { kanji: "犬", mnemonicVi: `Con chó nhớ bộ khuyển (smoke ${Date.now()})` });
+    assert.ok([200, 201].includes(r.status), `gửi mẹo: ${r.status} ${r.text}`);
+    const mid = r.data.id;
+    r = await api(s.adminToken, "GET", "/admin/mnemonics?status=PENDING&size=100");
+    assert.equal(r.status, 200, r.text);
+    assert.ok(r.data.items.some((m) => m.id === mid), "mẹo vừa gửi nằm trong hàng chờ");
+    r = await api(s.adminToken, "POST", `/admin/mnemonics/${mid}/approve`, { note: "smoke" });
+    assert.equal(r.status, 200, `duyệt: ${r.status} ${r.text}`);
+    r = await api(s.alice.token, "GET", "/kanji/%E7%8A%AC/mnemonics");
+    assert.equal(r.status, 200, r.text);
+    assert.ok(r.data.approved && r.data.approved.id === mid, "mẹo được duyệt thành mẹo công khai của chữ");
+    r = await api(s.adminToken, "GET", "/admin/audit-logs?targetType=MNEMONIC&size=50");
+    assert.equal(r.status, 200, r.text);
+});
+
+await section("ngân hàng câu hỏi: danh sách + lọc; tham số sai -> 400", async () => {
+    let r = await api(s.adminToken, "GET", "/admin/questions?size=5");
+    assert.equal(r.status, 200, r.text);
+    assert.ok(Array.isArray(r.data.items), "items phải là mảng");
+    r = await api(s.adminToken, "GET", "/admin/questions?flagged=true&size=5");
+    assert.equal(r.status, 200, r.text);
+    assert.equal((await api(s.adminToken, "GET", "/admin/questions?kind=XXX")).status, 400);
+    assert.equal((await api(s.alice.token, "GET", "/admin/questions")).status, 403);
+});
+
+await section("nguồn tri thức chuẩn: tải văn bản -> list -> chi tiết -> lưu trữ -> xoá", async () => {
+    const form = new FormData();
+    form.append("text", "学校\tがっこう\ttrường học\n勉強\tべんきょう\thọc");
+    form.append("title", `Nguồn smoke ${Date.now()}`);
+    form.append("kind", "VOCAB");
+    form.append("level", "N5");
+    const res = await fetch(`${BASE}/admin/knowledge-sources`, { method: "POST", headers: { Authorization: `Bearer ${s.adminToken}` }, body: form });
+    const body = await res.text();
+    assert.ok([200, 201].includes(res.status), `tải nguồn: ${res.status} ${body}`);
+    const src = JSON.parse(body);
+    assert.ok(src.id, "thiếu id nguồn");
+    let r = await api(s.adminToken, "GET", "/admin/knowledge-sources?status=ACTIVE&size=100");
+    assert.equal(r.status, 200, r.text);
+    assert.ok(r.data.items.some((i) => i.id === src.id), "nguồn vừa tải có trong danh sách ACTIVE");
+    r = await api(s.adminToken, "GET", `/admin/knowledge-sources/${src.id}`);
+    assert.equal(r.status, 200, r.text);
+    assert.ok((r.data.entryCount ?? r.data.entries?.length ?? 0) >= 2, `nguồn phải có ≥ 2 mục: ${r.text.slice(0, 200)}`);
+    r = await api(s.adminToken, "POST", `/admin/knowledge-sources/${src.id}/archive`);
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.status, "ARCHIVED");
+    assert.equal((await api(s.adminToken, "DELETE", `/admin/knowledge-sources/${src.id}`)).status, 403, "xoá nguồn chỉ SUPER_ADMIN");
+    assert.equal((await api(s.superToken, "DELETE", `/admin/knowledge-sources/${src.id}`)).status, 204);
+    assert.equal((await api(s.superToken, "GET", `/admin/knowledge-sources/${src.id}`)).status, 404);
+});
+
+await section("khiếu nại: tài khoản bị khoá gửi khiếu nại -> admin thấy OPEN -> giải quyết UNLOCK -> đăng nhập lại được", async () => {
+    const carol = await signUp("carol");
+    let r = await api(s.adminToken, "PATCH", `/admin/users/${carol.id}`, { locked: true, lockedReason: "smoke: thử khiếu nại" });
+    assert.equal(r.status, 200, `khoá: ${r.status} ${r.text}`);
+    assert.equal((await api(null, "POST", "/auth/login", { email: carol.email, password: pw })).status, 403, "bị khoá -> 403 khi đăng nhập");
+    r = await api(null, "POST", "/auth/appeals", { email: carol.email, message: "Tôi bị khoá nhầm, mong được xem xét (smoke)." });
+    assert.ok([200, 201, 202].includes(r.status), `gửi khiếu nại: ${r.status} ${r.text}`);
+    r = await api(s.adminToken, "GET", "/admin/appeals?status=OPEN&size=100");
+    assert.equal(r.status, 200, r.text);
+    const ap = r.data.items.find((a) => a.email === carol.email || a.userId === carol.id);
+    assert.ok(ap, `không thấy khiếu nại của ${carol.email}`);
+    r = await api(s.adminToken, "POST", `/admin/appeals/${ap.id}/resolve`, { action: "UNLOCK", note: "smoke" });
+    assert.equal(r.status, 200, `giải quyết: ${r.status} ${r.text}`);
+    assert.equal((await api(null, "POST", "/auth/login", { email: carol.email, password: pw })).status, 200, "mở khoá qua khiếu nại");
+});
+
+await section("từ điển admin: thống kê / hàng chờ / tìm (tìm cần ai-service: 503 khi tắt)", async () => {
+    let r = await api(s.adminToken, "GET", "/admin/dictionary/stats");
+    assert.equal(r.status, 200, r.text);
+    r = await api(s.adminToken, "GET", "/admin/dictionary/queue?page=0&size=5");
+    assert.equal(r.status, 200, r.text);
+    assert.ok(Array.isArray(r.data.items), "hàng chờ phải có items");
+    r = await api(s.adminToken, "GET", "/admin/dictionary/search?q=%E9%A3%9F%E3%81%B9%E3%82%8B&mode=ja");
+    assert.ok([200, 503].includes(r.status), `tìm: ${r.status} ${r.text}`);
+    assert.equal((await api(s.alice.token, "GET", "/admin/dictionary/stats")).status, 403);
+});
+
 await section("tự xoá tài khoản: Bob xoá -> ẩn danh, token vô hiệu; staff bị 403", async () => {
     assert.equal((await api(s.adminToken, "DELETE", "/auth/me", { password: "x" })).status, 403);
     assert.equal((await api(s.bob.token, "DELETE", "/auth/me", { password: "sai" })).status, 400);
