@@ -88,8 +88,9 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
           const best = quizBestLabel(ch.quizBestPct);
           const canStudy = !!ch.deckId && total > 0;
           const canQuiz = canStudy && state !== "locked";
-          // Chỉ khi còn mở được lượt mới (canQuiz): chương rỗng / chưa tới ngày không có nút nào để "làm lại".
-          const retry = canQuiz ? quizRetryLabel(ch, path.quizPassPct) : null;
+          // B5.8: chương đã làm kiểm tra mà trượt vẫn hiện dải "Làm lại" kể cả khi lịch đã cân lại đẩy nó về "chưa tới ngày"
+          // (locked) — điểm trượt là của người học, không phụ thuộc ngày; chương rỗng / bộ đã xoá thì không có gì để làm lại.
+          const retry = canStudy ? quizRetryLabel(ch, path.quizPassPct) : null;
 
           return (
             <li key={ch.id} className="relative pl-10" aria-current={current ? "step" : undefined}>

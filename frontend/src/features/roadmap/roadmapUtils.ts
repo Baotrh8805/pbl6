@@ -811,6 +811,13 @@ export function deckPathLink(path: LearningPath | null | undefined, deckId: stri
 }
 
 /**
+ * B5.8: lộ trình còn có thể chứa bộ thẻ của chương — ACTIVE và chưa chốt hoàn thành — để useDeckLearningPath so
+ * chapters[].deckId khi bộ thẻ đã rời thư mục của lộ trình (hoặc thư mục đã xoá). Giữ thứ tự danh sách (mới nhất trước).
+ */
+export const activePathIds = (paths: readonly Pick<LearningPath, "id" | "status" | "completedAt">[]): string[] =>
+    paths.filter((p) => p.status === "ACTIVE" && !p.completedAt).map((p) => p.id);
+
+/**
  * Lịch lộ trình 2.0 theo id thẻ (learning_path_cards, LP-5): thẻ chốt lúc kích hoạt; thẻ thêm sau không có dòng lịch, thẻ xoá
  * thì dòng lịch mất theo (CASCADE). Sửa nội dung thẻ cũ giữ nguyên id nên không đổi lịch.
  */

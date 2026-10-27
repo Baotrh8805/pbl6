@@ -19,6 +19,7 @@ import {
   chapterQuizReplaceNotice,
   chapterQuizTarget,
   completionFallback,
+  activePathIds,
   deckPathLink,
   deleteCardMessage,
   deleteDeckMessage,
@@ -108,6 +109,17 @@ export async function runLearningPathChecks(assert: (cond: boolean, msg: string)
   const link = deckPathLink(activePath, "d3");
   assert(link?.pathId === PATH_ID && link.pathTitle === "Minna bài 1–5", "LP-15: bộ của một chương -> liên kết tới lộ trình");
   assert(deckPathLink(activePath, "d9") === null, "LP-15: bộ tự tạo thêm trong thư mục lộ trình (không là chương) -> không nhắc");
+  // B5.8: không phụ thuộc thư mục — bộ của chương dù đã rời thư mục lộ trình vẫn nhắc; chỉ lộ trình ACTIVE chưa chốt được tra
+  assert(deckPathLink({ ...activePath, folderId: null } as LearningPath, "d3")?.pathId === PATH_ID, "LP-15: lộ trình không còn thư mục vẫn nhận ra bộ của chương");
+  assert(
+    activePathIds([
+      { id: "p1", status: "ACTIVE", completedAt: null },
+      { id: "p2", status: "ACTIVE", completedAt: "2026-10-20T00:00:00Z" },
+      { id: "p3", status: "DRAFT", completedAt: null },
+      { id: "p4", status: "ACTIVE" },
+    ] as LearningPath[]).join() === "p1,p4",
+    "LP-15: chỉ lộ trình ACTIVE chưa chốt được tra chapters[].deckId, giữ thứ tự"
+  );
   assert(
     deckPathLink({ ...activePath, status: "DRAFT" } as LearningPath, "d1") === null &&
       deckPathLink({ ...activePath, chapters: undefined } as LearningPath, "d1") === null &&
