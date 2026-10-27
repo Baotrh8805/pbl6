@@ -159,6 +159,9 @@ public class AdminStatsService {
         m.put("backup", backupStatus(marker, Instant.now()));
         m.put("lastBackupAt", marker != null && java.nio.file.Files.exists(marker) ? lastModified(marker).toString() : null);
         m.put("engines", engineFlags(body.orElse(null)));
+        // Đồ thị tri thức (spec 2026-10-27): ai-service nối được Neo4j không (cờ graph của /extract/health); chi tiết dựng /
+        // đồng bộ ở GET /api/admin/graph/status
+        m.put("graph", body.map(b -> b.path("graph").asBoolean(false)).orElse(false) ? "ok" : "down");
         m.put("aiModels", aiModels(body.orElse(null)));
         return m;
     }
