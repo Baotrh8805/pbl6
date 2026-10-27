@@ -9,7 +9,7 @@ nghĩa / ví dụ sang tiếng Việt, OCR dự phòng và gợi ý mẹo nhớ,
 
 ## Tính năng chính
 
-Trạng thái từng use case (xong / một phần / chưa làm) ở `docs/USE_CASES_CHECKLIST.md`. Lưu ý: thư mục `docs/` nằm trong
+Trạng thái từng use case (xong / một phần / chưa làm) ở `docs/USE_CASES_CHECKLIST.md`; các lớp bảo mật và việc phải làm khi triển khai ở `docs/SECURITY.md`. Lưu ý: thư mục `docs/` nằm trong
 `.gitignore` từ 18/10/2026 nên các liên kết `docs/...` trong README chỉ mở được trên máy đã có bản tài liệu cục bộ.
 
 > **Điểm nhấn: Lộ trình học tập 2.0** (`/roadmap`, chi tiết ở `docs/LEARNING_PATH.md`)

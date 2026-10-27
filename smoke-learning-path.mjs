@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5173/api";
-const pw = "secret123";
+const pw = "Secret123!";
 const TEXT = "第1課\n私は毎日日本語を勉強します。学校へ行きます。\n第2課\n友達と図書館で本を読みます。";
 const DAYS = 3;
 

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5173/api";
 const email = `smoke-${Date.now()}@test.com`;
-const password = "secret123";
+const password = "Secret123!";
 
 const post = (path, body) =>
     fetch(`${BASE}${path}`, {

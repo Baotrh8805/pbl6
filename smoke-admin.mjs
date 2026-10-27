@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:8082/api";
-const pw = "secret123";
+const pw = "Secret123!";
 
 async function api(token, method, path, body) {
     const res = await fetch(`${BASE}${path}`, {
