@@ -127,8 +127,17 @@ def _kanji_short(p: dict) -> str:
     return f"{s} ({', '.join(bits)})" if bits else s
 
 
-def _group(rows: list[dict], rtype: str, label: Optional[str] = None) -> list[dict]:
-    return [r for r in rows if r["type"] == rtype and (label is None or r["label"] == label)]
+def _group(rows: list[dict], rtype: str, label: Optional[str] = None, outward: Optional[bool] = None) -> list[dict]:
+    """Láng giềng theo loại quan hệ (và nhãn / chiều nếu cho), mỗi node một lần (LOOKS_LIKE hai chiều có thể lặp)."""
+    out, seen = [], set()
+    for r in rows:
+        if r["type"] != rtype or (label is not None and r["label"] != label) or (outward is not None and r["outward"] != outward):
+            continue
+        key = queries.node_id(r["label"], r["props"])
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
 
 
 def entity_text(entity: dict, rows: list[dict]) -> str:
@@ -160,9 +169,12 @@ def entity_text(entity: dict, rows: list[dict]) -> str:
             bits.append(f"bộ thủ {r.get('no')} {r.get('char') or ''} ({r.get('nameVi') or ''}: {r.get('meaningVi') or ''})")
         elif p.get("radicalNo"):
             bits.append(f"bộ thủ số {p['radicalNo']}")
-        comps = [r["props"].get("char") for r in _group(rows, "HAS_COMPONENT")]
+        comps = [r["props"].get("char") for r in _group(rows, "HAS_COMPONENT", outward=True)]
         if comps:
             bits.append("thành phần: " + " ".join(c for c in comps if c))
+        inside = [r["props"].get("char") for r in _group(rows, "HAS_COMPONENT", "Kanji", outward=False)]
+        if inside:
+            bits.append("là thành phần của: " + " ".join(c for c in inside if c))
         similar = [r["props"].get("char") for r in _group(rows, "LOOKS_LIKE", "Kanji")]
         if similar:
             bits.append("chữ giống hình: " + " ".join(c for c in similar if c))
