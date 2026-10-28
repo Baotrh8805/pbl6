@@ -203,32 +203,6 @@ public class DictionaryCommunityService {
         return toDto(store.report(id).orElseThrow(), null);
     }
 
-    /**
-     * Báo bản dịch sai ở tab Dịch (V40): chỉ bản đã nằm trong bộ nhớ dịch chung (bản thiếu / lỗi không được lưu, không có gì để
-     * sửa). Câu gốc lưu kèm báo cáo (người học tự gửi, giao diện nói rõ); bộ nhớ dịch vẫn không gắn tài khoản.
-     */
-    @Transactional
-    public DictDtos.Report reportTranslation(long uid, DictDtos.TranslateReportRequest req) {
-        String text = DictionaryService.normalizeText(req.text());
-        if (text.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nhập câu cần báo.");
-        String proposed = blankToNull(req.proposedValue());
-        String note = blankToNull(req.note());
-        if (proposed == null && note == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hãy nhập bản dịch đúng hoặc ghi rõ chỗ sai.");
-        }
-        String hash = DictionaryService.textHash(req.direction(), text);
-        String current = store.textTranslation(hash).map(t -> dictionary.cachedTranslation(t.result())).orElse(null);
-        if (current == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Bản dịch này không còn trong bộ nhớ dịch, hãy dịch lại rồi báo.");
-        }
-        if (store.openTextReportExists(uid, hash)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bạn đã báo bản dịch này, admin đang xem.");
-        }
-        reportLimiter.check(uid);
-        long id = store.insertTextReport(hash, req.direction(), text, current, proposed, note, uid);
-        return toDto(store.report(id).orElseThrow(), null);
-    }
-
     public DictDtos.ReportPage myReports(long uid, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, Math.min(size, 50));
@@ -239,7 +213,7 @@ public class DictionaryCommunityService {
     static DictDtos.Report toDto(DictionaryStore.Report r, String term) {
         return new DictDtos.Report(r.id(), r.kind(), r.entryKey(), term, r.commentId(), r.commentContent(), r.field(), r.subKey(),
                 r.currentValue(), r.proposedValue(), r.reason(), r.note(), r.reporterId(), r.reporterEmail(), r.status(), r.action(),
-                r.resolutionNote(), r.resolvedAt(), r.createdAt(), r.sourceText());
+                r.resolutionNote(), r.resolvedAt(), r.createdAt());
     }
 
     static String termOf(JsonNode e, DictionaryKeys.Key key) {

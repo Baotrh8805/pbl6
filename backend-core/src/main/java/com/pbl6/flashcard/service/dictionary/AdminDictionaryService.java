@@ -325,7 +325,6 @@ public class AdminDictionaryService {
     @Transactional
     public ObjectNode applyReport(Long actor, long id) {
         DictionaryStore.Report r = openReport(id);
-        if ("TEXT".equals(r.kind())) return applyTextReport(actor, r);
         if (!"ENTRY".equals(r.kind()) || r.proposedValue() == null || "other".equals(r.field())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Báo cáo này không có đề xuất áp dụng được.");
         }
@@ -348,38 +347,7 @@ public class AdminDictionaryService {
         return entry(key.raw());
     }
 
-    /**
-     * Báo bản dịch sai (TEXT, V40), chỉ Nhật → Việt: thay bản dịch trong bộ nhớ dịch bằng đề xuất, gắn {@code edited}; bỏ phương án
-     * khác / ghi chú của AI (viết cho bản cũ). Việt → Nhật không sửa tay (cách đọc, romaji, phân tích câu đi theo câu Nhật) → xoá
-     * khỏi bộ nhớ để dịch lại.
-     */
-    private ObjectNode applyTextReport(Long actor, DictionaryStore.Report r) {
-        if (!"ja-vi".equals(r.field()) || r.proposedValue() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Chỉ áp được bản sửa Nhật → Việt có đề xuất; hãy xoá khỏi bộ nhớ dịch để dịch lại.");
-        }
-        ObjectNode result = store.textTranslation(r.entryKey()).map(t -> {
-            try {
-                JsonNode n = json.readTree(t.result());
-                return n.isObject() ? (ObjectNode) n : null;
-            } catch (java.io.IOException e) {
-                return null;
-            }
-        }).orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Bản dịch đã không còn trong bộ nhớ dịch."));
-        result.put("translation", r.proposedValue());
-        result.putArray("alternatives");
-        result.putNull("notes");
-        result.put("edited", true);
-        result.put("model", "admin");
-        store.updateTextTranslation(r.entryKey(), result.toString());
-        close(actor, r, "RESOLVED", "APPLIED", null, "DICT_REPORT_APPLY");
-        return result;
-    }
-
-    /**
-     * ENTRY: đánh dấu đã sửa tay (EDITED). COMMENT: action hide (mặc định) | delete — server ẩn / xoá bình luận luôn. TEXT (V40):
-     * xoá bản dịch khỏi bộ nhớ dịch (CACHE_CLEARED), lượt dịch sau gọi AI lại.
-     */
+    /** ENTRY: đánh dấu đã sửa tay (EDITED). COMMENT: action hide (mặc định) | delete — server ẩn / xoá bình luận luôn. */
     @Transactional
     public DictDtos.Report resolveReport(Long actor, long id, String note, String action) {
         DictionaryStore.Report r = openReport(id);
@@ -394,9 +362,6 @@ public class AdminDictionaryService {
                 act = "COMMENT_HIDDEN";
                 hideComment(actor, r.commentId(), note == null ? "Vi phạm quy tắc cộng đồng" : note);
             }
-        } else if ("TEXT".equals(r.kind())) {
-            act = "CACHE_CLEARED";
-            store.deleteTextTranslation(r.entryKey());
         } else {
             act = "EDITED";
         }

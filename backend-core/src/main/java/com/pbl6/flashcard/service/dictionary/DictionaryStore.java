@@ -426,14 +426,14 @@ public class DictionaryStore {
     public record Report(long id, String kind, String entryKey, Long commentId, String field, String subKey, String currentValue,
                          String proposedValue, String reason, String note, Long reporterId, String reporterEmail, String status,
                          String action, String resolutionNote, Long resolvedBy, Instant resolvedAt, Instant createdAt,
-                         String commentContent, String sourceText) {}
+                         String commentContent) {}
 
     private static final RowMapper<Report> REPORT = (rs, i) -> new Report(rs.getLong("id"), rs.getString("kind"),
             rs.getString("entry_key"), longOrNull(rs, "comment_id"), rs.getString("field"), rs.getString("sub_key"),
             rs.getString("current_value"), rs.getString("proposed_value"), rs.getString("reason"), rs.getString("note"),
             longOrNull(rs, "reporter_id"), rs.getString("reporter_email"), rs.getString("status"), rs.getString("action"),
             rs.getString("resolution_note"), longOrNull(rs, "resolved_by"), inst(rs, "resolved_at"), inst(rs, "created_at"),
-            rs.getString("comment_content"), rs.getString("source_text"));
+            rs.getString("comment_content"));
 
     private static final String REPORT_SELECT = "SELECT r.*, u.email AS reporter_email, c.content AS comment_content "
             + "FROM dict_reports r LEFT JOIN users u ON u.id = r.reporter_id LEFT JOIN dict_comments c ON c.id = r.comment_id ";
@@ -444,20 +444,6 @@ public class DictionaryStore {
                 + "proposed_value, reason, note, reporter_id) VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id", Long.class, kind, key,
                 commentId, field, subKey, current, proposed, reason, note, reporter);
         return id == null ? 0 : id;
-    }
-
-    /** Báo bản dịch sai (TEXT, V40): entry_key = hash bộ nhớ dịch, field = hướng, câu gốc ở source_text. */
-    public long insertTextReport(String hash, String direction, String source, String current, String proposed, String note,
-                                 long reporter) {
-        Long id = jdbc.queryForObject("INSERT INTO dict_reports (kind, entry_key, field, current_value, proposed_value, note, "
-                + "reporter_id, source_text) VALUES ('TEXT',?,?,?,?,?,?,?) RETURNING id", Long.class, hash, direction, current,
-                proposed, note, reporter, source);
-        return id == null ? 0 : id;
-    }
-
-    public boolean openTextReportExists(long reporter, String hash) {
-        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM dict_reports WHERE kind = 'TEXT' AND "
-                + "status = 'OPEN' AND reporter_id = ? AND entry_key = ?)", Boolean.class, reporter, hash));
     }
 
     public boolean openEntryReportExists(long reporter, String key, String field, String subKey) {
@@ -685,16 +671,6 @@ public class DictionaryStore {
     public void insertTextTranslation(String hash, String direction, String sourceText, String result, String model) {
         jdbc.update("INSERT INTO dict_text_translations (text_hash, direction, source_text, result, model) VALUES (?,?,?,?,?) "
                 + "ON CONFLICT (text_hash) DO NOTHING", hash, direction, sourceText, result, cut(model, 40));
-    }
-
-    /** Admin áp bản sửa theo báo cáo (V40): ghi đè JSON kết quả, model = admin. 0 = dòng đã bị xoá / dọn. */
-    public int updateTextTranslation(String hash, String result) {
-        return jdbc.update("UPDATE dict_text_translations SET result = ?, model = 'admin' WHERE text_hash = ?", result, hash);
-    }
-
-    /** Admin xoá bản dịch sai khỏi bộ nhớ (V40): lượt dịch sau gọi AI lại. */
-    public int deleteTextTranslation(String hash) {
-        return jdbc.update("DELETE FROM dict_text_translations WHERE text_hash = ?", hash);
     }
 
     public void touchTextTranslation(String hash) {

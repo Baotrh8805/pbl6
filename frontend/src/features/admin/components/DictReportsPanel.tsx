@@ -7,7 +7,7 @@ import { useAsync } from "@/lib/useAsync";
 import { extractErrorMessage } from "@/services/apiClient";
 import { applyDictReport, dismissDictReport, fetchDictReports, resolveDictReport } from "@/services/adminDictionaryService";
 import type { DictReport } from "@/types/dictionary.types";
-import { REPORT_FIELD_LABELS, translateDirectionLabel } from "@/features/dictionary/dictUtils";
+import { REPORT_FIELD_LABELS } from "@/features/dictionary/dictUtils";
 import { DictEntryEditor } from "./DictEntryEditor";
 import { Pager } from "./Pager";
 import { useAdminQuery } from "../useAdminQuery";
@@ -23,19 +23,18 @@ const ACTIONS: Record<string, string> = {
   EDITED: "Đã sửa tay",
   COMMENT_HIDDEN: "Đã ẩn bình luận",
   COMMENT_DELETED: "Đã xoá bình luận",
-  CACHE_CLEARED: "Đã xoá khỏi bộ nhớ dịch (dịch lại)",
   DISMISSED: "Từ chối",
 };
 const PAGE_SIZE = 20;
 const time = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "");
 
-// Báo cáo từ điển trong trang Báo cáo (K5): báo lỗi mục từ (trường + đề xuất), báo cáo bình luận và báo bản dịch sai ở tab Dịch
-// (TEXT, V40). Xử lý nhanh tại hàng, hoặc mở ngăn sửa để xem bản hiện tại cạnh đề xuất.
+// Báo cáo từ điển trong trang Báo cáo (K5): báo lỗi mục từ (trường + đề xuất) và báo cáo bình luận. Xử lý nhanh tại hàng, hoặc
+// mở ngăn sửa để xem bản hiện tại cạnh đề xuất.
 export const DictReportsPanel: React.FC = () => {
   const dialog = useDialog();
   const q = useAdminQuery({ status: "OPEN" });
   const status = (STATUSES.some((s) => s.key === q.get("status")) ? q.get("status") : "OPEN") as (typeof STATUSES)[number]["key"];
-  const kind = q.get("kind") as "ENTRY" | "COMMENT" | "TEXT" | "";
+  const kind = q.get("kind") as "ENTRY" | "COMMENT" | "";
   const [reload, setReload] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<DictReport | null>(null);
@@ -75,10 +74,9 @@ export const DictReportsPanel: React.FC = () => {
           onChange={(e) => q.set({ kind: e.target.value || undefined })}
           className="rounded-lg border border-outline-variant bg-surface-container-lowest px-2.5 py-1.5 text-body-sm"
         >
-          <option value="">Tất cả</option>
+          <option value="">Mục từ + bình luận</option>
           <option value="ENTRY">Báo lỗi mục từ</option>
           <option value="COMMENT">Báo cáo bình luận</option>
-          <option value="TEXT">Báo bản dịch sai</option>
         </select>
       </div>
       {error && <p role="alert" className="text-error text-body-sm">{error}</p>}
@@ -88,33 +86,16 @@ export const DictReportsPanel: React.FC = () => {
         {(data?.items ?? []).map((r) => (
           <li key={r.id} className="rounded-xl border border-surface-container-high bg-surface-container-lowest p-3 flex flex-col gap-1.5 text-body-sm">
             <p className="flex flex-wrap items-center gap-2">
-              {r.kind === "TEXT" ? (
-                <span className="font-semibold">Bản dịch</span>
-              ) : (
-                <button type="button" onClick={() => setOpen(r.entryKey)} lang="ja" className="font-semibold text-primary hover:underline">
-                  {r.term || r.entryKey}
-                </button>
-              )}
+              <button type="button" onClick={() => setOpen(r.entryKey)} lang="ja" className="font-semibold text-primary hover:underline">
+                {r.term || r.entryKey}
+              </button>
               <span className="text-xs px-1.5 py-0.5 rounded bg-surface-container">
-                {r.kind === "COMMENT"
-                  ? `Bình luận · ${REASONS[r.reason ?? ""] ?? r.reason}`
-                  : r.kind === "TEXT"
-                    ? translateDirectionLabel(r.field === "vi-ja" ? "vi-ja" : "ja-vi")
-                    : REPORT_FIELD_LABELS[(r.field ?? "other") as keyof typeof REPORT_FIELD_LABELS]}
+                {r.kind === "COMMENT" ? `Bình luận · ${REASONS[r.reason ?? ""] ?? r.reason}` : REPORT_FIELD_LABELS[r.field ?? "other"]}
                 {r.subKey ? ` · ${r.subKey}` : ""}
               </span>
               <span className="text-xs text-on-surface-variant">{r.reporterEmail} · {time(r.createdAt)}</span>
             </p>
-            {r.kind === "TEXT" ? (
-              <>
-                <blockquote lang={r.field === "vi-ja" ? "vi" : "ja"} className="border-l-4 border-outline-variant pl-2 whitespace-pre-line">
-                  {r.sourceText ?? "(không có câu gốc)"}
-                </blockquote>
-                <p lang={r.field === "vi-ja" ? "ja" : "vi"} className="whitespace-pre-line">
-                  <span className="text-on-surface-variant line-through">{r.currentValue || "(trống)"}</span> → <strong>{r.proposedValue || "(không đề xuất)"}</strong>
-                </p>
-              </>
-            ) : r.kind === "ENTRY" ? (
+            {r.kind === "ENTRY" ? (
               r.field !== "other" && (
                 <p>
                   <span className="text-on-surface-variant line-through">{r.currentValue || "(trống)"}</span> → <strong>{r.proposedValue || "(không đề xuất)"}</strong>
@@ -131,16 +112,7 @@ export const DictReportsPanel: React.FC = () => {
                 {r.kind === "ENTRY" && r.proposedValue && r.field !== "other" && (
                   <Button size="sm" onClick={() => void run(() => applyDictReport(r.id))}>Áp dụng đề xuất</Button>
                 )}
-                {r.kind === "TEXT" ? (
-                  <>
-                    {r.proposedValue && r.field === "ja-vi" && (
-                      <Button size="sm" onClick={() => void run(() => applyDictReport(r.id))}>Áp bản sửa</Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => void run(() => resolveDictReport(r.id, undefined, "retranslate"))}>
-                      Xoá khỏi bộ nhớ (dịch lại)
-                    </Button>
-                  </>
-                ) : r.kind === "ENTRY" ? (
+                {r.kind === "ENTRY" ? (
                   <>
                     <Button size="sm" variant="outline" onClick={() => setOpen(r.entryKey)}>Mở ngăn sửa</Button>
                     <Button size="sm" variant="ghost" onClick={() => void run(() => resolveDictReport(r.id))}>Đã sửa tay</Button>

@@ -7,7 +7,6 @@ import { translateText } from "@/services/dictionaryService";
 import type { DictKey, DictTranslateDirection, DictTranslateToken, DictTranslation } from "@/types/dictionary.types";
 import { TRANSLATE_MAX_CHARS, detectTranslateDirection, tokenMeaning, translateDirectionLabel, translateStateNote } from "../dictUtils";
 import { DictPopover } from "./DictQuickLookup";
-import { ReportTranslationModal } from "./ReportTranslationModal";
 
 const DIRECTIONS: { key: DictTranslateDirection; label: string }[] = [
   { key: "auto", label: "Tự nhận" },
@@ -100,9 +99,8 @@ const TokenRow: React.FC<{ t: DictTranslateToken; onPick: (key: DictKey) => void
 };
 
 /** Kết quả một lượt dịch: bản dịch (AI dịch cả đoạn) + cách đọc, phương án khác, ghi chú, sát nghĩa theo cụm, phân tích câu. */
-const TranslationResult: React.FC<{ r: DictTranslation; text: string; onOpen: (key: DictKey) => void }> = ({ r, text, onOpen }) => {
+const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) => void }> = ({ r, onOpen }) => {
   const [popKey, setPopKey] = useState<DictKey | null>(null);
-  const [reporting, setReporting] = useState(false);
   const { copied, copy } = useCopyToClipboard();
   const targetLang = r.direction === "ja-vi" ? "vi" : "ja";
   const note = translateStateNote(r.state, r.aiLeft, r.aiLimit);
@@ -115,7 +113,6 @@ const TranslationResult: React.FC<{ r: DictTranslation; text: string; onOpen: (k
         <span className="inline-flex items-center gap-2">
           <span className="font-semibold text-on-surface">{translateDirectionLabel(r.direction)}</span>
           {r.cached && <span title="Câu này đã được dịch trước đó, lấy từ bộ nhớ dịch chung">· từ bộ nhớ dịch</span>}
-          {r.edited && <span title="Bản dịch đã được quản trị viên sửa theo báo cáo của người học">· đã hiệu đính</span>}
         </span>
         {r.aiLimit > 0 && <span>Còn {r.aiLeft}/{r.aiLimit} lượt dịch AI trong giờ này</span>}
       </div>
@@ -153,17 +150,6 @@ const TranslationResult: React.FC<{ r: DictTranslation; text: string; onOpen: (k
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[20px]">{copied ? "check" : "content_copy"}</span>
               </button>
-              {r.state === "OK" && (
-                <button
-                  type="button"
-                  onClick={() => setReporting(true)}
-                  className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container"
-                  title="Báo bản dịch sai"
-                  aria-label="Báo bản dịch sai"
-                >
-                  <span aria-hidden="true" className="material-symbols-outlined text-[20px]">flag</span>
-                </button>
-              )}
             </div>
           </div>
           {r.direction === "vi-ja" && (r.reading || r.romaji) && (
@@ -223,9 +209,6 @@ const TranslationResult: React.FC<{ r: DictTranslation; text: string; onOpen: (k
         </section>
       )}
 
-      {reporting && r.translation && (
-        <ReportTranslationModal text={text} direction={r.direction} translation={r.translation} onClose={() => setReporting(false)} />
-      )}
       {popKey && <DictPopover entryKey={popKey} onClose={() => setPopKey(null)} onOpen={(k) => { setPopKey(null); onOpen(k); }} />}
     </div>
   );
@@ -347,7 +330,7 @@ export const TranslateTab: React.FC<{
           {error}
         </p>
       )}
-      {result && <TranslationResult r={result} text={text} onOpen={onOpen} />}
+      {result && <TranslationResult r={result} onOpen={onOpen} />}
       {result && (
         <p className="text-[11px] text-on-surface-variant">
           Bản dịch do AI tạo, có thể sai ở câu mơ hồ hoặc thành ngữ; câu bạn nhập được gửi tới dịch vụ AI để dịch và lưu trong bộ nhớ dịch

@@ -23,12 +23,6 @@ public final class DictDtos {
     public record TranslateTextRequest(@NotBlank @Size(max = 1000) String text,
                                        @Pattern(regexp = "auto|ja-vi|vi-ja") String direction) {}
 
-    /** Báo bản dịch sai ở tab Dịch (V40): câu đã dịch + hướng cụ thể; đề xuất / ghi chú cần ít nhất một. */
-    public record TranslateReportRequest(@NotBlank @Size(max = 1000) String text,
-                                         @NotBlank @Pattern(regexp = "ja-vi|vi-ja") String direction,
-                                         @Size(max = 1000) String proposedValue,
-                                         @Size(max = 1000) String note) {}
-
     /** Vẽ chữ Hán để tra: các nét theo thứ tự vẽ, mỗi nét là dãy điểm (toạ độ khung vẽ). */
     public record HandwritingRequest(
             @jakarta.validation.constraints.NotNull @Size(min = 1, max = 40)
@@ -59,11 +53,10 @@ public final class DictDtos {
     public record CommentReportRequest(@NotBlank @Pattern(regexp = "SPAM|OFFENSIVE|WRONG|OTHER") String reason,
                                        @Size(max = 1000) String note) {}
 
-    /** kind ENTRY | COMMENT | TEXT (V40: báo bản dịch sai — entryKey = hash bộ nhớ dịch, field = hướng, sourceText = câu gốc). */
     public record Report(long id, String kind, String entryKey, String term, Long commentId, String commentContent, String field,
                          String subKey, String currentValue, String proposedValue, String reason, String note, Long reporterId,
                          String reporterEmail, String status, String action, String resolutionNote, Instant resolvedAt,
-                         Instant createdAt, String sourceText) {}
+                         Instant createdAt) {}
 
     public record ReportPage(List<Report> items, long total, int page, int size) {}
 

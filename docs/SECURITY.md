@@ -67,8 +67,7 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
   khi đó chỉ phân tích câu tại chỗ (Sudachi + JMdict).
 - Bộ nhớ dịch `dict_text_translations` lưu câu + bản dịch theo hash, **không gắn người dùng**; dòng không dùng lại 30 ngày bị
   `HousekeepingJob` xoá (câu có thể chứa thông tin cá nhân nên không giữ mãi). Không có API đọc lại bộ nhớ dịch; admin không xem được
-  câu người khác đã dịch — **trừ** câu người học tự gửi kèm "Báo bản dịch sai" (V40: `dict_reports.kind = TEXT`, `source_text`, gắn
-  người báo như mọi báo cáo; hộp thoại báo nói rõ trước khi gửi). Admin áp bản sửa / xoá dòng bộ nhớ qua API báo cáo có audit.
+  câu người khác đã dịch.
 - Hạn mức: trần / giờ / tài khoản (cấu hình, mặc định 20) + chống dồn 10 / phút kể cả lượt trúng bộ nhớ dịch (429); văn bản ≤ 1 000 ký tự
   ở cả backend (400) và ai-service (422). Gemini chỉ nhận prompt cố định + văn bản; đầu ra qua lọc (đúng ngôn ngữ, trần độ dài, không
   trộn chữ Nhật vào bản Việt, nghĩa từng cụm ≤ 80 ký tự) trước khi lưu / hiện. Lời gọi dịch câu có hạn chót riêng 26 s và không kích
