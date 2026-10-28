@@ -62,7 +62,7 @@ export const fetchDictHistoryAdmin = async (params: { field?: string; page?: num
     (await apiClient.get<DictPage<DictHistory>>("/admin/dictionary/history", { params })).data;
 
 export const fetchDictReports = async (params: {
-    kind?: "ENTRY" | "COMMENT" | "";
+    kind?: "ENTRY" | "COMMENT" | "TEXT" | "";
     status?: "OPEN" | "RESOLVED" | "DISMISSED" | "ALL";
     q?: string;
     page?: number;
@@ -72,10 +72,12 @@ export const fetchDictReports = async (params: {
     return (await apiClient.get<DictPage<DictReport>>("/admin/dictionary/reports", { params: clean })).data;
 };
 
+/** Mục từ: trả mục đã sửa; báo bản dịch sai (TEXT, Nhật → Việt): trả bản dịch đã sửa trong bộ nhớ dịch. */
 export const applyDictReport = async (id: number): Promise<DictAdminEntry> =>
     (await apiClient.post<DictAdminEntry>(`/admin/dictionary/reports/${id}/apply`)).data;
 
-export const resolveDictReport = async (id: number, note?: string, action?: "hide" | "delete"): Promise<DictReport> =>
+/** action: bình luận hide | delete; báo bản dịch sai (TEXT) retranslate = xoá khỏi bộ nhớ dịch để lượt sau dịch lại. */
+export const resolveDictReport = async (id: number, note?: string, action?: "hide" | "delete" | "retranslate"): Promise<DictReport> =>
     (await apiClient.post<DictReport>(`/admin/dictionary/reports/${id}/resolve`, { note: note || null }, {
         params: action ? { action } : undefined,
     })).data;

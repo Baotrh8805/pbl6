@@ -118,8 +118,9 @@ export const describeNotification = (n: AppNotification): { text: string; to?: s
         }
         case "DICT_REPORT_RESOLVED": {
             const key = str(p.entryKey);
-            const to = key ? `/dictionary?e=${encodeURIComponent(key)}` : "/dictionary";
-            const what = p.kind === "COMMENT" ? "Báo cáo bình luận" : "Báo lỗi từ điển";
+            // TEXT (V40): entryKey là hash bộ nhớ dịch, không phải mục từ -> về tab Dịch
+            const to = p.kind === "TEXT" ? "/dictionary?tab=translate" : key ? `/dictionary?e=${encodeURIComponent(key)}` : "/dictionary";
+            const what = p.kind === "COMMENT" ? "Báo cáo bình luận" : p.kind === "TEXT" ? "Báo bản dịch sai" : "Báo lỗi từ điển";
             if (p.status === "DISMISSED") {
                 return { text: `${what} của bạn không được chấp nhận.${str(p.note) ? ` Lý do: ${str(p.note)}` : ""}`, to };
             }

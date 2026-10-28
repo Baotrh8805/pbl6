@@ -1,6 +1,6 @@
 // Từ điển cho người học (/api/dictionary/*, spec 2026-10-26 §6.4). Khoá mục có ký tự ":" "|" và chữ Nhật → luôn encodeURIComponent.
 import { apiClient } from "./apiClient.ts";
-import type { DictComment, DictEntry, DictExample, DictKey, DictPage, DictReport, DictReportField, DictSearchResult, DictSentenceResult, DictSummary, DictToken, DictTranslateDirection, DictTranslation } from "../types/dictionary.types.ts";
+import type { DictComment, DictEntry, DictExample, DictKey, DictPage, DictReport, DictReportField, DictSearchResult, DictSentenceResult, DictSummary, DictToken, DictTranslateDirection, DictTranslateDirectionFixed, DictTranslation } from "../types/dictionary.types.ts";
 
 const enc = encodeURIComponent;
 
@@ -66,6 +66,14 @@ export const reportDictEntry = async (
 
 export const reportDictComment = async (id: number, reason: "SPAM" | "OFFENSIVE" | "WRONG" | "OTHER", note?: string): Promise<DictReport> =>
     (await apiClient.post<DictReport>(`/dictionary/comments/${id}/reports`, { reason, note: note || null })).data;
+
+/** Báo bản dịch sai ở tab Dịch (V40): chỉ bản đã nằm trong bộ nhớ dịch (state OK); câu gốc gửi kèm cho quản trị viên. */
+export const reportTranslation = async (body: {
+    text: string;
+    direction: DictTranslateDirectionFixed;
+    proposedValue?: string | null;
+    note?: string | null;
+}): Promise<DictReport> => (await apiClient.post<DictReport>("/dictionary/translate/reports", body)).data;
 
 export const fetchMyDictReports = async (page = 0, size = 20): Promise<DictPage<DictReport>> =>
     (await apiClient.get<DictPage<DictReport>>("/dictionary/reports/mine", { params: { page, size } })).data;

@@ -81,6 +81,14 @@ public class DictionaryController {
         return dictionary.translateText(uid(me), body.text(), body.direction());
     }
 
+    /** Báo bản dịch sai (V40): {text, direction ja-vi | vi-ja, proposedValue?, note?} → 201; 404 không còn trong bộ nhớ dịch; 409 đã báo. */
+    @PostMapping("/translate/reports")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DictDtos.Report reportTranslation(@AuthenticationPrincipal CustomUserDetails me,
+                                             @Valid @RequestBody DictDtos.TranslateReportRequest body) {
+        return community.reportTranslation(uid(me), body);
+    }
+
     @GetMapping("/stats")
     public DictDtos.AiStats stats(@AuthenticationPrincipal CustomUserDetails me) {
         return dictionary.stats(uid(me));

@@ -348,6 +348,11 @@ await section("dịch câu (V39, D33): POST /dictionary/translate 200 có state 
     assert.equal((await api(s.alice.token, "POST", "/dictionary/translate", { text: "   " })).status, 400, "văn bản rỗng -> 400");
     assert.equal((await api(s.alice.token, "POST", "/dictionary/translate", { text: "x", direction: "en-vi" })).status, 400, "hướng lạ -> 400");
     assert.equal((await api(s.alice.token, "POST", "/dictionary/translate", { text: "x".repeat(1001) })).status, 400, "quá 1 000 ký tự -> 400");
+    // V40: báo bản dịch sai chỉ cho câu đã nằm trong bộ nhớ dịch; thiếu đề xuất lẫn ghi chú -> 400
+    r = await api(s.alice.token, "POST", "/dictionary/translate/reports", { text: `smoke ${Date.now()} 学校`, direction: "ja-vi", note: "sai" });
+    assert.equal(r.status, 404, `báo câu chưa dịch: ${r.status} ${r.text}`);
+    r = await api(s.alice.token, "POST", "/dictionary/translate/reports", { text: "ご飯を食べました。", direction: "ja-vi" });
+    assert.equal(r.status, 400, `báo thiếu nội dung: ${r.status} ${r.text}`);
     r = await api(s.adminToken, "GET", "/admin/settings");
     assert.equal(r.status, 200, r.text);
     assert.equal(typeof r.data.dictionary_translate_hourly_limit, "number", "khoá cấu hình dictionary_translate_hourly_limit");

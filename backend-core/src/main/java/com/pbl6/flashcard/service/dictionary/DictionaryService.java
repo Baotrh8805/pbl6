@@ -586,7 +586,7 @@ public class DictionaryService {
         if (!TRANSLATE_DIRECTIONS.contains(dir)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hướng dịch không hợp lệ.");
         if ("auto".equals(dir)) dir = DictionaryKeys.hasJapanese(text) ? "ja-vi" : "vi-ja";
         limiter.checkTranslateBurst(uid);
-        String hash = sha256(dir + "\n" + text);
+        String hash = textHash(dir, text);
         ObjectNode out = store.textTranslation(hash).map(c -> parseCached(c.result())).orElse(null);
         boolean fromCache = out != null;
         String state = "OK";
@@ -632,6 +632,17 @@ public class DictionaryService {
         out.put("aiLeft", limiter.translateLeft(uid));
         out.put("aiLimit", limiter.translateLimit());
         return out;
+    }
+
+    /** Khoá bộ nhớ dịch: sha256(hướng + '\n' + câu đã chuẩn hoá) — dùng chung cho dịch và báo bản dịch sai (V40). */
+    static String textHash(String direction, String normalizedText) {
+        return sha256(direction + "\n" + normalizedText);
+    }
+
+    /** Bản dịch trong một dòng bộ nhớ dịch (JSON kết quả); null khi dòng hỏng / không có bản dịch. */
+    String cachedTranslation(String result) {
+        ObjectNode n = parseCached(result);
+        return n == null ? null : text(n, "translation", null);
     }
 
     /** Gộp khoảng trắng để cùng một câu gõ khác vài dấu cách vẫn trúng bộ nhớ dịch; không đổi chữ (giữ nguyên dấu câu Nhật). */

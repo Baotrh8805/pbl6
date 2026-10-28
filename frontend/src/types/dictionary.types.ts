@@ -156,12 +156,15 @@ export type DictReportField = "reading" | "han_viet" | "meaning_vi" | "meaning_e
 
 export interface DictReport {
     id: number;
-    kind: "ENTRY" | "COMMENT";
+    /** TEXT (V40): báo bản dịch sai ở tab Dịch — entryKey là hash bộ nhớ dịch, field là hướng ja-vi | vi-ja */
+    kind: "ENTRY" | "COMMENT" | "TEXT";
     entryKey: DictKey;
     term?: string | null;
     commentId?: number | null;
     commentContent?: string | null;
-    field?: DictReportField | null;
+    /** TEXT: câu gốc người học gửi kèm báo cáo */
+    sourceText?: string | null;
+    field?: DictReportField | DictTranslateDirectionFixed | null;
     subKey?: string | null;
     currentValue?: string | null;
     proposedValue?: string | null;
@@ -285,6 +288,7 @@ export interface DictSentenceResult {
 // ---------- Dịch câu (tab Dịch, spec 2026-10-28-dich-cau-design, D33) ----------
 
 export type DictTranslateDirection = "auto" | "ja-vi" | "vi-ja";
+export type DictTranslateDirectionFixed = Exclude<DictTranslateDirection, "auto">;
 
 /**
  * OK: có bản dịch; OFF: admin tắt hoặc chưa cấu hình AI; LIMIT: hết lượt trong giờ; AI_DOWN: AI lỗi / quá tải. Ba trạng thái sau
@@ -335,6 +339,8 @@ export interface DictTranslation {
     readingAgrees: boolean | null;
     tokens: DictTranslateToken[];
     model: string | null;
+    /** Quản trị viên đã sửa bản dịch này theo báo cáo của người học (V40) */
+    edited?: boolean;
     state: DictTranslateState;
     cached: boolean;
     aiLeft: number;

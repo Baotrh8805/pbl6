@@ -1,8 +1,9 @@
 # Nhật ký thay đổi
 
 ## 28/10/2026: Dịch câu / đoạn Nhật ↔ Việt trong từ điển (tab Dịch, D33)
-Spec [Plan/specs/2026-10-28-dich-cau-design.md](Plan/specs/2026-10-28-dich-cau-design.md). Một migration chỉ thêm: **V39** (bảng
-`dict_text_translations` bộ nhớ dịch chung, khoá `dictionary_translate_hourly_limit` = 20). Đảo quyết định 26/10 "Dịch ngược Việt →
+Spec [Plan/specs/2026-10-28-dich-cau-design.md](Plan/specs/2026-10-28-dich-cau-design.md). Hai migration chỉ thêm: **V39** (bảng
+`dict_text_translations` bộ nhớ dịch chung, khoá `dictionary_translate_hourly_limit` = 20), **V40** (báo bản dịch sai: `dict_reports`
+kind `TEXT` + `source_text`). Đảo quyết định 26/10 "Dịch ngược Việt →
 Nhật bằng AI → bỏ qua" thành làm cả hai chiều.
 - **Nguyên tắc (yêu cầu của người dùng: bản dịch phải trôi chảy, đúng nghĩa)**: bản dịch luôn do Gemini dịch **cả đoạn** (ngữ cảnh,
   chủ ngữ bị bỏ, trật tự, kính ngữ, thành ngữ); phần phân tích từng cụm (Sudachi + JMdict + JLPT) chỉ là lớp hỗ trợ học, **không bao
@@ -26,8 +27,13 @@ Nhật bằng AI → bỏ qua" thành làm cả hai chiều.
   `/about/data`; hàm thuần `dictUtils.ts` + selfcheck `dictionary.ts`.
 - **Smoke**: `smoke-admin.mjs` mục "dịch câu" (200 có `state` / `tokens` hoặc 503 khi ai-service tắt; 400 rỗng / hướng lạ / quá dài;
   khoá cấu hình).
+- **Báo bản dịch sai (V40, bổ sung cùng ngày)**: bộ nhớ dịch dùng chung nên bản sai phải sửa được — `dict_reports.kind = TEXT`
+  (+ cột `source_text`), `POST /api/dictionary/translate/reports` (404 khi câu không còn trong bộ nhớ, 409 trùng), admin **Áp bản sửa**
+  (Nhật → Việt: thay bản dịch trong bộ nhớ, `edited`) / **Xoá khỏi bộ nhớ** (`resolve?action=retranslate`, dịch lại lượt sau) / Từ
+  chối; FE nút cờ + `ReportTranslationModal`, nhãn "đã hiệu đính", bộ lọc "Báo bản dịch sai" ở Admin › Báo cáo, thông báo về tab
+  Dịch. Test `DictionaryIT` +2.
 - **Chưa làm / giới hạn**: chưa chạy với khoá Gemini thật (máy dev không có khoá) — chất lượng hai prompt cần kiểm tay; không dịch
-  offline (D33); chưa có nút báo bản dịch sai, chưa có lịch sử dịch theo người dùng (chủ ý).
+  offline (D33); chưa có lịch sử dịch theo người dùng (chủ ý).
 
 ## 27/10/2026 (đêm): Kiểm duyệt bình luận bằng AI (ViHSD + ViHOS) và mô hình trí nhớ HLR trong ôn tập (D31, D32)
 Spec [Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md](Plan/specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md), kế hoạch

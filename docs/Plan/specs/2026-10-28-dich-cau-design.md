@@ -103,6 +103,22 @@ Trả 200 kèm `reason` (khác `/dict/translate` trả 503) vì nửa còn lại
   thêm ô "Lượt dịch câu AI / giờ".
 - `HousekeepingJob` xoá dòng bộ nhớ dịch có `last_hit_at` quá 30 ngày (`KEEP_TEXT_TRANSLATIONS`, phần tử thứ 10 của mảng kết quả).
 
+### 4.5 Báo bản dịch sai (bổ sung 28/10, V40)
+
+Bộ nhớ dịch dùng chung: một bản dịch sai được trả lại cho mọi người tới 30 ngày, nên cần đường sửa.
+
+- `V40__dict_text_reports.sql` (chỉ thêm): `dict_reports.source_text`, CHECK `kind` thêm `TEXT`. Báo cáo TEXT: `entry_key` = hash bộ
+  nhớ dịch (64 ký tự), `field` = hướng, `current_value` = bản dịch lúc báo, `proposed_value` = bản đúng người học đề xuất (tuỳ chọn).
+- `POST /api/dictionary/translate/reports {text, direction: ja-vi | vi-ja, proposedValue?, note?}` (`DictionaryCommunityService.
+  reportTranslation`) → 201; 400 thiếu cả đề xuất lẫn ghi chú / hướng `auto`; 404 câu không còn trong bộ nhớ dịch (bản lỗi / thiếu
+  không được lưu nên không có gì để sửa); 409 người này đã báo câu này và chưa xử lý; chung trần báo cáo `ReportRateLimiter`.
+- Admin (Báo cáo › Từ điển, lọc "Báo bản dịch sai"): **Áp bản sửa** (`/reports/{id}/apply`, chỉ Nhật → Việt có đề xuất: thay
+  `translation`, bỏ phương án khác / ghi chú của AI, gắn `edited = true`, `model = admin`); **Xoá khỏi bộ nhớ** (`/reports/{id}/resolve
+  ?action=retranslate` → `CACHE_CLEARED`, lượt sau gọi AI lại); **Từ chối**. Việt → Nhật không áp tay được (cách đọc, romaji, phân tích
+  câu đi theo câu Nhật) → 400. Người báo nhận `DICT_REPORT_RESOLVED` (kind TEXT → link về tab Dịch).
+- Frontend: nút cờ "Báo bản dịch sai" trên thẻ bản dịch khi `state = OK` (`ReportTranslationModal`: câu gốc, bản hiện tại, bản đúng,
+  ghi chú, dòng nói rõ câu gốc đi kèm báo cáo); nhãn "· đã hiệu đính" khi `edited`.
+
 ## 5. Frontend
 
 - Tab **Dịch** trong `/dictionary` (`features/dictionary/components/TranslateTab.tsx`, icon `g_translate`), trạng thái trên URL
@@ -130,7 +146,7 @@ Trả 200 kèm `reason` (khác `/dict/translate` trả 503) vì nửa còn lại
 | Tầng | Test |
 |---|---|
 | ai-service | `tests/test_translate_text.py` (15 ca: hướng, gom trợ động từ / て / です sau danh từ không gom, dấu / Latin, trần token, romaji + so cách đọc, lọc đầu ra hai chiều, prompt / schema / hồ sơ 20 s, code fence, lỗi, hạn chót không cooldown, thử lại 503); `tests/test_dictionary.py` 2 ca router (`/dict/translate-text` không AI / `withAi=false` / vi-ja; có AI hai chiều, nghĩa theo ngữ cảnh, `readingAgrees`, romaji, `quota` / `budget` → `aiOverloaded` / bản dịch còn chữ Nhật → `error`) |
-| backend | `DictionaryIT` 3 ca (dịch một lần rồi cache cho cả người khác + `dictVi` áp lúc đọc; OFF / trần 0 / AI_DOWN → LIMIT / tự nhận hướng; 400 / 401 / 503 hoàn lượt / 429 chống dồn); `AdminSettingsIT` (16 dòng seed, khoá tuỳ chọn 0..1000); `HousekeepingIT` (mảng 10 phần tử) |
+| backend | `DictionaryIT` 5 ca (V40: báo → áp bản sửa → người khác nhận bản đã sửa từ bộ nhớ → báo lại → xoá khỏi bộ nhớ → dịch lại; Việt → Nhật không áp tay được, từ chối; 400 / 401 / 404 / 409 — dịch một lần rồi cache cho cả người khác + `dictVi` áp lúc đọc; OFF / trần 0 / AI_DOWN → LIMIT / tự nhận hướng; 400 / 401 / 503 hoàn lượt / 429 chống dồn); `AdminSettingsIT` (16 dòng seed, khoá tuỳ chọn 0..1000); `HousekeepingIT` (mảng 10 phần tử) |
 | frontend | `npm run lint`, `npm run build`, selfcheck `dictionary.ts` (hướng, nhãn, ghi chú trạng thái, nhận câu, thứ tự nghĩa, khoá cấu hình) |
 | smoke | `smoke-admin.mjs` mục "dịch câu": 200 có `state` / `tokens` (ai-service tắt → 503), 400 rỗng / hướng lạ / quá dài, khoá cấu hình trong `GET /admin/settings` |
 
@@ -145,8 +161,8 @@ Chưa kiểm: chất lượng bản dịch với Gemini thật (prompt hai chi�
 
 ## 9. Hạn chế, việc sau
 
-- Chất lượng phụ thuộc Gemini; câu mơ hồ / thành ngữ có thể sai — chân tab có nhắc; chưa có nút "báo bản dịch sai" (có thể nối vào
-  `dict_reports` sau).
+- Chất lượng phụ thuộc Gemini; câu mơ hồ / thành ngữ có thể sai — chân tab có nhắc; người học báo bản dịch sai (§4.5), admin sửa
+  hoặc cho dịch lại.
 - Nghĩa theo ngữ cảnh chỉ cho 150 cụm đầu; đoạn dài hơn dùng nghĩa từ điển / gloss Anh cho phần sau.
 - Chưa có lịch sử dịch theo người dùng (chủ ý: không lưu câu người học theo tài khoản); chưa thêm câu dịch vào bộ thẻ trực tiếp (đi qua
   popover → mục từ → "Thêm vào bộ thẻ").

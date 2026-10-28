@@ -578,4 +578,77 @@ class DictionaryIT extends IntegrationTest {
         for (int i = 0; i < 8; i++) translate(token, "ご飯");
         call(post("/api/dictionary/translate"), token, Map.of("text", "ご飯")).andExpect(status().isTooManyRequests());
     }
+    // ------------------------------------------------------------------ báo bản dịch sai (V40)
+
+    @Test
+    void translation_report_apply_and_retranslate() throws Exception {
+        String user = newUser();
+        String admin = newStaff(Role.ADMIN);
+        String src = "ご飯を食べました。" + id;   // câu riêng của test: bộ nhớ dịch dùng chung giữa các test
+        Mockito.when(ai.translateText(eq(src), eq("ja-vi"), eq(true))).thenReturn(aiTranslation("w:" + id));
+        assertEquals("OK", translate(user, src).get("state").asText());
+
+        // chưa dịch / chưa vào bộ nhớ -> 404; thiếu cả đề xuất lẫn ghi chú -> 400; hướng auto không nhận
+        call(post("/api/dictionary/translate/reports"), user, Map.of("text", "学校", "direction", "ja-vi", "note", "sai"))
+                .andExpect(status().isNotFound());
+        call(post("/api/dictionary/translate/reports"), user, Map.of("text", src, "direction", "ja-vi")).andExpect(status().isBadRequest());
+        call(post("/api/dictionary/translate/reports"), user, Map.of("text", src, "direction", "auto", "note", "sai"))
+                .andExpect(status().isBadRequest());
+        call(post("/api/dictionary/translate/reports"), null, Map.of("text", src, "direction", "ja-vi", "note", "sai"))
+                .andExpect(status().isUnauthorized());
+
+        JsonNode r = read(call(post("/api/dictionary/translate/reports"), user,
+                Map.of("text", "  " + src, "direction", "ja-vi", "proposedValue", "Tôi đã ăn cơm rồi.", "note", "thiếu 'rồi'"))
+                .andExpect(status().isCreated()));
+        assertEquals("TEXT", r.get("kind").asText());
+        assertEquals("ja-vi", r.get("field").asText());
+        assertEquals(src, r.get("sourceText").asText(), "câu gốc đã chuẩn hoá đi kèm báo cáo");
+        assertEquals("Tôi đã ăn cơm.", r.get("currentValue").asText());
+        call(post("/api/dictionary/translate/reports"), user, Map.of("text", src, "direction", "ja-vi", "note", "lần nữa"))
+                .andExpect(status().isConflict());
+
+        // admin thấy ở bộ lọc TEXT; báo cáo TEXT không lọt vào hàng chờ mục từ
+        JsonNode list = read(call(get("/api/admin/dictionary/reports").param("kind", "TEXT"), admin, null).andExpect(status().isOk()));
+        assertTrue(list.get("total").asInt() >= 1);
+        long rid = r.get("id").asLong();
+        JsonNode applied = read(call(post("/api/admin/dictionary/reports/{id}/apply", rid), admin, null).andExpect(status().isOk()));
+        assertEquals("Tôi đã ăn cơm rồi.", applied.get("translation").asText());
+        assertEquals("RESOLVED", jdbc.queryForObject("SELECT status FROM dict_reports WHERE id = ?", String.class, rid));
+        JsonNode feed = read(call(get("/api/notifications"), user, null));
+        assertEquals("TEXT", feed.get("items").get(0).get("payload").get("kind").asText());
+
+        // người học (cả người khác) nhận bản đã sửa từ bộ nhớ, không gọi AI lại
+        JsonNode fixed = translate(newUser(), src);
+        assertTrue(fixed.get("cached").asBoolean());
+        assertTrue(fixed.get("edited").asBoolean());
+        assertEquals("Tôi đã ăn cơm rồi.", fixed.get("translation").asText());
+        assertEquals("admin", fixed.get("model").asText());
+        Mockito.verify(ai, Mockito.times(1)).translateText(eq(src), eq("ja-vi"), eq(true));
+
+        // báo tiếp -> admin xoá khỏi bộ nhớ -> lượt sau dịch lại bằng AI
+        long rid2 = read(call(post("/api/dictionary/translate/reports"), user, Map.of("text", src, "direction", "ja-vi", "note", "vẫn sai"))
+                .andExpect(status().isCreated())).get("id").asLong();
+        call(post("/api/admin/dictionary/reports/{id}/resolve", rid2).param("action", "retranslate"), admin, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("CACHE_CLEARED"));
+        JsonNode again = translate(user, src);
+        assertFalse(again.get("cached").asBoolean());
+        Mockito.verify(ai, Mockito.times(2)).translateText(eq(src), eq("ja-vi"), eq(true));
+    }
+
+    @Test
+    void translation_report_vi_ja_cannot_be_hand_applied() throws Exception {
+        String user = newUser();
+        String admin = newStaff(Role.ADMIN);
+        String src = "Tôi ăn cơm " + id + ".";
+        Mockito.when(ai.translateText(eq(src), eq("vi-ja"), eq(true))).thenReturn(json.readTree("""
+                {"direction":"vi-ja","source":"%s","translation":"ご飯を食べます。","literal":null,"alternatives":[],"notes":null,
+                 "reading":"ごはんをたべます。","romaji":"gohan o tabemasu.","readingAgrees":true,"tokens":[],"model":"gemini-test","reason":null}
+                """.formatted(src)));
+        assertEquals("OK", translate(user, src).get("state").asText());
+        long rid = read(call(post("/api/dictionary/translate/reports"), user,
+                Map.of("text", src, "direction", "vi-ja", "proposedValue", "ご飯を食べています。")).andExpect(status().isCreated())).get("id").asLong();
+        call(post("/api/admin/dictionary/reports/{id}/apply", rid), admin, null).andExpect(status().isBadRequest());
+        call(post("/api/admin/dictionary/reports/{id}/dismiss", rid), admin, Map.of("note", "bản dịch đúng")).andExpect(status().isOk());
+        assertEquals("DISMISSED", jdbc.queryForObject("SELECT status FROM dict_reports WHERE id = ?", String.class, rid));
+    }
 }
