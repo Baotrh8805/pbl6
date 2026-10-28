@@ -74,7 +74,8 @@ public class DictionaryController {
     /**
      * Tab Dịch (spec 2026-10-28, D33): dịch câu / đoạn Nhật ↔ Việt bằng AI (cả đoạn, có bộ nhớ dịch, trần giờ riêng) + phân tích câu
      * Nhật: {direction, source, translation, literal, alternatives, notes, reading, romaji, readingAgrees, tokens[{…, dictVi}],
-     * state: OK | OFF | LIMIT | AI_DOWN, cached, aiLeft, aiLimit, model}. 400 văn bản rỗng / quá dài / hướng lạ; 429 dịch quá nhanh.
+     * state: OK | OFF | LIMIT | AI_DOWN | BUSY | UNAVAILABLE, engine: ai | offline | null, cached, aiLeft, aiLimit, model}. Luôn 200
+     * (kể cả ai-service sập / dịch quá nhanh, D34); chỉ 400 khi văn bản rỗng / quá dài / hướng lạ.
      */
     @PostMapping("/translate")
     public ObjectNode translate(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody DictDtos.TranslateTextRequest body) {

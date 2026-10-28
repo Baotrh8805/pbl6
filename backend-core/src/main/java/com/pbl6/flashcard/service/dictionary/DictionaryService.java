@@ -572,9 +572,12 @@ public class DictionaryService {
      * Dịch câu / đoạn Nhật ↔ Việt. Bản dịch luôn do Gemini dịch CẢ đoạn ở ai-service (không bao giờ ghép nghĩa từng từ); phần phân
      * tích câu Nhật (cụm từ, cách đọc, bậc JLPT, nghĩa theo ngữ cảnh) luôn có. Bộ nhớ dịch theo hash (hướng + câu đã gộp khoảng
      * trắng): câu lặp không gọi AI, không tốn lượt, không gắn người dùng. Trần giờ riêng {@code dictionary_translate_hourly_limit}
-     * (D33) + chống dồn 10 / phút. state: OK | OFF (admin tắt hoặc không có khoá AI) | LIMIT (hết lượt, chỉ phân tích) | AI_DOWN
-     * (AI lỗi / quá tải, lượt vẫn tính như dịch lúc tra). Nghĩa Việt của từ điển (dict_meanings) áp lên từng cụm lúc đọc
-     * ({@code dictVi}) để bản cache không giữ nghĩa cũ.
+     * (D33) + chống dồn 10 / phút. state cho biết vì sao không có bản AI: OK | OFF (admin tắt hoặc không có khoá AI) | LIMIT (hết
+     * lượt) | AI_DOWN (AI lỗi / quá tải, lượt vẫn tính như dịch lúc tra) | BUSY (dịch quá nhanh, không gọi ai-service) | UNAVAILABLE
+     * (ai-service không tới được / quá giờ). Khi không có bản Gemini, ai-service trả bản **dịch máy offline** (D34, {@code engine}
+     * "offline") — không lưu vào bộ nhớ dịch chung để lần sau Gemini dịch lại. Không bao giờ ném lỗi vì dịch vụ phía sau (D34):
+     * người học luôn nhận 200 kèm state; chỉ 400 khi văn bản rỗng / quá dài / hướng lạ (giao diện đã chặn trước). Nghĩa Việt của
+     * từ điển (dict_meanings) áp lên từng cụm lúc đọc ({@code dictVi}) để bản cache không giữ nghĩa cũ.
      */
     public ObjectNode translateText(long uid, String rawText, String rawDirection) {
         String text = normalizeText(rawText);
@@ -585,11 +588,12 @@ public class DictionaryService {
         String dir = rawDirection == null || rawDirection.isBlank() ? "auto" : rawDirection;
         if (!TRANSLATE_DIRECTIONS.contains(dir)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hướng dịch không hợp lệ.");
         if ("auto".equals(dir)) dir = DictionaryKeys.hasJapanese(text) ? "ja-vi" : "vi-ja";
-        limiter.checkTranslateBurst(uid);
         String hash = sha256(dir + "\n" + text);
         ObjectNode out = store.textTranslation(hash).map(c -> parseCached(c.result())).orElse(null);
         boolean fromCache = out != null;
         String state = "OK";
+        // dịch quá nhanh: câu đã có trong bộ nhớ dịch vẫn trả (không tốn gì), câu mới thì BUSY, không gọi ai-service
+        if (!limiter.tryTranslateBurst(uid) && !fromCache) return unavailable(uid, text, dir, "BUSY");
         if (fromCache) {
             store.touchTextTranslation(hash);
         } else {
@@ -609,13 +613,19 @@ public class DictionaryService {
                 res = translateUpstream(hash, text, dir, withAi);
             } catch (RuntimeException ex) {
                 if (acquired) limiter.refundTranslate(uid);   // không tới được ai-service: không có gì để tính lượt
-                throw ex;
+                log.warn("Dịch câu: ai-service không trả lời ({})", ex.getMessage());
+                return unavailable(uid, text, dir, "UNAVAILABLE");
             }
-            out = res.isObject() ? ((ObjectNode) res).deepCopy() : json.createObjectNode();
+            if (res == null || !res.isObject()) {
+                if (acquired) limiter.refundTranslate(uid);
+                return unavailable(uid, text, dir, "UNAVAILABLE");
+            }
+            out = ((ObjectNode) res).deepCopy();
             String reason = text(out, "reason", null);
             out.remove("reason");   // chuyện giữa backend và ai-service: không lưu vào bộ nhớ dịch, không trả client
             if (withAi) {
-                if (reason == null && out.hasNonNull("translation")) {
+                // chỉ bản Gemini vào bộ nhớ dịch chung; bản offline (D34) không lưu để lần sau Gemini dịch lại
+                if (reason == null && out.hasNonNull("translation") && !"offline".equals(text(out, "engine", null))) {
                     store.insertTextTranslation(hash, dir, text, out.toString(), text(out, "model", null));
                 } else if ("no_api_key".equals(reason)) {
                     limiter.refundTranslate(uid);
@@ -626,9 +636,32 @@ public class DictionaryService {
             }
         }
         out.remove("reason");   // bản cache cũ (nếu có) cũng không lộ
+        if (!out.hasNonNull("engine") && out.hasNonNull("translation")) out.put("engine", "ai");   // bản cache trước D34
         overlayTokenMeanings(out.path("tokens"));
         out.put("state", state);
         out.put("cached", fromCache);
+        out.put("aiLeft", limiter.translateLeft(uid));
+        out.put("aiLimit", limiter.translateLimit());
+        return out;
+    }
+
+    /** Không có gì từ ai-service (sập / quá giờ / dịch quá nhanh): vẫn 200, khung rỗng + state để giao diện nói nhẹ nhàng (D34). */
+    private ObjectNode unavailable(long uid, String text, String dir, String state) {
+        ObjectNode out = json.createObjectNode();
+        out.put("direction", dir);
+        out.put("source", text);
+        out.putNull("translation");
+        out.putNull("literal");
+        out.putArray("alternatives");
+        out.putNull("notes");
+        out.putNull("reading");
+        out.putNull("romaji");
+        out.putNull("readingAgrees");
+        out.putArray("tokens");
+        out.putNull("model");
+        out.putNull("engine");
+        out.put("state", state);
+        out.put("cached", false);
         out.put("aiLeft", limiter.translateLeft(uid));
         out.put("aiLimit", limiter.translateLimit());
         return out;

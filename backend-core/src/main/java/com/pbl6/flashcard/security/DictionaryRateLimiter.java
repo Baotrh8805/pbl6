@@ -17,8 +17,8 @@ import java.time.Duration;
  *   <li>Tách câu cho popup tra nhanh: app.rate-limit.dict-tokenize.* (mặc định 60 / phút) → 429.</li>
  *   <li>Vẽ chữ Hán để tra (nhận dạng sau mỗi nét): app.rate-limit.dict-handwriting.* (mặc định 120 / phút) → 429.</li>
  *   <li>Dịch câu (tab Dịch, D33): lượt gọi Gemini / giờ theo {@code dictionary_translate_hourly_limit} (riêng, không ăn lượt dịch
- *       nghĩa khi tra; 0 = tắt, hết lượt vẫn trả phân tích câu) + chống dồn app.rate-limit.dict-translate.* (mặc định 10 / phút,
- *       tính cả lượt trúng bộ nhớ dịch) → 429.</li>
+ *       nghĩa khi tra; 0 = tắt, hết lượt vẫn có dịch máy offline + phân tích câu) + chống dồn app.rate-limit.dict-translate.*
+ *       (mặc định 10 / phút, tính cả lượt trúng bộ nhớ dịch) → state BUSY (200, không phải 429: D34).</li>
  * </ul>
  * Lưu trong RAM như các bộ giới hạn khác (mất khi khởi động lại).
  */
@@ -97,9 +97,17 @@ public class DictionaryRateLimiter {
         translateAi.undoLast(key(uid));
     }
 
-    /** Chống dồn lời gọi dịch câu (kể cả lượt trúng bộ nhớ dịch): mặc định 10 / phút → 429. */
-    public void checkTranslateBurst(Long uid) {
-        check(translateBurst, uid, "Bạn dịch quá nhanh, vui lòng chờ một chút.");
+    /**
+     * Chống dồn lời gọi dịch câu (kể cả lượt trúng bộ nhớ dịch), mặc định 10 / phút. Không ném 429: tab Dịch không bao giờ báo lỗi
+     * cho người học (D34) — false thì service trả state BUSY ("chờ vài giây rồi dịch lại") mà không gọi ai-service.
+     */
+    public boolean tryTranslateBurst(Long uid) {
+        String k = key(uid);
+        synchronized (translateBurst) {
+            if (translateBurst.isBlocked(k)) return false;
+            translateBurst.record(k);
+            return true;
+        }
     }
 
     public void checkComment(Long uid) {
