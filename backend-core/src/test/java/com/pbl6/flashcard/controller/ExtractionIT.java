@@ -577,14 +577,17 @@ class ExtractionIT extends IntegrationTest {
             JsonNode done = awaitTerminal(token, id);
             assertEquals(1, done.get("stats").get("fromDictionary").asInt(), done.toString());
             org.mockito.ArgumentCaptor<AiDtos.EnrichRequest> sent = org.mockito.ArgumentCaptor.forClass(AiDtos.EnrichRequest.class);
-            // atLeastOnce: job nền của test trước trong lớp có thể gọi enrich sau Mockito.reset → chỉ xét lời gọi có term của test này
-            Mockito.verify(ai, Mockito.atLeastOnce()).enrich(sent.capture());
-            List<List<String>> mine = sent.getAllValues().stream()
-                    .map(r -> r.items().stream().map(AiDtos.EnrichInput::term).filter(t -> t.startsWith("zz" + rnd)).toList())
-                    .filter(t -> !t.isEmpty()).toList();
-            assertEquals(List.of(List.of(corner)), mine, "chỉ dạng viết mơ hồ 角 được gửi Gemini");
             JsonNode items = read(call(get("/api/extractions/" + id + "/items"), token, null).andExpect(status().isOk()));
             assertEquals("hôm nay (từ điển)", items.get(0).get("meaningVi").asText());
+            // job còn chạy của test trước trong lớp cũng nhận stub analyze ở trên (cùng term) → chỉ xét lời gọi enrich có ref là
+            // item của job này
+            java.util.Set<String> myRefs = new java.util.HashSet<>();
+            items.forEach(it -> myRefs.add(it.get("id").asText()));
+            Mockito.verify(ai, Mockito.atLeastOnce()).enrich(sent.capture());
+            List<List<String>> mine = sent.getAllValues().stream()
+                    .map(r -> r.items().stream().filter(in -> myRefs.contains(in.ref())).map(AiDtos.EnrichInput::term).toList())
+                    .filter(t -> !t.isEmpty()).toList();
+            assertEquals(List.of(List.of(corner)), mine, "chỉ dạng viết mơ hồ 角 được gửi Gemini");
         } finally {
             jdbc.update("DELETE FROM dict_meanings WHERE entry_key IN (?, ?, ?)", keys.toArray());
         }
