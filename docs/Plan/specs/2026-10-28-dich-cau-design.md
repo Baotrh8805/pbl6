@@ -66,7 +66,8 @@ admin tắt / hết lượt, quota, quá tải, hết hạn chót, đầu ra kh�
 
 | Mục | Chọn |
 |---|---|
-| Mô hình | `facebook/m2m100_418M`, giấy phép **MIT**, hai chiều ja ↔ vi. Chạy **CTranslate2 int8** (`models/mt/m2m100_418M-ct2`, ~470 MB, không commit) — lúc chạy chỉ cần `ctranslate2` + `sentencepiece`, không cần torch |
+| Mô hình | `facebook/m2m100_418M`, giấy phép **MIT**, hai chiều ja ↔ vi. Lớp chính **CTranslate2 int8** (`models/mt/m2m100_418M-ct2`, ~470 MB, không commit) — chỉ cần `ctranslate2` + `sentencepiece` |
+| Lớp dự phòng thứ hai | bản **PyTorch** gốc (`models/mt/m2m100_418M`, 1,9 GB, giữ lại theo yêu cầu người dùng): chỉ dùng khi CTranslate2 thiếu / nạp hỏng / lỗi lúc dịch (đánh dấu hỏng tới khi khởi động lại; hết giờ hay đầu ra kém thì **không** chuyển — cùng mô hình). Int8 động `quantize_dynamic`; nạp ~27 s nên còn ít hơn 30 s thì nạp ở luồng nền, lượt đó không có bản dịch ("đợi vài giây"), lượt sau có. Đo: câu ngắn 2–3,5 s, 1 000 ký tự 16 s (beam tự hạ) |
 | Đã loại | `Helsinki-NLP/opus-mt-ja-vi` (Apache-2.0, chỉ Nhật → Việt): bịa nghĩa nhiều hơn khi đo ("日本語の勉強は難しいですが…" → "Vì vậy, tôi sẽ cho bạn thấy một số ví dụ."); NLLB (CC-BY-NC, D33); m2m100_1.2B (5 GB, chậm ~3 lần trên CPU) |
 | Tiền xử lý | tách câu (giữ xuống dòng, cắt mềm câu > 300 ký tự), tên người Nhật (Sudachi 固有名詞・人名) → romaji (田中 → Tanaka; không đổi thì mô hình dịch thành "Tanja") |
 | Tốc độ (máy dev 16 luồng) | nạp 2–3 s (nạp sẵn ở luồng nền lúc khởi động, `OFFLINE_MT_PRELOAD=0` để tắt); câu ngắn < 1 s; 1 000 ký tự Nhật → Việt ~9 s beam 4 (PyTorch fp32 cũ: 45 s) |

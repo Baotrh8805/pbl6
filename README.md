@@ -205,11 +205,12 @@ Thiếu model → bình luận ở trạng thái "chưa kiểm" và được ch�
 Tải `facebook/m2m100_418M` (MIT, ~1,9 GB) rồi chuyển CTranslate2 int8 (~470 MB) vào `ai-service/models/mt/` (không commit):
 
 ```bash
-pip install -r requirements-ml.txt               # cần ctranslate2 + sentencepiece (+ torch/transformers cho bước chuyển)
-python scripts/fetch_offline_mt.py --drop-source  # --drop-source: xong thì xoá bản PyTorch 1,9 GB, chỉ giữ bản int8
+pip install -r requirements-ml.txt    # ctranslate2 + sentencepiece (+ torch / transformers cho bước chuyển và lớp dự phòng)
+python scripts/fetch_offline_mt.py    # giữ cả bản PyTorch 1,9 GB làm lớp dự phòng thứ hai (thêm --drop-source nếu thiếu đĩa)
 ```
 
-Thiếu mô hình → tab Dịch vẫn chạy, chỉ hiện phân tích câu khi không có Gemini.
+Hai lớp: CTranslate2 int8 (chính, nhanh) → bản PyTorch (chỉ nạp khi CTranslate2 không chạy được; chậm hơn 3–5 lần). Thiếu cả hai
+→ tab Dịch vẫn chạy, chỉ hiện phân tích câu khi không có Gemini.
 
 **2.2. Tải dữ liệu từ điển** (một lần, cần mạng, mất vài phút)
 

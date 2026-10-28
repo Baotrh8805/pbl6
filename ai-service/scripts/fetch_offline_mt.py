@@ -1,11 +1,12 @@
 """Tải + chuyển mô hình dịch offline Nhật ↔ Việt cho tab Dịch (dự phòng khi không có bản dịch Gemini, D34).
 
     python scripts/fetch_offline_mt.py                 # tải facebook/m2m100_418M (MIT, ~1,9 GB) rồi chuyển CTranslate2 int8
-    python scripts/fetch_offline_mt.py --drop-source   # xong thì xoá bản PyTorch đã tải (chỉ giữ bản int8 ~470 MB)
+    python scripts/fetch_offline_mt.py --drop-source   # xong thì xoá bản PyTorch (mất lớp dự phòng thứ hai, tiết kiệm 1,9 GB)
 
-Kết quả: models/mt/m2m100_418M-ct2/ (model.bin, config.json, shared_vocabulary.*, sentencepiece.bpe.model) — app/extract/
-offline_mt.py chỉ cần thư mục này + ctranslate2 + sentencepiece. Bước chuyển cần torch + transformers (requirements-ml.txt).
-Bản PyTorch tải về models/mt/m2m100_418M/. Không commit: ai-service/models/* nằm trong .gitignore.
+Kết quả: models/mt/m2m100_418M-ct2/ (model.bin, config.json, shared_vocabulary.*, sentencepiece.bpe.model) — lớp chính của
+app/extract/offline_mt.py, chỉ cần ctranslate2 + sentencepiece. Bản PyTorch ở models/mt/m2m100_418M/ là lớp dự phòng khi
+CTranslate2 không chạy được (cần torch + transformers) và là nguồn để chuyển lại mà không tải lại. Không commit: ai-service/models/*
+nằm trong .gitignore.
 """
 from __future__ import annotations
 

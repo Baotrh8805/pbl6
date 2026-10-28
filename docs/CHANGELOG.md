@@ -7,7 +7,8 @@ Người dùng yêu cầu: luôn trả bản dịch, không bao giờ báo lỗi
   tách câu, tên người → romaji, lọc đầu ra, beam tự hạ theo hạn chót, không bao giờ ném; nạp sẵn ở luồng nền lúc khởi động
   (`OFFLINE_MT_PRELOAD`). `/api/dict/translate-text`: không có bản Gemini → bản offline (`engine` "offline", `reason` giữ nguyên);
   Gemini hạ hạn chót 26 → 16 s để kịp 30 s backend chờ. `scripts/fetch_offline_mt.py` (tải + chuyển), `requirements-ml.txt` thêm
-  `ctranslate2`, `sentencepiece`. Sửa kèm: romaji trợ từ は / へ là "wa" / "e"; 私 đọc わたし. Đo: câu ngắn < 1 s, 1 000 ký tự ~9 s;
+  `ctranslate2`, `sentencepiece`. **Lớp dự phòng thứ hai**: bản PyTorch gốc (`models/mt/m2m100_418M`, giữ lại theo yêu cầu) chạy khi
+  CTranslate2 thiếu / hỏng — nạp nền nếu không kịp, câu ngắn 2–3,5 s, 1 000 ký tự 16 s. Sửa kèm: romaji trợ từ は / へ là "wa" / "e"; 私 đọc わたし. Đo: câu ngắn < 1 s, 1 000 ký tự ~9 s;
   opus-mt-ja-vi bị loại vì bịa nghĩa. Test `test_offline_mt.py` (11 ca, 1 ca dùng mô hình thật nếu đã tải) + 1 ca router.
 - **Backend**: `translateText` luôn 200 — ai-service sập / quá giờ → `state UNAVAILABLE` (hoàn lượt), dịch quá nhanh → `BUSY` (không gọi
   ai-service) thay 503 / 429; chỉ bản Gemini vào bộ nhớ dịch; trường `engine`. `DictionaryRateLimiter.tryTranslateBurst`. `DictionaryIT`
