@@ -60,6 +60,19 @@ Tệp cấu hình: `backend-core/src/main/resources/application.properties` (bi�
 - ai-service lỗi không chặn người dùng: bình luận ở `PENDING`, job quét lại; tên hiển thị cho qua. Ngưỡng cố định trong `ModerationPolicy`
   (không nhận từ client).
 
+## 3c. Dịch câu Nhật ↔ Việt (28/10, V39, D33)
+
+- Câu người học nhập ở tab Dịch **được gửi sang Google Gemini** (như dịch nghĩa / ví dụ, OCR dự phòng, mẹo nhớ); trang ghi nguồn
+  `/about/data` và chân tab Dịch nói rõ. Không gửi khi admin tắt (`dictionary_translate_hourly_limit` = 0), hết lượt hay không có khoá —
+  khi đó chỉ phân tích câu tại chỗ (Sudachi + JMdict).
+- Bộ nhớ dịch `dict_text_translations` lưu câu + bản dịch theo hash, **không gắn người dùng**; dòng không dùng lại 30 ngày bị
+  `HousekeepingJob` xoá (câu có thể chứa thông tin cá nhân nên không giữ mãi). Không có API đọc lại bộ nhớ dịch; admin không xem được
+  câu người khác đã dịch.
+- Hạn mức: trần / giờ / tài khoản (cấu hình, mặc định 20) + chống dồn 10 / phút kể cả lượt trúng bộ nhớ dịch (429); văn bản ≤ 1 000 ký tự
+  ở cả backend (400) và ai-service (422). Gemini chỉ nhận prompt cố định + văn bản; đầu ra qua lọc (đúng ngôn ngữ, trần độ dài, không
+  trộn chữ Nhật vào bản Việt, nghĩa từng cụm ≤ 80 ký tự) trước khi lưu / hiện. Lời gọi dịch câu có hạn chót riêng 26 s và không kích
+  cầu dao tạm ngưng Gemini toàn cục.
+
 ## 4. Việc phải làm khi triển khai (không nằm trong mã)
 
 1. **Đổi ngay** mật khẩu Supabase và `JWT_SECRET` đã từng bị commit (21/10) — lịch sử git vẫn còn bản cũ.

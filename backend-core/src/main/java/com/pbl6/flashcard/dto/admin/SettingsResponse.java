@@ -38,5 +38,7 @@ public record SettingsResponse(
         @JsonProperty("dictionary_ai_hourly_limit") Integer dictionaryAiHourlyLimit,
         /** Từ điển (V32): số câu ví dụ dịch kèm khi mục chưa có nghĩa Việt, 0..10. Tuỳ chọn khi PUT */
         @JsonProperty("dictionary_examples_translate") Integer dictionaryExamplesTranslate,
+        /** Từ điển (V39, D33): lượt dịch câu Nhật ↔ Việt bằng AI / giờ / tài khoản, 0..1000 (0 = tắt, chỉ phân tích câu). Tuỳ chọn khi PUT */
+        @JsonProperty("dictionary_translate_hourly_limit") Integer dictionaryTranslateHourlyLimit,
         @JsonProperty("updatedAt") Instant updatedAt) {
 }

@@ -266,13 +266,15 @@ class AdminSettingsIT extends IntegrationTest {
 
     /**
      * V14 seed 4 khoá; V20 (lộ trình 2.0) thêm 3 khoá learning_path_*; V21 (WP-G5) thêm 6 khoá AI; V32 (từ điển) thêm 2 khoá
-     * dictionary_* — không khoá nào khác lọt vào app_settings, và CHECK (V21, tạo lại ở V32) chặn khoá lạ.
+     * dictionary_*; V39 (dịch câu, D33) thêm dictionary_translate_hourly_limit — không khoá nào khác lọt vào app_settings, và CHECK
+     * (V21, tạo lại ở V32 / V39) chặn khoá lạ.
      */
     @Test
-    void migration_seeds_exactly_fifteen_rows() { // ST-08
-        assertEquals(15, settings.count());
+    void migration_seeds_exactly_sixteen_rows() { // ST-08
+        assertEquals(16, settings.count());
         assertTrue(settings.existsById("dictionary_ai_hourly_limit"));
         assertTrue(settings.existsById("dictionary_examples_translate"));
+        assertTrue(settings.existsById("dictionary_translate_hourly_limit"));
         for (String k : defaults().keySet()) {
             assertTrue(settings.existsById(k), k);
         }
@@ -280,6 +282,25 @@ class AdminSettingsIT extends IntegrationTest {
         unknown.setKey("khoa_la");
         unknown.setValue("1");
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> settings.saveAndFlush(unknown));
+    }
+
+    /** V39 (D33): khoá tuỳ chọn như hai khoá từ điển V32 — không gửi thì giữ nguyên; 0..1000. */
+    @Test
+    void dictionary_translate_limit_is_optional_and_range_checked() throws Exception { // ST-11
+        String root = newStaff(Role.SUPER_ADMIN);
+        try {
+            call(put("/api/admin/settings"), root, with("dictionary_translate_hourly_limit", 1001)).andExpect(status().isBadRequest());
+            call(put("/api/admin/settings"), root, with("dictionary_translate_hourly_limit", -1)).andExpect(status().isBadRequest());
+            JsonNode s = read(call(put("/api/admin/settings"), root, with("dictionary_translate_hourly_limit", 5)).andExpect(status().isOk()));
+            assertEquals(5, s.get("dictionary_translate_hourly_limit").asInt());
+            assertEquals(5, read(call(put("/api/admin/settings"), root, defaults()).andExpect(status().isOk()))
+                    .get("dictionary_translate_hourly_limit").asInt(), "không gửi khoá -> giữ nguyên");
+            assertEquals(5, read(call(get("/api/admin/settings"), root, null)).get("dictionary_translate_hourly_limit").asInt());
+        } finally {
+            var row = settings.findById("dictionary_translate_hourly_limit").orElseThrow();
+            row.setValue("20");
+            settings.save(row);
+        }
     }
 
     @Test

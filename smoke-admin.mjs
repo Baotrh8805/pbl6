@@ -330,6 +330,29 @@ await section("từ điển admin: thống kê / hàng chờ / tìm (tìm cần 
     assert.equal((await api(s.alice.token, "GET", "/admin/dictionary/stats")).status, 403);
 });
 
+await section("dịch câu (V39, D33): POST /dictionary/translate 200 có state + tokens (ai-service tắt -> 503), 400 rỗng / hướng lạ / quá dài, khoá cấu hình", async () => {
+    let r = await api(s.alice.token, "POST", "/dictionary/translate", { text: "ご飯を食べました。" });
+    assert.ok([200, 503].includes(r.status), `dịch: ${r.status} ${r.text}`);
+    if (r.status === 200) {
+        assert.ok(["OK", "OFF", "LIMIT", "AI_DOWN"].includes(r.data.state), `state = ${r.data.state}`);
+        assert.equal(r.data.direction, "ja-vi", "có chữ Nhật -> ja-vi");
+        assert.ok(Array.isArray(r.data.tokens) && r.data.tokens.length > 0, "phân tích câu luôn có (kể cả khi không dịch được)");
+        assert.ok(typeof r.data.aiLeft === "number" && typeof r.data.aiLimit === "number", "aiLeft / aiLimit");
+        assert.equal(typeof r.data.cached, "boolean");
+        assert.equal(r.data.reason, undefined, "reason không lộ ra client");
+        if (r.data.state !== "OK") assert.equal(r.data.translation, null, "không có bản dịch thì không bịa câu");
+    }
+    r = await api(s.alice.token, "POST", "/dictionary/translate", { text: "Tôi ăn cơm.", direction: "vi-ja" });
+    assert.ok([200, 503].includes(r.status), `dịch vi-ja: ${r.status} ${r.text}`);
+    if (r.status === 200) assert.equal(r.data.direction, "vi-ja");
+    assert.equal((await api(s.alice.token, "POST", "/dictionary/translate", { text: "   " })).status, 400, "văn bản rỗng -> 400");
+    assert.equal((await api(s.alice.token, "POST", "/dictionary/translate", { text: "x", direction: "en-vi" })).status, 400, "hướng lạ -> 400");
+    assert.equal((await api(s.alice.token, "POST", "/dictionary/translate", { text: "x".repeat(1001) })).status, 400, "quá 1 000 ký tự -> 400");
+    r = await api(s.adminToken, "GET", "/admin/settings");
+    assert.equal(r.status, 200, r.text);
+    assert.equal(typeof r.data.dictionary_translate_hourly_limit, "number", "khoá cấu hình dictionary_translate_hourly_limit");
+});
+
 await section("kiểm duyệt AI (V38): hàng chờ / counts / bình luận -> trạng thái / quét lại / công tắc nhạy cảm / badge (ai-service tắt -> PENDING)", async () => {
     let r = await api(s.adminToken, "GET", "/admin/moderation?status=OPEN&size=5");
     assert.equal(r.status, 200, `hàng chờ: ${r.status} ${r.text}`);

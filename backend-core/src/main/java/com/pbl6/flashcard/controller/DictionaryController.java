@@ -71,6 +71,16 @@ public class DictionaryController {
         return dictionary.tokenize(uid(me), body.text());
     }
 
+    /**
+     * Tab Dịch (spec 2026-10-28, D33): dịch câu / đoạn Nhật ↔ Việt bằng AI (cả đoạn, có bộ nhớ dịch, trần giờ riêng) + phân tích câu
+     * Nhật: {direction, source, translation, literal, alternatives, notes, reading, romaji, readingAgrees, tokens[{…, dictVi}],
+     * state: OK | OFF | LIMIT | AI_DOWN, cached, aiLeft, aiLimit, model}. 400 văn bản rỗng / quá dài / hướng lạ; 429 dịch quá nhanh.
+     */
+    @PostMapping("/translate")
+    public ObjectNode translate(@AuthenticationPrincipal CustomUserDetails me, @Valid @RequestBody DictDtos.TranslateTextRequest body) {
+        return dictionary.translateText(uid(me), body.text(), body.direction());
+    }
+
     @GetMapping("/stats")
     public DictDtos.AiStats stats(@AuthenticationPrincipal CustomUserDetails me) {
         return dictionary.stats(uid(me));

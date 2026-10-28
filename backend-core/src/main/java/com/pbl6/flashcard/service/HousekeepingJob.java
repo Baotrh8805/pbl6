@@ -29,6 +29,8 @@ public class HousekeepingJob {
     static final Duration KEEP_FINISHED_JOBS = Duration.ofDays(90);
     /** Tài khoản chưa xác thực email quá hạn này bị xoá (link xác thực chỉ sống 24 giờ; người thật đăng ký lại được ngay). */
     static final Duration KEEP_UNVERIFIED = Duration.ofHours(48);
+    /** Bộ nhớ dịch câu (V39): dòng không ai dùng lại quá hạn này bị xoá — câu người học gõ không được giữ mãi (D33). */
+    static final Duration KEEP_TEXT_TRANSLATIONS = Duration.ofDays(30);
 
     private final RefreshTokenRepository refreshTokens;
     private final PasswordResetTokenRepository resetTokens;
@@ -37,12 +39,15 @@ public class HousekeepingJob {
     private final NotificationService notifications;
     private final EmailVerificationTokenRepository verificationTokens;
     private final com.pbl6.flashcard.service.moderation.ModerationStore moderation;
+    private final com.pbl6.flashcard.service.dictionary.DictionaryStore dictionary;
 
     public HousekeepingJob(RefreshTokenRepository refreshTokens, PasswordResetTokenRepository resetTokens,
                            ExtractionJobRepository jobs, UserRepository users, NotificationService notifications,
                            EmailVerificationTokenRepository verificationTokens,
-                           com.pbl6.flashcard.service.moderation.ModerationStore moderation) {
+                           com.pbl6.flashcard.service.moderation.ModerationStore moderation,
+                           com.pbl6.flashcard.service.dictionary.DictionaryStore dictionary) {
         this.moderation = moderation;
+        this.dictionary = dictionary;
         this.verificationTokens = verificationTokens;
         this.refreshTokens = refreshTokens;
         this.resetTokens = resetTokens;
@@ -86,11 +91,13 @@ public class HousekeepingJob {
         // bình luận đánh giá (giữ sao)
         int[] purged = moderation.purgeBlocked(now.minus(com.pbl6.flashcard.service.moderation.ModerationPolicy.BLOCKED_TTL));
         int i = purged[0] + purged[1];
+        // V39: bộ nhớ dịch câu không ai dùng lại 30 ngày (D33)
+        int j = dictionary.pruneTextTranslations(now.minus(KEEP_TEXT_TRANSLATIONS));
         log.info("Housekeeping: xoá {} refresh token, {} reset token, {} job bóc tách cũ; {} Premium hết hạn; "
                 + "xoá trắng văn bản {} job lộ trình cũ; xoá {} job lộ trình mồ côi; xoá {} token xác thực email; "
-                + "xoá {} tài khoản chưa xác thực quá 48 giờ; xoá {} bình luận AI chặn quá 30 ngày",
-                a, b, c, d, e, f, g, h, i);
-        return new int[] {a, b, c, d, e, f, g, h, i};
+                + "xoá {} tài khoản chưa xác thực quá 48 giờ; xoá {} bình luận AI chặn quá 30 ngày; xoá {} bản dịch câu cũ",
+                a, b, c, d, e, f, g, h, i, j);
+        return new int[] {a, b, c, d, e, f, g, h, i, j};
     }
 
     /**

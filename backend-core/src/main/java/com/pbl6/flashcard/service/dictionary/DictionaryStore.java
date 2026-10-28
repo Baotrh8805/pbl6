@@ -656,6 +656,32 @@ public class DictionaryStore {
                 + "AND i.example ILIKE ? ESCAPE '\\' ORDER BY i.example LIMIT ?", userId, like, limit);
     }
 
+    // ------------------------------------------------------------------ bộ nhớ dịch câu (V39, D33)
+
+    public record TextTranslation(String hash, String direction, String sourceText, String result, String model, int hitCount) {}
+
+    public Optional<TextTranslation> textTranslation(String hash) {
+        return jdbc.query("SELECT text_hash, direction, source_text, result, model, hit_count FROM dict_text_translations "
+                + "WHERE text_hash = ?", (rs, i) -> new TextTranslation(rs.getString("text_hash"), rs.getString("direction"),
+                rs.getString("source_text"), rs.getString("result"), rs.getString("model"), rs.getInt("hit_count")), hash)
+                .stream().findFirst();
+    }
+
+    /** Ghi kết quả dịch mới; cùng hash đã có (hai người dịch cùng câu cùng lúc) thì giữ bản cũ. */
+    public void insertTextTranslation(String hash, String direction, String sourceText, String result, String model) {
+        jdbc.update("INSERT INTO dict_text_translations (text_hash, direction, source_text, result, model) VALUES (?,?,?,?,?) "
+                + "ON CONFLICT (text_hash) DO NOTHING", hash, direction, sourceText, result, cut(model, 40));
+    }
+
+    public void touchTextTranslation(String hash) {
+        jdbc.update("UPDATE dict_text_translations SET hit_count = hit_count + 1, last_hit_at = now() WHERE text_hash = ?", hash);
+    }
+
+    /** Dòng không ai dùng lại quá hạn (HousekeepingJob 30 ngày): câu người học gõ không được giữ mãi. */
+    public int pruneTextTranslations(Instant before) {
+        return jdbc.update("DELETE FROM dict_text_translations WHERE last_hit_at < ?", Timestamp.from(before));
+    }
+
     // ------------------------------------------------------------------ tiện ích
 
     static String cut(String s, int max) {

@@ -65,6 +65,7 @@ class DictionaryIT extends IntegrationTest {
     @AfterEach
     void resetLimit() {
         jdbc.update("UPDATE app_settings SET value = '30' WHERE key = 'dictionary_ai_hourly_limit'");
+        jdbc.update("UPDATE app_settings SET value = '20' WHERE key = 'dictionary_translate_hourly_limit'");
     }
 
     private JsonNode entryJson(String wid, String kanji, String kana, String gloss) throws Exception {
@@ -445,5 +446,136 @@ class DictionaryIT extends IntegrationTest {
         JsonNode e = entry(newUser(), k2);
         assertEquals("từ thử", e.get("meaningVi").asText());
         assertEquals("OK", e.get("viState").asText());
+    }
+
+    // ------------------------------------------------------------------ dịch câu (tab Dịch, spec 2026-10-28, D33)
+
+    /** Kết quả ai-service cho ご飯を食べました。: cụm thứ ba có mục từ điển key (để kiểm dictVi áp lúc đọc). */
+    private JsonNode aiTranslation(String key) throws Exception {
+        return json.readTree("""
+                {"direction":"ja-vi","source":"ご飯を食べました。","translation":"Tôi đã ăn cơm.","literal":"cơm / (tân ngữ) / đã ăn",
+                 "alternatives":[],"notes":null,"reading":null,"romaji":null,"readingAgrees":null,
+                 "tokens":[{"i":0,"surface":"ご飯","lemma":"ご飯","reading":"ごはん","romaji":"gohan","rubies":null,"key":null,"jlpt":"N3",
+                            "pos":"名詞","posVi":"danh từ","particle":false,"symbol":false,"glossEn":"cooked rice","meaning":"cơm"},
+                           {"i":1,"surface":"を","lemma":"を","reading":"を","romaji":"o","rubies":null,"key":null,"jlpt":null,
+                            "pos":"助詞","posVi":"trợ từ","particle":true,"symbol":false,"glossEn":null,"meaning":"trợ từ chỉ tân ngữ"},
+                           {"i":2,"surface":"食べました","lemma":"食べる","reading":"たべました","romaji":"tabemashita","rubies":null,
+                            "key":"%s","jlpt":"N5","pos":"動詞","posVi":"động từ","particle":false,"symbol":false,"glossEn":"to eat","meaning":"đã ăn"},
+                           {"i":3,"surface":"。","lemma":null,"reading":null,"romaji":null,"rubies":null,"key":null,"jlpt":null,
+                            "pos":"補助記号","posVi":"dấu","particle":false,"symbol":true,"glossEn":null,"meaning":null}],
+                 "model":"gemini-test","reason":null}
+                """.formatted(key));
+    }
+
+    /** ai-service không dịch được (reason) nhưng vẫn trả phân tích câu Nhật. */
+    private JsonNode aiFailure(String text, String direction, String reason) throws Exception {
+        String tokens = "ja-vi".equals(direction)
+                ? "[{\"i\":0,\"surface\":\"%s\",\"lemma\":\"%s\",\"reading\":null,\"key\":null,\"symbol\":false,\"meaning\":null}]".formatted(text, text)
+                : "[]";
+        return json.readTree("""
+                {"direction":"%s","source":"%s","translation":null,"literal":null,"alternatives":[],"notes":null,"reading":null,
+                 "romaji":null,"readingAgrees":null,"tokens":%s,"model":null,"reason":"%s"}
+                """.formatted(direction, text, tokens, reason));
+    }
+
+    private JsonNode translate(String token, String text) throws Exception {
+        return read(call(post("/api/dictionary/translate"), token, Map.of("text", text)).andExpect(status().isOk()));
+    }
+
+    @Test
+    void translate_text_calls_ai_once_then_serves_cache_and_overlays_dictionary_meaning() throws Exception {
+        String token = newUser();
+        String key = "w:" + id;
+        jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'MACHINE','SEED')",
+                key, "食べる", "たべる", "ăn; dùng bữa");
+        Mockito.when(ai.translateText(eq("ご飯を食べました。"), eq("ja-vi"), eq(true))).thenReturn(aiTranslation(key));
+
+        JsonNode r = translate(token, "  ご飯を食べました。 ");   // khoảng trắng hai đầu bị cắt, câu trùng bộ nhớ dịch
+        assertEquals("OK", r.get("state").asText());
+        assertEquals("ja-vi", r.get("direction").asText());
+        assertEquals("Tôi đã ăn cơm.", r.get("translation").asText());
+        assertEquals("cơm / (tân ngữ) / đã ăn", r.get("literal").asText());
+        assertFalse(r.get("cached").asBoolean());
+        assertEquals(19, r.get("aiLeft").asInt());
+        assertEquals(20, r.get("aiLimit").asInt());
+        assertEquals("gemini-test", r.get("model").asText());
+        assertTrue(r.path("reason").isMissingNode(), "reason là chuyện giữa backend và ai-service");
+        JsonNode eat = r.get("tokens").get(2);
+        assertEquals("đã ăn", eat.get("meaning").asText(), "nghĩa theo ngữ cảnh của AI");
+        assertEquals("ăn; dùng bữa", eat.get("dictVi").asText(), "nghĩa Việt của từ điển áp theo khoá");
+        assertTrue(r.get("tokens").get(0).get("dictVi").isNull(), "cụm không có mục từ điển");
+
+        // lần hai (cả người khác): bộ nhớ dịch, không gọi AI, không tốn lượt; nghĩa từ điển mới áp lúc đọc
+        jdbc.update("UPDATE dict_meanings SET meaning_vi = 'ăn' WHERE entry_key = ?", key);
+        JsonNode again = translate(newUser(), "ご飯を食べました。");
+        assertTrue(again.get("cached").asBoolean());
+        assertEquals("Tôi đã ăn cơm.", again.get("translation").asText());
+        assertEquals("ăn", again.get("tokens").get(2).get("dictVi").asText());
+        assertEquals(20, again.get("aiLeft").asInt(), "lượt của người thứ hai còn nguyên");
+        Mockito.verify(ai, Mockito.times(1)).translateText(anyString(), anyString(), anyBoolean());
+        assertEquals(1, jdbc.queryForObject("SELECT hit_count FROM dict_text_translations WHERE direction = 'ja-vi'", Integer.class));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE source_text = ?", Integer.class, "ご飯を食べました。"), "DB dùng chung giữa các test: chỉ đếm câu của test này");
+    }
+
+    @Test
+    void translate_text_states_off_limit_and_ai_down() throws Exception {
+        String token = newUser();
+        // không có khoá AI → OFF, hoàn lượt, vẫn có phân tích câu
+        Mockito.when(ai.translateText(eq("ご飯"), eq("ja-vi"), eq(true))).thenReturn(aiFailure("ご飯", "ja-vi", "no_api_key"));
+        JsonNode r = translate(token, "ご飯");
+        assertEquals("OFF", r.get("state").asText());
+        assertTrue(r.get("translation").isNull());
+        assertEquals(1, r.get("tokens").size());
+        assertEquals(20, r.get("aiLeft").asInt(), "không có khoá AI: không tính lượt");
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE source_text = ?", Integer.class, "ご飯"), "không cache kết quả thiếu bản dịch");
+
+        // admin tắt (trần 0) → OFF, chỉ hỏi ai-service phần phân tích (withAi=false)
+        jdbc.update("UPDATE app_settings SET value = '0' WHERE key = 'dictionary_translate_hourly_limit'");
+        Mockito.when(ai.translateText(eq("ご飯"), eq("ja-vi"), eq(false))).thenReturn(aiFailure("ご飯", "ja-vi", "skipped"));
+        r = translate(token, "ご飯");
+        assertEquals("OFF", r.get("state").asText());
+        assertEquals(0, r.get("aiLimit").asInt());
+        Mockito.verify(ai, Mockito.times(1)).translateText(eq("ご飯"), eq("ja-vi"), eq(false));
+
+        // trần 1: AI quá tải → AI_DOWN (lượt vẫn tính), lượt sau LIMIT (chỉ phân tích)
+        jdbc.update("UPDATE app_settings SET value = '1' WHERE key = 'dictionary_translate_hourly_limit'");
+        String other = newUser();
+        Mockito.when(ai.translateText(eq("学校"), eq("ja-vi"), eq(true))).thenReturn(aiFailure("学校", "ja-vi", "aiOverloaded"));
+        Mockito.when(ai.translateText(eq("学校"), eq("ja-vi"), eq(false))).thenReturn(aiFailure("学校", "ja-vi", "skipped"));
+        assertEquals("AI_DOWN", translate(other, "学校").get("state").asText());
+        JsonNode lim = translate(other, "学校");
+        assertEquals("LIMIT", lim.get("state").asText());
+        assertEquals(0, lim.get("aiLeft").asInt());
+        assertEquals(1, lim.get("tokens").size(), "hết lượt vẫn có phân tích câu");
+        Mockito.verify(ai, Mockito.times(1)).translateText(eq("学校"), eq("ja-vi"), eq(false));
+
+        // Việt → Nhật tự nhận hướng; hướng gửi tay được tôn trọng
+        Mockito.when(ai.translateText(eq("Tôi ăn cơm."), eq("vi-ja"), anyBoolean())).thenReturn(aiFailure("Tôi ăn cơm.", "vi-ja", "skipped"));
+        assertEquals("vi-ja", translate(other, "Tôi ăn cơm.").get("direction").asText());
+        Mockito.when(ai.translateText(eq("学校"), eq("vi-ja"), anyBoolean())).thenReturn(aiFailure("学校", "vi-ja", "skipped"));
+        JsonNode forced = read(call(post("/api/dictionary/translate"), other, Map.of("text", "学校", "direction", "vi-ja"))
+                .andExpect(status().isOk()));
+        assertEquals("vi-ja", forced.get("direction").asText());
+    }
+
+    @Test
+    void translate_text_validation_ai_service_down_and_burst_limit() throws Exception {
+        String token = newUser();
+        call(post("/api/dictionary/translate"), token, Map.of("text", "   ")).andExpect(status().isBadRequest());
+        call(post("/api/dictionary/translate"), token, Map.of("text", "x".repeat(1001))).andExpect(status().isBadRequest());
+        call(post("/api/dictionary/translate"), token, Map.of("text", "x", "direction", "en-vi")).andExpect(status().isBadRequest());
+        call(post("/api/dictionary/translate"), null, Map.of("text", "ご飯")).andExpect(status().isUnauthorized());
+
+        // ai-service tắt → 503 và lượt được hoàn
+        Mockito.when(ai.translateText(anyString(), anyString(), anyBoolean()))
+                .thenThrow(new AiServiceClient.AiServiceException("Không kết nối được dịch vụ AI"));
+        call(post("/api/dictionary/translate"), token, Map.of("text", "ご飯")).andExpect(status().isServiceUnavailable());
+        Mockito.reset(ai);
+        Mockito.when(ai.translateText(eq("ご飯"), eq("ja-vi"), eq(true))).thenReturn(aiFailure("ご飯", "ja-vi", "no_api_key"));
+        assertEquals(20, translate(token, "ご飯").get("aiLeft").asInt(), "lời gọi hỏng không tốn lượt");
+
+        // chống dồn 10 / phút (tính cả lượt 503 và trúng cache): đã gọi 2 lần hợp lệ → 8 lần nữa ok, lần 11 bị 429
+        for (int i = 0; i < 8; i++) translate(token, "ご飯");
+        call(post("/api/dictionary/translate"), token, Map.of("text", "ご飯")).andExpect(status().isTooManyRequests());
     }
 }

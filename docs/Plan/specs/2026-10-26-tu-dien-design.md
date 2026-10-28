@@ -92,7 +92,7 @@ popup tra nhanh ở màn học và trong câu ví dụ · thẻ thống kê Từ
 `[Tìm câu ví dụ theo cụm (tab Câu)] → bỏ qua; thêm khi cần, dữ liệu đã có trong examples.` (26/10 tối: **đã làm**, kèm tra dạng chia, câu ví dụ dịch sẵn, vẽ chữ để tra — xem CHANGELOG.) `[Trả lời lồng, nhắc tên, ảnh trong bình
 luận] → bỏ qua.` `[Người dùng đóng góp nghĩa thành nghĩa chính không qua admin] → bỏ qua (D20: qua báo cáo).` `[Tra công khai không
 đăng nhập] → bỏ qua (D24).` `[Audio giọng người, NHK] → bỏ qua; TTS trình duyệt như màn học.` `[Dịch ngược Việt → Nhật bằng AI]
-→ bỏ qua; tìm Việt chỉ tra trong nghĩa Việt đã lưu.`
+→ bỏ qua; tìm Việt chỉ tra trong nghĩa Việt đã lưu.` (28/10: **đã làm** thành tab Dịch hai chiều — Gemini dịch cả đoạn + phân tích cụm, D33, spec [2026-10-28-dich-cau-design.md](2026-10-28-dich-cau-design.md).)
 
 ---
 

@@ -3,7 +3,7 @@
 Dự án hỗ trợ sinh viên CNTT - Tiếng Nhật và người học tiếng Nhật biến tài liệu tự sưu tầm (ảnh chụp sách, PDF, DOCX,
 văn bản) thành bộ thẻ, bài kiểm tra và lộ trình học theo ngày, kèm luyện viết Kanji, luyện phát âm và trọng âm. Lõi xử lý
 là OCR, tách từ tiếng Nhật và dữ liệu từ điển mở (JMdict, Unihan, KanjiVG, KRADFILE, kanjium); Gemini chỉ dùng để dịch
-nghĩa / ví dụ sang tiếng Việt, OCR dự phòng và gợi ý mẹo nhớ, nên thiếu key Gemini hệ thống vẫn chạy.
+nghĩa / ví dụ sang tiếng Việt, dịch câu ở tab Dịch của từ điển, OCR dự phòng và gợi ý mẹo nhớ, nên thiếu key Gemini hệ thống vẫn chạy.
 
 ---
 

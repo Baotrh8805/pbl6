@@ -85,6 +85,23 @@ public class DictionaryAiClient {
         return ai.postJson("dịch từ điển", "/api/dict/translate", body);
     }
 
+    /**
+     * POST /api/dict/translate-text {text, direction: ja-vi | vi-ja, geminiModel?, withAi} (tab Dịch, D33) → luôn 200:
+     * {direction, source, translation, literal, alternatives[{text, reading, note}], notes, reading, romaji, readingAgrees,
+     * tokens[{i, surface, lemma, reading, romaji, rubies, key, jlpt, pos, posVi, particle, symbol, glossEn, meaning}], model, reason}.
+     * reason null khi có bản dịch; không thì no_api_key | quota | aiOverloaded | error | skipped (withAi=false: chỉ phân tích câu,
+     * không gọi Gemini). Phân tích câu Nhật luôn có; bản dịch luôn là của Gemini dịch cả đoạn, không ghép từ nghĩa từng từ.
+     */
+    public JsonNode translateText(String text, String direction, boolean withAi) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("text", text);
+        body.put("direction", direction);
+        body.put("withAi", withAi);
+        String model = ai.geminiModel();
+        if (model != null) body.put("geminiModel", model);
+        return ai.postJson("dịch câu", "/api/dict/translate-text", body);
+    }
+
     /** Thay toàn bộ bản sao ghi đè ở ai-service. */
     public JsonNode pushOverrides(long version, List<Map<String, Object>> items) {
         return ai.postJsonLong("đồng bộ từ điển", "/api/dict/overrides", Map.of("version", version, "items", items));

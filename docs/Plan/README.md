@@ -3,7 +3,7 @@
 Mỗi tính năng lớn có một **spec** (`specs/`: vấn đề, phương án, quyết định) và đôi khi một **kế hoạch triển khai** (`plans/`: từng bước).
 Cột trạng thái cho biết file đó **có phản ánh code hiện tại hay không**: đọc nó trước khi tin vào nội dung.
 
-| Ngày | Tài liệu | Trạng thái (27/10/2026) |
+| Ngày | Tài liệu | Trạng thái (28/10/2026) |
 | :--- | :--- | :--- |
 | 12/10 | [specs/2026-10-12-trich-xuat-cum-tu-design.md](specs/2026-10-12-trich-xuat-cum-tu-design.md) | **Đã làm.** Bảng / danh sách từ vựng → trích theo cụm, dùng nghĩa in sẵn. Mô tả hành vi hiện hành ở [../EXTRACTION.md](../EXTRACTION.md) |
 | 12/10 | [specs/2026-10-12-dich-nghia-offline-design.md](specs/2026-10-12-dich-nghia-offline-design.md), [plans/2026-10-12-dich-nghia-offline.md](plans/2026-10-12-dich-nghia-offline.md) | **Đã thử rồi hoàn tác, không có trong code.** Dịch EN → VI bằng NLLB / CTranslate2. Giữ lại kết quả spike (Argos kém, NLLB 22/27 đúng, giấy phép CC-BY-NC) |
@@ -17,5 +17,6 @@ Cột trạng thái cho biết file đó **có phản ánh code hiện tại hay
 | 26/10 | [specs/2026-10-26-tu-dien-design.md](specs/2026-10-26-tu-dien-design.md), [plans/2026-10-26-tu-dien-va-viec-con-lai.md](plans/2026-10-26-tu-dien-va-viec-con-lai.md) | **Đã làm hết.** Phần A (từ điển Nhật–Việt cộng đồng, D14–D29) code 26/10; phần B: B1–B4 26/10, B5–B9 27/10 (B5.7 chỉ bỏ Redis + cảnh báo khoá vì Neo4j dùng thật theo D30). |
 | 27/10 | [specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md](specs/2026-10-27-kiem-duyet-ai-va-hlr-design.md), [plans/2026-10-27-kiem-duyet-ai-va-hlr.md](plans/2026-10-27-kiem-duyet-ai-va-hlr.md) | **Đã làm (đêm 27/10, chưa kiểm tay trên trình duyệt).** Kiểm duyệt bình luận từ điển / đánh giá bằng hai model tự huấn luyện (ViHSD 3 lớp numpy + ViHOS PhoBERT), hàng chờ Admin › Kiểm duyệt AI, mục từ nhạy cảm, khoá bình luận mềm; HLR phanh SM-2 + độ nhớ / sắp quên (D31, D32; V38). |
 | 27/10 | [specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md), [plans/2026-10-27-do-thi-tri-thuc-neo4j.md](plans/2026-10-27-do-thi-tri-thuc-neo4j.md) | **Đã làm.** Đồ thị tri thức trên Neo4j thật + đồng bộ Postgres → Neo4j + Cypher + GraphRAG (UC-34 / UC-35, D30); `/graph`, Admin dựng / đồng bộ. |
+| 28/10 | [specs/2026-10-28-dich-cau-design.md](specs/2026-10-28-dich-cau-design.md) | **Đã làm 28/10 (chưa kiểm tay với khoá Gemini thật).** Dịch câu / đoạn Nhật ↔ Việt trong từ điển (tab Dịch, D33, UC-48): Gemini dịch cả đoạn + phân tích từng cụm tại chỗ (không ghép từ thành câu), bộ nhớ dịch V39, trần giờ riêng. Không có kế hoạch riêng. |
 
 Quy ước: spec mới ghi rõ ngày, nhánh và trạng thái ở dòng đầu; khi triển khai xong thì sửa dòng đó và thêm mục vào [../CHANGELOG.md](../CHANGELOG.md).

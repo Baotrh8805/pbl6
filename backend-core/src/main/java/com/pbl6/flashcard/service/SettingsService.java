@@ -49,6 +49,8 @@ public class SettingsService {
     public static final String KEY_DICT_AI_LIMIT = "dictionary_ai_hourly_limit";
     /** Từ điển (V32): số câu ví dụ đầu dịch kèm nghĩa khi mục chưa có nghĩa Việt. */
     public static final String KEY_DICT_EXAMPLES = "dictionary_examples_translate";
+    /** Từ điển (V39, D33): trần lượt dịch câu Nhật ↔ Việt bằng AI / giờ / tài khoản (0 = tắt dịch câu, chỉ phân tích). */
+    public static final String KEY_DICT_TRANSLATE_LIMIT = "dictionary_translate_hourly_limit";
 
     /**
      * Giá trị seed của migration. Chỉ dùng khi dòng thiếu / giá trị trong DB không đọc được (sửa tay sai): GET vẫn trả được để
@@ -60,7 +62,7 @@ public class SettingsService {
             Map.entry(KEY_LP_REMINDER_HOUR, "7"), Map.entry(KEY_OCR_FALLBACK, "0.85"), Map.entry(KEY_OCR_LOW_LINE, "0.75"),
             Map.entry(KEY_DISTRACTOR_MIN, "0.6"), Map.entry(KEY_CONTRADICTION_ALERT, "0.7"), Map.entry(KEY_AI_MODEL_PRIMARY, ""),
             Map.entry(KEY_EMAIL_VERIFICATION, "true"),
-            Map.entry(KEY_DICT_AI_LIMIT, "30"), Map.entry(KEY_DICT_EXAMPLES, "3"));
+            Map.entry(KEY_DICT_AI_LIMIT, "30"), Map.entry(KEY_DICT_EXAMPLES, "3"), Map.entry(KEY_DICT_TRANSLATE_LIMIT, "20"));
 
     static final int MAX_MODEL_CHARS = 40;
     static final int MAX_DAILY_LIMIT = 1000;
@@ -134,6 +136,11 @@ public class SettingsService {
         return intOrDefault(KEY_DICT_EXAMPLES);
     }
 
+    /** Trần lượt dịch câu Nhật ↔ Việt (tab Dịch) / giờ; không ném (cấu hình hỏng → mặc định 20). */
+    public int dictionaryTranslateHourlyLimit() {
+        return intOrDefault(KEY_DICT_TRANSLATE_LIMIT);
+    }
+
     private int intOrDefault(String key) {
         try {
             return Integer.parseInt(raw(key).trim());
@@ -163,6 +170,7 @@ public class SettingsService {
                 Boolean.parseBoolean(textOf(all, KEY_EMAIL_VERIFICATION)),
                 intOf(all, KEY_DICT_AI_LIMIT),
                 intOf(all, KEY_DICT_EXAMPLES),
+                intOf(all, KEY_DICT_TRANSLATE_LIMIT),
                 updatedAt);
     }
 
@@ -215,6 +223,9 @@ public class SettingsService {
         if (req.dictionaryAiHourlyLimit() != null) wanted.put(KEY_DICT_AI_LIMIT, String.valueOf(req.dictionaryAiHourlyLimit()));
         if (req.dictionaryExamplesTranslate() != null) {
             wanted.put(KEY_DICT_EXAMPLES, String.valueOf(req.dictionaryExamplesTranslate()));
+        }
+        if (req.dictionaryTranslateHourlyLimit() != null) {
+            wanted.put(KEY_DICT_TRANSLATE_LIMIT, String.valueOf(req.dictionaryTranslateHourlyLimit()));
         }
 
         Map<String, Object> changes = new HashMap<>();
@@ -271,6 +282,9 @@ public class SettingsService {
         unit(errors, KEY_DISTRACTOR_MIN, req.distractorMinConfidence());
         unit(errors, KEY_CONTRADICTION_ALERT, req.contradictionAlertThreshold());
         if (req.dictionaryAiHourlyLimit() != null) intRange(errors, KEY_DICT_AI_LIMIT, req.dictionaryAiHourlyLimit(), 0, 1000);
+        if (req.dictionaryTranslateHourlyLimit() != null) {
+            intRange(errors, KEY_DICT_TRANSLATE_LIMIT, req.dictionaryTranslateHourlyLimit(), 0, 1000);
+        }
         if (req.dictionaryExamplesTranslate() != null) {
             intRange(errors, KEY_DICT_EXAMPLES, req.dictionaryExamplesTranslate(), 0, 10);
         }

@@ -19,6 +19,10 @@ public final class DictDtos {
 
     public record TokenizeRequest(@NotBlank @Size(max = 300) String text) {}
 
+    /** Tab Dịch (D33): câu / đoạn ≤ 1 000 ký tự; direction null = auto (có chữ Nhật → ja-vi, không thì vi-ja). */
+    public record TranslateTextRequest(@NotBlank @Size(max = 1000) String text,
+                                       @Pattern(regexp = "auto|ja-vi|vi-ja") String direction) {}
+
     /** Vẽ chữ Hán để tra: các nét theo thứ tự vẽ, mỗi nét là dãy điểm (toạ độ khung vẽ). */
     public record HandwritingRequest(
             @jakarta.validation.constraints.NotNull @Size(min = 1, max = 40)

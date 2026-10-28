@@ -132,8 +132,8 @@ class HousekeepingIT extends IntegrationTest {
         jobs.save(orphanRecent);
 
         int[] n = housekeeping.run(now);
-        assertEquals(9, n.length, "chỉ số cũ giữ nguyên, n[6] = token xác thực email (V24), n[7] = tài khoản chưa xác thực (27/10), "
-                + "n[8] = bình luận AI chặn quá 30 ngày (V38)");
+        assertEquals(10, n.length, "chỉ số cũ giữ nguyên, n[6] = token xác thực email (V24), n[7] = tài khoản chưa xác thực (27/10), "
+                + "n[8] = bình luận AI chặn quá 30 ngày (V38), n[9] = bản dịch câu không dùng 30 ngày (V39)");
         assertTrue(n[4] >= 1, "ít nhất job của lộ trình ACTIVE cũ vừa tạo bị xoá trắng văn bản");
         assertTrue(n[5] >= 1, "job lộ trình mồ côi > 90 ngày bị xoá ở bước riêng (LP-10), không lẫn vào số job thường");
 
