@@ -201,6 +201,16 @@ pip install -r requirements-ml.txt    # torch CPU + transformers cho PhoBERT đ�
 
 Thiếu model → bình luận ở trạng thái "chưa kiểm" và được chấm lại khi có; HLR (file JSON đã commit) luôn chạy.
 
+**2.1c. Mô hình dịch offline Nhật ↔ Việt (28/10, D34, nên có)** — dự phòng cho tab Dịch khi không có khoá Gemini / hết lượt / AI lỗi.
+Tải `facebook/m2m100_418M` (MIT, ~1,9 GB) rồi chuyển CTranslate2 int8 (~470 MB) vào `ai-service/models/mt/` (không commit):
+
+```bash
+pip install -r requirements-ml.txt               # cần ctranslate2 + sentencepiece (+ torch/transformers cho bước chuyển)
+python scripts/fetch_offline_mt.py --drop-source  # --drop-source: xong thì xoá bản PyTorch 1,9 GB, chỉ giữ bản int8
+```
+
+Thiếu mô hình → tab Dịch vẫn chạy, chỉ hiện phân tích câu khi không có Gemini.
+
 **2.2. Tải dữ liệu từ điển** (một lần, cần mạng, mất vài phút)
 
 ```bash
