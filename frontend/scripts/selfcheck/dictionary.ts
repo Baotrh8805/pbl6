@@ -131,11 +131,20 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(detectTranslateDirection("ご飯を食べました。") === "ja-vi" && detectTranslateDirection("Tôi ăn cơm") === "vi-ja", "Dịch: tự nhận hướng");
   assert(detectTranslateDirection("Từ 食べる nghĩa là gì?") === "ja-vi", "Dịch: văn bản trộn coi là tiếng Nhật (như backend)");
   assert(translateDirectionLabel("vi-ja") === "Việt → Nhật" && translateDirectionLabel("ja-vi") === "Nhật → Việt", "Dịch: nhãn hướng");
-  assert(translateStateNote("OK") === null, "Dịch: OK không có ghi chú");
+  assert(translateStateNote("OK") === null && translateStateNote("OK", 1, 20, "ai") === null, "Dịch: bản AI không có ghi chú");
   const limitNote = translateStateNote("LIMIT", 0, 20) ?? "";
   assert(limitNote.includes("0/20") && limitNote.includes("phân tích"), "Dịch: hết lượt nói rõ số lượt và vẫn có phân tích");
-  assert((translateStateNote("OFF") ?? "").includes("tắt") && (translateStateNote("AI_DOWN") ?? "").includes("thử lại"), "Dịch: OFF / AI_DOWN có hướng xử lý");
+  assert((translateStateNote("OFF") ?? "").includes("tắt") && (translateStateNote("AI_DOWN") ?? "").includes("lại"), "Dịch: OFF / AI_DOWN có hướng xử lý");
   assert(!(translateStateNote("OFF") ?? "").toLowerCase().includes("ghép"), "Dịch: không hứa ghép từ thành câu");
+  // D34: bản dịch máy offline nói rõ nguồn + lý do; BUSY / UNAVAILABLE nhẹ nhàng, có hướng làm tiếp, không chữ "lỗi"
+  const offNote = translateStateNote("OFF", 20, 20, "offline") ?? "";
+  assert(offNote.includes("offline") && offNote.includes("tắt"), "Dịch: bản offline nói rõ nguồn và lý do");
+  assert((translateStateNote("LIMIT", 0, 20, "offline") ?? "").includes("0/20"), "Dịch: bản offline do hết lượt nêu số lượt");
+  for (const st of ["BUSY", "UNAVAILABLE", "AI_DOWN", "OFF", "LIMIT"] as const) {
+    const n = translateStateNote(st, 0, 20) ?? "";
+    assert(n.length > 0 && !n.toLowerCase().includes("lỗi"), `Dịch: ${st} có ghi chú, không báo lỗi`);
+  }
+  assert((translateStateNote("BUSY") ?? "").includes("Dịch lại"), "Dịch: BUSY hướng dẫn dịch lại");
   assert(looksLikeSentence("ご飯を食べました。") && looksLikeSentence("昨日は友達と映画を見ました"), "Dịch: nhận cả câu Nhật (dấu câu hoặc dài)");
   assert(!looksLikeSentence("食べる") && !looksLikeSentence("Tôi ăn cơm hôm nay.") && !looksLikeSentence("  "), "Dịch: không gợi ý cho từ đơn / câu Việt / rỗng");
   const tok = { meaning: null, dictVi: "ăn", glossEn: "to eat", posVi: "động từ", particle: false };

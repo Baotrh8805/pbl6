@@ -290,7 +290,10 @@ export type DictTranslateDirection = "auto" | "ja-vi" | "vi-ja";
  * OK: có bản dịch; OFF: admin tắt hoặc chưa cấu hình AI; LIMIT: hết lượt trong giờ; AI_DOWN: AI lỗi / quá tải. Ba trạng thái sau
  * vẫn có phân tích câu — không bao giờ ghép nghĩa từng từ thành bản dịch.
  */
-export type DictTranslateState = "OK" | "OFF" | "LIMIT" | "AI_DOWN";
+/** Vì sao không có bản AI (OK = có). BUSY: dịch quá nhanh; UNAVAILABLE: dịch vụ dịch chưa trả lời (D34, vẫn 200). */
+export type DictTranslateState = "OK" | "OFF" | "LIMIT" | "AI_DOWN" | "BUSY" | "UNAVAILABLE";
+/** ai = Gemini dịch cả đoạn; offline = dịch máy offline m2m100 dự phòng (D34); null = không có bản dịch. */
+export type DictTranslateEngine = "ai" | "offline";
 
 export interface DictRuby {
     text: string;
@@ -335,6 +338,7 @@ export interface DictTranslation {
     readingAgrees: boolean | null;
     tokens: DictTranslateToken[];
     model: string | null;
+    engine?: DictTranslateEngine | null;
     state: DictTranslateState;
     cached: boolean;
     aiLeft: number;

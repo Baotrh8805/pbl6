@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useCopyToClipboard } from "@/lib/clipboard";
 import { canSpeak, speakJa } from "@/lib/speech";
-import { extractErrorMessage } from "@/services/apiClient";
 import { translateText } from "@/services/dictionaryService";
 import type { DictKey, DictTranslateDirection, DictTranslateToken, DictTranslation } from "@/types/dictionary.types";
 import { TRANSLATE_MAX_CHARS, detectTranslateDirection, tokenMeaning, translateDirectionLabel, translateStateNote } from "../dictUtils";
@@ -103,7 +102,7 @@ const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) =
   const [popKey, setPopKey] = useState<DictKey | null>(null);
   const { copied, copy } = useCopyToClipboard();
   const targetLang = r.direction === "ja-vi" ? "vi" : "ja";
-  const note = translateStateNote(r.state, r.aiLeft, r.aiLimit);
+  const note = translateStateNote(r.state, r.aiLeft, r.aiLimit, r.engine);
   const words = r.tokens.filter((t) => !t.symbol);
   const analysisTitle = r.direction === "ja-vi" ? "Phân tích câu gốc" : "Phân tích câu tiếng Nhật";
 
@@ -113,6 +112,11 @@ const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) =
         <span className="inline-flex items-center gap-2">
           <span className="font-semibold text-on-surface">{translateDirectionLabel(r.direction)}</span>
           {r.cached && <span title="Câu này đã được dịch trước đó, lấy từ bộ nhớ dịch chung">· từ bộ nhớ dịch</span>}
+          {r.engine === "offline" && (
+            <span className="px-1.5 rounded-full bg-surface-container text-on-surface-variant" title="Dịch bằng mô hình chạy trên máy chủ, không dùng AI trực tuyến">
+              dịch máy offline
+            </span>
+          )}
         </span>
         {r.aiLimit > 0 && <span>Còn {r.aiLeft}/{r.aiLimit} lượt dịch AI trong giờ này</span>}
       </div>
@@ -236,7 +240,8 @@ export const TranslateTab: React.FC<{
     setDir(direction);
   }
   const key = text ? `${direction}|${text}` : "";
-  const [res, setRes] = useState<{ key: string; data?: DictTranslation; error?: string }>({ key: "" });
+  const [res, setRes] = useState<{ key: string; data?: DictTranslation; error?: boolean }>({ key: "" });
+  const [attempt, setAttempt] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -247,11 +252,15 @@ export const TranslateTab: React.FC<{
     const [d, ...rest] = key.split("|");
     translateText(rest.join("|"), d as DictTranslateDirection, ctl.signal)
       .then((r) => !ctl.signal.aborted && setRes({ key, data: r }))
-      .catch((e) => !ctl.signal.aborted && setRes({ key, error: extractErrorMessage(e) }));
+      .catch(() => !ctl.signal.aborted && setRes({ key, error: true }));
     return () => ctl.abort();
-  }, [key]);
+  }, [key, attempt]);
 
   const current = key && res.key === key ? res : null;
+  const retry = () => {
+    setRes({ key: "" });
+    setAttempt((n) => n + 1);
+  };
   const result = current?.data ?? null;
   const error = current?.error ?? null;
   const loading = !!key && !current;
@@ -260,7 +269,9 @@ export const TranslateTab: React.FC<{
 
   const submit = () => {
     if (!trimmed) return;
-    onChange(trimmed.slice(0, TRANSLATE_MAX_CHARS), dir);
+    const next = trimmed.slice(0, TRANSLATE_MAX_CHARS);
+    if (next === text && dir === direction) retry();   // cùng câu: bấm Dịch lại vẫn gửi lại (vd. sau BUSY / chưa trả lời)
+    else onChange(next, dir);
   };
 
   return (
@@ -326,9 +337,12 @@ export const TranslateTab: React.FC<{
       )}
       {loading && <p className="text-body-sm text-on-surface-variant">Đang dịch…</p>}
       {error && (
-        <p role="alert" className="text-body-sm text-error">
-          {error}
-        </p>
+        <div role="status" className="flex flex-wrap items-center gap-3 text-body-sm text-on-surface rounded-xl bg-surface-container-low px-4 py-3">
+          <span className="flex-1 min-w-0">Chưa dịch được lúc này, có thể do mạng chập chờn hoặc máy chủ đang khởi động. Đợi vài giây rồi thử lại nhé.</span>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
+            Thử lại
+          </Button>
+        </div>
       )}
       {result && <TranslationResult r={result} onOpen={onOpen} />}
       {result && (

@@ -1,7 +1,7 @@
 // Hàm thuần của từ điển (spec 2026-10-26 §7): chọn chế độ tìm, romaji → kana, nhãn trường / từ loại, dựng thẻ từ mục từ.
 // Import tương đối để scripts/selfcheck chạy được bằng node.
 import { romajiToKanaFull } from "../../lib/romaji.ts";
-import type { DictEntry, DictKey, DictReportField, DictSummary, DictTranslateState, DictTranslateToken, DictViState } from "../../types/dictionary.types.ts";
+import type { DictEntry, DictKey, DictReportField, DictSummary, DictTranslateEngine, DictTranslateState, DictTranslateToken, DictViState } from "../../types/dictionary.types.ts";
 
 const JA_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/;
 const VI_RE = /[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i;
@@ -34,19 +34,37 @@ export const detectTranslateDirection = (text: string): "ja-vi" | "vi-ja" => (ha
 export const translateDirectionLabel = (d: "ja-vi" | "vi-ja"): string => (d === "ja-vi" ? "Nhật → Việt" : "Việt → Nhật");
 
 /**
- * Dòng giải thích khi không có bản dịch: phần phân tích câu vẫn hiện nhưng KHÔNG ghép thành câu (câu ghép không trôi chảy, sai
- * nghĩa — spec §2). OK → null.
+ * Dòng giải thích dưới hướng dịch, giọng nhẹ nhàng — tab Dịch không bao giờ hiện lỗi đỏ (D34). Có bản dịch máy offline: nói rõ
+ * đó là bản offline và vì sao (để người học biết độ tin cậy). Không có bản dịch: phần phân tích câu vẫn hiện nhưng KHÔNG ghép
+ * thành câu (câu ghép không trôi chảy, sai nghĩa — spec §2). Bản AI → null.
  */
-export const translateStateNote = (state: DictTranslateState, aiLeft?: number, aiLimit?: number): string | null => {
+export const translateStateNote = (
+    state: DictTranslateState,
+    aiLeft?: number,
+    aiLimit?: number,
+    engine?: DictTranslateEngine | null
+): string | null => {
+    if (engine === "offline") {
+        const why =
+            state === "LIMIT"
+                ? `Bạn đã dùng hết lượt dịch AI trong giờ này (${aiLeft ?? 0}/${aiLimit ?? 0})`
+                : state === "AI_DOWN"
+                  ? "AI đang bận"
+                  : "Dịch bằng AI đang tắt";
+        return `${why}, nên đây là bản dịch máy offline: dịch được cả câu nhưng có thể sát chữ hoặc chưa chính xác, hãy đối chiếu phần phân tích bên dưới.`;
+    }
+    if (engine === "ai" || state === "OK") return null;
     switch (state) {
-        case "OFF":
-            return "Dịch bằng AI đang tắt hoặc chưa được cấu hình. Chỉ hiện phân tích từng cụm từ, không có bản dịch.";
+        case "BUSY":
+            return "Bạn dịch hơi nhanh. Đợi vài giây rồi bấm Dịch lại nhé.";
+        case "UNAVAILABLE":
+            return "Dịch vụ dịch đang khởi động hoặc bận, chưa trả lời kịp. Đợi vài giây rồi bấm Dịch lại nhé.";
         case "LIMIT":
-            return `Bạn đã hết lượt dịch AI trong giờ này (${aiLeft ?? 0}/${aiLimit ?? 0}). Chỉ hiện phân tích từng cụm từ; thử lại sau một giờ.`;
+            return `Bạn đã dùng hết lượt dịch AI trong giờ này (${aiLeft ?? 0}/${aiLimit ?? 0}) và bản dịch offline chưa sẵn sàng. Dưới đây là phân tích từng cụm từ; thử lại sau ít phút.`;
         case "AI_DOWN":
-            return "AI chưa dịch được lúc này (quá tải hoặc lỗi). Chỉ hiện phân tích từng cụm từ, hãy thử lại sau ít phút.";
+            return "Chưa dịch được câu này lúc này. Dưới đây là phân tích từng cụm từ; bấm Dịch lại sau ít phút.";
         default:
-            return null;
+            return "Dịch bằng AI đang tắt và bản dịch offline chưa sẵn sàng. Dưới đây là phân tích từng cụm từ.";
     }
 };
 
