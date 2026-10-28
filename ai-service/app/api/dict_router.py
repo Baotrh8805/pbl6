@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.security import require_internal_key
-from app.extract import dictionary, gemini, handwriting, overrides
+from app.extract import dictionary, gemini, handwriting, overrides, translate_text
 from app.extract.jachars import has_japanese
 
 router = APIRouter(prefix="/dict", tags=["Từ điển"], dependencies=[Depends(require_internal_key)])
@@ -189,10 +189,63 @@ def dict_translate(req: TranslateRequest) -> dict:
     try:
         raw = gemini.translate_dictionary([it.model_dump() for it in req.items], model=model)
     except gemini.GeminiError as exc:
-        reason = exc.reason if exc.reason in ("no_api_key", "quota") else (
-            "aiOverloaded" if getattr(exc, "retryable", False) else "error")
-        raise HTTPException(status_code=503, detail=reason)
+        raise HTTPException(status_code=503, detail=ai_reason(exc))
     return {"items": filter_translated(raw, req), "model": model}
+
+
+def ai_reason(exc: gemini.GeminiError) -> str:
+    """Lý do Gemini lỗi cho backend (mã như /extract/enrich): no_api_key | quota | aiOverloaded (quá tải / hết hạn chót, thử lại
+    được) | error."""
+    if exc.reason in ("no_api_key", "quota"):
+        return exc.reason
+    return "aiOverloaded" if getattr(exc, "retryable", False) else "error"
+
+
+class TranslateTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=translate_text.MAX_CHARS)
+    direction: str = Field(default="auto", pattern="^(auto|ja-vi|vi-ja)$")
+    geminiModel: Optional[str] = None
+    # false: backend hết lượt / tắt dịch → chỉ phân tích câu, không gọi Gemini (reason "skipped")
+    withAi: bool = True
+
+
+@router.post("/translate-text")
+def dict_translate_text(req: TranslateTextRequest) -> dict:
+    """Dịch câu / đoạn Nhật ↔ Việt cho tab Dịch (spec 2026-10-28-dich-cau-design §3, D33). Luôn 200: phần phân tích câu Nhật
+    (Sudachi + JMdict + JLPT + furigana, không tốn quota) có ngay cả khi không gọi được AI; bản dịch chỉ có khi Gemini trả lời
+    và qua lọc — ``reason`` ghi vì sao thiếu: no_api_key | quota | aiOverloaded | error | skipped. Không bao giờ ghép nghĩa
+    từng từ thành bản dịch. Việt → Nhật: phân tích câu Nhật mà AI trả, ``readingAgrees`` so cách đọc AI với Sudachi."""
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text rỗng")
+    direction = req.direction if req.direction != "auto" else translate_text.detect_direction(text)
+    out: dict = {"direction": direction, "source": text, "translation": None, "literal": None, "alternatives": [],
+                 "notes": None, "reading": None, "romaji": None, "readingAgrees": None, "tokens": [], "model": None,
+                 "reason": None}
+    tokens = translate_text.analyse(text) if direction == "ja-vi" else []
+    if not req.withAi:
+        out["reason"] = "skipped"
+    elif not gemini.available():
+        out["reason"] = "no_api_key"
+    else:
+        try:
+            raw, used = gemini.translate_text(text, direction, translate_text.ai_words(tokens),
+                                              model=gemini.resolve_model(req.geminiModel))
+        except gemini.GeminiError as exc:
+            out["reason"] = ai_reason(exc)
+        else:
+            cleaned = translate_text.clean_result(raw, direction, tokens)
+            if cleaned is None:
+                out["reason"] = "error"
+            else:
+                out.update(cleaned)
+                out["model"] = used
+                if direction == "vi-ja":
+                    tokens = translate_text.analyse(cleaned["translation"])
+                    out["readingAgrees"] = translate_text.reading_agrees(tokens, cleaned["reading"])
+                    out["romaji"] = translate_text.romaji_of(tokens)
+    out["tokens"] = tokens
+    return out
 
 
 class OverrideItem(BaseModel):

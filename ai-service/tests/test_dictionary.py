@@ -379,3 +379,77 @@ def test_gemini_translate_dictionary_parses(monkeypatch):
     out = gemini.translate_dictionary([{"ref": "w:1", "forms": "食べる"}, {"ref": "w:2", "forms": "飲む"}])
     assert out == [{"ref": "w:1", "meaningVi": "ăn", "examples": [{"id": "7", "vi": "Tôi ăn."}]},
                    {"ref": "w:2", "meaningVi": "", "examples": []}]
+
+
+# ----------------------------------------------------------------------------- dịch câu (tab Dịch, spec 2026-10-28, D33)
+
+def test_router_translate_text_analysis_without_ai(client, monkeypatch):
+    monkeypatch.setattr(gemini, "available", lambda: False)
+    r = client.post("/api/dict/translate-text", json={"text": " 日本語を食べました。 "}).json()
+    assert r["direction"] == "ja-vi" and r["source"] == "日本語を食べました。"
+    assert r["translation"] is None and r["reason"] == "no_api_key" and r["model"] is None
+    keys = {t["surface"]: t["key"] for t in r["tokens"]}
+    assert keys["日本語"] == "w:1464530" and keys["食べました"] == "w:1358280" and keys["。"] is None
+    assert keys["を"].startswith("w:"), "trợ từ có mục JMdict thì vẫn bấm tra được"
+    nihongo = r["tokens"][0]
+    assert nihongo["jlpt"] == "N5" and nihongo["reading"] == "にほんご" and nihongo["meaning"] is None and nihongo["glossEn"]
+
+    def boom(*a, **k):
+        raise AssertionError("không được gọi Gemini")
+    monkeypatch.setattr(gemini, "available", lambda: True)
+    monkeypatch.setattr(gemini, "translate_text", boom)
+    r2 = client.post("/api/dict/translate-text", json={"text": "学校", "withAi": False}).json()
+    assert r2["reason"] == "skipped" and r2["tokens"][0]["key"] == "w:1206730"
+    r3 = client.post("/api/dict/translate-text", json={"text": "Tôi ăn cơm", "withAi": False}).json()
+    assert r3["direction"] == "vi-ja" and r3["tokens"] == [] and r3["translation"] is None
+    assert client.post("/api/dict/translate-text", json={"text": "食べる", "direction": "vi-ja", "withAi": False}).json()["direction"] == "vi-ja"
+    assert client.post("/api/dict/translate-text", json={"text": "   "}).status_code == 400
+    assert client.post("/api/dict/translate-text", json={"text": "x" * 1001}).status_code == 422
+    assert client.post("/api/dict/translate-text", json={"text": "x", "direction": "en-vi"}).status_code == 422
+
+
+def test_router_translate_text_with_ai(client, monkeypatch):
+    monkeypatch.setattr(gemini, "available", lambda: True)
+    monkeypatch.setattr(gemini, "resolve_model", lambda m: m or "gemini-default")
+    calls = []
+
+    def fake(text, direction, words=None, model=None):
+        calls.append((text, direction, words, model))
+        if direction == "ja-vi":
+            return ({"translation": "Tôi đã học tiếng Nhật.", "literal": "tiếng Nhật / (tân ngữ) / đã học", "alternatives": [],
+                     "notes": "", "words": [{"i": 0, "meaning": "tiếng Nhật"}, {"i": 1, "meaning": "trợ từ chỉ tân ngữ"}]}, model)
+        return ({"translation": "日本語を勉強しました。", "reading": "にほんごをべんきょうしました。",
+                 "alternatives": [{"text": "日本語を勉強した。", "reading": "にほんごをべんきょうした。", "note": "thể thường"}],
+                 "notes": "勉強する: học"}, model)
+    monkeypatch.setattr(gemini, "translate_text", fake)
+
+    r = client.post("/api/dict/translate-text", json={"text": "日本語を勉強しました。", "geminiModel": "gemini-test"}).json()
+    assert r["translation"] == "Tôi đã học tiếng Nhật." and r["literal"] == "tiếng Nhật / (tân ngữ) / đã học"
+    assert r["reason"] is None and r["model"] == "gemini-test" and r["readingAgrees"] is None
+    assert r["tokens"][0]["meaning"] == "tiếng Nhật" and r["tokens"][1]["meaning"] == "trợ từ chỉ tân ngữ"
+    assert [w["surface"] for w in calls[0][2]] == ["日本語", "を", "勉強", "しました"] and calls[0][3] == "gemini-test"
+
+    r = client.post("/api/dict/translate-text", json={"text": "Tôi đã học tiếng Nhật."}).json()
+    assert r["direction"] == "vi-ja" and r["translation"] == "日本語を勉強しました。" and r["reading"] == "にほんごをべんきょうしました。"
+    assert r["readingAgrees"] is True and r["romaji"] == "nihongo o benkyou shimashita。"
+    assert [t["surface"] for t in r["tokens"]] == ["日本語", "を", "勉強", "しました", "。"] and r["tokens"][0]["key"] == "w:1464530"
+    assert r["alternatives"] == [{"text": "日本語を勉強した。", "reading": "にほんごをべんきょうした。", "note": "thể thường"}]
+    assert r["notes"] == "勉強する: học" and calls[1][2] == [] and calls[1][3] == "gemini-default"
+
+    # Gemini lỗi → reason theo mã /dict/translate, phân tích câu vẫn có
+    def quota(*a, **k):
+        raise gemini.GeminiError("quota", "x", retryable=True)
+    monkeypatch.setattr(gemini, "translate_text", quota)
+    r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
+    assert r["reason"] == "quota" and r["translation"] is None and r["tokens"][0]["key"] == "w:1206730"
+
+    def budget(*a, **k):
+        raise gemini.GeminiError("budget", "hết hạn chót", retryable=True)
+    monkeypatch.setattr(gemini, "translate_text", budget)
+    assert client.post("/api/dict/translate-text", json={"text": "学校"}).json()["reason"] == "aiOverloaded"
+
+    def bad(*a, **k):
+        return {"translation": "学校 còn chữ Nhật", "literal": "", "alternatives": [], "notes": "", "words": []}, "m"
+    monkeypatch.setattr(gemini, "translate_text", bad)
+    r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
+    assert r["reason"] == "error" and r["translation"] is None and r["model"] is None

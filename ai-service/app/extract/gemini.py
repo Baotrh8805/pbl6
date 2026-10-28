@@ -1,4 +1,4 @@
-"""Lớp mỏng bọc google-genai: Vision OCR fallback và dịch nghĩa VN theo batch.
+"""Lớp mỏng bọc google-genai: Vision OCR fallback, dịch nghĩa VN theo batch, dịch câu Nhật ↔ Việt (tab Dịch).
 
 Mọi lỗi SDK được gói thành GeminiError(reason) với reason ∈ {no_api_key, quota, error}
 để router/reader quyết định bỏ qua; không bao giờ log API key.
@@ -393,6 +393,124 @@ def translate_dictionary(items: list[dict], model: Optional[str] = None) -> list
                    for e in (d.get("examples") or []) if isinstance(e, dict)]
             out.append({"ref": str(d.get("ref", "")), "meaningVi": (d.get("meaningVi") or "").strip(), "examples": exs})
     return out
+
+
+# --- Dịch câu / đoạn Nhật ↔ Việt (tab Dịch, spec 2026-10-28-dich-cau-design §3, D33) ----------------------------
+
+# Lời gọi tương tác: người học đang chờ và backend chỉ đọc 30 s (postJson) → timeout 20 s, thử lại 1 lần, hạn chót chung
+# TEXT_DEADLINE_S như OCR: hết hạn → GeminiError("budget", retryable) → router trả aiOverloaded, KHÔNG tạm ngưng Gemini toàn cục
+# (một câu dịch chậm không được tắt dịch nghĩa từ điển của mọi người trong COOLDOWN_S).
+TEXT_PROFILE = CallProfile(20_000, (2,), None)
+TEXT_DEADLINE_S = 26
+
+# Bản dịch luôn do model dịch CẢ đoạn (ngữ cảnh, chủ ngữ bị bỏ, trật tự SOV → SVO, kính ngữ, thành ngữ); phần "words" chỉ xin
+# nghĩa theo ngữ cảnh cho từng token Sudachi mà ai-service đã tách, để lớp phân tích khớp bản dịch — không bao giờ ghép lại thành câu.
+_TEXT_PROMPT_JA_VI = (
+    "You are a professional Japanese-to-Vietnamese translator helping Vietnamese learners of Japanese.\n"
+    "Translate the WHOLE Japanese text below into natural, fluent Vietnamese.\n"
+    "Rules:\n"
+    "- Translate meaning, not words: natural Vietnamese word order, no literal calques; keep the register (polite / casual) "
+    "and the tone of the original.\n"
+    "- Japanese often omits the subject: infer it from context (first person -> \"tôi\" unless the text shows otherwise) and "
+    "keep it consistent across sentences.\n"
+    "- Keep names, numbers and quoted terms; never add explanations inside the translation.\n"
+    "Return ONLY a JSON object with:\n"
+    "- \"translation\": the natural Vietnamese translation of the whole text (keep paragraph breaks as \n).\n"
+    "- \"literal\": a close, phrase-by-phrase Vietnamese rendering that follows the Japanese order, phrases separated by "
+    "\" / \" (a study aid; may sound awkward). Empty string when the text is a single word.\n"
+    "- \"alternatives\": up to 2 other natural Vietnamese translations ONLY when the Japanese is genuinely ambiguous "
+    "(e.g. a different omitted subject or reading), otherwise [].\n"
+    "- \"notes\": one short Vietnamese note (max 200 characters) on a grammar point or nuance that matters for this "
+    "translation, or \"\".\n"
+    "- \"words\": for EACH item of \"Words\" below (tokens of the text with index \"i\"), the meaning of that word IN THIS "
+    "CONTEXT in Vietnamese (max 8 words, no Japanese characters, no romaji); for particles and auxiliaries give the "
+    "function instead (e.g. \"trợ từ chỉ tân ngữ\", \"quá khứ lịch sự\"). Keep \"i\" exactly.\n\n"
+    "Text:\n{text}\n\nWords:\n{words}"
+)
+
+_TEXT_PROMPT_VI_JA = (
+    "You are a professional Vietnamese-to-Japanese translator helping Vietnamese learners of Japanese.\n"
+    "Translate the WHOLE Vietnamese text below into natural Japanese.\n"
+    "Rules:\n"
+    "- Japanese as a native speaker would write it; use the polite です・ます style unless the Vietnamese is clearly casual, "
+    "a title or a heading.\n"
+    "- Prefer common vocabulary (JLPT N5-N3) when it is natural; write kanji as commonly written (with okurigana), "
+    "katakana for loanwords.\n"
+    "- Translate meaning, not words; keep names and numbers; never add explanations inside the translation.\n"
+    "Return ONLY a JSON object with:\n"
+    "- \"translation\": the Japanese translation of the whole text (keep paragraph breaks as \n).\n"
+    "- \"reading\": the full reading of \"translation\" in hiragana (katakana words may stay in katakana), same punctuation.\n"
+    "- \"alternatives\": up to 2 other natural renderings worth knowing (e.g. the casual form, a more formal one), each an "
+    "object {{\"text\", \"reading\", \"note\"}} where \"note\" is a short Vietnamese label such as \"thể thường\" or "
+    "\"lịch sự hơn\"; [] when none.\n"
+    "- \"notes\": one short Vietnamese note (max 200 characters) on a grammar point or word choice in the translation, "
+    "or \"\".\n\n"
+    "Text:\n{text}"
+)
+
+_TEXT_PROMPT = {"ja-vi": _TEXT_PROMPT_JA_VI, "vi-ja": _TEXT_PROMPT_VI_JA}
+
+_TEXT_SCHEMA = {
+    "ja-vi": {
+        "type": "object",
+        "properties": {
+            "translation": {"type": "string"},
+            "literal": {"type": "string"},
+            "alternatives": {"type": "array", "items": {"type": "string"}},
+            "notes": {"type": "string"},
+            "words": {"type": "array", "items": {"type": "object", "properties": {
+                "i": {"type": "integer"}, "meaning": {"type": "string"}}, "required": ["i", "meaning"]}},
+        },
+        "required": ["translation", "literal", "alternatives", "notes", "words"],
+    },
+    "vi-ja": {
+        "type": "object",
+        "properties": {
+            "translation": {"type": "string"},
+            "reading": {"type": "string"},
+            "alternatives": {"type": "array", "items": {"type": "object", "properties": {
+                "text": {"type": "string"}, "reading": {"type": "string"}, "note": {"type": "string"}},
+                "required": ["text", "reading", "note"]}},
+            "notes": {"type": "string"},
+        },
+        "required": ["translation", "reading", "alternatives", "notes"],
+    },
+}
+
+
+def _parse_json_object(raw: str) -> dict:
+    text = raw.strip()
+    if text.startswith("```"):  # model đôi khi bọc code fence dù đã yêu cầu JSON
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise GeminiError("error", "Gemini returned invalid JSON") from exc
+    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+        data = data[0]
+    if not isinstance(data, dict):
+        raise GeminiError("error", "Gemini JSON is not an object")
+    return data
+
+
+def translate_text(text: str, direction: str, words: Optional[list[dict]] = None,
+                   model: Optional[str] = None) -> tuple[dict, str]:
+    """Dịch cả đoạn ``text`` theo ``direction`` ("ja-vi" | "vi-ja") → (JSON thô của model, model đã trả lời). ``words``: token Sudachi
+    [{i, surface, lemma, reading}] để xin nghĩa theo ngữ cảnh (chỉ ja-vi). Chưa lọc: translate_text.clean_result lọc sau. Lỗi
+    SDK / hết hạn chót → GeminiError (reason như vision_transcribe; "budget" khi quá TEXT_DEADLINE_S)."""
+    if not available():
+        raise GeminiError("no_api_key")
+    if direction not in _TEXT_PROMPT:
+        raise ValueError(f"direction lạ: {direction}")
+    prompt = _TEXT_PROMPT[direction].format(text=text, words=json.dumps(words or [], ensure_ascii=False))
+    raw, used = _generate_with_model(prompt, {
+        "temperature": 0.2,
+        "response_mime_type": "application/json",
+        "response_schema": _TEXT_SCHEMA[direction],
+    }, model, profile=TEXT_PROFILE, deadline=_now() + TEXT_DEADLINE_S)
+    return _parse_json_object(raw), used
 
 
 # --- Mẹo nhớ bộ thủ (C4) ------------------------------------------------------
