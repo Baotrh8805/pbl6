@@ -11,7 +11,8 @@ export type SettingsNumberKey =
     | "distractor_min_confidence"
     | "contradiction_alert_threshold"
     | "dictionary_ai_hourly_limit"
-    | "dictionary_examples_translate";
+    | "dictionary_examples_translate"
+    | "dictionary_translate_hourly_limit";
 
 export interface SettingsNumberField {
     key: SettingsNumberKey;
@@ -97,7 +98,7 @@ export const AI_THRESHOLD_FIELDS: readonly SettingsNumberField[] = [
     },
 ];
 
-/** Từ điển (V32, D26): trần dịch Gemini lúc tra và số câu ví dụ dịch kèm. */
+/** Từ điển (V32, D26): trần dịch Gemini lúc tra và số câu ví dụ dịch kèm; (V39, D33): trần dịch câu ở tab Dịch. */
 export const DICTIONARY_FIELDS: readonly SettingsNumberField[] = [
     {
         key: "dictionary_ai_hourly_limit",
@@ -118,6 +119,16 @@ export const DICTIONARY_FIELDS: readonly SettingsNumberField[] = [
         step: 1,
         integer: true,
         unit: "câu",
+    },
+    {
+        key: "dictionary_translate_hourly_limit",
+        label: "Lượt dịch câu AI / giờ",
+        hint: "Tab Dịch: mỗi tài khoản dịch tối đa bấy nhiêu câu / đoạn bằng AI mỗi giờ (câu trùng lấy từ bộ nhớ dịch, không tính). 0 = tắt dịch câu; người học vẫn thấy phân tích từng cụm từ.",
+        min: 0,
+        max: 1000,
+        step: 1,
+        integer: true,
+        unit: "lượt / giờ",
     },
 ];
 

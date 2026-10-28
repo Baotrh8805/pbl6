@@ -5,15 +5,17 @@ import { HanVietMapPage } from "@/pages/HanVietMapPage";
 import { WordsTab } from "@/features/dictionary/components/WordsTab";
 import { NotebookTab } from "@/features/dictionary/components/NotebookTab";
 import { SentencesTab } from "@/features/dictionary/components/SentencesTab";
+import { TranslateTab } from "@/features/dictionary/components/TranslateTab";
 import { HandwritingPad } from "@/features/dictionary/components/HandwritingPad";
 import { KanjiCommunity } from "@/features/dictionary/components/KanjiCommunity";
-import type { DictKey } from "@/types/dictionary.types";
+import type { DictKey, DictTranslateDirection } from "@/types/dictionary.types";
 
-type DictTab = "words" | "sentences" | "kanji" | "hanviet" | "notebook";
+type DictTab = "words" | "sentences" | "translate" | "kanji" | "hanviet" | "notebook";
 
 const TABS: { key: DictTab; label: string; icon: string }[] = [
   { key: "words", label: "Từ vựng", icon: "menu_book" },
   { key: "sentences", label: "Câu", icon: "format_quote" },
+  { key: "translate", label: "Dịch", icon: "g_translate" },
   { key: "kanji", label: "Hán tự", icon: "translate" },
   { key: "hanviet", label: "Hán-Việt", icon: "hub" },
   { key: "notebook", label: "Sổ tay", icon: "bookmarks" },
@@ -23,14 +25,18 @@ const TAB_KEYS = TABS.map((t) => t.key);
 const TAB_PARAMS: Record<DictTab, string[]> = {
   words: ["q", "e"],
   sentences: ["s"],
+  translate: ["t", "dir"],
   kanji: ["k", "sub", "r"],
   hanviet: ["reading", "level"],
   notebook: [],
 };
 const KANJI_RE = /[㐀-䶿一-鿿豈-﫿]/u;
 
-// Từ điển (D14): Từ vựng (mới) + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay. Mọi trạng thái trên URL:
-// ?tab=words&q=…&e=<khoá mục>, ?tab=sentences&s=…, ?tab=kanji&k=食&sub=radicals&r=85, ?tab=hanviet&reading=…, ?tab=notebook.
+const TRANSLATE_DIRS: DictTranslateDirection[] = ["auto", "ja-vi", "vi-ja"];
+
+// Từ điển (D14): Từ vựng (mới) + Câu + Dịch (D33) + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay. Mọi trạng thái trên URL:
+// ?tab=words&q=…&e=<khoá mục>, ?tab=sentences&s=…, ?tab=translate&t=…&dir=ja-vi|vi-ja, ?tab=kanji&k=食&sub=radicals&r=85,
+// ?tab=hanviet&reading=…, ?tab=notebook.
 export const DictionaryPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const raw = params.get("tab") as DictTab | null;
@@ -79,6 +85,8 @@ export const DictionaryPage: React.FC = () => {
   };
 
   const kanjiChar = (params.get("k") ?? "").match(KANJI_RE)?.[0] ?? null;
+  const rawDir = params.get("dir") as DictTranslateDirection | null;
+  const translateDir: DictTranslateDirection = rawDir && TRANSLATE_DIRS.includes(rawDir) ? rawDir : "auto";
 
   return (
     <section className="flex flex-col gap-space-lg pb-space-xl">
@@ -88,8 +96,8 @@ export const DictionaryPage: React.FC = () => {
           Từ điển Nhật–Việt
         </h1>
         <p className="text-body-sm text-on-surface-variant mt-1 max-w-2xl">
-          Tra từ, cách đọc, âm Hán-Việt, nghĩa tiếng Việt và câu ví dụ; bình luận chia sẻ mẹo nhớ; báo lỗi để quản trị viên sửa
-          từ điển gốc cho mọi người.
+          Tra từ, cách đọc, âm Hán-Việt, nghĩa tiếng Việt và câu ví dụ; dịch câu Nhật ↔ Việt bằng AI kèm phân tích từng cụm; bình luận
+          chia sẻ mẹo nhớ; báo lỗi để quản trị viên sửa từ điển gốc cho mọi người.
         </p>
       </header>
 
@@ -132,12 +140,22 @@ export const DictionaryPage: React.FC = () => {
             entryKey={params.get("e")}
             onQuery={(q) => go("words", { q: q || null, e: null }, true)}
             onOpen={openKey}
+            onTranslate={(t) => go("translate", { t })}
           />
         )}
         {tab === "sentences" && (
           <SentencesTab
             query={params.get("s") ?? ""}
             onQuery={(s) => go("sentences", { s: s || null }, true)}
+            onOpen={(k) => go("words", { e: k })}
+            onTranslate={(t) => go("translate", { t })}
+          />
+        )}
+        {tab === "translate" && (
+          <TranslateTab
+            text={params.get("t") ?? ""}
+            direction={translateDir}
+            onChange={(t, dir) => go("translate", { t: t || null, dir: dir === "auto" ? null : dir }, true)}
             onOpen={(k) => go("words", { e: k })}
           />
         )}

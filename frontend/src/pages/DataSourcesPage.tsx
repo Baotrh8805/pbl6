@@ -78,6 +78,11 @@ export const DataSourcesPage: React.FC = () => (
         Từ điển, luyện viết và bóc tách tài liệu dùng các bộ dữ liệu mở dưới đây. Nghĩa tiếng Việt và bản dịch câu ví dụ do hệ thống
         tạo và được cộng đồng cùng quản trị viên hiệu đính; chúng được chia sẻ theo cùng giấy phép với dữ liệu gốc.
       </p>
+      <p className="text-body-sm text-on-surface-variant">
+        Câu bạn nhập ở tab Dịch của từ điển được gửi tới dịch vụ AI (Google Gemini) để dịch cả câu; bản dịch được giữ trong bộ nhớ dịch
+        chung tối đa 30 ngày kể từ lần dùng cuối, không gắn với tài khoản của bạn. Phần phân tích từng cụm từ chạy trên máy chủ của hệ
+        thống bằng dữ liệu mở (SudachiDict, JMdict, danh sách JLPT).
+      </p>
       <ul className="flex flex-col gap-3">
         {SOURCES.map((s) => (
           <li key={s.name} className="rounded-xl border border-surface-container-high bg-surface-container-lowest p-4">

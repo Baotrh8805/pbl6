@@ -1,7 +1,7 @@
 // Hàm thuần của từ điển (spec 2026-10-26 §7): chọn chế độ tìm, romaji → kana, nhãn trường / từ loại, dựng thẻ từ mục từ.
 // Import tương đối để scripts/selfcheck chạy được bằng node.
 import { romajiToKanaFull } from "../../lib/romaji.ts";
-import type { DictEntry, DictKey, DictReportField, DictSummary, DictViState } from "../../types/dictionary.types.ts";
+import type { DictEntry, DictKey, DictReportField, DictSummary, DictTranslateState, DictTranslateToken, DictViState } from "../../types/dictionary.types.ts";
 
 const JA_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/;
 const VI_RE = /[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i;
@@ -22,6 +22,49 @@ export const prepareQuery = (raw: string, romaji: boolean): { q: string; mode: "
         if (kana && !/[a-z]/i.test(kana)) return { q: kana, mode: "ja", converted: true };
     }
     return { q, mode: "auto", converted: false };
+};
+
+// ---------- Dịch câu (tab Dịch, spec 2026-10-28-dich-cau-design, D33) ----------
+
+export const TRANSLATE_MAX_CHARS = 1000;
+
+/** Hướng dịch tự nhận như backend: có chữ Nhật → Nhật → Việt, không thì Việt → Nhật. */
+export const detectTranslateDirection = (text: string): "ja-vi" | "vi-ja" => (hasJapanese(text) ? "ja-vi" : "vi-ja");
+
+export const translateDirectionLabel = (d: "ja-vi" | "vi-ja"): string => (d === "ja-vi" ? "Nhật → Việt" : "Việt → Nhật");
+
+/**
+ * Dòng giải thích khi không có bản dịch: phần phân tích câu vẫn hiện nhưng KHÔNG ghép thành câu (câu ghép không trôi chảy, sai
+ * nghĩa — spec §2). OK → null.
+ */
+export const translateStateNote = (state: DictTranslateState, aiLeft?: number, aiLimit?: number): string | null => {
+    switch (state) {
+        case "OFF":
+            return "Dịch bằng AI đang tắt hoặc chưa được cấu hình. Chỉ hiện phân tích từng cụm từ, không có bản dịch.";
+        case "LIMIT":
+            return `Bạn đã hết lượt dịch AI trong giờ này (${aiLeft ?? 0}/${aiLimit ?? 0}). Chỉ hiện phân tích từng cụm từ; thử lại sau một giờ.`;
+        case "AI_DOWN":
+            return "AI chưa dịch được lúc này (quá tải hoặc lỗi). Chỉ hiện phân tích từng cụm từ, hãy thử lại sau ít phút.";
+        default:
+            return null;
+    }
+};
+
+/** Ô tra từ nhận cả câu tiếng Nhật (có dấu câu hoặc dài ≥ 10 ký tự) → gợi ý sang tab Dịch; từ đơn / câu Việt thì không. */
+export const looksLikeSentence = (q: string): boolean => {
+    const s = q.trim();
+    return hasJapanese(s) && (/[。、！？!?,.「」]/.test(s) || s.length >= 10);
+};
+
+/** Nghĩa hiện cho một cụm: AI theo ngữ cảnh → nghĩa Việt của từ điển → gloss Anh; trợ từ không có nghĩa thì nhãn từ loại. */
+export const tokenMeaning = (
+    t: Pick<DictTranslateToken, "meaning" | "dictVi" | "glossEn" | "posVi" | "particle">
+): { text: string; lang: "vi" | "en"; source: "ai" | "dict" | "en" | "pos" } | null => {
+    if (t.meaning) return { text: t.meaning, lang: "vi", source: "ai" };
+    if (t.dictVi) return { text: t.dictVi, lang: "vi", source: "dict" };
+    if (t.glossEn) return { text: t.glossEn, lang: "en", source: "en" };
+    if (t.particle && t.posVi) return { text: t.posVi, lang: "vi", source: "pos" };
+    return null;
 };
 
 export const isKanjiKey = (key: DictKey): boolean => key.startsWith("k:");

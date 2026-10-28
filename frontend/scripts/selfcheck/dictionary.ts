@@ -5,15 +5,20 @@ import {
   cardMeaningOf,
   currentValueOf,
   deinflectNote,
+  detectTranslateDirection,
   highlightParts,
   entryToWordNode,
   headOf,
+  looksLikeSentence,
   needsSubKey,
   pitchSteps,
   posLabel,
   prepareQuery,
   primaryMeaning,
   reportFieldsFor,
+  tokenMeaning,
+  translateDirectionLabel,
+  translateStateNote,
   viStateNote,
 } from "../../src/features/dictionary/dictUtils.ts";
 import { describeNotification } from "../../src/services/notificationService.ts";
@@ -121,4 +126,23 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(hp("食べた。食べたい", "食べ") === "[食べ]た。[食べ]たい", "Từ điển (Câu): chữ Nhật tô mọi chỗ");
   assert(hp("Tôi ăn cơm", "an com") === "Tôi ăn cơm", "Từ điển (Câu): gõ không dấu thì không tô (không đoán)");
   assert(hp("abc", "  ") === "abc" && highlightParts("", "a").length === 0, "Từ điển (Câu): q rỗng / text rỗng");
+
+  // ---------- tab Dịch (spec 2026-10-28, D33) ----------
+  assert(detectTranslateDirection("ご飯を食べました。") === "ja-vi" && detectTranslateDirection("Tôi ăn cơm") === "vi-ja", "Dịch: tự nhận hướng");
+  assert(detectTranslateDirection("Từ 食べる nghĩa là gì?") === "ja-vi", "Dịch: văn bản trộn coi là tiếng Nhật (như backend)");
+  assert(translateDirectionLabel("vi-ja") === "Việt → Nhật" && translateDirectionLabel("ja-vi") === "Nhật → Việt", "Dịch: nhãn hướng");
+  assert(translateStateNote("OK") === null, "Dịch: OK không có ghi chú");
+  const limitNote = translateStateNote("LIMIT", 0, 20) ?? "";
+  assert(limitNote.includes("0/20") && limitNote.includes("phân tích"), "Dịch: hết lượt nói rõ số lượt và vẫn có phân tích");
+  assert((translateStateNote("OFF") ?? "").includes("tắt") && (translateStateNote("AI_DOWN") ?? "").includes("thử lại"), "Dịch: OFF / AI_DOWN có hướng xử lý");
+  assert(!(translateStateNote("OFF") ?? "").toLowerCase().includes("ghép"), "Dịch: không hứa ghép từ thành câu");
+  assert(looksLikeSentence("ご飯を食べました。") && looksLikeSentence("昨日は友達と映画を見ました"), "Dịch: nhận cả câu Nhật (dấu câu hoặc dài)");
+  assert(!looksLikeSentence("食べる") && !looksLikeSentence("Tôi ăn cơm hôm nay.") && !looksLikeSentence("  "), "Dịch: không gợi ý cho từ đơn / câu Việt / rỗng");
+  const tok = { meaning: null, dictVi: "ăn", glossEn: "to eat", posVi: "động từ", particle: false };
+  assert(tokenMeaning(tok)?.source === "dict" && tokenMeaning({ ...tok, meaning: "đã ăn" })?.source === "ai", "Dịch: nghĩa AI theo ngữ cảnh đứng trước nghĩa từ điển");
+  assert(tokenMeaning({ ...tok, dictVi: null })?.lang === "en", "Dịch: dự phòng gloss Anh");
+  assert(tokenMeaning({ meaning: null, dictVi: null, glossEn: null, posVi: "trợ từ", particle: true })?.text === "trợ từ", "Dịch: trợ từ không nghĩa hiện từ loại");
+  assert(tokenMeaning({ meaning: null, dictVi: null, glossEn: null, posVi: "dấu", particle: false }) === null, "Dịch: không có gì -> null");
+  const tl = DICTIONARY_FIELDS.find((f) => f.key === "dictionary_translate_hourly_limit")!;
+  assert(parseSettingNumber(tl, "20") === 20 && parseSettingNumber(tl, "0") === 0 && parseSettingNumber(tl, "1001") === null, "Dịch: trần lượt dịch câu 0..1000");
 }

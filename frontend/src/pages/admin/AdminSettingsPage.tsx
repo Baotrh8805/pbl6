@@ -378,7 +378,7 @@ export const AdminSettingsPage: React.FC = () => {
         <AdminDetailCard
           title="Từ điển"
           icon="dictionary"
-          description="Dịch nghĩa tiếng Việt bằng AI khi người học mở mục chưa có nghĩa (lưu vĩnh viễn, mục đã dịch không tốn lượt)."
+          description="Dịch nghĩa tiếng Việt bằng AI khi người học mở mục chưa có nghĩa (lưu vĩnh viễn, mục đã dịch không tốn lượt); tab Dịch dịch câu Nhật ↔ Việt bằng AI có bộ nhớ dịch chung."
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {DICTIONARY_FIELDS.map((f) => (

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchDictEntry, searchDictionary } from "@/services/dictionaryService";
 import type { DictEntry, DictKey, DictSearchResult, DictSummary } from "@/types/dictionary.types";
-import { deinflectNote, headOf, prepareQuery, primaryMeaning } from "../dictUtils";
+import { deinflectNote, headOf, looksLikeSentence, prepareQuery, primaryMeaning } from "../dictUtils";
 import { DictEntryView } from "./DictEntryView";
 import { HandwritingPad } from "./HandwritingPad";
 
@@ -47,7 +47,9 @@ export const WordsTab: React.FC<{
   entryKey: string | null;
   onQuery: (q: string) => void;
   onOpen: (key: DictKey | null) => void;
-}> = ({ query, entryKey, onQuery, onOpen }) => {
+  /** Ô tìm nhận cả câu tiếng Nhật → gợi ý sang tab Dịch (D33). */
+  onTranslate?: (text: string) => void;
+}> = ({ query, entryKey, onQuery, onOpen, onTranslate }) => {
   const [input, setInput] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
   // URL đổi từ bên ngoài (Back, link) → ô tìm theo URL (điều chỉnh lúc render, không dùng effect)
@@ -188,6 +190,14 @@ export const WordsTab: React.FC<{
           <p className="text-body-sm text-on-surface-variant">
             Gõ từ tiếng Nhật (chữ Hán, kana hoặc romaji), nghĩa tiếng Việt hay tiếng Anh để tra. Mỗi mục có âm Hán-Việt, nghĩa
             tiếng Việt, câu ví dụ và bình luận của cộng đồng.
+          </p>
+        )}
+        {onTranslate && query && looksLikeSentence(query) && (
+          <p role="status" className="text-xs text-on-surface-variant rounded-lg bg-surface-container-low px-3 py-2">
+            Có vẻ bạn nhập cả câu.{" "}
+            <button type="button" onClick={() => onTranslate(query)} className="text-primary font-semibold hover:underline">
+              Dịch cả câu và phân tích từng cụm
+            </button>
           </p>
         )}
         {items.length > 0 && deinflectNote(result) && (

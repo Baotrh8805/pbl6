@@ -281,3 +281,62 @@ export interface DictSentenceResult {
     page: number;
     size: number;
 }
+
+// ---------- Dịch câu (tab Dịch, spec 2026-10-28-dich-cau-design, D33) ----------
+
+export type DictTranslateDirection = "auto" | "ja-vi" | "vi-ja";
+
+/**
+ * OK: có bản dịch; OFF: admin tắt hoặc chưa cấu hình AI; LIMIT: hết lượt trong giờ; AI_DOWN: AI lỗi / quá tải. Ba trạng thái sau
+ * vẫn có phân tích câu — không bao giờ ghép nghĩa từng từ thành bản dịch.
+ */
+export type DictTranslateState = "OK" | "OFF" | "LIMIT" | "AI_DOWN";
+
+export interface DictRuby {
+    text: string;
+    reading: string | null;
+}
+
+/** Một cụm từ của câu Nhật (token Sudachi đã gom trợ động từ). Nghĩa ưu tiên: meaning (AI theo ngữ cảnh) → dictVi (từ điển) → glossEn. */
+export interface DictTranslateToken {
+    i: number;
+    surface: string;
+    lemma: string | null;
+    reading: string | null;
+    romaji: string | null;
+    rubies: DictRuby[] | null;
+    key: DictKey | null;
+    jlpt: string | null;
+    pos: string | null;
+    posVi: string | null;
+    particle: boolean;
+    symbol: boolean;
+    glossEn: string | null;
+    meaning: string | null;
+    dictVi?: string | null;
+}
+
+export interface DictTranslateAlternative {
+    text: string;
+    reading: string | null;
+    note: string | null;
+}
+
+/** POST /api/dictionary/translate: bản dịch AI dịch cả đoạn + phân tích câu Nhật (câu gốc khi ja-vi, câu AI trả khi vi-ja). */
+export interface DictTranslation {
+    direction: "ja-vi" | "vi-ja";
+    source: string;
+    translation: string | null;
+    literal: string | null;
+    alternatives: DictTranslateAlternative[];
+    notes: string | null;
+    reading: string | null;
+    romaji: string | null;
+    readingAgrees: boolean | null;
+    tokens: DictTranslateToken[];
+    model: string | null;
+    state: DictTranslateState;
+    cached: boolean;
+    aiLeft: number;
+    aiLimit: number;
+}

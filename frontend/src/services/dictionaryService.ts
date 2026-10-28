@@ -1,6 +1,6 @@
 // Từ điển cho người học (/api/dictionary/*, spec 2026-10-26 §6.4). Khoá mục có ký tự ":" "|" và chữ Nhật → luôn encodeURIComponent.
 import { apiClient } from "./apiClient.ts";
-import type { DictComment, DictEntry, DictExample, DictKey, DictPage, DictReport, DictReportField, DictSearchResult, DictSentenceResult, DictSummary, DictToken } from "../types/dictionary.types.ts";
+import type { DictComment, DictEntry, DictExample, DictKey, DictPage, DictReport, DictReportField, DictSearchResult, DictSentenceResult, DictSummary, DictToken, DictTranslateDirection, DictTranslation } from "../types/dictionary.types.ts";
 
 const enc = encodeURIComponent;
 
@@ -34,6 +34,10 @@ export const translateDictExamples = async (
 
 export const tokenizeForDictionary = async (text: string): Promise<DictToken[]> =>
     (await apiClient.post<{ tokens: DictToken[] }>("/dictionary/tokenize", { text })).data.tokens;
+
+/** Tab Dịch (D33): dịch câu / đoạn Nhật ↔ Việt bằng AI (cả đoạn, có bộ nhớ dịch, trần giờ riêng) + phân tích câu Nhật. */
+export const translateText = async (text: string, direction: DictTranslateDirection = "auto", signal?: AbortSignal): Promise<DictTranslation> =>
+    (await apiClient.post<DictTranslation>("/dictionary/translate", { text, direction }, { signal })).data;
 
 // ---------- bình luận ----------
 

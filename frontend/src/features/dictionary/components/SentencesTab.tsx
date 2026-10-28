@@ -4,7 +4,7 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { searchDictSentences } from "@/services/dictionaryService";
 import { canSpeak, speakJa } from "@/lib/speech";
 import type { DictKey, DictSentence, DictSentenceResult } from "@/types/dictionary.types";
-import { highlightParts } from "../dictUtils";
+import { highlightParts, looksLikeSentence } from "../dictUtils";
 
 const PAGE = 20;
 
@@ -60,11 +60,13 @@ const SentenceRow: React.FC<{ s: DictSentence; q: string; onOpen: (key: DictKey)
 
 // Tab Câu (cải tiến 26/10): tìm câu ví dụ theo cụm — chữ Nhật khớp đúng chuỗi, tiếng Anh khớp từ đầu một từ, tiếng Việt có hoặc
 // không dấu. Mỗi câu: bản dịch Việt (dịch sẵn hoặc admin sửa), câu Anh, các mục từ mà câu làm ví dụ (bấm để mở ở tab Từ vựng).
-export const SentencesTab: React.FC<{ query: string; onQuery: (q: string) => void; onOpen: (key: DictKey) => void }> = ({
-  query,
-  onQuery,
-  onOpen,
-}) => {
+export const SentencesTab: React.FC<{
+  query: string;
+  onQuery: (q: string) => void;
+  onOpen: (key: DictKey) => void;
+  /** Không có câu ví dụ chứa cụm mà cụm trông như cả câu → gợi ý tab Dịch (D33). */
+  onTranslate?: (text: string) => void;
+}> = ({ query, onQuery, onOpen, onTranslate }) => {
   const [input, setInput] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
   if (query !== prevQuery) {
@@ -142,7 +144,19 @@ export const SentencesTab: React.FC<{ query: string; onQuery: (q: string) => voi
       )}
       {loading && <p className="text-body-sm text-on-surface-variant">Đang tìm…</p>}
       {current?.error && <p role="alert" className="text-body-sm text-error">{current.error}</p>}
-      {result && items.length === 0 && <p className="text-body-sm text-on-surface-variant">Không có câu ví dụ nào chứa «{q}».</p>}
+      {result && items.length === 0 && (
+        <p className="text-body-sm text-on-surface-variant">
+          Không có câu ví dụ nào chứa «{q}».
+          {onTranslate && looksLikeSentence(q) && (
+            <>
+              {" "}
+              <button type="button" onClick={() => onTranslate(q)} className="text-primary font-semibold hover:underline">
+                Dịch cả câu này
+              </button>
+            </>
+          )}
+        </p>
+      )}
       {result && items.length > 0 && (
         <p className="text-xs text-on-surface-variant" role="status">
           {result.total >= 500 ? "Hơn 500" : result.total.toLocaleString("vi-VN")} câu

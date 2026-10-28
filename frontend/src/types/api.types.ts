@@ -959,6 +959,8 @@ export interface AdminSettings {
     /** Từ điển (V32): trần dịch AI lúc tra / giờ, 0..1000; số câu ví dụ dịch kèm, 0..10. */
     dictionary_ai_hourly_limit?: number;
     dictionary_examples_translate?: number;
+    /** Từ điển (V39, D33): trần dịch câu Nhật ↔ Việt ở tab Dịch / giờ, 0..1000 (0 = tắt). */
+    dictionary_translate_hourly_limit?: number;
 }
 
 // ===== Bản đồ Hán–Việt (F1, proxy /api/nlp/han-viet-graph & han-viet-suggest) =====
