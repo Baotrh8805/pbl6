@@ -302,6 +302,10 @@ export interface ExtractionTextMeta {
     lowLines?: { text: string; conf: number }[];
     /** Chỉ có khi OCR kém mà Gemini không chép lại được: quota | no_api_key | error. */
     geminiError?: string;
+    /** Có khi trang OCR giữ bản Tesseract vì Gemini quá tải / hết quota / hết ngân sách (ai-service, spec 21/10). */
+    ocrDegraded?: boolean;
+    ocrDegradedPages?: number;
+    ocrDegradedReason?: string;
 }
 
 /** Cấp JLPT (N5 dễ nhất -> N1 khó nhất); cùng tập giá trị với JLPT_LEVELS trong lib/deckUtils.ts. */

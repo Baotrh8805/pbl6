@@ -81,6 +81,7 @@ import {
   defaultDeckLevel,
   levelDistribution,
   levelDistributionSummary,
+  ocrDegradedNotice,
   overallLevelLabel,
   roundToHundred,
 } from "../src/features/extraction/extractionUtils.ts";
@@ -830,6 +831,19 @@ async function runSelfCheck() {
     levelDistributionSummary(distAll),
     "Phân bố cấp JLPT (toàn tài liệu): N5 50 (50%), N4 30 (30%), N3 15 (15%), N2 4 (4%), N1 1 (1%) · chưa rõ 7",
     "Tóm tắt bằng chữ cho aria-label / tooltip"
+  );
+  // Kiểm thử 28/10 (L-05): trang bóc tách báo OCR hạ cấp (Gemini quá tải → giữ bản Tesseract)
+  assertStrictEqual(ocrDegradedNotice(null), null, "Không có meta -> không cảnh báo");
+  assertStrictEqual(ocrDegradedNotice({ pages: 1 }), null, "Đọc file / OCR bình thường -> không cảnh báo");
+  assertStrictEqual(
+    ocrDegradedNotice({ ocrDegraded: true, ocrDegradedPages: 1, pages: 1 }),
+    "Ảnh chưa được AI soát lại (dịch vụ AI quá tải); văn bản dưới đây là bản OCR thô, có thể sai chữ — hãy đối chiếu và sửa rồi phân tích lại.",
+    "Một trang -> nói 'Ảnh'"
+  );
+  assertStrictEqual(
+    ocrDegradedNotice({ ocrDegraded: true, ocrDegradedPages: 3, pages: 10 }),
+    "3/10 trang chưa được AI soát lại (dịch vụ AI quá tải); văn bản dưới đây là bản OCR thô, có thể sai chữ — hãy đối chiếu và sửa rồi phân tích lại.",
+    "Nhiều trang -> nêu số trang hạ cấp / tổng"
   );
   const distPct = levelDistribution({ byLevel: {}, byLevelAll: { N5: 1, N4: 1 }, levelPct: { N5: 70.4, N4: 29.6 } })!;
   assertStrictEqual(distPct.segments.slice(0, 2).map((s) => s.pct).join(","), "70,30", "Có levelPct thì tỉ lệ theo ai-service, làm tròn về số nguyên");

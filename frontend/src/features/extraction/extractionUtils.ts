@@ -6,6 +6,7 @@ import type {
   ExtractionOptions,
   ExtractionStage,
   ExtractionStatus,
+  ExtractionTextMeta,
   JlptLevel,
 } from "../../types/api.types.ts";
 import { JLPT_LEVELS } from "../../lib/deckUtils.ts";
@@ -125,6 +126,15 @@ export const geminiReasonText = (reason: string): string =>
     : reason === "no_api_key"
       ? "Chưa cấu hình khoá Gemini"
       : "AI (Gemini) đang gặp lỗi";
+
+/** Câu cảnh báo OCR hạ cấp (meta.ocrDegraded); null khi không hạ cấp. Cùng ý với cảnh báo ở bản nháp lộ trình. */
+export function ocrDegradedNotice(
+  meta: Pick<ExtractionTextMeta, "ocrDegraded" | "ocrDegradedPages" | "pages"> | null | undefined
+): string | null {
+  if (!meta?.ocrDegraded) return null;
+  const where = meta.pages > 1 ? `${meta.ocrDegradedPages ?? 1}/${meta.pages} trang` : "Ảnh";
+  return `${where} chưa được AI soát lại (dịch vụ AI quá tải); văn bản dưới đây là bản OCR thô, có thể sai chữ — hãy đối chiếu và sửa rồi phân tích lại.`;
+}
 
 export const formatBytes = (bytes: number): string =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
