@@ -548,4 +548,45 @@ class ExtractionIT extends IntegrationTest {
             jdbc.update("DELETE FROM dict_meanings WHERE entry_key IN (?, ?)", studyKey, kanjiKey);
         }
     }
+
+    /**
+     * Kiểm thử 28/10 (L-06): item không có dictKey, cách đọc khác dòng từ điển duy nhất của dạng viết (今日 きょう / こんにち) vẫn
+     * lấy nghĩa đó; dạng viết có hai dòng (角 かど / つの) thì không đoán, để Gemini dịch.
+     */
+    @Test
+    void enrich_falls_back_to_single_meaning_when_reading_differs() throws Exception {
+        long rnd = java.util.concurrent.ThreadLocalRandom.current().nextLong(1_000_000_000L, 9_999_999_999L);
+        String today = "zz" + rnd + "今日";
+        String corner = "zz" + rnd + "角";
+        List<String> keys = List.of("w:" + rnd, "w:" + (rnd - 1), "w:" + (rnd - 2));
+        jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'MACHINE','SEED')",
+                keys.get(0), today, "こんにち", "hôm nay (từ điển)");
+        jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'MACHINE','SEED')",
+                keys.get(1), corner, "かど", "góc");
+        jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'MACHINE','SEED')",
+                keys.get(2), corner, "つの", "sừng");
+        Mockito.when(ai.analyze(anyString(), any(), any())).thenReturn(new AiDtos.AnalyzeResult(List.of(
+                new AiDtos.Item("vocab", 1, today, today, "きょう", null, "KIM NHẬT", "名詞", "today", null, "N5", 1.0, List.of(), 1,
+                        TEXT, null, null, null, null, null, null, null),
+                new AiDtos.Item("vocab", 2, corner, corner, "かく", null, "GIÁC", "名詞", "angle", null, "N3", 1.0, List.of(), 2,
+                        TEXT, null, null, null, null, null, null, null)),
+                Map.of("vocab", 2, "grammar", 0), false));
+        try {
+            String token = newUser();
+            String id = read(postText(token, TEXT, null).andExpect(status().isAccepted())).get("id").asText();
+            JsonNode done = awaitTerminal(token, id);
+            assertEquals(1, done.get("stats").get("fromDictionary").asInt(), done.toString());
+            org.mockito.ArgumentCaptor<AiDtos.EnrichRequest> sent = org.mockito.ArgumentCaptor.forClass(AiDtos.EnrichRequest.class);
+            // atLeastOnce: job nền của test trước trong lớp có thể gọi enrich sau Mockito.reset → chỉ xét lời gọi có term của test này
+            Mockito.verify(ai, Mockito.atLeastOnce()).enrich(sent.capture());
+            List<List<String>> mine = sent.getAllValues().stream()
+                    .map(r -> r.items().stream().map(AiDtos.EnrichInput::term).filter(t -> t.startsWith("zz" + rnd)).toList())
+                    .filter(t -> !t.isEmpty()).toList();
+            assertEquals(List.of(List.of(corner)), mine, "chỉ dạng viết mơ hồ 角 được gửi Gemini");
+            JsonNode items = read(call(get("/api/extractions/" + id + "/items"), token, null).andExpect(status().isOk()));
+            assertEquals("hôm nay (từ điển)", items.get(0).get("meaningVi").asText());
+        } finally {
+            jdbc.update("DELETE FROM dict_meanings WHERE entry_key IN (?, ?, ?)", keys.toArray());
+        }
+    }
 }
