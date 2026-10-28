@@ -397,11 +397,11 @@ def translate_dictionary(items: list[dict], model: Optional[str] = None) -> list
 
 # --- Dịch câu / đoạn Nhật ↔ Việt (tab Dịch, spec 2026-10-28-dich-cau-design §3, D33) ----------------------------
 
-# Lời gọi tương tác: người học đang chờ và backend chỉ đọc 30 s (postJson) → timeout 20 s, thử lại 1 lần, hạn chót chung
-# TEXT_DEADLINE_S như OCR: hết hạn → GeminiError("budget", retryable) → router trả aiOverloaded, KHÔNG tạm ngưng Gemini toàn cục
+# Lời gọi tương tác: người học đang chờ và backend chỉ đọc 30 s (postJson) → timeout 12 s, thử lại 1 lần, hạn chót chung
+# TEXT_DEADLINE_S 16 s (chừa ≥ 11 s cho dịch offline dự phòng, D34) như OCR: hết hạn → GeminiError("budget", retryable) → router trả aiOverloaded, KHÔNG tạm ngưng Gemini toàn cục
 # (một câu dịch chậm không được tắt dịch nghĩa từ điển của mọi người trong COOLDOWN_S).
-TEXT_PROFILE = CallProfile(20_000, (2,), None)
-TEXT_DEADLINE_S = 26
+TEXT_PROFILE = CallProfile(12_000, (1,), None)
+TEXT_DEADLINE_S = 16
 
 # Bản dịch luôn do model dịch CẢ đoạn (ngữ cảnh, chủ ngữ bị bỏ, trật tự SOV → SVO, kính ngữ, thành ngữ); phần "words" chỉ xin
 # nghĩa theo ngữ cảnh cho từng token Sudachi mà ai-service đã tách, để lớp phân tích khớp bản dịch — không bao giờ ghép lại thành câu.

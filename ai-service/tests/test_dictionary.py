@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.extract import dictionary, example_vi, gemini, han_viet, jmdict, kanji_meanings, overrides, pipeline
+from app.extract import dictionary, example_vi, gemini, han_viet, jmdict, kanji_meanings, offline_mt, overrides, pipeline
 
 FIXTURE = Path(__file__).parent / "fixtures" / "jmdict_mini.json"
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "build_dicts.py"
@@ -384,10 +384,11 @@ def test_gemini_translate_dictionary_parses(monkeypatch):
 # ----------------------------------------------------------------------------- dịch câu (tab Dịch, spec 2026-10-28, D33)
 
 def test_router_translate_text_analysis_without_ai(client, monkeypatch):
+    monkeypatch.setattr(offline_mt, "translate", lambda *a, **k: None)   # không có mô hình offline
     monkeypatch.setattr(gemini, "available", lambda: False)
     r = client.post("/api/dict/translate-text", json={"text": " 日本語を食べました。 "}).json()
     assert r["direction"] == "ja-vi" and r["source"] == "日本語を食べました。"
-    assert r["translation"] is None and r["reason"] == "no_api_key" and r["model"] is None
+    assert r["translation"] is None and r["reason"] == "no_api_key" and r["model"] is None and r["engine"] is None
     keys = {t["surface"]: t["key"] for t in r["tokens"]}
     assert keys["日本語"] == "w:1464530" and keys["食べました"] == "w:1358280" and keys["。"] is None
     assert keys["を"].startswith("w:"), "trợ từ có mục JMdict thì vẫn bấm tra được"
@@ -409,6 +410,7 @@ def test_router_translate_text_analysis_without_ai(client, monkeypatch):
 
 
 def test_router_translate_text_with_ai(client, monkeypatch):
+    monkeypatch.setattr(offline_mt, "translate", lambda *a, **k: None)
     monkeypatch.setattr(gemini, "available", lambda: True)
     monkeypatch.setattr(gemini, "resolve_model", lambda m: m or "gemini-default")
     calls = []
@@ -425,7 +427,7 @@ def test_router_translate_text_with_ai(client, monkeypatch):
 
     r = client.post("/api/dict/translate-text", json={"text": "日本語を勉強しました。", "geminiModel": "gemini-test"}).json()
     assert r["translation"] == "Tôi đã học tiếng Nhật." and r["literal"] == "tiếng Nhật / (tân ngữ) / đã học"
-    assert r["reason"] is None and r["model"] == "gemini-test" and r["readingAgrees"] is None
+    assert r["reason"] is None and r["model"] == "gemini-test" and r["readingAgrees"] is None and r["engine"] == "ai"
     assert r["tokens"][0]["meaning"] == "tiếng Nhật" and r["tokens"][1]["meaning"] == "trợ từ chỉ tân ngữ"
     assert [w["surface"] for w in calls[0][2]] == ["日本語", "を", "勉強", "しました"] and calls[0][3] == "gemini-test"
 
@@ -453,3 +455,41 @@ def test_router_translate_text_with_ai(client, monkeypatch):
     monkeypatch.setattr(gemini, "translate_text", bad)
     r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
     assert r["reason"] == "error" and r["translation"] is None and r["model"] is None
+
+
+def test_router_translate_text_falls_back_to_offline_mt(client, monkeypatch):
+    """D34: không có bản Gemini (không khoá / skipped / quota / đầu ra hỏng) → dịch máy offline; reason vẫn ghi lý do."""
+    seen = []
+
+    def fake_offline(text, direction, deadline=None):
+        seen.append((text, direction, deadline is not None))
+        return ("Tôi đã ăn cơm." if direction == "ja-vi" else "私はご飯を食べました。"), "m2m100_418M"
+    monkeypatch.setattr(offline_mt, "translate", fake_offline)
+    monkeypatch.setattr(gemini, "available", lambda: False)
+
+    r = client.post("/api/dict/translate-text", json={"text": "ご飯を食べました。"}).json()
+    assert r["translation"] == "Tôi đã ăn cơm." and r["engine"] == "offline" and r["model"] == "offline:m2m100_418M"
+    assert r["reason"] == "no_api_key" and r["literal"] is None and r["tokens"][0]["surface"] == "ご飯"
+    assert seen[-1] == ("ご飯を食べました。", "ja-vi", True), "luôn có hạn chót để kịp trước 30 s của backend"
+
+    # Việt → Nhật: phân tích câu Nhật đã dịch, cách đọc ghép từ Sudachi
+    r = client.post("/api/dict/translate-text", json={"text": "Tôi đã ăn cơm.", "withAi": False}).json()
+    assert r["direction"] == "vi-ja" and r["translation"] == "私はご飯を食べました。" and r["reason"] == "skipped"
+    assert r["reading"] == "わたしはごはんをたべました。" and r["romaji"].startswith("watashi wa gohan o tabemashita")
+    assert r["readingAgrees"] is None and [t["surface"] for t in r["tokens"]][:2] == ["私", "は"]
+
+    # Gemini hỏng → vẫn có bản offline
+    monkeypatch.setattr(gemini, "available", lambda: True)
+
+    def quota(*a, **k):
+        raise gemini.GeminiError("quota", "x", retryable=True)
+    monkeypatch.setattr(gemini, "translate_text", quota)
+    r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
+    assert r["reason"] == "quota" and r["engine"] == "offline" and r["translation"]
+
+    # dự phòng lỗi bất ngờ cũng không làm hỏng response
+    def broken(*a, **k):
+        raise RuntimeError("torch hỏng")
+    monkeypatch.setattr(offline_mt, "translate", broken)
+    r = client.post("/api/dict/translate-text", json={"text": "学校"})
+    assert r.status_code == 200 and r.json()["translation"] is None and r.json()["tokens"]
