@@ -1,11 +1,13 @@
-import React, { useCallback, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
+import { extractErrorMessage } from "@/services/apiClient";
 import { KanjiDiagramCanvas } from "@/features/graph/components/KanjiDiagramCanvas";
 import { KanjiDiagramPanel } from "@/features/graph/components/KanjiDiagramPanel";
+import { diagramStats, placeAround, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
 import { fetchKanjiDiagram } from "@/services/kanjiDiagramService";
-import type { KanjiDiagramMode } from "@/types/kanjiDiagram.types";
+import type { KanjiDiagramMode, KanjiDiagramResponse } from "@/types/kanjiDiagram.types";
 
 const MODES: { key: KanjiDiagramMode; label: string; icon: string; hint: string }[] = [
   { key: "structure", label: "Cấu tạo", icon: "account_tree", hint: "thành phần, bộ thủ, họ chữ cùng chỉ âm" },
@@ -14,20 +16,37 @@ const MODES: { key: KanjiDiagramMode; label: string; icon: string; hint: string 
 const MODE_KEYS = MODES.map((m) => m.key);
 const QUICK: string[] = ["時", "寺", "青", "工", "生", "THỜI", "THANH"];
 export const MAX_QUERY_CHARS = 32;
+/** "Mở thêm 1 tầng" mở tối đa chừng này node (tuần tự, đều qua cache backend). */
+const EXPAND_ALL_MAX = 8;
+const EXPAND_RADIUS = 110;
+const EMPTY_GRAPH: DiagramGraph = { nodes: [], edges: [] };
+
+/** Trạng thái mở thêm / kéo node, gắn với khoá (q|mode) tạo ra nó: đổi truy vấn là về sơ đồ gốc, không cần effect. */
+interface Overlay {
+  key: string;
+  extra: DiagramGraph;
+  expanded: Set<string>;
+  override: DiagramPositions;
+}
+const emptyOverlay = (key: string): Overlay => ({ key, extra: EMPTY_GRAPH, expanded: new Set(), override: {} });
 
 /**
  * Sơ đồ chữ Hán (/graph, spec 2026-10-30): thay bộ khám phá Neo4j cũ. Trạng thái trên URL: ?q=時&mode=compounds (mode mặc định
- * structure không ghi). Đổi tâm = đổi q (push history) nên Back / Forward của trình duyệt đi lại các chữ đã xem. Node đang chọn
- * gắn với (q, mode) tạo ra nó: đổi truy vấn thì về chữ tâm. Dữ liệu tĩnh ở ai-service, không cần Neo4j.
+ * structure không ghi). Đổi tâm = đổi q (push history) nên Back / Forward của trình duyệt đi lại các chữ đã xem; nút "Quay lại
+ * [chữ trước]" dùng ngăn xếp riêng trong phiên. Node đang chọn, node đã mở thêm và vị trí đã kéo gắn với (q, mode) tạo ra
+ * chúng. Dữ liệu tĩnh ở ai-service, không cần Neo4j.
  */
 export const KnowledgeGraphPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const q = (params.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
   const rawMode = params.get("mode") as KanjiDiagramMode | null;
   const mode: KanjiDiagramMode = rawMode && MODE_KEYS.includes(rawMode) ? rawMode : "structure";
+  const key = `${q}|${mode}`;
   const [input, setInput] = useState(q);
   const [reload, setReload] = useState(0);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [history, setHistory] = useState<string[]>([]);
 
   const go = useCallback(
     (next: { q?: string; mode?: KanjiDiagramMode }, replace = false) => {
@@ -53,16 +72,82 @@ export const KnowledgeGraphPage: React.FC = () => {
     (query: string) => {
       const v = query.trim().slice(0, MAX_QUERY_CHARS);
       setInput(v);
+      if (v && q && v !== q) setHistory((h) => [...h.slice(-19), q]);
       go({ q: v });
     },
-    [go]
+    [go, q]
   );
+  const goBack = () => {
+    const prev = history[history.length - 1];
+    if (!prev) return;
+    setHistory((h) => h.slice(0, -1));
+    setInput(prev);
+    navigate(-1);
+  };
 
   const res = useAsync(() => (q ? fetchKanjiDiagram(q, mode) : Promise.resolve(null)), [q, mode], reload);
-  const data = res.data ?? null;
-  const [sel, setSel] = useState<{ q: string; mode: KanjiDiagramMode; id: string | null }>({ q: "", mode: "structure", id: null });
-  const selectedId = sel.q === q && sel.mode === mode && sel.id ? sel.id : (data?.center ?? null);
-  const select = (id: string) => setSel({ q, mode, id });
+  const data: KanjiDiagramResponse | null = res.data ?? null;
+  const [sel, setSel] = useState<{ key: string; id: string | null }>({ key: "", id: null });
+  const selectedId = sel.key === key && sel.id ? sel.id : (data?.center ?? null);
+  const select = (id: string) => setSel({ key, id });
+
+  // ---- mở thêm liên kết / kéo node -----------------------------------------------------------------------------------------
+  const [overlayState, setOverlay] = useState<Overlay>(() => emptyOverlay(key));
+  const overlay = overlayState.key === key ? overlayState : emptyOverlay(key);
+  const [expanding, setExpanding] = useState<Set<string>>(new Set());
+  const [expandError, setExpandError] = useState<string | null>(null);
+  const layoutRef = useRef<DiagramPositions>({});
+  const baseGraph = useMemo<DiagramGraph>(() => (data && data.center ? { nodes: data.nodes, edges: data.edges } : EMPTY_GRAPH), [data]);
+
+  const expand = useCallback(
+    async (id: string) => {
+      if (!id.startsWith("k:") || !data?.center) return;
+      const ch = id.slice(2);
+      setExpanding((s) => new Set(s).add(id));
+      setExpandError(null);
+      try {
+        const more = await fetchKanjiDiagram(ch, mode);
+        setOverlay((cur) => {
+          const o = cur.key === key ? cur : emptyOverlay(key);
+          const known = new Set([...baseGraph.nodes.map((n) => n.id), ...o.extra.nodes.map((n) => n.id)]);
+          const fresh = more.nodes.filter((n) => !known.has(n.id));
+          const anchor = layoutRef.current[id] ?? { x: 0, y: 0 };
+          const placed = placeAround(anchor, fresh.map((n) => n.id), layoutRef.current, EXPAND_RADIUS);
+          const expanded = new Set(o.expanded).add(id);
+          return {
+            key,
+            extra: { nodes: [...o.extra.nodes, ...fresh], edges: [...o.extra.edges, ...more.edges] },
+            expanded,
+            override: { ...o.override, ...placed },
+          };
+        });
+      } catch (e) {
+        setExpandError(extractErrorMessage(e));
+      } finally {
+        setExpanding((s) => {
+          const n = new Set(s);
+          n.delete(id);
+          return n;
+        });
+      }
+    },
+    [data, mode, key, baseGraph]
+  );
+  const expandAll = async () => {
+    const all = [...baseGraph.nodes, ...overlay.extra.nodes];
+    const todo = all.filter((n) => n.expandable && n.id !== data?.center && !overlay.expanded.has(n.id)).slice(0, EXPAND_ALL_MAX);
+    for (const n of todo) await expand(n.id);
+  };
+  const collapse = () => {
+    setOverlay(emptyOverlay(key));
+    setExpandError(null);
+  };
+  const onDragNode = (id: string, p: DiagramPoint) =>
+    setOverlay((cur) => {
+      const o = cur.key === key ? cur : emptyOverlay(key);
+      return { ...o, key, override: { ...o.override, [id]: { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 } } };
+    });
+  const canCollapse = overlay.extra.nodes.length > 0 || Object.keys(overlay.override).length > 0;
 
   const onTabKeyDown = (e: React.KeyboardEvent) => {
     const i = MODE_KEYS.indexOf(mode);
@@ -78,6 +163,8 @@ export const KnowledgeGraphPage: React.FC = () => {
     }
   };
 
+  const centerLabel = data?.center ? data.center.slice(2) : null;
+
   return (
     <section className="flex flex-col gap-space-md pb-space-xl">
       <header className="flex flex-col gap-1">
@@ -92,12 +179,7 @@ export const KnowledgeGraphPage: React.FC = () => {
       </header>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <div
-          role="tablist"
-          aria-label="Chế độ sơ đồ"
-          onKeyDown={onTabKeyDown}
-          className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start shrink-0"
-        >
+        <div role="tablist" aria-label="Chế độ sơ đồ" onKeyDown={onTabKeyDown} className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start shrink-0">
           {MODES.map((m) => {
             const selected = m.key === mode;
             return (
@@ -160,6 +242,10 @@ export const KnowledgeGraphPage: React.FC = () => {
         ))}
       </div>
 
+      <p aria-live="polite" className="sr-only">
+        {data && centerLabel ? `Sơ đồ của ${centerLabel}: ${diagramStats(data.nodes)}` : ""}
+      </p>
+
       <div id="kd-panel" role="tabpanel" aria-labelledby={`kd-tab-${mode}`} className="flex flex-col gap-space-md">
         {!q && (
           <div className="rounded-2xl border border-dashed border-outline-variant bg-surface-container-lowest p-6 flex flex-col items-center text-center gap-2">
@@ -167,7 +253,7 @@ export const KnowledgeGraphPage: React.FC = () => {
             <h2 className="font-title-md text-title-md font-bold text-on-surface">Nhập một chữ Hán hoặc âm Hán-Việt</h2>
             <p className="text-body-sm text-on-surface-variant max-w-xl">
               Sơ đồ vẽ chữ ở giữa, thành phần cấu tạo bên trái (bộ thủ viền đỏ, phần chỉ âm nối bằng mũi tên xanh lá) và họ chữ cùng chỉ âm
-              bên phải. Bấm một chữ để xem chi tiết ở bảng bên; đúp chuột để lấy chữ đó làm tâm.
+              bên phải. Bấm một chữ để xem chi tiết ở bảng bên; bấm dấu + để mở thêm liên kết; cuộn chuột để phóng to, kéo để di chuyển.
             </p>
           </div>
         )}
@@ -182,17 +268,37 @@ export const KnowledgeGraphPage: React.FC = () => {
         {q && res.loading && !res.error && <p className="text-body-sm text-on-surface-variant">Đang dựng sơ đồ «{q}»…</p>}
         {q && data && (
           <div className="grid gap-space-md lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
-            <div className="min-w-0 rounded-2xl bg-surface-container-lowest border border-surface-container-high p-3">
+            <div className="min-w-0 rounded-2xl bg-surface-container-lowest border border-surface-container-high p-3 flex flex-col gap-2">
               {data.center ? (
-                <KanjiDiagramCanvas
-                  nodes={data.nodes}
-                  edges={data.edges}
-                  centerId={data.center}
-                  mode={mode}
-                  selectedId={selectedId}
-                  onSelect={select}
-                  onRecenter={draw}
-                />
+                <>
+                  <KanjiDiagramCanvas
+                    base={baseGraph}
+                    extra={overlay.extra}
+                    centerId={data.center}
+                    mode={mode}
+                    selectedId={selectedId}
+                    expanded={overlay.expanded}
+                    expanding={expanding}
+                    positionsOverride={overlay.override}
+                    onSelect={select}
+                    onExpand={(id) => void expand(id)}
+                    onRecenter={draw}
+                    onDragNode={onDragNode}
+                    onLayout={(p) => {
+                      layoutRef.current = p;
+                    }}
+                    back={history.length > 0 ? { label: history[history.length - 1], onClick: goBack } : null}
+                    onExpandAll={() => void expandAll()}
+                    canExpandAll={expanding.size === 0}
+                    onCollapse={collapse}
+                    canCollapse={canCollapse}
+                  />
+                  {expandError && (
+                    <p role="alert" className="text-body-sm text-error">
+                      Không mở thêm được: {expandError}
+                    </p>
+                  )}
+                </>
               ) : (
                 <div className="min-h-[18rem] flex flex-col items-center justify-center text-center gap-2 p-6">
                   <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">
@@ -206,7 +312,15 @@ export const KnowledgeGraphPage: React.FC = () => {
                 </div>
               )}
             </div>
-            <KanjiDiagramPanel data={data} selectedId={selectedId} mode={mode} onRecenter={draw} onSelect={select} onMode={(m) => go({ mode: m })} />
+            <KanjiDiagramPanel
+              data={data}
+              extraNodes={overlay.extra.nodes}
+              selectedId={selectedId}
+              mode={mode}
+              onRecenter={draw}
+              onSelect={select}
+              onMode={(m) => go({ mode: m })}
+            />
           </div>
         )}
       </div>

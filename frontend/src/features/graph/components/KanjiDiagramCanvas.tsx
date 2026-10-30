@@ -1,24 +1,53 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useRef } from "react";
 import type { KanjiDiagramEdge, KanjiDiagramMode, KanjiDiagramNode } from "@/types/kanjiDiagram.types";
 import { edgePath, pillWidth } from "@/lib/hanVietUtils";
-import { DIAGRAM_SIZE, diagramStats, edgeLabel, fitViewBox, sectorLayout } from "@/features/graph/diagramLayout";
+import {
+  DIAGRAM_SIZE,
+  clientToDiagram,
+  diagramStats,
+  edgeLabel,
+  fitViewBox,
+  mergeDiagram,
+  sectorLayout,
+  type DiagramGraph,
+  type DiagramPoint,
+  type DiagramPositions,
+} from "@/features/graph/diagramLayout";
 import { EDGE_COLOR, NODE_FILL, NODE_TEXT, RADICAL_RING, nodeRadius } from "@/features/graph/diagramStyle";
+import { useViewBox } from "@/features/graph/useViewBox";
 
 /**
  * Canvas SVG sơ đồ chữ Hán (spec 2026-10-30 §3.5): tâm xanh dương, thành phần cam (bộ thủ viền đỏ), chữ cùng họ chỉ âm vàng,
  * từ ghép viên tím, chữ khác trong từ trắng viền xám; cạnh có mũi tên và nhãn: chỉ âm (xanh lá), cùng phần chỉ âm (xanh lá
- * nét đứt), bộ (đỏ), thành phần / có chữ (xám), ghép thành từ (tím). Đợt 1: tĩnh — bấm chọn, đúp chuột / Shift+Enter đổi tâm;
- * zoom / kéo / mở tầng ở đợt 2. Mọi node là <g role="button" tabIndex=0> như KnowledgeGraphSvg cũ (Tab tới được).
+ * nét đứt), bộ (đỏ), thành phần / có chữ (xám), ghép thành từ (tím). Tương tác (đợt 2): cuộn chuột / nút + − ⤢ / phím + − 0 để
+ * zoom, kéo nền để pan, kéo node để sắp lại, huy hiệu + hoặc đúp chuột để mở thêm liên kết của node, Shift+Enter đổi tâm.
+ * Bố cục lấy từ đồ thị gốc (`base`), node mở thêm (`extra`) và node đã kéo nhận toạ độ qua `positionsOverride`.
  */
 interface KanjiDiagramCanvasProps {
-  nodes: KanjiDiagramNode[];
-  edges: KanjiDiagramEdge[];
+  base: DiagramGraph;
+  extra: DiagramGraph;
   centerId: string | null;
   mode: KanjiDiagramMode;
   selectedId: string | null;
+  /** Node đã mở thêm (ẩn huy hiệu +). */
+  expanded: ReadonlySet<string>;
+  /** Node đang tải liên kết mở thêm. */
+  expanding: ReadonlySet<string>;
+  positionsOverride: DiagramPositions;
   onSelect: (id: string) => void;
-  /** Đúp chuột / Shift+Enter một chữ: vẽ lại với chữ đó làm tâm. */
+  onExpand: (id: string) => void;
+  /** Shift+Enter một chữ: vẽ lại với chữ đó làm tâm. */
   onRecenter: (kanji: string) => void;
+  onDragNode: (id: string, p: DiagramPoint) => void;
+  /** Toạ độ bố cục hiện tại (để trang đặt node mới quanh node mẹ). */
+  onLayout?: (positions: DiagramPositions) => void;
+  /** Nút góc trên trái: quay lại chữ trước (null = không có). */
+  back?: { label: string; onClick: () => void } | null;
+  /** Thanh dưới: mở thêm một tầng / thu gọn. */
+  onExpandAll?: () => void;
+  canExpandAll?: boolean;
+  onCollapse?: () => void;
+  canCollapse?: boolean;
   className?: string;
 }
 
@@ -36,32 +65,91 @@ const roleText = (n: KanjiDiagramNode): string => {
   return "chữ đang xét";
 };
 
-const nodeBase =
-  "cursor-pointer focus:outline-none [&:hover_.halo]:opacity-60 [&:focus-visible_.halo]:opacity-100";
+const nodeBase = "cursor-pointer focus:outline-none [&:hover_.halo]:opacity-60 [&:focus-visible_.halo]:opacity-100";
+const toolBtn =
+  "w-8 h-8 inline-flex items-center justify-center rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
-  nodes,
-  edges,
+  base,
+  extra,
   centerId,
   mode,
   selectedId,
+  expanded,
+  expanding,
+  positionsOverride,
   onSelect,
+  onExpand,
   onRecenter,
+  onDragNode,
+  onLayout,
+  back,
+  onExpandAll,
+  canExpandAll = false,
+  onCollapse,
+  canCollapse = false,
   className = "",
 }) => {
-  const positions = useMemo(() => sectorLayout(nodes, edges, centerId, DIAGRAM_SIZE), [nodes, edges, centerId]);
-  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
-  const viewBox = useMemo(() => fitViewBox(positions, 64), [positions]);
+  const merged = useMemo(() => mergeDiagram(base, extra), [base, extra]);
+  const layout = useMemo(() => sectorLayout(base.nodes, base.edges, centerId, DIAGRAM_SIZE), [base, centerId]);
+  const positions = useMemo<DiagramPositions>(() => ({ ...layout, ...positionsOverride }), [layout, positionsOverride]);
+  const onLayoutRef = useRef(onLayout);
+  React.useEffect(() => {
+    onLayoutRef.current = onLayout;
+  });
+  React.useEffect(() => {
+    onLayoutRef.current?.(positions);
+  }, [positions]);
+  const byId = useMemo(() => new Map(merged.nodes.map((n) => [n.id, n])), [merged]);
+  const fitBox = useMemo(() => fitViewBox(positions, 64), [positions]);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const { view, isFit, zoomIn, zoomOut, fit, panHandlers, panning, onKeyDown } = useViewBox(fitBox, svgRef);
 
-  const activate = (n: KanjiDiagramNode, recenter: boolean) => {
+  // kéo node: bắt con trỏ trên <g>, quá 4 px mới coi là kéo; click sau một lần kéo bị nuốt (consumeDrag)
+  const drag = useRef<{ id: string; pointer: number; x: number; y: number; moved: boolean } | null>(null);
+  const dragged = useRef(false);
+  const consumeDrag = () => {
+    const was = dragged.current;
+    dragged.current = false;
+    return was;
+  };
+  const nodeHandlers = (n: KanjiDiagramNode) => ({
+    onPointerDown: (e: React.PointerEvent<SVGGElement>) => {
+      if (!e.isPrimary || e.button !== 0) return;
+      e.stopPropagation();
+      drag.current = { id: n.id, pointer: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+      dragged.current = false;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e: React.PointerEvent<SVGGElement>) => {
+      const d = drag.current;
+      if (!d || e.pointerId !== d.pointer || d.id !== n.id) return;
+      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+      d.moved = true;
+      dragged.current = true;
+      const svg = svgRef.current;
+      if (!svg) return;
+      onDragNode(n.id, clientToDiagram(svg.getBoundingClientRect(), view, e.clientX, e.clientY));
+    },
+    onPointerUp: (e: React.PointerEvent<SVGGElement>) => {
+      if (drag.current && e.pointerId === drag.current.pointer) drag.current = null;
+    },
+    onPointerCancel: () => {
+      drag.current = null;
+    },
+  });
+
+  const activate = (n: KanjiDiagramNode, kind: "select" | "expand" | "recenter") => {
     const ch = kanjiOf(n);
-    if (recenter && ch && n.id !== centerId) onRecenter(ch);
+    if (kind === "recenter" && ch && n.id !== centerId) onRecenter(ch);
+    else if (kind === "expand" && canExpand(n)) onExpand(n.id);
     else onSelect(n.id);
   };
+  const canExpand = (n: KanjiDiagramNode) => Boolean(n.expandable) && n.id !== centerId && !expanded.has(n.id) && !expanding.has(n.id);
   const onKey = (e: React.KeyboardEvent, n: KanjiDiagramNode) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      activate(n, e.shiftKey);
+      activate(n, e.shiftKey ? "recenter" : "select");
     }
   };
 
@@ -101,140 +189,182 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
           { swatch: <Dot fill={NODE_FILL.kanji} stroke="#94a3b8" />, text: "chữ khác trong từ" },
           { swatch: <Line color={EDGE_COLOR.compound} />, text: "ghép thành từ" },
         ];
+  const expandableLeft = merged.nodes.some(canExpand);
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
-      <svg
-        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-        role="group"
-        aria-label={`Sơ đồ ${diagramStats(nodes)}`}
-        className="block w-full h-auto select-none"
+      <div
+        className="relative rounded-xl bg-surface-container-lowest focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        aria-label="Khung sơ đồ: phím + − để phóng / thu, 0 để vừa khung; kéo nền để di chuyển"
       >
-        <defs>
-          {Object.entries(EDGE_COLOR).map(([type, color]) => (
-            <marker key={type} id={`kd-arrow-${type}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={color} />
-            </marker>
-          ))}
-        </defs>
-        {edges.map((e, i) => {
-          const t = trimmed(e);
-          if (!t) return null;
-          const touched = selectedId !== null && (e.from === selectedId || e.to === selectedId);
-          const label = edgeLabel(e.type);
-          return (
-            <g key={`${e.from}|${e.to}|${e.type}|${i}`} className="pointer-events-none">
-              <path
-                d={edgePath(t.from, t.to)}
-                fill="none"
-                stroke={EDGE_COLOR[e.type]}
-                strokeWidth={touched ? 2.6 : 1.8}
-                strokeDasharray={e.type === "family" ? "6 4" : undefined}
-                markerEnd={`url(#kd-arrow-${e.type})`}
-                opacity={selectedId && !touched ? 0.55 : 1}
-              />
-              <text
-                x={t.mid.x}
-                y={t.mid.y}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={11}
-                fontWeight={600}
-                fill={EDGE_COLOR[e.type]}
-                stroke="#ffffff"
-                strokeWidth={3}
-                paintOrder="stroke"
+        {back && (
+          <button
+            type="button"
+            onClick={back.onClick}
+            className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-surface-container-lowest border border-outline-variant text-label-sm font-semibold text-on-surface hover:bg-surface-container cursor-pointer"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
+            Quay lại <span lang="ja" className="font-japanese">{back.label}</span>
+          </button>
+        )}
+        <div className="absolute top-2 right-2 z-10 flex flex-col gap-1" role="group" aria-label="Phóng to / thu nhỏ">
+          <button type="button" onClick={zoomIn} className={toolBtn} aria-label="Phóng to" title="Phóng to (+)">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">add</span>
+          </button>
+          <button type="button" onClick={zoomOut} className={toolBtn} aria-label="Thu nhỏ" title="Thu nhỏ (−)">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">remove</span>
+          </button>
+          <button type="button" onClick={fit} disabled={isFit} className={toolBtn} aria-label="Vừa khung" title="Vừa khung (0)">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">fit_screen</span>
+          </button>
+        </div>
+        <svg
+          ref={svgRef}
+          viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+          role="group"
+          aria-label={`Sơ đồ ${diagramStats(merged.nodes)}`}
+          className={`block w-full h-auto select-none touch-none ${panning ? "cursor-grabbing" : "cursor-grab"}`}
+          style={{ aspectRatio: `${view.w} / ${view.h}`, maxHeight: "70vh" }}
+          {...panHandlers}
+        >
+          <defs>
+            {Object.entries(EDGE_COLOR).map(([type, color]) => (
+              <marker key={type} id={`kd-arrow-${type}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill={color} />
+              </marker>
+            ))}
+          </defs>
+          {merged.edges.map((e, i) => {
+            const t = trimmed(e);
+            if (!t) return null;
+            const touched = selectedId !== null && (e.from === selectedId || e.to === selectedId);
+            return (
+              <g key={`${e.from}|${e.to}|${e.type}|${i}`} className="pointer-events-none">
+                <path
+                  d={edgePath(t.from, t.to)}
+                  fill="none"
+                  stroke={EDGE_COLOR[e.type]}
+                  strokeWidth={touched ? 2.6 : 1.8}
+                  strokeDasharray={e.type === "family" ? "6 4" : undefined}
+                  markerEnd={`url(#kd-arrow-${e.type})`}
+                  opacity={selectedId && !touched ? 0.55 : 1}
+                />
+                <text x={t.mid.x} y={t.mid.y} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600} fill={EDGE_COLOR[e.type]} stroke="#ffffff" strokeWidth={3} paintOrder="stroke">
+                  {edgeLabel(e.type)}
+                </text>
+              </g>
+            );
+          })}
+          {merged.nodes.map((n) => {
+            const p = positions[n.id];
+            if (!p) return null;
+            const r = nodeRadius(n);
+            const isCenter = n.id === centerId;
+            const selected = selectedId === n.id;
+            const tip = `${n.label}${n.hanViet ? ` (${n.hanViet})` : ""}${n.meaningVi ? ` — ${n.meaningVi}` : n.meaningEn ? ` — ${n.meaningEn}` : ""} · ${roleText(n)}${canExpand(n) ? " · có thể mở thêm" : ""}`;
+            const isWord = n.type === "word";
+            const w = isWord ? pillWidth(n.label, 16, 20) : r * 2;
+            const radicalRing = n.type === "component" && (n.role === "radical" || n.isRadical);
+            const showPlus = canExpand(n);
+            const busy = expanding.has(n.id);
+            return (
+              <g
+                key={n.id}
+                transform={`translate(${p.x} ${p.y})`}
+                role="button"
+                tabIndex={0}
+                aria-label={tip}
+                aria-pressed={selected}
+                onClick={() => {
+                  if (!consumeDrag()) onSelect(n.id);
+                }}
+                onDoubleClick={() => activate(n, "expand")}
+                onKeyDown={(e) => onKey(e, n)}
+                className={nodeBase}
+                {...nodeHandlers(n)}
               >
-                {label}
-              </text>
-            </g>
-          );
-        })}
-        {nodes.map((n) => {
-          const p = positions[n.id];
-          if (!p) return null;
-          const r = nodeRadius(n);
-          const isCenter = n.id === centerId;
-          const selected = selectedId === n.id;
-          const tip = `${n.label}${n.hanViet ? ` (${n.hanViet})` : ""}${n.meaningVi ? ` — ${n.meaningVi}` : n.meaningEn ? ` — ${n.meaningEn}` : ""} · ${roleText(n)}`;
-          const isWord = n.type === "word";
-          const w = isWord ? pillWidth(n.label, 16, 20) : r * 2;
-          const radicalRing = n.type === "component" && (n.role === "radical" || n.isRadical);
-          return (
-            <g
-              key={n.id}
-              transform={`translate(${p.x} ${p.y})`}
-              role="button"
-              tabIndex={0}
-              aria-label={tip}
-              aria-pressed={selected}
-              onClick={() => onSelect(n.id)}
-              onDoubleClick={() => activate(n, true)}
-              onKeyDown={(e) => onKey(e, n)}
-              className={nodeBase}
-            >
-              <title>{tip}</title>
-              {isWord ? (
-                <>
-                  <rect x={-w / 2 - 5} y={-r - 5} width={w + 10} height={r * 2 + 10} rx={r + 5} className={`halo fill-none stroke-primary ${selected ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
-                  <rect x={-w / 2} y={-r} width={w} height={r * 2} rx={r} fill={NODE_FILL.word} stroke={selected ? "#1b2a4a" : "#6d28d9"} strokeWidth={1.5} />
-                  <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={16} fontWeight={700} fill={NODE_TEXT.word} className="font-japanese pointer-events-none">
-                    {n.label}
-                  </text>
-                  {n.reading && (
-                    <text y={r + 13} textAnchor="middle" lang="ja" fontSize={10} fill="#45464e" className="font-japanese pointer-events-none">
-                      {n.reading}
+                <title>{tip}</title>
+                {isWord ? (
+                  <>
+                    <rect x={-w / 2 - 5} y={-r - 5} width={w + 10} height={r * 2 + 10} rx={r + 5} className={`halo fill-none stroke-primary ${selected ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
+                    <rect x={-w / 2} y={-r} width={w} height={r * 2} rx={r} fill={NODE_FILL.word} stroke={selected ? "#1b2a4a" : "#6d28d9"} strokeWidth={1.5} />
+                    <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={16} fontWeight={700} fill={NODE_TEXT.word} className="font-japanese pointer-events-none">
+                      {n.label}
                     </text>
-                  )}
-                </>
-              ) : (
-                <>
-                  <circle r={r + 6} className={`halo fill-none stroke-primary ${selected ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
-                  {radicalRing && <circle r={r + 3} fill="none" stroke={RADICAL_RING} strokeWidth={2.5} />}
-                  <circle
-                    r={r}
-                    fill={NODE_FILL[n.type]}
-                    stroke={isCenter ? "#1e3a8a" : n.type === "kanji" ? "#94a3b8" : "#ffffff"}
-                    strokeWidth={isCenter ? 3 : 1.5}
-                  />
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    lang="ja"
-                    fontSize={isCenter ? 34 : n.type === "kanji" ? 20 : 26}
-                    fontWeight={700}
-                    fill={NODE_TEXT[n.type]}
-                    className="font-japanese pointer-events-none"
+                    {n.reading && (
+                      <text y={r + 13} textAnchor="middle" lang="ja" fontSize={10} fill="#45464e" className="font-japanese pointer-events-none">
+                        {n.reading}
+                      </text>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <circle r={r + 6} className={`halo fill-none stroke-primary ${selected ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
+                    {radicalRing && <circle r={r + 3} fill="none" stroke={RADICAL_RING} strokeWidth={2.5} />}
+                    <circle r={r} fill={NODE_FILL[n.type]} stroke={isCenter ? "#1e3a8a" : n.type === "kanji" ? "#94a3b8" : "#ffffff"} strokeWidth={isCenter ? 3 : 1.5} />
+                    <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={isCenter ? 34 : n.type === "kanji" ? 20 : 26} fontWeight={700} fill={NODE_TEXT[n.type]} className="font-japanese pointer-events-none">
+                      {n.label}
+                    </text>
+                    {n.hanViet && (
+                      <text y={r + 13} textAnchor="middle" fontSize={10} fontWeight={700} fill="#45464e" className="pointer-events-none">
+                        {n.hanViet}
+                      </text>
+                    )}
+                    {n.type === "component" && n.phon && n.phon !== n.label && (
+                      <text y={r + 24} textAnchor="middle" lang="ja" fontSize={9} fill="#6b7280" className="font-japanese pointer-events-none">
+                        {`≈ ${n.phon}`}
+                      </text>
+                    )}
+                  </>
+                )}
+                {(showPlus || busy) && (
+                  <g
+                    transform={`translate(${(isWord ? w / 2 : r) - 4} ${-r + 2})`}
+                    role="button"
+                    aria-label={busy ? `Đang mở ${n.label}` : `Mở thêm liên kết của ${n.label}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!busy && !consumeDrag()) onExpand(n.id);
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    className="cursor-pointer"
                   >
-                    {n.label}
-                  </text>
-                  {n.hanViet && (
-                    <text y={r + 13} textAnchor="middle" fontSize={10} fontWeight={700} fill="#45464e" className="pointer-events-none">
-                      {n.hanViet}
+                    <circle r={9} fill={busy ? "#94a3b8" : "#16a34a"} stroke="#ffffff" strokeWidth={2} />
+                    <text textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={800} fill="#ffffff" className="pointer-events-none">
+                      {busy ? "…" : "+"}
                     </text>
-                  )}
-                  {n.type === "component" && n.phon && n.phon !== n.label && (
-                    <text y={r + 24} textAnchor="middle" lang="ja" fontSize={9} fill="#6b7280" className="font-japanese pointer-events-none">
-                      {`≈ ${n.phon}`}
-                    </text>
-                  )}
-                </>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label-sm text-on-surface-variant px-1">
-        <span className="font-semibold text-on-surface">{diagramStats(nodes)}</span>
-        <span className="text-outline">· bấm vào chữ để xem chi tiết, đúp chuột để lấy chữ đó làm tâm</span>
-        <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
-          {legend.map((l) => (
-            <span key={l.text} className="inline-flex items-center gap-1">
-              {l.swatch}
-              {l.text}
-            </span>
-          ))}
-        </span>
+        <span className="font-semibold text-on-surface">{diagramStats(merged.nodes)} trên sơ đồ</span>
+        <span className="text-outline">· bấm chữ để xem chi tiết · bấm dấu + (hoặc đúp chuột) để mở thêm liên kết · kéo để sắp lại</span>
+        {onExpandAll && (
+          <button type="button" onClick={onExpandAll} disabled={!canExpandAll || !expandableLeft} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">unfold_more</span>
+            Mở thêm 1 tầng
+          </button>
+        )}
+        {onCollapse && (
+          <button type="button" onClick={onCollapse} disabled={!canCollapse && isFit} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">unfold_less</span>
+            Thu gọn
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label-sm text-on-surface-variant px-1">
+        {legend.map((l) => (
+          <span key={l.text} className="inline-flex items-center gap-1">
+            {l.swatch}
+            {l.text}
+          </span>
+        ))}
       </div>
     </div>
   );

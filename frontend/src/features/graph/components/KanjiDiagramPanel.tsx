@@ -20,6 +20,8 @@ import { NODE_FILL } from "@/features/graph/diagramStyle";
  */
 interface KanjiDiagramPanelProps {
   data: KanjiDiagramResponse | null;
+  /** Node mở thêm (đợt 2) — để chọn được cả chữ không nằm trong payload gốc. */
+  extraNodes?: KanjiDiagramNode[];
   selectedId: string | null;
   mode: KanjiDiagramMode;
   onRecenter: (kanji: string) => void;
@@ -44,7 +46,7 @@ const meaningOf = (x: { meaningVi?: string | null; meaningEn?: string | null }):
 
 const ROLE_LABEL: Record<string, string> = { radical: "bộ", phon: "chỉ âm", part: "thành phần" };
 
-export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, selectedId, mode, onRecenter, onSelect, onMode }) => {
+export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extraNodes = [], selectedId, mode, onRecenter, onSelect, onMode }) => {
   const box = "rounded-2xl bg-surface-container-lowest border border-surface-container-high p-4 flex flex-col gap-3";
   if (!data) {
     return (
@@ -90,7 +92,8 @@ export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, sele
     );
   }
 
-  const node = data.nodes.find((n) => n.id === selectedId) ?? data.nodes.find((n) => n.id === data.center) ?? null;
+  const node =
+    data.nodes.find((n) => n.id === selectedId) ?? extraNodes.find((n) => n.id === selectedId) ?? data.nodes.find((n) => n.id === data.center) ?? null;
   const detail = data.detail;
   const isCenter = node !== null && node.id === data.center;
 
