@@ -15,7 +15,7 @@ from app.extract.jachars import is_kana_only, is_kanji, kata_to_hira
 from app.extract.jlpt import classifier
 from app.extract.kanji_readings import readings_split
 
-MODES = ("structure", "compounds")
+MODES = ("structure", "compounds", "word")
 MAX_FAMILY = 12          # họ chỉ âm lớn nhất trong JLPT là 8 chữ (莫, 方); trần để canvas không quá tải
 MAX_WORDS = 12           # từ ghép trên sơ đồ / panel
 MAX_CANDIDATES = 24      # âm Hán-Việt nhiều chữ (THỊ, HOÀ…): đủ để chọn, chữ hiếm không có từ bị cắt
@@ -423,20 +423,99 @@ def compounds(ch: str, limit: int = MAX_WORDS) -> dict:
     return {"nodes": nodes, "edges": edges, "detail": d, "stats": _stats(nodes)}
 
 
+# ----------------------------------------------------------------------------- chế độ Phân tích từ
+
+def _word_reading(term: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """(cách đọc, nghĩa Anh, cấp JLPT) của từ: mục JLPT dễ nhất, không có thì JMdict thông dụng đầu tiên, không có → None."""
+    jl = classifier.entries_of(term)
+    if jl:
+        reading, meaning, level = jl[0]
+        return reading or None, meaning or None, level
+    for w in han_viet_graph.words_of(term[0]):
+        if w["term"] == term:
+            return w["reading"], w["meaning"], w["level"]
+    return None, None, None
+
+
+def _word_info(term: str) -> dict:
+    """``word`` của payload (spec từ nhiều chữ §3): thẻ từ + mỗi chữ một khối gọn (công thức như detail, bộ thủ)."""
+    reading, meaning, level = _word_reading(term)
+    w = {"term": term, "reading": reading, "meaning": meaning, "level": level, "source": "jlpt" if level else "jmdict"}
+    chars = []
+    for ch in kanji_run(term):
+        d = detail(ch)
+        chars.append({"kanji": ch, "hanViet": d["hanViet"], "meaningEn": d["meaningEn"], "jlpt": d["jlpt"],
+                      "formula": d["formula"], "radical": d["radical"]})
+    return {"term": term, "reading": reading, "hanViet": han_viet.han_viet(term), "jlpt": level, "meaningEn": meaning,
+            "key": _word_key(w), "chars": chars}
+
+
+def word_diagram(term: str) -> dict:
+    """Tâm là từ (w:<từ>), mỗi chữ (k:X, type kanji) nối bằng contains, thành phần trực tiếp của từng chữ nối về chữ theo vai
+    (radical / phon / part). Không họ chỉ âm, không từ ghép. Part trùng một chữ của từ → giữ node chữ; không cạnh tự nối."""
+    info = _word_info(term)
+    wid = f"w:{term}"
+    nodes = [{"id": wid, "type": "word", "label": term, "reading": info["reading"], "meaningEn": info["meaningEn"],
+              "jlpt": info["jlpt"], "hanViet": info["hanViet"], "key": info["key"], "expandable": False}]
+    edges: list[dict] = []
+    ids = {wid}
+    keys: set[tuple[str, str, str]] = set()
+
+    def add_edge(a: str, b: str, t: str) -> None:
+        if a != b and (a, b, t) not in keys:
+            keys.add((a, b, t))
+            edges.append({"from": a, "to": b, "type": t})
+
+    chars = kanji_run(term)
+    for ch in chars:
+        nodes.append(_kanji_node(ch, "kanji"))
+        ids.add(f"k:{ch}")
+        add_edge(wid, f"k:{ch}", "contains")
+    for ch in chars:
+        p = kanjidata.parts(ch)
+        if not p:
+            continue
+        phon_part, phon, guessed = _phon_of(ch, p)
+        for part, original, position in _real_parts(ch, p):
+            role = _role(p, part, phon_part)
+            pid = f"k:{part}"
+            if pid not in ids:
+                extra = {"role": role, "position": position, "original": original}
+                if role == "phon" and phon and phon != part:
+                    extra["phon"] = phon
+                if role == "phon" and guessed:
+                    extra["guess"] = True
+                nodes.append(_kanji_node(part, "component", **extra))
+                ids.add(pid)
+            add_edge(pid, f"k:{ch}", role)
+    return {"nodes": nodes, "edges": edges, "word": info, "stats": _stats(nodes)}
+
+
 # ----------------------------------------------------------------------------- endpoint
 
-def diagram(q: str, mode: str = "structure") -> dict:
-    """Payload {query, mode, center, candidates, nodes, edges, detail, stats}; mode lạ → ValueError (router đổi thành 400).
-    Không tìm được chữ / phải chọn chữ → đồ thị rỗng, detail None."""
-    if mode not in MODES:
+def diagram(q: str, mode: Optional[str] = None, k: Optional[str] = None) -> dict:
+    """Payload {query, mode, center, candidates, nodes, edges, detail, stats, chars, selectedChar, word, wordCandidates}.
+    mode None = tự chọn (từ 2–4 chữ → word, còn lại → structure); word khi không phải từ → structure; ``mode`` trong payload
+    là chế độ thực tế. k = chữ chọn trong cụm cho structure / compounds (ngoài cụm → chữ đầu). mode lạ → ValueError (400)."""
+    if mode is not None and mode not in MODES:
         raise ValueError(f"mode không hợp lệ: {mode} (chỉ nhận {', '.join(MODES)})")
     r = resolve(q)
-    base = {"query": q, "mode": mode, "center": None, "candidates": r["candidates"], "nodes": [], "edges": [],
-            "detail": None, "stats": _stats([])}
+    m = mode or ("word" if r["term"] else "structure")
+    if m == "word" and not r["term"]:
+        m = "structure"
+    base = {"query": q, "mode": m, "center": None, "candidates": r["candidates"], "nodes": [], "edges": [],
+            "detail": None, "stats": _stats([]), "chars": r["chars"], "selectedChar": None, "word": None,
+            "wordCandidates": r["wordCandidates"]}
     if not r["center"]:
         return base
-    ch = r["center"]
-    body = structure(ch) if mode == "structure" else compounds(ch)
-    base.update(body)
+    if m == "word":
+        base.update(word_diagram(r["term"]))
+        base["center"] = f"w:{r['term']}"
+        return base
+    ch = k if k and k in r["chars"] else r["center"]
+    base.update(structure(ch) if m == "structure" else compounds(ch))
     base["center"] = f"k:{ch}"
+    base["selectedChar"] = ch
+    if r["term"]:
+        base["word"] = _word_info(r["term"])
     return base

@@ -220,7 +220,9 @@ def test_compounds_sorted_easy_first():
 
 def test_diagram_shape_and_modes():
     p = kanji_diagram.diagram("時", "compounds")
-    assert set(p) == {"query", "mode", "center", "candidates", "nodes", "edges", "detail", "stats"}
+    assert set(p) == {"query", "mode", "center", "candidates", "nodes", "edges", "detail", "stats",
+                      "chars", "selectedChar", "word", "wordCandidates"}
+    assert p["chars"] == ["時"] and p["selectedChar"] == "時" and p["word"] is None and p["wordCandidates"] == []
     assert p["query"] == "時" and p["mode"] == "compounds" and p["center"] == "k:時"
     s = kanji_diagram.diagram("時", "structure")
     assert s["mode"] == "structure" and "k:寺" in _nodes(s)
@@ -232,9 +234,55 @@ def test_diagram_candidates_and_unknown_are_empty_graphs():
     q = kanji_diagram.diagram("abc", "structure")
     assert q == {"query": "abc", "mode": "structure", "center": None, "candidates": [], "nodes": [], "edges": [],
                  "detail": None, "stats": {"kanji": 0, "words": 0, "parts": kanjidata.availability()["kanjiParts"],
-                                           "jmdict": jmdict.available()}}
+                                           "jmdict": jmdict.available()},
+                 "chars": [], "selectedChar": None, "word": None, "wordCandidates": []}
 
 
 def test_diagram_rejects_bad_mode():
     with pytest.raises(ValueError):
         kanji_diagram.diagram("時", "tree")
+
+
+# ----------------------------------------------------------------------------- chế độ word (spec từ nhiều chữ §3–4)
+
+def test_word_mode_gakusei():
+    p = kanji_diagram.diagram("学生")
+    assert p["mode"] == "word" and p["center"] == "w:学生" and p["detail"] is None and p["candidates"] == []
+    assert p["chars"] == ["学", "生"] and p["selectedChar"] is None
+    assert p["word"]["term"] == "学生" and p["word"]["reading"] == "がくせい" and p["word"]["hanViet"] == "HỌC SINH"
+    e = _edges(p)
+    assert ("w:学生", "k:学", "contains") in e and ("w:学生", "k:生", "contains") in e
+    assert ("k:子", "k:学", "radical") in e and _nodes(p)["k:生"]["type"] == "kanji"
+    assert not _nodes(p, "phonetic") and not [n for n in p["nodes"] if n["type"] == "word" and n["id"] != "w:学生"]
+    assert [f["part"] for f in p["word"]["chars"][0]["formula"]] == ["⺍", "冖", "子"]
+    assert p["stats"]["words"] == 1 and p["stats"]["kanji"] == len(p["nodes"]) - 1
+
+
+def test_word_mode_k_and_fallbacks():
+    s = kanji_diagram.diagram("学生", "structure", "生")
+    assert s["mode"] == "structure" and s["center"] == "k:生" and s["selectedChar"] == "生" and s["chars"] == ["学", "生"]
+    assert s["word"]["term"] == "学生"                              # thanh chọn chữ vẫn có từ để quay về
+    assert kanji_diagram.diagram("学生", "structure", "水")["center"] == "k:学"    # k ngoài cụm → chữ đầu
+    one = kanji_diagram.diagram("時", "word")
+    assert one["mode"] == "structure" and one["center"] == "k:時"
+    assert kanji_diagram.diagram("時")["mode"] == "structure"
+    long = kanji_diagram.diagram("日本語能力試験")
+    assert long["mode"] == "structure" and long["word"] is None and len(long["chars"]) == 7
+    cands = kanji_diagram.diagram("かみ")
+    assert cands["center"] is None and cands["wordCandidates"] and cands["nodes"] == []
+    assert kanji_diagram.diagram("人々")["mode"] == "structure"
+
+
+def test_word_mode_never_breaks_across_jlpt_words():
+    bad = []
+    for term in sorted({e[0] for ch in classifier.jlpt_kanji_set() for e in classifier.entries_containing(ch)}):
+        run = kanji_diagram.kanji_run(term)
+        if not (2 <= len(run) <= 4) or "".join(run) != term:
+            continue
+        p = kanji_diagram.diagram(term, "word")
+        ids = [n["id"] for n in p["nodes"]]
+        keys = [(e["from"], e["to"], e["type"]) for e in p["edges"]]
+        if len(ids) != len(set(ids)) or len(keys) != len(set(keys)) or any(a == b for a, b, _ in keys) \
+                or any(a not in ids or b not in ids for a, b, _ in keys):
+            bad.append(term)
+    assert bad == []

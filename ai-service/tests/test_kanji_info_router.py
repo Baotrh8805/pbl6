@@ -30,11 +30,11 @@ def fakes(monkeypatch):
         calls["cards"] = (list(kanji_list), user_level)
         return [{"kanji": k} for k in kanji_list]
 
-    def diagram(q, mode="structure"):
-        calls["diagram"] = (q, mode)
-        if mode not in kanji_diagram.MODES:
+    def diagram(q, mode=None, k=None):
+        calls["diagram"] = (q, mode, k)
+        if mode is not None and mode not in kanji_diagram.MODES:
             raise ValueError("mode không hợp lệ")
-        return {"query": q, "mode": mode, "center": "k:時", "candidates": [], "nodes": [{"id": "k:時", "type": "center"}],
+        return {"query": q, "mode": mode or "structure", "center": "k:時", "candidates": [], "nodes": [{"id": "k:時", "type": "center"}],
                 "edges": [], "detail": {"kanji": "時"}, "stats": {"kanji": 1, "words": 0, "parts": True, "jmdict": False}}
 
     monkeypatch.setattr(han_viet_graph, "graph", graph)
@@ -107,11 +107,15 @@ def test_diagram_params_and_defaults(fakes):
     r = client.get("/api/kanji-info/diagram", params={"q": "時"})
     assert r.status_code == 200, r.text
     assert r.json()["center"] == "k:時" and r.json()["mode"] == "structure"
-    assert fakes["diagram"] == ("時", "structure")
+    assert fakes["diagram"] == ("時", None, None)                       # thiếu mode = để ai-service tự chọn
     assert client.get("/api/kanji-info/diagram", params={"q": "thoi", "mode": "compounds"}).status_code == 200
-    assert fakes["diagram"] == ("thoi", "compounds")
-    assert client.get("/api/kanji-info/diagram", params={"q": "時", "mode": ""}).status_code == 200   # rỗng = mặc định
-    assert fakes["diagram"] == ("時", "structure")
+    assert fakes["diagram"] == ("thoi", "compounds", None)
+    assert client.get("/api/kanji-info/diagram", params={"q": "時", "mode": ""}).status_code == 200   # rỗng = tự chọn
+    assert fakes["diagram"] == ("時", None, None)
+    assert client.get("/api/kanji-info/diagram", params={"q": "学生", "mode": "word", "k": "生"}).status_code == 200
+    assert fakes["diagram"] == ("学生", "word", "生")
+    assert client.get("/api/kanji-info/diagram", params={"q": "学生", "k": ""}).status_code == 200
+    assert fakes["diagram"] == ("学生", None, None)
 
 
 def test_diagram_validation(fakes):
@@ -121,6 +125,7 @@ def test_diagram_validation(fakes):
     assert client.get(url, params={"q": "x" * (kanji_info_router.MAX_QUERY_CHARS + 1)}).status_code == 422
     r = client.get(url, params={"q": "時", "mode": "tree"})
     assert r.status_code == 400 and "mode" in r.json()["detail"]
+    assert client.get(url, params={"q": "学生", "k": "学生x"}).status_code == 422   # k quá 2 ký tự
     assert "diagram" not in fakes                                                 # chặn trước khi gọi tầng module
 
 
