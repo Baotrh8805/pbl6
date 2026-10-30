@@ -9,6 +9,7 @@ import {
   fitViewBox,
   mergeDiagram,
   sectorLayout,
+  wordLayout,
   type DiagramGraph,
   type DiagramPoint,
   type DiagramPositions,
@@ -48,6 +49,8 @@ interface KanjiDiagramCanvasProps {
   canExpandAll?: boolean;
   onCollapse?: () => void;
   canCollapse?: boolean;
+  /** Bố cục: sector (Cấu tạo / Từ ghép) hoặc word (Phân tích từ, spec 30/10 từ nhiều chữ §4). */
+  layout?: "sector" | "word";
   className?: string;
 }
 
@@ -88,10 +91,20 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
   canExpandAll = false,
   onCollapse,
   canCollapse = false,
+  layout: layoutKind = "sector",
   className = "",
 }) => {
   const merged = useMemo(() => mergeDiagram(base, extra), [base, extra]);
-  const layout = useMemo(() => sectorLayout(base.nodes, base.edges, centerId, DIAGRAM_SIZE), [base, centerId]);
+  const layout = useMemo(
+    () =>
+      layoutKind === "word" && centerId
+        ? wordLayout(base.nodes, base.edges, centerId, DIAGRAM_SIZE)
+        : sectorLayout(base.nodes, base.edges, centerId, DIAGRAM_SIZE),
+    [base, centerId, layoutKind]
+  );
+  // từ làm tâm (Phân tích từ) vẽ viên lớn hơn từ ghép thường
+  const wordPx = (n: KanjiDiagramNode) => (n.id === centerId ? 22 : 16);
+  const radiusOf = (n: KanjiDiagramNode) => (n.type === "word" && n.id === centerId ? 22 : nodeRadius(n));
   const positions = useMemo<DiagramPositions>(() => ({ ...layout, ...positionsOverride }), [layout, positionsOverride]);
   const onLayoutRef = useRef(onLayout);
   React.useEffect(() => {
@@ -168,8 +181,8 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
-    const ra = na.type === "word" ? pillWidth(na.label, 16, 20) / 2 : nodeRadius(na);
-    const rb = (nb.type === "word" ? pillWidth(nb.label, 16, 20) / 2 : nodeRadius(nb)) + 6;
+    const ra = na.type === "word" ? pillWidth(na.label, wordPx(na), 20) / 2 : nodeRadius(na);
+    const rb = (nb.type === "word" ? pillWidth(nb.label, wordPx(nb), 20) / 2 : nodeRadius(nb)) + 6;
     if (len <= ra + rb) return null;
     return {
       from: { x: a.x + (dx / len) * ra, y: a.y + (dy / len) * ra },
@@ -189,6 +202,15 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
           { swatch: <Line color={EDGE_COLOR.radical} />, text: "bộ" },
           { swatch: <Line color={EDGE_COLOR.part} />, text: "thành phần khác" },
         ]
+      : mode === "word"
+        ? [
+            { swatch: <Dot fill={NODE_FILL.word} />, text: "từ đang xét" },
+            { swatch: <Dot fill={NODE_FILL.kanji} stroke="#94a3b8" />, text: "chữ trong từ" },
+            { swatch: <Dot fill={NODE_FILL.component} />, text: "thành phần cấu tạo" },
+            { swatch: <Line color={EDGE_COLOR.radical} />, text: "bộ" },
+            { swatch: <Line color={EDGE_COLOR.phon} />, text: "chỉ âm" },
+            { swatch: <Line color={EDGE_COLOR.part} />, text: "thành phần khác" },
+          ]
       : [
           { swatch: <Dot fill={NODE_FILL.center} />, text: "chữ đang xét" },
           { swatch: <Dot fill={NODE_FILL.word} />, text: "từ ghép" },
@@ -268,12 +290,12 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
           {merged.nodes.map((n) => {
             const p = positions[n.id];
             if (!p) return null;
-            const r = nodeRadius(n);
+            const r = radiusOf(n);
             const isCenter = n.id === centerId;
             const selected = selectedId === n.id;
             const tip = `${n.label}${n.hanViet ? ` (${n.hanViet})` : ""}${n.meaningVi ? ` — ${n.meaningVi}` : n.meaningEn ? ` — ${n.meaningEn}` : ""} · ${roleText(n)}${canExpand(n) ? " · có thể mở thêm (phím +)" : ""}`;
             const isWord = n.type === "word";
-            const w = isWord ? pillWidth(n.label, 16, 20) : r * 2;
+            const w = isWord ? pillWidth(n.label, wordPx(n), 20) : r * 2;
             const radicalRing = n.type === "component" && (n.role === "radical" || n.isRadical);
             const showPlus = canExpand(n);
             const busy = expanding.has(n.id);
@@ -298,7 +320,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
                   <>
                     <rect x={-w / 2 - 5} y={-r - 5} width={w + 10} height={r * 2 + 10} rx={r + 5} className={`halo fill-none stroke-primary ${selected ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
                     <rect x={-w / 2} y={-r} width={w} height={r * 2} rx={r} fill={NODE_FILL.word} stroke={selected ? "#1b2a4a" : "#6d28d9"} strokeWidth={1.5} />
-                    <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={16} fontWeight={700} fill={NODE_TEXT.word} className="font-japanese pointer-events-none">
+                    <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={wordPx(n)} fontWeight={700} fill={NODE_TEXT.word} className="font-japanese pointer-events-none">
                       {n.label}
                     </text>
                     {n.reading && (

@@ -3,30 +3,39 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useShell } from "@/components/layout/shellContext";
 import { useAsync } from "@/lib/useAsync";
-import { hasCjkIdeograph } from "@/lib/textUtils";
+import { hasCjkIdeograph, isCjkIdeograph } from "@/lib/textUtils";
 import { extractErrorMessage } from "@/services/apiClient";
 import { suggestHanViet } from "@/services/nlpService";
 import { AddWordToDeckModal } from "@/features/hanviet/components/AddWordToDeckModal";
 import { KanjiDiagramCanvas } from "@/features/graph/components/KanjiDiagramCanvas";
 import { KanjiDiagramPanel } from "@/features/graph/components/KanjiDiagramPanel";
-import { diagramStats, placeAround, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
+import { DiagramCharBar } from "@/features/graph/components/DiagramCharBar";
+import {
+  WORD_MAX_CHARS,
+  WORD_MIN_CHARS,
+  diagramKey,
+  diagramStats,
+  placeAround, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
 import { fetchKanjiDiagram } from "@/services/kanjiDiagramService";
 import type { HanVietWordNode } from "@/types/api.types";
 import type { KanjiDiagramMode, KanjiDiagramResponse } from "@/types/kanjiDiagram.types";
 
 const MODES: { key: KanjiDiagramMode; label: string; icon: string; hint: string }[] = [
+  { key: "word", label: "Phân tích từ", icon: "join_inner", hint: "từ ở giữa, mỗi chữ cùng thành phần cấu tạo" },
   { key: "structure", label: "Cấu tạo", icon: "account_tree", hint: "thành phần, bộ thủ, họ chữ cùng chỉ âm" },
   { key: "compounds", label: "Từ ghép", icon: "hub", hint: "từ thông dụng chứa chữ và các chữ ghép cùng" },
 ];
 const MODE_KEYS = MODES.map((m) => m.key);
-const QUICK: string[] = ["時", "寺", "青", "工", "生", "THỜI", "THANH"];
+const QUICK: string[] = ["学生", "時", "寺", "青", "生", "THỜI", "THANH", "học sinh"];
+/** Câu tìm là đúng một chữ Hán: giữ tab Cấu tạo / Từ ghép đang mở; còn lại (từ, kana, Hán-Việt) để ai-service tự chọn chế độ. */
+const isSingleKanji = (v: string): boolean => Array.from(v).filter(isCjkIdeograph).length === 1;
 export const MAX_QUERY_CHARS = 32;
 /** "Mở thêm 1 tầng" mở tối đa chừng này node (tuần tự, đều qua cache backend). */
 const EXPAND_ALL_MAX = 8;
 const EXPAND_RADIUS = 110;
 const EMPTY_GRAPH: DiagramGraph = { nodes: [], edges: [] };
 
-/** Trạng thái mở thêm / kéo node, gắn với khoá (q|mode) tạo ra nó: đổi truy vấn là về sơ đồ gốc, không cần effect. */
+/** Trạng thái mở thêm / kéo node, gắn với khoá (q|mode|k) tạo ra nó: đổi truy vấn là về sơ đồ gốc, không cần effect. */
 interface Overlay {
   key: string;
   extra: DiagramGraph;
@@ -45,8 +54,10 @@ export const KnowledgeGraphPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const q = (params.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
   const rawMode = params.get("mode") as KanjiDiagramMode | null;
-  const mode: KanjiDiagramMode = rawMode && MODE_KEYS.includes(rawMode) ? rawMode : "structure";
-  const key = `${q}|${mode}`;
+  // mode trên URL: thiếu = để ai-service tự chọn (từ 2–4 chữ → Phân tích từ); k = chữ chọn trong từ (spec 30/10 từ nhiều chữ §3)
+  const modeUrl: KanjiDiagramMode | null = rawMode && MODE_KEYS.includes(rawMode) ? rawMode : null;
+  const k = params.get("k") || null;
+  const key = diagramKey(q, modeUrl, k);
   // ô tìm gắn với q tạo ra nó: q đổi (Back / Forward, chọn ứng viên) thì ô hiện q mới, không cần setState trong effect (review I5)
   const [typed, setTyped] = useState<{ q: string; value: string }>({ q, value: q });
   const input = typed.q === q ? typed.value : q;
@@ -69,17 +80,22 @@ export const KnowledgeGraphPage: React.FC = () => {
   const suggestions = suggestRes.data ?? [];
 
   const go = useCallback(
-    (next: { q?: string; mode?: KanjiDiagramMode }, replace = false) => {
+    (next: { q?: string; mode?: KanjiDiagramMode | null; k?: string | null }, replace = false) => {
       setParams(
         (prev) => {
           const out = new URLSearchParams(prev);
           if (next.q !== undefined) {
             if (next.q) out.set("q", next.q);
             else out.delete("q");
+            if (next.k === undefined) out.delete("k"); // đổi câu tìm: chữ chọn của từ cũ không còn nghĩa
           }
           if (next.mode !== undefined) {
-            if (next.mode === "structure") out.delete("mode");
-            else out.set("mode", next.mode);
+            if (next.mode) out.set("mode", next.mode);
+            else out.delete("mode");
+          }
+          if (next.k !== undefined) {
+            if (next.k) out.set("k", next.k);
+            else out.delete("k");
           }
           return out;
         },
@@ -88,14 +104,18 @@ export const KnowledgeGraphPage: React.FC = () => {
     },
     [setParams]
   );
+  const modeFor = useCallback(
+    (v: string): KanjiDiagramMode | null => (modeUrl && modeUrl !== "word" && isSingleKanji(v) ? modeUrl : null),
+    [modeUrl]
+  );
   const draw = useCallback(
     (query: string) => {
       const v = query.trim().slice(0, MAX_QUERY_CHARS);
       setTyped({ q, value: v });
       if (v && q && v !== q) setHistory((h) => [...h.slice(-19), q]);
-      go({ q: v }, v === q); // vẽ lại cùng chữ: thay entry thay vì push (review M3)
+      go({ q: v, mode: modeFor(v) }, v === q); // vẽ lại cùng chữ: thay entry thay vì push (review M3)
     },
-    [go, q]
+    [go, q, modeFor]
   );
   // "Quay lại [chữ trước]" vẽ lại chữ đó bằng một entry mới (không navigate(-1): đổi tab / vẽ lại cũng push history nên lùi một bước
   // không chắc về đúng chữ — review 30/10 I2)
@@ -103,11 +123,21 @@ export const KnowledgeGraphPage: React.FC = () => {
     const prev = history[history.length - 1];
     if (!prev) return;
     setHistory((h) => h.slice(0, -1));
-    go({ q: prev });
+    go({ q: prev, mode: modeFor(prev) });
   };
 
-  const res = useAsync(() => (q ? fetchKanjiDiagram(q, mode) : Promise.resolve(null)), [q, mode], reload);
+  const res = useAsync(() => (q ? fetchKanjiDiagram(q, modeUrl, k) : Promise.resolve(null)), [q, modeUrl, k], reload);
   const data: KanjiDiagramResponse | null = res.data ?? null;
+  // chế độ thực tế do ai-service trả (gửi word cho một chữ → structure); URL ghi chế độ khác thì sửa lại bằng replace
+  const mode: KanjiDiagramMode = data?.mode ?? modeUrl ?? "structure";
+  useEffect(() => {
+    if (data && modeUrl && data.query === q && data.mode !== modeUrl) go({ mode: data.mode === "word" ? null : data.mode }, true);
+  }, [data, modeUrl, q, go]);
+  const hasWord = Boolean(data?.word) && (data?.chars.length ?? 0) >= WORD_MIN_CHARS && (data?.chars.length ?? 0) <= WORD_MAX_CHARS;
+  const tabs = MODES.filter((m) => m.key !== "word" || hasWord);
+  const tabKeys = tabs.map((m) => m.key);
+  const selectMode = (m: KanjiDiagramMode) => (m === "word" ? go({ mode: null, k: "" }) : go({ mode: m }));
+  const pickChar = (ch: string) => go({ mode: "structure", k: ch });
   const [sel, setSel] = useState<{ key: string; id: string | null }>({ key: "", id: null });
   const selectedId = sel.key === key && sel.id ? sel.id : (data?.center ?? null);
   const select = (id: string) => setSel({ key, id });
@@ -127,7 +157,8 @@ export const KnowledgeGraphPage: React.FC = () => {
       setExpanding((s) => new Set(s).add(id));
       setExpandError(null);
       try {
-        const more = await fetchKanjiDiagram(ch, mode);
+        // Phân tích từ: mở thêm một chữ = Cấu tạo đầy đủ của chữ đó (họ chỉ âm…), không lặp lại chế độ từ (spec §4)
+        const more = await fetchKanjiDiagram(ch, mode === "word" ? "structure" : mode);
         setOverlay((cur) => {
           const o = cur.key === key ? cur : emptyOverlay(key);
           const known = new Set([...baseGraph.nodes.map((n) => n.id), ...o.extra.nodes.map((n) => n.id)]);
@@ -171,20 +202,20 @@ export const KnowledgeGraphPage: React.FC = () => {
   const canCollapse = overlay.extra.nodes.length > 0 || Object.keys(overlay.override).length > 0;
 
   const onTabKeyDown = (e: React.KeyboardEvent) => {
-    const i = MODE_KEYS.indexOf(mode);
+    const i = tabKeys.indexOf(mode);
     let next: KanjiDiagramMode | null = null;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = MODE_KEYS[(i + 1) % MODE_KEYS.length];
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = MODE_KEYS[(i - 1 + MODE_KEYS.length) % MODE_KEYS.length];
-    else if (e.key === "Home") next = MODE_KEYS[0];
-    else if (e.key === "End") next = MODE_KEYS[MODE_KEYS.length - 1];
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = tabKeys[(i + 1) % tabKeys.length];
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = tabKeys[(i - 1 + tabKeys.length) % tabKeys.length];
+    else if (e.key === "Home") next = tabKeys[0];
+    else if (e.key === "End") next = tabKeys[tabKeys.length - 1];
     if (next) {
       e.preventDefault();
-      go({ mode: next });
+      selectMode(next);
       tabRefs.current[next]?.focus();
     }
   };
 
-  const centerLabel = data?.center ? data.center.slice(2) : null;
+  const centerLabel = data?.mode === "word" && data.word ? data.word.term : data?.center ? data.center.slice(2) : null;
 
   return (
     <section className="flex flex-col gap-space-md pb-space-xl">
@@ -195,13 +226,14 @@ export const KnowledgeGraphPage: React.FC = () => {
         </h1>
         <p className="text-body-md text-on-surface-variant max-w-3xl">
           Một chữ Hán được ghép từ những phần nào, phần nào là bộ, phần nào cho âm đọc, và những chữ nào mượn cùng phần chỉ âm (時 持 待
-          特 等 詩 侍 đều mang 寺). Chuyển sang <strong>Từ ghép</strong> để xem từ thông dụng chứa chữ đó.
+          特 等 詩 侍 đều mang 寺). Chuyển sang <strong>Từ ghép</strong> để xem từ thông dụng chứa chữ đó; gõ cả một từ (学生, がくせい, học sinh)
+          để xem từ đó được ghép từ những chữ và thành phần nào.
         </p>
       </header>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div role="tablist" aria-label="Chế độ sơ đồ" onKeyDown={onTabKeyDown} className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start shrink-0">
-          {MODES.map((m) => {
+          {tabs.map((m) => {
             const selected = m.key === mode;
             return (
               <button
@@ -216,7 +248,7 @@ export const KnowledgeGraphPage: React.FC = () => {
                 aria-controls={selected ? "kd-panel" : undefined}
                 tabIndex={selected ? 0 : -1}
                 title={m.hint}
-                onClick={() => go({ mode: m.key })}
+                onClick={() => selectMode(m.key)}
                 className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 min-h-10 rounded-lg text-label-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   selected ? "bg-surface-container-lowest text-primary font-semibold shadow-sm" : "text-on-surface-variant hover:bg-surface-container"
                 }`}
@@ -238,8 +270,8 @@ export const KnowledgeGraphPage: React.FC = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             maxLength={MAX_QUERY_CHARS}
-            placeholder="Gõ chữ Hán (時) hoặc âm Hán-Việt (THỜI, thoi) rồi Enter"
-            aria-label="Chữ Hán hoặc âm Hán-Việt"
+            placeholder="Gõ chữ Hán (時), từ (学生), kana hoặc âm Hán-Việt (học sinh) rồi Enter"
+            aria-label="Chữ Hán, từ, kana hoặc âm Hán-Việt"
             lang="ja"
             list="kd-suggest"
             autoComplete="off"
@@ -278,7 +310,7 @@ export const KnowledgeGraphPage: React.FC = () => {
         {!q && (
           <div className="rounded-2xl border border-dashed border-outline-variant bg-surface-container-lowest p-6 flex flex-col items-center text-center gap-2">
             <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-primary/60">account_tree</span>
-            <h2 className="font-title-md text-title-md font-bold text-on-surface">Nhập một chữ Hán hoặc âm Hán-Việt</h2>
+            <h2 className="font-title-md text-title-md font-bold text-on-surface">Nhập một chữ Hán, một từ hoặc âm Hán-Việt</h2>
             <p className="text-body-sm text-on-surface-variant max-w-xl">
               Sơ đồ vẽ chữ ở giữa, thành phần cấu tạo bên trái (bộ thủ viền đỏ, phần chỉ âm nối bằng mũi tên xanh lá) và họ chữ cùng chỉ âm
               bên phải. Bấm một chữ để xem chi tiết ở bảng bên; bấm dấu + để mở thêm liên kết; cuộn chuột để phóng to, kéo để di chuyển.
@@ -297,9 +329,17 @@ export const KnowledgeGraphPage: React.FC = () => {
         {q && data && (
           <div className="grid gap-space-md lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
             <div className="min-w-0 rounded-2xl bg-surface-container-lowest border border-surface-container-high p-3 flex flex-col gap-2">
+              <DiagramCharBar
+                word={data.word?.term ?? null}
+                chars={data.chars}
+                active={mode === "word" ? null : data.selectedChar}
+                onWord={() => selectMode("word")}
+                onChar={pickChar}
+              />
               {data.center ? (
                 <>
                   <KanjiDiagramCanvas
+                    layout={mode === "word" ? "word" : "sector"}
                     base={baseGraph}
                     extra={overlay.extra}
                     centerId={data.center}
@@ -330,10 +370,12 @@ export const KnowledgeGraphPage: React.FC = () => {
               ) : (
                 <div className="min-h-[18rem] flex flex-col items-center justify-center text-center gap-2 p-6">
                   <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">
-                    {data.candidates.length > 0 ? "touch_app" : "search_off"}
+                    {data.candidates.length > 0 || data.wordCandidates.length > 0 ? "touch_app" : "search_off"}
                   </span>
                   <p className="text-body-md text-on-surface-variant">
-                    {data.candidates.length > 0
+                    {data.wordCandidates.length > 0
+                      ? `«${q}» ứng với ${data.wordCandidates.length} từ — chọn một từ ở bảng bên để vẽ sơ đồ.`
+                      : data.candidates.length > 0
                       ? `Âm «${q.toUpperCase()}» ứng với ${data.candidates.length} chữ — chọn một chữ ở bảng bên để vẽ sơ đồ.`
                       : `Không tìm thấy chữ nào cho «${q}».`}
                   </p>
@@ -347,8 +389,9 @@ export const KnowledgeGraphPage: React.FC = () => {
               mode={mode}
               onRecenter={draw}
               onSelect={select}
-              onMode={(m) => go({ mode: m })}
+              onMode={selectMode}
               onAddWord={setAddWord}
+              onChar={pickChar}
             />
           </div>
         )}

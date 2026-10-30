@@ -13,6 +13,8 @@ import type {
 } from "@/types/kanjiDiagram.types";
 import { NODE_FILL } from "@/features/graph/diagramStyle";
 import { toHanVietWord } from "@/features/graph/diagramWords";
+import { kanjiHref, meaningOf, wordHref } from "@/features/graph/diagramText";
+import { WordAnalysisPanel } from "@/features/graph/components/WordAnalysisPanel";
 
 /**
  * Panel bên phải (spec 2026-10-30 §3.5): chữ tâm → chi tiết đầy đủ (âm On / Kun, bộ, công thức cấu tạo, từ có chữ, làm phần
@@ -31,26 +33,13 @@ interface KanjiDiagramPanelProps {
   onMode: (mode: KanjiDiagramMode) => void;
   /** Thêm từ ghép vào bộ thẻ của mình (mở AddWordToDeckModal ở trang). */
   onAddWord?: (word: HanVietWordNode) => void;
+  /** Chọn chữ trong từ (Phân tích từ → Cấu tạo của chữ đó; spec 30/10 từ nhiều chữ §5). */
+  onChar?: (ch: string) => void;
 }
-
-const kanjiHref = (ch: string) => `/dictionary?tab=kanji&k=${encodeURIComponent(ch)}`;
-const wordHref = (key: string | null, term: string) =>
-  key ? `/dictionary?e=${encodeURIComponent(key)}` : `/dictionary?q=${encodeURIComponent(term)}`;
-
-const meaningOf = (x: { meaningVi?: string | null; meaningEn?: string | null }): React.ReactNode =>
-  x.meaningVi ? (
-    <span className="text-on-surface">{x.meaningVi}</span>
-  ) : x.meaningEn ? (
-    <span className="text-on-surface-variant" title="Chưa có nghĩa tiếng Việt, hiện nghĩa tiếng Anh">
-      {x.meaningEn}
-    </span>
-  ) : (
-    <span className="text-outline">Chưa có nghĩa</span>
-  );
 
 const ROLE_LABEL: Record<string, string> = { radical: "bộ", phon: "chỉ âm", part: "thành phần" };
 
-export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extraNodes = [], selectedId, mode, onRecenter, onSelect, onMode, onAddWord }) => {
+export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extraNodes = [], selectedId, mode, onRecenter, onSelect, onMode, onAddWord, onChar }) => {
   const box = "rounded-2xl bg-surface-container-lowest border border-surface-container-high p-4 flex flex-col gap-3";
   if (!data) {
     return (
@@ -62,7 +51,31 @@ export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extr
   if (!data.center) {
     return (
       <aside className={box} aria-label="Chọn chữ">
-        {data.candidates.length > 0 ? (
+        {data.wordCandidates.length > 0 ? (
+          <>
+            <h2 className="font-title-md text-title-md font-bold text-on-surface">
+              «{data.query.trim()}» ứng với {data.wordCandidates.length} từ — chọn một từ
+            </h2>
+            <ul className="flex flex-col gap-1">
+              {data.wordCandidates.map((w) => (
+                <li key={w.term}>
+                  <button
+                    type="button"
+                    onClick={() => onRecenter(w.term)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container text-left cursor-pointer"
+                  >
+                    <span lang="ja" className="font-japanese text-body-lg font-bold text-on-surface shrink-0">
+                      <Ruby term={w.term} reading={w.reading ?? undefined} />
+                    </span>
+                    <span className="text-[10px] font-bold text-primary shrink-0 tracking-wide">{w.hanViet ?? ""}</span>
+                    <span className="flex-1 min-w-0 text-body-sm truncate">{meaningOf(w)}</span>
+                    <LevelChip level={w.jlpt} className="shrink-0" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : data.candidates.length > 0 ? (
           <>
             <h2 className="font-title-md text-title-md font-bold text-on-surface">
               Âm «{data.query.trim().toUpperCase()}» có {data.candidates.length} chữ — chọn một chữ
@@ -88,7 +101,8 @@ export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extr
           <>
             <h2 className="font-title-md text-title-md font-bold text-on-surface">Không tìm thấy «{data.query}»</h2>
             <p className="text-body-sm text-on-surface-variant">
-              Gõ một chữ Hán (時) hoặc âm Hán-Việt có / không dấu (THỜI, thoi). Chữ ngoài bảng Unihan hay âm không có chữ nào sẽ không vẽ được.
+              Gõ chữ Hán (時), từ (学生), kana (がくせい) hoặc âm Hán-Việt có / không dấu (THỜI, học sinh). Chữ ngoài bảng Unihan hay âm
+              không có chữ nào sẽ không vẽ được.
             </p>
           </>
         )}
@@ -100,6 +114,14 @@ export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extr
     data.nodes.find((n) => n.id === selectedId) ?? extraNodes.find((n) => n.id === selectedId) ?? data.nodes.find((n) => n.id === data.center) ?? null;
   const detail = data.detail;
   const isCenter = node !== null && node.id === data.center;
+
+  if (data.mode === "word" && data.word && isCenter) {
+    return (
+      <aside className={box} aria-label="Phân tích từ">
+        <WordAnalysisPanel word={data.word} onChar={onChar ?? onRecenter} onAddWord={onAddWord} />
+      </aside>
+    );
+  }
 
   return (
     <aside className={box} aria-label="Chi tiết chữ Hán">
@@ -287,7 +309,7 @@ const KanjiCard: React.FC<{ node: KanjiDiagramNode; onRecenter: (ch: string) => 
         ? node.sameOn
           ? "Cùng họ chỉ âm, trùng âm On"
           : "Cùng phần chỉ âm nhưng đọc khác"
-        : "Chữ trong từ ghép";
+        : "Chữ trong từ";
   return (
     <>
       <div className="flex items-start gap-3">
