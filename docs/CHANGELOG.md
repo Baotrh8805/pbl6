@@ -12,6 +12,10 @@ bình luận Thư viện, tìm theo nội dung thẻ), học sâu (hoạt hình 
   đếm theo người lưu (`count(DISTINCT owner)`), bản trùng cũ không đếm hai lần.
 - **Phổ biến** cần TB ≥ 4,5 **và** ≥ 3 lượt đánh giá.
 - Kiểm: LibraryDeckIT +2 (7 xanh) cùng 7 lớp IT liên quan; selfcheck `library.ts` +14; lint / tsc / build xanh. **Chưa bấm thử trên trình duyệt.**
+- **Sửa lỗi kẹt trang (Từ điển, Thư viện)**: khôi phục trạng thái đã nhớ chạy lại sau mỗi lần đổi tab / bộ lọc vì effect phụ thuộc
+  `setSearchParams` (react-router đổi danh tính mỗi khi URL đổi) → bấm "Từ vựng" / "Câu" bị kéo về `?tab=kanji&k=結`; tab Từ vựng (URL
+  trống) còn bị coi là "đang chờ khôi phục" nên không vẽ. Gom vào hook `lib/useSearchMemory.ts`: chỉ khôi phục cho đúng mục lịch sử
+  lúc vào trang (`location.key`), một lần.
 
 ## 30/10/2026 (tối): Sơ đồ chữ Hán — tra bằng từ nhiều chữ, kana, Hán-Việt nhiều âm ("Phân tích từ")
 Spec [Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md](Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md), kế hoạch

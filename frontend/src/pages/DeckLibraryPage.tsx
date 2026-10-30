@@ -18,7 +18,7 @@ import {
   parseLibraryParams,
   type LibraryFilters,
 } from "@/features/library/libraryParams";
-import { pickParams, readSearchMemory, restoreOnEnter, writeSearchMemory } from "@/lib/searchMemory";
+import { useSearchMemory } from "@/lib/useSearchMemory";
 
 const TOAST_DURATION_MS = 6000;
 const PAGE_SIZE = 12;
@@ -30,14 +30,7 @@ export const DeckLibraryPage: React.FC = () => {
 
   // Bộ lọc nằm trên URL (rà soát 30/10 A2): Back quay lại bộ lọc trước, chia sẻ được link, ?q= từ nơi khác (vd. "Tìm bộ thẻ" ở bản
   // đồ Hán–Việt) vẫn là điểm vào. Rời trang qua sidebar (URL trống) thì khôi phục bộ lọc đã nhớ một lần, như Từ điển.
-  const [entered] = useState(() => restoreOnEnter(params, readSearchMemory(LIBRARY_MEMORY_KEY), LIBRARY_PARAMS));
-  const restoring = entered !== null && pickParams(params, LIBRARY_PARAMS) === "";
-  useEffect(() => {
-    if (entered) setParams(entered, { replace: true });
-  }, [entered, setParams]);
-  useEffect(() => {
-    if (!restoring) writeSearchMemory(LIBRARY_MEMORY_KEY, pickParams(params, LIBRARY_PARAMS));
-  }, [params, restoring]);
+  const restoring = useSearchMemory(LIBRARY_MEMORY_KEY, LIBRARY_PARAMS);
 
   const filters = parseLibraryParams(params);
   /** Đổi bộ lọc → về trang đầu (trừ khi đổi chính trang); push để Back quay lại, replace khi chỉ là gõ tìm kiếm. */

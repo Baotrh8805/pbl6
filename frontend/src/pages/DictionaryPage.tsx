@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { KanjiPage } from "@/pages/KanjiPage";
 import { HanVietMapPage } from "@/pages/HanVietMapPage";
@@ -8,7 +8,7 @@ import { SentencesTab } from "@/features/dictionary/components/SentencesTab";
 import { TranslateTab } from "@/features/dictionary/components/TranslateTab";
 import { HandwritingPad } from "@/features/dictionary/components/HandwritingPad";
 import { KanjiCommunity } from "@/features/dictionary/components/KanjiCommunity";
-import { pickParams, readSearchMemory, restoreOnEnter, writeSearchMemory } from "@/lib/searchMemory";
+import { useSearchMemory } from "@/lib/useSearchMemory";
 import { DICTIONARY_MEMORY_KEY, DICTIONARY_PARAMS } from "@/features/dictionary/dictionaryMemory";
 import type { DictKey, DictTranslateDirection } from "@/types/dictionary.types";
 
@@ -41,16 +41,9 @@ const TRANSLATE_DIRS: DictTranslateDirection[] = ["auto", "ja-vi", "vi-ja"];
 // ?tab=hanviet&reading=…, ?tab=notebook.
 export const DictionaryPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
-  // Sidebar dẫn tới /dictionary không kèm tham số: nhớ trạng thái URL trong tab (sessionStorage) và khôi phục MỘT LẦN khi vào trang
-  // trống (replace). Chỉ lúc vào trang, không phải mỗi khi URL trống: người dùng xoá ô tìm thì URL trống là ý muốn của họ.
-  const [entered] = useState(() => restoreOnEnter(params, readSearchMemory(DICTIONARY_MEMORY_KEY), DICTIONARY_PARAMS));
-  const restoring = entered !== null && pickParams(params, DICTIONARY_PARAMS) === "";
-  useEffect(() => {
-    if (entered) setParams(entered, { replace: true });
-  }, [entered, setParams]);
-  useEffect(() => {
-    if (!restoring) writeSearchMemory(DICTIONARY_MEMORY_KEY, pickParams(params, DICTIONARY_PARAMS));
-  }, [params, restoring]);
+  // Sidebar dẫn tới /dictionary không kèm tham số: nhớ trạng thái URL trong tab và khôi phục MỘT LẦN khi vào trang trống
+  // (xem useSearchMemory — gắn với mục lịch sử lúc vào trang, đổi tab sau đó không bị kéo về).
+  const restoring = useSearchMemory(DICTIONARY_MEMORY_KEY, DICTIONARY_PARAMS);
   const raw = params.get("tab") as DictTab | null;
   const tab: DictTab = raw && TAB_KEYS.includes(raw) ? raw : "words";
   const tabRefs = useRef<Partial<Record<DictTab, HTMLButtonElement | null>>>({});
