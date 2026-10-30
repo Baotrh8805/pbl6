@@ -3,7 +3,9 @@ package com.pbl6.flashcard.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -19,6 +21,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LibraryDeckIT extends IntegrationTest {
 
     private static final String LIBRARY = "/api/library/decks";
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     /**
      * Self-check chuyển dữ liệu: library-decks-legacy.json là bản xuất nguyên văn CURATED_DECKS
@@ -180,6 +185,50 @@ class LibraryDeckIT extends IntegrationTest {
         JsonNode hidden = read(call(post("/api/decks"), newUser(), Map.of("title", "Ẩn", "level", "N5")));
         call(put(LIBRARY + "/" + hidden.get("id").asText() + "/rating"), token, Map.of("stars", 5))
                 .andExpect(status().isNotFound());
+    }
+
+    /**
+     * Rà soát Cộng đồng & Khám phá 30/10 (A4): lưu lần hai → 409 DECK_ALREADY_SAVED, không tạo bản trùng; savedDeckId cho biết mình
+     * đã lưu (người khác thấy null); lượt tải đếm theo người lưu, bản trùng cũ trong DB không đếm hai lần.
+     */
+    @Test
+    void saving_twice_is_refused_and_saved_deck_is_shown() throws Exception {
+        String token = newUser();
+        String other = newUser();
+        String src = "lib-kanji-214-radicals";
+        long before = downloads(token, src);
+        assertTrue(libraryItem(token, src).get("savedDeckId").isNull(), "chưa lưu → savedDeckId null");
+
+        JsonNode copy = read(call(post("/api/decks/" + src + "/clone"), token, Map.of()).andExpect(status().isCreated()));
+        String copyId = copy.get("id").asText();
+        JsonNode again = read(call(post("/api/decks/" + src + "/clone"), token, Map.of()).andExpect(status().isConflict()));
+        assertEquals("DECK_ALREADY_SAVED", again.get("code").asText());
+        assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM decks WHERE source_deck_id = ? AND owner_id = "
+                + "(SELECT owner_id FROM decks WHERE id = ?)", Long.class, src, copyId), "không tạo bản trùng");
+        assertEquals(copyId, libraryItem(token, src).get("savedDeckId").asText());
+        assertTrue(libraryItem(other, src).get("savedDeckId").isNull(), "người khác chưa lưu → null");
+        assertEquals(before + 1, downloads(token, src));
+
+        // bản trùng cũ (trước khi chặn): một bộ khác của cùng người trỏ về cùng nguồn → vẫn chỉ một lượt tải
+        JsonNode legacy = read(call(post("/api/decks"), token, Map.of("title", "Bản cũ", "level", "N5")).andExpect(status().isCreated()));
+        jdbc.update("UPDATE decks SET source_deck_id = ? WHERE id = ?", src, legacy.get("id").asText());
+        assertEquals(before + 1, downloads(token, src), "lượt tải đếm theo người lưu");
+    }
+
+    /** A5: tab Phổ biến cần TB ≥ 4,5 VÀ ≥ 3 lượt đánh giá — một vài đánh giá 5 sao không đủ. */
+    @Test
+    void popular_tab_needs_at_least_three_ratings() throws Exception {
+        String owner = newUser();
+        String title = "Phổ biến thử " + System.nanoTime();
+        JsonNode deck = read(call(post("/api/decks"), owner, Map.of("title", title, "level", "N5",
+                "visibility", "public", "category", "goi")).andExpect(status().isCreated()));
+        String rate = LIBRARY + "/" + deck.get("id").asText() + "/rating";
+        for (int i = 0; i < 2; i++) call(put(rate), newUser(), Map.of("stars", 5)).andExpect(status().isOk());
+        JsonNode two = read(call(get(LIBRARY).param("tab", "popular").param("q", title), owner, null).andExpect(status().isOk()));
+        assertEquals(List.of(), ids(two), "2 đánh giá 5 sao chưa đủ để lên Phổ biến");
+        call(put(rate), newUser(), Map.of("stars", 5)).andExpect(status().isOk());
+        JsonNode three = read(call(get(LIBRARY).param("tab", "popular").param("q", title), owner, null).andExpect(status().isOk()));
+        assertEquals(List.of(deck.get("id").asText()), ids(three), "3 đánh giá TB 5 → Phổ biến");
     }
 
     private List<String> ids(JsonNode page) {

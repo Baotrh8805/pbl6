@@ -5,17 +5,17 @@ import com.pbl6.flashcard.repository.DeckRepository.LibraryRow;
 
 import java.util.List;
 
-/** Một bộ thẻ trong Thư viện cộng đồng. rating null = chưa có đánh giá; myRating null = mình chưa chấm. */
+/** Một bộ thẻ trong Thư viện cộng đồng. rating null = chưa có đánh giá; myRating null = mình chưa chấm; savedDeckId null = mình chưa lưu. */
 public record LibraryDeckResponse(String id, String title, String level, String description, String category,
                                   boolean official, boolean featured, String authorName, boolean mine,
                                   long cardsCount, long downloadsCount, long quizCount,
-                                  Double rating, long ratingsCount, Integer myRating) {
+                                  Double rating, long ratingsCount, Integer myRating, String savedDeckId) {
 
     public static LibraryDeckResponse of(LibraryRow r, Long uid) {
         return new LibraryDeckResponse(r.getId(), r.getTitle(), r.getLevel(), r.getDescription(), r.getCategory(),
                 Boolean.TRUE.equals(r.getOfficial()), Boolean.TRUE.equals(r.getFeatured()), r.getAuthorName(),
                 uid.equals(r.getOwnerId()), r.getCardsCount(), r.getDownloadsCount(), r.getQuizCount(),
-                round1(r.getRating()), r.getRatingsCount(), r.getMyRating());
+                round1(r.getRating()), r.getRatingsCount(), r.getMyRating(), r.getSavedDeckId());
     }
 
     /** 1 chữ số thập phân như giao diện cũ (4.9). */

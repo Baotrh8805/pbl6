@@ -15,6 +15,12 @@ import java.util.UUID;
 
 @Repository
 public interface DeckRepository extends JpaRepository<Deck, String> {
+    /** Rà soát 30/10 A5: tab Phổ biến cần điểm TB ≥ 4,5 VÀ ít nhất chừng này lượt đánh giá (một đánh giá 5 sao không đủ). */
+    int POPULAR_MIN_RATINGS = 3;
+
+    /** Người dùng đã lưu bản sao của bộ này chưa (chặn lưu trùng, A4). */
+    boolean existsBySourceDeckIdAndOwnerId(String sourceDeckId, Long ownerId);
+
     // "Bộ thẻ của tôi": bộ thẻ mình sở hữu (gồm bản đã lưu từ Cộng đồng) + bộ được chia sẻ qua email.
     // Bộ thẻ public của người khác chỉ nằm ở Thư viện cộng đồng (LibraryService), không nằm ở đây.
     // EntityGraph: lấy luôn thẻ trong cùng query, tránh N+1 (1 query thẻ cho mỗi deck).
@@ -89,7 +95,7 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
                    d.is_official AS "official", d.is_featured AS "featured",
                    (SELECT count(*) FROM flashcards f WHERE f.deck_id = d.id) AS "cardCount",
                    (SELECT CAST(avg(r.stars) AS double precision) FROM deck_ratings r WHERE r.deck_id = d.id) AS "avgStars",
-                   (SELECT count(*) FROM decks c WHERE c.source_deck_id = d.id) AS "downloads",
+                   (SELECT count(DISTINCT c.owner_id) FROM decks c WHERE c.source_deck_id = d.id) AS "downloads",
                    (SELECT count(*) FROM content_reports cr WHERE cr.deck_id = d.id AND cr.status = 'OPEN') AS "openReports"
             FROM decks d JOIN users u ON u.id = d.owner_id
             WHERE (:q = '' OR lower(d.title) LIKE :q ESCAPE '!')
@@ -117,7 +123,7 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
                    d.is_official AS "official", d.is_featured AS "featured",
                    (SELECT count(*) FROM flashcards f WHERE f.deck_id = d.id) AS "cardCount",
                    (SELECT CAST(avg(r.stars) AS double precision) FROM deck_ratings r WHERE r.deck_id = d.id) AS "avgStars",
-                   (SELECT count(*) FROM decks c WHERE c.source_deck_id = d.id) AS "downloads",
+                   (SELECT count(DISTINCT c.owner_id) FROM decks c WHERE c.source_deck_id = d.id) AS "downloads",
                    (SELECT count(*) FROM content_reports cr WHERE cr.deck_id = d.id AND cr.status = 'OPEN') AS "openReports"
             FROM decks d JOIN users u ON u.id = d.owner_id
             WHERE d.id = :id
@@ -141,11 +147,14 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
         Double getRating();
         Long getRatingsCount();
         Integer getMyRating();
+        /** Bản sao mới nhất của người xem (null = chưa lưu) — nút "Đã lưu · Mở" ở Thư viện. */
+        String getSavedDeckId();
     }
 
     /**
      * Tìm (q đã lower-case, rỗng = bỏ qua), lọc, sắp xếp và phân trang ở DB. Tham số rỗng = không lọc.
-     * tab: all | popular (điểm TB >= 4.5) | official | community | featured.
+     * tab: all | popular (điểm TB >= 4.5 và >= POPULAR_MIN_RATINGS lượt) | official | community | featured.
+     * Lượt tải = số NGƯỜI đã lưu (count DISTINCT owner): bản trùng cũ trước khi chặn lưu trùng không đếm hai lần.
      * sort: downloads | rating | cards; hoà thì theo lượt tải rồi tiêu đề (thứ tự ổn định giữa các trang).
      */
     @Query(value = """
@@ -154,11 +163,13 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
                        d.category AS "category", d.is_official AS "official", d.is_featured AS "featured",
                        d.owner_id AS "ownerId", coalesce(u.full_name, u.email) AS "authorName",
                        (SELECT count(*) FROM flashcards f WHERE f.deck_id = d.id) AS "cardsCount",
-                       (SELECT count(*) FROM decks c WHERE c.source_deck_id = d.id) AS "downloadsCount",
+                       (SELECT count(DISTINCT c.owner_id) FROM decks c WHERE c.source_deck_id = d.id) AS "downloadsCount",
                        (SELECT count(*) FROM quiz_results q WHERE q.deck_id = d.id) AS "quizCount",
                        (SELECT CAST(avg(r.stars) AS double precision) FROM deck_ratings r WHERE r.deck_id = d.id) AS "rating",
                        (SELECT count(*) FROM deck_ratings r WHERE r.deck_id = d.id) AS "ratingsCount",
-                       (SELECT CAST(r.stars AS integer) FROM deck_ratings r WHERE r.deck_id = d.id AND r.user_id = :uid) AS "myRating"
+                       (SELECT CAST(r.stars AS integer) FROM deck_ratings r WHERE r.deck_id = d.id AND r.user_id = :uid) AS "myRating",
+                       (SELECT c.id FROM decks c WHERE c.source_deck_id = d.id AND c.owner_id = :uid
+                        ORDER BY c.created_at DESC LIMIT 1) AS "savedDeckId"
                 FROM decks d JOIN users u ON u.id = d.owner_id
                 WHERE d.visibility = 'public'
                   AND (:q = '' OR strpos(lower(d.title), :q) > 0 OR strpos(lower(coalesce(d.description, '')), :q) > 0
@@ -169,7 +180,7 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
             WHERE (:tab <> 'official' OR x."official")
               AND (:tab <> 'community' OR NOT x."official")
               AND (:tab <> 'featured' OR x."featured")
-              AND (:tab <> 'popular' OR x."rating" >= 4.5)
+              AND (:tab <> 'popular' OR (x."rating" >= 4.5 AND x."ratingsCount" >= 3))
             ORDER BY CASE WHEN :sort = 'rating' THEN x."rating" END DESC NULLS LAST,
                      CASE WHEN :sort = 'cards' THEN x."cardsCount" END DESC,
                      x."downloadsCount" DESC, x."title" ASC, x."id" ASC
@@ -182,7 +193,8 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
     @Query(value = """
             SELECT count(*) FROM (
                 SELECT d.is_official AS official,
-                       (SELECT avg(r.stars) FROM deck_ratings r WHERE r.deck_id = d.id) AS rating, d.is_featured AS featured
+                       (SELECT avg(r.stars) FROM deck_ratings r WHERE r.deck_id = d.id) AS rating, d.is_featured AS featured,
+                       (SELECT count(*) FROM deck_ratings r WHERE r.deck_id = d.id) AS ratings_count
                 FROM decks d JOIN users u ON u.id = d.owner_id
                 WHERE d.visibility = 'public'
                   AND (:q = '' OR strpos(lower(d.title), :q) > 0 OR strpos(lower(coalesce(d.description, '')), :q) > 0
@@ -193,7 +205,7 @@ public interface DeckRepository extends JpaRepository<Deck, String> {
             WHERE (:tab <> 'official' OR x.official)
               AND (:tab <> 'community' OR NOT x.official)
               AND (:tab <> 'featured' OR x.featured)
-              AND (:tab <> 'popular' OR x.rating >= 4.5)
+              AND (:tab <> 'popular' OR (x.rating >= 4.5 AND x.ratings_count >= 3))
             """, nativeQuery = true)
     long countLibrary(@Param("q") String q, @Param("level") String level, @Param("category") String category,
                       @Param("tab") String tab);
