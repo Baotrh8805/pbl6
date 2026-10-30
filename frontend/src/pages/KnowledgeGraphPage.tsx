@@ -229,16 +229,11 @@ export const KnowledgeGraphPage: React.FC = () => {
 
   return (
     <section className="flex flex-col gap-space-md pb-space-xl">
-      <header className="flex flex-col gap-1">
+      <header>
         <h1 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2">
           <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-primary">account_tree</span>
           Sơ đồ chữ Hán
         </h1>
-        <p className="text-body-md text-on-surface-variant max-w-3xl">
-          Một chữ Hán được ghép từ những phần nào, phần nào là bộ, phần nào cho âm đọc, và những chữ nào mượn cùng phần chỉ âm (時 持 待
-          特 等 詩 侍 đều mang 寺). Chuyển sang <strong>Từ ghép</strong> để xem từ thông dụng chứa chữ đó; gõ cả một từ (学生, がくせい, học sinh)
-          để xem từ đó được ghép từ những chữ và thành phần nào.
-        </p>
       </header>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">

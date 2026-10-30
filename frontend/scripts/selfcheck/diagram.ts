@@ -172,6 +172,20 @@ export function runDiagramChecks(assert: (cond: boolean, msg: string) => void): 
   const w2 = wordLayout(wordNodes(["学", "生"], gParts), wordEdges(["学", "生"], gParts), "w:学生", size);
   assert(w2["w:学生"].x === c && w2["w:学生"].y === c, "Phân tích từ: từ ở giữa");
   assert(w2["k:学"].x < c && w2["k:生"].x > c, "Phân tích từ: 2 chữ trái – phải theo thứ tự");
+  // ảnh người dùng 30/10 (企業): vòng tròn + nhãn Hán-Việt bên dưới đè nhau → mọi cặp node cách nhau ≥ 84 (đường kính 44 + nhãn)
+  const minPair = (pos: Record<string, { x: number; y: number }>) => {
+    const ks = Object.keys(pos);
+    return Math.min(...ks.flatMap((n, i) => ks.slice(i + 1).map((m) => Math.hypot(pos[n].x - pos[m].x, pos[n].y - pos[m].y))));
+  };
+  const kParts = { 企: ["人", "止"], 業: ["业", "羊", "木"] };
+  const wk = wordLayout(wordNodes(["企", "業"], kParts), wordEdges(["企", "業"], kParts), "w:企業", size);
+  assert(minPair(wk) >= 84, `Phân tích từ: 企業 không có hai node đè nhau (gần nhất ${minPair(wk).toFixed(0)})`);
+  const fourParts = { 図: ["囗", "义"], 書: ["聿", "曰", "一"], 館: ["食", "官", "宀"], 員: ["口", "貝"] };
+  const w4 = wordLayout(wordNodes(["図", "書", "館", "員"], fourParts), wordEdges(["図", "書", "館", "員"], fourParts), "w:図書館員", size);
+  assert(minPair(w4) >= 84, `Phân tích từ: 4 chữ × 2–3 thành phần không đè nhau (gần nhất ${minPair(w4).toFixed(0)})`);
+  const manyParts = { 鬱: ["林", "缶", "冖", "鬯", "彡"], 学: ["⺍", "冖", "子"] };
+  const wm = wordLayout(wordNodes(["鬱", "学"], manyParts), wordEdges(["鬱", "学"], manyParts), "w:鬱学", size);
+  assert(minPair(wm) >= 84, `Phân tích từ: chữ 5 thành phần không đè nhau (gần nhất ${minPair(wm).toFixed(0)})`);
   assert(["⺍", "冖", "子"].every((p) => Math.hypot(w2["k:" + p].x - c, w2["k:" + p].y - c) > Math.hypot(w2["k:学"].x - c, w2["k:学"].y - c)),
     "Phân tích từ: thành phần nằm xa tâm hơn chữ của nó");
   assert(JSON.stringify(w2) === JSON.stringify(wordLayout(wordNodes(["学", "生"], gParts), wordEdges(["学", "生"], gParts), "w:学生", size)),

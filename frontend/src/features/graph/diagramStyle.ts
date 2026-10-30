@@ -30,6 +30,6 @@ export const EDGE_COLOR: Record<KanjiDiagramEdge["type"], string> = {
 
 export const RADICAL_RING = "#dc2626";
 
-/** Bán kính node (từ ghép là viên: nửa chiều cao). */
+/** Bán kính node (từ ghép là viên: nửa chiều cao). Thu nhỏ 30/10 để vòng tròn không lấn nhãn khi khung vừa sơ đồ. */
 export const nodeRadius = (n: KanjiDiagramNode): number =>
-    n.type === "center" ? 36 : n.type === "component" || n.type === "phonetic" ? 26 : n.type === "word" ? 15 : 22;
+    n.type === "center" ? 30 : n.type === "component" || n.type === "phonetic" ? 22 : n.type === "word" ? 15 : 20;

@@ -105,8 +105,25 @@ export function sectorLayout(
 /** Chế độ "Phân tích từ" chỉ có cho từ 2–4 chữ Hán (spec 30/10 từ nhiều chữ W4). */
 export const WORD_MIN_CHARS = 2;
 export const WORD_MAX_CHARS = 4;
-/** Bán kính quạt thành phần quanh từng chữ ở chế độ Phân tích từ. */
-const WORD_PART_RADIUS = 90;
+/** Quạt thành phần quanh từng chữ ở chế độ Phân tích từ: bán kính ban đầu, khoảng cách tối thiểu giữa hai node (đường kính node
+ *  44 + nhãn Hán-Việt bên dưới), góc quạt tối đa hướng ra ngoài (không vòng lại phía từ ở giữa / chữ bên cạnh). */
+const WORD_PART_RADIUS = 120;
+const WORD_MIN_GAP = 88; // 84 cần thiết + biên cho toạ độ làm tròn 1 chữ số
+const WORD_MAX_ARC = 150 * DEG;
+
+/** Đặt ids trên cung tâm ``anchor`` hướng ``away``: bước góc đủ cho WORD_MIN_GAP, quá WORD_MAX_ARC thì nới bán kính. */
+function fanOut(anchor: DiagramPoint, away: number, ids: string[]): DiagramPositions {
+    const out: DiagramPositions = {};
+    if (ids.length === 0) return out;
+    let r = WORD_PART_RADIUS;
+    const stepAt = (radius: number) => 2 * Math.asin(Math.min(1, WORD_MIN_GAP / 2 / radius));
+    while ((ids.length - 1) * stepAt(r) > WORD_MAX_ARC) r *= 1.2;
+    const fan = (ids.length - 1) * stepAt(r);
+    spread(ids.length, away - fan / 2, away + fan / 2).forEach((theta, i) => {
+        out[ids[i]] = { x: round1(anchor.x + r * Math.cos(theta)), y: round1(anchor.y + r * Math.sin(theta)) };
+    });
+    return out;
+}
 
 /**
  * Bố cục "Phân tích từ" (spec 30/10 từ nhiều chữ §4): từ ở giữa; các chữ (node có cạnh contains từ tâm, theo thứ tự cạnh)
@@ -130,7 +147,8 @@ export function wordLayout(
     });
     for (const ch of chars) {
         const parts = edges.filter((e) => e.to === ch && e.type !== "contains" && has.has(e.from) && !(e.from in positions)).map((e) => e.from);
-        Object.assign(positions, placeAround(positions[ch], [...new Set(parts)], positions, WORD_PART_RADIUS));
+        const at = positions[ch];
+        Object.assign(positions, fanOut(at, Math.atan2(at.y - c, at.x - c), [...new Set(parts)]));
     }
     const rest = nodes.filter((n) => !(n.id in positions));
     rest.forEach((n, i) => {

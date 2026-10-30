@@ -19,6 +19,9 @@ viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học si
   gần nhất trong sessionStorage của tab (`diagramMemory.ts`) và khôi phục bằng `replace` khi mở `/graph` trống; selfcheck +6.
 - **Từ điển cũng vậy**: `/dictionary` nhớ tab + tham số của tab (q / e, s, t / dir, k / sub / r, reading / level) và khôi phục **một
   lần lúc vào trang** (xoá ô tìm thì URL trống là ý người dùng, không bị đè). Đọc / ghi dùng chung `lib/searchMemory.ts`; selfcheck +6.
+- **Bố cục sơ đồ rộng và thoáng hơn** (ảnh người dùng 企業): bỏ đoạn giải thích đầu trang, khung sơ đồ cao tối đa 78vh (trước 70vh);
+  Phân tích từ quạt thành phần ra ngoài trong ≤ 150°, cách nhau ≥ 84 (trước 60, quạt tới 300° nên lấn chữ bên cạnh), nới bán kính khi
+  nhiều thành phần; vòng tròn nhỏ lại (tâm 36→30, thành phần 26→22, chữ 22→20); nhãn cạnh 11→8,5 px, nét mảnh hơn. selfcheck +3.
 
 ## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
 Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch

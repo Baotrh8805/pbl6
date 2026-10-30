@@ -104,8 +104,8 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
     [base, centerId, layoutKind]
   );
   // từ làm tâm (Phân tích từ) vẽ viên lớn hơn từ ghép thường
-  const wordPx = (n: KanjiDiagramNode) => (n.id === centerId ? 22 : 16);
-  const radiusOf = (n: KanjiDiagramNode) => (n.type === "word" && n.id === centerId ? 22 : nodeRadius(n));
+  const wordPx = (n: KanjiDiagramNode) => (n.id === centerId ? 20 : 16);
+  const radiusOf = (n: KanjiDiagramNode) => (n.type === "word" && n.id === centerId ? 20 : nodeRadius(n));
   const positions = useMemo<DiagramPositions>(() => ({ ...layout, ...positionsOverride }), [layout, positionsOverride]);
   const onLayoutRef = useRef(onLayout);
   React.useEffect(() => {
@@ -256,7 +256,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
           role="group"
           aria-label={`Sơ đồ ${diagramStats(merged.nodes)}`}
           className={`block w-full h-auto select-none touch-none ${panning ? "cursor-grabbing" : "cursor-grab"}`}
-          style={{ aspectRatio: `${view.w} / ${view.h}`, maxHeight: "70vh" }}
+          style={{ aspectRatio: `${view.w} / ${view.h}`, maxHeight: "78vh" }}
           {...panHandlers}
         >
           <defs>
@@ -283,7 +283,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
                   markerEnd={`url(#kd-arrow-${e.type})`}
                   opacity={selectedId && !touched ? 0.55 : 1}
                 />
-                <text x={t.mid.x} y={t.mid.y} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600} fill={EDGE_COLOR[e.type]} stroke="#ffffff" strokeWidth={3} paintOrder="stroke">
+                <text x={t.mid.x} y={t.mid.y} textAnchor="middle" dominantBaseline="central" fontSize={8.5} fontWeight={500} fill={EDGE_COLOR[e.type]} opacity={0.85} stroke="#ffffff" strokeWidth={2.5} paintOrder="stroke">
                   {guessed ? "chỉ âm?" : edgeLabel(e.type)}
                 </text>
               </g>
@@ -336,7 +336,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
                     <circle r={r + 6} className={`halo fill-none stroke-primary ${selected ? "opacity-100" : "opacity-0"}`} strokeWidth={3} />
                     {radicalRing && <circle r={r + 3} fill="none" stroke={RADICAL_RING} strokeWidth={2.5} />}
                     <circle r={r} fill={NODE_FILL[n.type]} stroke={isCenter ? "#1e3a8a" : n.type === "kanji" ? "#94a3b8" : "#ffffff"} strokeWidth={isCenter ? 3 : 1.5} />
-                    <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={isCenter ? 34 : n.type === "kanji" ? 20 : 26} fontWeight={700} fill={NODE_TEXT[n.type]} className="font-japanese pointer-events-none">
+                    <text textAnchor="middle" dominantBaseline="central" lang="ja" fontSize={isCenter ? 28 : n.type === "kanji" ? 18 : 22} fontWeight={700} fill={NODE_TEXT[n.type]} className="font-japanese pointer-events-none">
                       {n.label}
                     </text>
                     {n.hanViet && (
