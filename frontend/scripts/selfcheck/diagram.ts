@@ -11,6 +11,7 @@ import {
   mergeDiagram,
   panViewBox,
   placeAround,
+  visibleArrowLength,
   sectorLayout,
   showWordTab,
   wordLayout,
@@ -196,14 +197,32 @@ export function runDiagramChecks(assert: (cond: boolean, msg: string) => void): 
     assert(aspect(pos) <= 1.5, `Phân tích từ: ${name} không trải ngang quá (rộng / cao ${aspect(pos).toFixed(2)})`);
   }
   assert(minPair(wg) >= 84, `Phân tích từ: 学生 không có hai node đè nhau (gần nhất ${minPair(wg).toFixed(0)})`);
+
+  // ---- người dùng 30/10: mũi tên còn ~60% độ dài cũ (đo phần nhìn thấy, cùng hàm canvas dùng để vẽ) ----------------------------
+  const arrows = (nodes: KanjiDiagramNode[], edges: KanjiDiagramEdge[], pos: Record<string, { x: number; y: number }>, center: string) => {
+    const by = new Map(nodes.map((n) => [n.id, n]));
+    const lens = edges.map((e) => visibleArrowLength(pos[e.from], pos[e.to], by.get(e.from)!, by.get(e.to)!, center));
+    return { mean: lens.reduce((s, x) => s + x, 0) / lens.length, min: Math.min(...lens) };
+  };
+  const checkArrows = (name: string, before: number, a: { mean: number; min: number }) => {
+    assert(a.mean <= 0.65 * before, `Mũi tên ${name}: trung bình ${a.mean.toFixed(0)} ≤ 65% của ${before} (mục tiêu 60%)`);
+    assert(a.min >= 12, `Mũi tên ${name}: mũi tên ngắn nhất ${a.min.toFixed(0)} vẫn đủ để vẽ`);
+  };
+  checkArrows("企業", 65, arrows(wordNodes(["企", "業"], kParts), wordEdges(["企", "業"], kParts), wk, "w:企業"));
+  checkArrows("学生", 64, arrows(wordNodes(["学", "生"], gParts), wordEdges(["学", "生"], gParts), wg, "w:学生"));
+  checkArrows("図書館員", 72, arrows(wordNodes(["図", "書", "館", "員"], fourParts), wordEdges(["図", "書", "館", "員"], fourParts), w4, "w:図書館員"));
+  checkArrows("鬱学", 114.6, arrows(wordNodes(["鬱", "学"], manyParts), wordEdges(["鬱", "学"], manyParts), wm, "w:鬱学"));
+  checkArrows("時 cấu tạo", 288, arrows(structureNodes, structureEdges, a, "k:時"));
+  checkArrows("時 từ ghép", 97.8, arrows(compoundNodes, compoundEdges, w, "k:時"));
   assert(["⺍", "冖", "子"].every((p) => Math.hypot(w2["k:" + p].x - c, w2["k:" + p].y - c) > Math.hypot(w2["k:学"].x - c, w2["k:学"].y - c)),
     "Phân tích từ: thành phần nằm xa tâm hơn chữ của nó");
   assert(JSON.stringify(w2) === JSON.stringify(wordLayout(wordNodes(["学", "生"], gParts), wordEdges(["学", "生"], gParts), "w:学生", size)),
     "Phân tích từ: tất định");
   for (const chars of [["日", "本", "語"], ["図", "書", "館", "員"]]) {
     const wl = wordLayout(wordNodes(chars, {}), wordEdges(chars, {}), "w:" + chars.join(""), size);
-    assert(chars.every((ch) => Math.abs(Math.hypot(wl["k:" + ch].x - c, wl["k:" + ch].y - c) - 0.24 * size) <= 1),
-      `Phân tích từ: ${chars.length} chữ trên vòng 0,24 cạnh`);
+    const r0 = Math.hypot(wl["k:" + chars[0]].x - c, wl["k:" + chars[0]].y - c);
+    assert(chars.every((ch) => Math.abs(Math.hypot(wl["k:" + ch].x - c, wl["k:" + ch].y - c) - r0) <= 1),
+      `Phân tích từ: ${chars.length} chữ cách đều tâm`);
   }
   // review 30/10: từ có 々 / chữ lặp (人々 → chars [人]) vẫn có tab Phân tích từ; cụm > 4 chữ thì không
   assert(showWordTab("人々", ["人"]) && showWordTab("学生", ["学", "生"]), "Tab Phân tích từ: hiện cho từ, kể cả 人々");

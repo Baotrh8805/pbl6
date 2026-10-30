@@ -6,7 +6,10 @@ import {
   clientToDiagram,
   diagramStats,
   edgeLabel,
+  ARROW_GAP,
   fitViewBox,
+  nodeExtent,
+  wordFontPx,
   isGuessedPhonEdge,
   mergeDiagram,
   sectorLayout,
@@ -104,7 +107,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
     [base, centerId, layoutKind]
   );
   // từ làm tâm (Phân tích từ) vẽ viên lớn hơn từ ghép thường
-  const wordPx = (n: KanjiDiagramNode) => (n.id === centerId ? 20 : 16);
+  const wordPx = (n: KanjiDiagramNode) => wordFontPx(n, centerId);
   const radiusOf = (n: KanjiDiagramNode) => (n.type === "word" && n.id === centerId ? 20 : nodeRadius(n));
   const positions = useMemo<DiagramPositions>(() => ({ ...layout, ...positionsOverride }), [layout, positionsOverride]);
   const onLayoutRef = useRef(onLayout);
@@ -182,8 +185,8 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
-    const ra = na.type === "word" ? pillWidth(na.label, wordPx(na), 20) / 2 : nodeRadius(na);
-    const rb = (nb.type === "word" ? pillWidth(nb.label, wordPx(nb), 20) / 2 : nodeRadius(nb)) + 6;
+    const ra = nodeExtent(na, centerId);
+    const rb = nodeExtent(nb, centerId) + ARROW_GAP;
     if (len <= ra + rb) return null;
     return {
       from: { x: a.x + (dx / len) * ra, y: a.y + (dy / len) * ra },

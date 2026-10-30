@@ -25,6 +25,10 @@ viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học si
 - **Từ 2 chữ không còn trải ngang**: hai chữ gần tâm hơn (vòng 0,15 thay 0,24), thành phần quạt chéo lên / xuống (120–220°, ép ngang
   0,7 / giãn dọc 1,15), bán kính nới tới khi không đè node đã đặt. Khung vừa sơ đồ rộng / cao: 企業 2,42 → 1,23; 学生 2,03 → 1,13;
   鬱学 1,82 → 1,02 (từ 3–4 chữ giữ nguyên, đã gần vuông). selfcheck +4.
+- **Mũi tên ngắn còn ~60%** (yêu cầu người dùng): các vòng không còn theo tỉ lệ cạnh khung (0,24 / 0,4 / 0,3 / 0,43) mà theo độ dài
+  mũi tên mong muốn + phần nằm trong hai node, chỉ nới khi đông node (không đè). Mũi tên trung bình: 時 Cấu tạo 288 → 179, Từ ghép
+  100 → 65, 企業 65 → 37, 学生 64 → 36, 図書館員 72 → 46, 鬱学 115 → 73. Từ 2 chữ quạt 170–240° không ép trục (rộng / cao 1,27–1,33).
+  Độ dài mũi tên đo bằng `visibleArrowLength` dùng chung với canvas; selfcheck +12. Node mở thêm (dấu +) giữ khoảng cách cũ.
 
 ## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
 Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch

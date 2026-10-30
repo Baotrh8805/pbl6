@@ -3,6 +3,8 @@
 // cùng chỉ âm quạt bên phải, từ ghép xếp vòng quanh tâm và chữ khác trong từ nằm ngoài trên cùng tia. Toạ độ làm tròn
 // 1 chữ số để JSON / so sánh ổn định.
 import type { KanjiDiagramEdge, KanjiDiagramEdgeType, KanjiDiagramMode, KanjiDiagramNode } from "../../types/kanjiDiagram.types.ts";
+import { nodeRadius } from "./diagramStyle.ts";
+import { pillWidth } from "../../lib/hanVietUtils.ts";
 
 export interface DiagramPoint {
     x: number;
@@ -21,12 +23,20 @@ export interface DiagramViewBox {
 }
 
 export const DIAGRAM_SIZE = 720;
-/** Bán kính các vòng theo tỉ lệ cạnh canvas: thành phần, họ chỉ âm, từ ghép, chữ khác trong từ / node lạ. */
-const R_COMPONENT = 0.24;
-const R_PHONETIC = 0.4;
-const R_WORD = 0.3;
-const R_OUTER = 0.43;
 const DEG = Math.PI / 180;
+/**
+ * Độ dài mũi tên nhìn thấy mong muốn (người dùng 30/10: rút còn ~60% so với bố cục cũ theo tỉ lệ cạnh khung). Vòng nào cũng lấy
+ * mũi tên này làm gốc rồi chỉ nới ra khi số node trên vòng cần thêm chỗ (khoảng cách tối thiểu giữa hai node cùng vòng).
+ */
+const ARROW_COMPONENT = 60;  // thành phần → chữ tâm (Cấu tạo; cũ 115)
+const ARROW_WORD = 80;       // chữ tâm → từ ghép (Từ ghép; cũ 154)
+const ARROW_CONTAINS = 26;   // từ ghép → chữ khác trong từ (cũ 42)
+const ARROW_WORD_CHAR = 32;  // từ → chữ trong từ (Phân tích từ; cũ 52–97)
+const SECTOR_GAP = 78;       // hai vòng tròn cùng vòng (đường kính 44 + nhãn Hán-Việt)
+const SECTOR_WORD_GAP = 84;  // hai viên từ ghép cùng vòng (viên rộng hơn vòng tròn)
+
+/** Bán kính nhỏ nhất để n node chia đều với bước góc step cách nhau ≥ gap (n ≤ 1 → 0). */
+const ringFor = (n: number, step: number, gap: number): number => (n <= 1 ? 0 : gap / (2 * Math.sin(Math.min(Math.PI, step) / 2)));
 /** Khoảng cách tối thiểu giữa hai node mới đặt quanh node mẹ (đường kính node + lề). */
 const MIN_GAP = 60;
 
@@ -44,10 +54,11 @@ const spread = (n: number, from: number, to: number): number[] => {
 };
 
 /**
- * Toạ độ từng node trong hộp size×size. Tâm = node có id centerId (hoặc type center). Thành phần: cung trái 225° → 135°
- * (trên xuống dưới, y hướng xuống như SVG). Họ chỉ âm: quạt phải −70° → 70°. Từ ghép: vòng đều bắt đầu từ đỉnh; chữ khác
- * trong từ: ngoài vòng từ, trên tia của từ đầu tiên chứa nó (nhiều chữ cùng từ lệch nhau ±9°). Node không thuộc nhóm nào:
- * vòng ngoài. Đồ thị rỗng → {}.
+ * Toạ độ từng node quanh tâm (size / 2, size / 2). Tâm = node có id centerId (hoặc type center). Thành phần: cung trái 225° → 135°
+ * (trên xuống dưới, y hướng xuống như SVG). Họ chỉ âm: quạt phải −70° → 70°, vòng ngoài vòng thành phần. Từ ghép: vòng đều bắt đầu
+ * từ đỉnh; chữ khác trong từ: ngoài vòng từ, trên tia của từ đầu tiên chứa nó (nhiều chữ cùng từ lệch nhau đủ để không đè). Bán
+ * kính mỗi vòng = mũi tên mong muốn (ARROW_*) + phần nằm trong hai node, nới khi đông node (ringFor). Node không thuộc nhóm nào:
+ * vòng ngoài cùng. Đồ thị rỗng → {}.
  */
 export function sectorLayout(
     nodes: KanjiDiagramNode[],
@@ -60,26 +71,37 @@ export function sectorLayout(
     const c = size / 2;
     const center = nodes.find((n) => n.id === centerId) ?? nodes.find((n) => n.type === "center") ?? nodes[0];
     positions[center.id] = { x: c, y: c };
+    const ext = (n: KanjiDiagramNode) => nodeExtent(n, center.id);
+    const maxExt = (ns: KanjiDiagramNode[], fallback: number) => (ns.length ? Math.max(...ns.map(ext)) : fallback);
+    const cExt = ext(center);
 
     const components = nodes.filter((n) => n.id !== center.id && n.type === "component");
+    const compR = Math.max(
+        cExt + maxExt(components, 22) + ARROW_GAP + ARROW_COMPONENT,
+        ringFor(components.length, (90 * DEG) / Math.max(1, components.length - 1), SECTOR_GAP)
+    );
     spread(components.length, 225 * DEG, 135 * DEG).forEach((theta, i) => {
-        positions[components[i].id] = polar(c, size * R_COMPONENT, theta);
+        positions[components[i].id] = polar(c, compR, theta);
     });
 
     const phonetic = nodes.filter((n) => n.id !== center.id && n.type === "phonetic");
+    const phonR = Math.max(compR + SECTOR_GAP, ringFor(phonetic.length, (140 * DEG) / Math.max(1, phonetic.length - 1), SECTOR_GAP));
     spread(phonetic.length, -70 * DEG, 70 * DEG).forEach((theta, i) => {
-        positions[phonetic[i].id] = polar(c, size * R_PHONETIC, theta);
+        positions[phonetic[i].id] = polar(c, phonR, theta);
     });
 
     const words = nodes.filter((n) => n.id !== center.id && n.type === "word");
+    const wordExt = maxExt(words, 26);
+    const wordR = Math.max(cExt + wordExt + ARROW_GAP + ARROW_WORD, ringFor(words.length, (2 * Math.PI) / Math.max(1, words.length), SECTOR_WORD_GAP));
     const wordAngle: Record<string, number> = {};
     words.forEach((w, i) => {
         const theta = -90 * DEG + (2 * Math.PI * i) / words.length;
         wordAngle[w.id] = theta;
-        positions[w.id] = polar(c, size * R_WORD, theta);
+        positions[w.id] = polar(c, wordR, theta);
     });
+    const outerR = wordR + wordExt + 20 + ARROW_GAP + ARROW_CONTAINS;
 
-    // chữ khác trong từ: gom theo từ đầu tiên chứa nó (cạnh contains), lệch ±9° khi một từ có nhiều chữ
+    // chữ khác trong từ: gom theo từ đầu tiên chứa nó (cạnh contains), nhiều chữ cùng từ lệch nhau đủ SECTOR_GAP
     const kanjiByWord: Record<string, string[]> = {};
     const placedKanji = new Set<string>();
     for (const e of edges) {
@@ -90,14 +112,16 @@ export function sectorLayout(
     }
     for (const [wid, ids] of Object.entries(kanjiByWord)) {
         const base = wordAngle[wid];
-        spread(ids.length, base - 9 * DEG * (ids.length - 1), base + 9 * DEG * (ids.length - 1)).forEach((theta, i) => {
-            positions[ids[i]] = polar(c, size * R_OUTER, theta);
+        const half = Math.asin(Math.min(1, SECTOR_GAP / 2 / outerR)) * (ids.length - 1);
+        spread(ids.length, base - half, base + half).forEach((theta, i) => {
+            positions[ids[i]] = polar(c, outerR, theta);
         });
     }
 
     const rest = nodes.filter((n) => !(n.id in positions));
+    const restR = Math.max(phonetic.length ? phonR : compR, words.length ? outerR : 0) + SECTOR_GAP;
     rest.forEach((n, i) => {
-        positions[n.id] = polar(c, size * R_OUTER, -90 * DEG + (2 * Math.PI * i) / rest.length + 0.37);
+        positions[n.id] = polar(c, restR, -90 * DEG + (2 * Math.PI * i) / rest.length + 0.37);
     });
     return positions;
 }
@@ -107,13 +131,12 @@ export const WORD_MIN_CHARS = 2;
 export const WORD_MAX_CHARS = 4;
 /** Quạt thành phần quanh từng chữ ở chế độ Phân tích từ: bán kính ban đầu, khoảng cách tối thiểu giữa hai node (đường kính node
  *  44 + nhãn Hán-Việt bên dưới), góc quạt tối đa hướng ra ngoài (không vòng lại phía từ ở giữa / chữ bên cạnh). */
-const WORD_PART_RADIUS = 110;
-const WORD_MIN_GAP = 88; // 84 cần thiết + biên cho toạ độ làm tròn 1 chữ số
-/** Từ 2 chữ: hai chữ gần tâm hơn (vòng 0,15 cạnh thay vì 0,24) và quạt thành phần chéo lên / xuống thay vì ra ngang, để khung vừa
- *  sơ đồ không quá dẹt (企業 trước đây rộng / cao 2,4). Quạt rộng tối thiểu 120° (2 thành phần ở hai góc chéo), tối đa 220°;
- *  toạ độ thành phần ép ngang 0,7 / giãn dọc 1,15 quanh chữ. Từ 3–4 chữ đã gần vuông: quạt ≤ 150°, không ép. */
-const R_WORD_PAIR = 0.15;
-const FAN_PAIR = { minArc: 120 * DEG, maxArc: 220 * DEG, sx: 0.7, sy: 1.15 };
+const WORD_PART_RADIUS = 80; // fanOut nới tới khi cách node đã đặt ≥ WORD_MIN_GAP
+const WORD_MIN_GAP = 84.5; // 84 cần thiết (đường kính 44 + nhãn) + biên cho toạ độ làm tròn 1 chữ số
+/** Từ 2 chữ: quạt thành phần chéo lên / xuống thay vì ra ngang, để khung vừa sơ đồ không quá dẹt (企業 trước đây rộng / cao 2,4).
+ *  Quạt rộng tối thiểu 170° (2 thành phần ở trên / dưới chữ), tối đa 240°. Không ép trục (sx = sy = 1): ép ngang bắt bán kính
+ *  nới ra nên mũi tên dài lại (đo 30/10: 鬱 5 thành phần 73 → 107). Từ 3–4 chữ đã gần vuông: quạt ≤ 150°. */
+const FAN_PAIR = { minArc: 170 * DEG, maxArc: 240 * DEG, sx: 1, sy: 1 };
 const FAN_MANY = { minArc: 0, maxArc: 150 * DEG, sx: 1, sy: 1 };
 
 /**
@@ -173,8 +196,14 @@ export function wordLayout(
     positions[centerId] = { x: c, y: c };
     const chars = edges.filter((e) => e.type === "contains" && e.from === centerId && has.has(e.to)).map((e) => e.to);
     const pair = chars.length <= 2;
+    const centerNode = nodes.find((n) => n.id === centerId);
+    const charR = Math.max(
+        (centerNode ? nodeExtent(centerNode, centerId) : 20) + 20 + ARROW_GAP + ARROW_WORD_CHAR,
+        WORD_MIN_GAP,
+        ringFor(chars.length, (2 * Math.PI) / Math.max(1, chars.length), WORD_MIN_GAP)
+    );
     chars.forEach((id, i) => {
-        positions[id] = polar(c, size * (pair ? R_WORD_PAIR : R_COMPONENT), Math.PI + (2 * Math.PI * i) / chars.length);
+        positions[id] = polar(c, charR, Math.PI + (2 * Math.PI * i) / chars.length);
     });
     for (const ch of chars) {
         const parts = edges.filter((e) => e.to === ch && e.type !== "contains" && has.has(e.from) && !(e.from in positions)).map((e) => e.from);
@@ -182,8 +211,9 @@ export function wordLayout(
         Object.assign(positions, fanOut(at, Math.atan2(at.y - c, at.x - c), [...new Set(parts)], positions, pair ? FAN_PAIR : FAN_MANY));
     }
     const rest = nodes.filter((n) => !(n.id in positions));
+    const farthest = Math.max(charR, ...Object.values(positions).map((p) => Math.hypot(p.x - c, p.y - c)));
     rest.forEach((n, i) => {
-        positions[n.id] = polar(c, size * R_OUTER, -90 * DEG + (2 * Math.PI * i) / rest.length + 0.37);
+        positions[n.id] = polar(c, farthest + WORD_MIN_GAP, -90 * DEG + (2 * Math.PI * i) / rest.length + 0.37);
     });
     return positions;
 }
@@ -207,6 +237,20 @@ export function isGuessedPhonEdge(
 
 /** Khoá trạng thái mở thêm / kéo / chọn node của một sơ đồ: đổi câu tìm, chế độ hay chữ chọn trong từ là sơ đồ khác. */
 export const diagramKey = (q: string, mode: KanjiDiagramMode | null, k: string | null): string => `${q}|${mode ?? ""}|${k ?? ""}`;
+
+/** Cỡ chữ của viên từ ghép (từ làm tâm ở Phân tích từ to hơn). */
+export const wordFontPx = (n: KanjiDiagramNode, centerId: string | null): number => (n.id === centerId ? 20 : 16);
+
+/** Nửa bề rộng phần node mà cạnh phải lùi vào (viên từ: nửa bề ngang; vòng tròn: bán kính). */
+export const nodeExtent = (n: KanjiDiagramNode, centerId: string | null): number =>
+    n.type === "word" ? pillWidth(n.label, wordFontPx(n, centerId), 20) / 2 : nodeRadius(n);
+
+/** Khoảng hở thêm trước đầu mũi tên (để mũi tên không chạm viền node đích). */
+export const ARROW_GAP = 6;
+
+/** Độ dài phần mũi tên nhìn thấy giữa hai node = khoảng cách tâm − phần nằm trong hai node − khoảng hở; ≤ 0 → không vẽ. */
+export const visibleArrowLength = (a: DiagramPoint, b: DiagramPoint, na: KanjiDiagramNode, nb: KanjiDiagramNode, centerId: string | null): number =>
+    Math.hypot(b.x - a.x, b.y - a.y) - nodeExtent(na, centerId) - nodeExtent(nb, centerId) - ARROW_GAP;
 
 /** Gộp đồ thị mở thêm vào đồ thị đang vẽ: node trùng id và cạnh trùng (from, to, type) giữ bản cũ; không sửa mảng gốc. */
 export function mergeDiagram(base: DiagramGraph, extra: DiagramGraph): DiagramGraph {
