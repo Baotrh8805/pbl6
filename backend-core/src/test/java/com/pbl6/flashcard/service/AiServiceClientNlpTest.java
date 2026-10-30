@@ -106,13 +106,20 @@ class AiServiceClientNlpTest {
         client.radicalKanji(85, List.of());
         assertFalse(seen.get("rawQuery").contains("levels"));
 
-        // sơ đồ chữ Hán (spec 2026-10-30): q là chữ Hán / âm Hán-Việt, mode luôn gửi
-        client.kanjiDiagram("thời & a", "compounds");
+        // sơ đồ chữ Hán (spec 2026-10-30 + từ nhiều chữ): mode / k chỉ gửi khi có (mode trống = ai-service tự chọn)
+        client.kanjiDiagram("thời & a", "compounds", null);
         assertEquals("GET", seen.get("method"));
         assertEquals("/api/kanji-info/diagram", seen.get("path"));
         assertEquals("thời & a", queryParam("q"));
         assertEquals("compounds", queryParam("mode"));
+        assertFalse(seen.get("rawQuery").contains("k="));
         assertEquals("secret", seen.get("key"));
+        client.kanjiDiagram("学生", null, null);
+        assertEquals("学生", queryParam("q"));
+        assertFalse(seen.get("rawQuery").contains("mode"));
+        client.kanjiDiagram("学生", "structure", "生");
+        assertEquals("structure", queryParam("mode"));
+        assertEquals("生", queryParam("k"));
     }
 
     @Test

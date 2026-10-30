@@ -36,7 +36,9 @@ public class NlpService {
     public static final int RADICAL_COUNT = 214;
     private static final Set<String> LEVELS = Set.of("N5", "N4", "N3", "N2", "N1");
     /** Chế độ sơ đồ chữ Hán (kanji_diagram.MODES của ai-service); rỗng = structure. */
-    static final List<String> DIAGRAM_MODES = List.of("structure", "compounds");
+    static final List<String> DIAGRAM_MODES = List.of("structure", "compounds", "word");
+    /** Tham số k: một chữ Hán (chữ ngoài BMP là 2 đơn vị UTF-16), như max_length của ai-service. */
+    static final int MAX_DIAGRAM_CHAR = 2;
 
     static final Duration CACHE_TTL = Duration.ofMinutes(10);
     static final int CACHE_MAX_ENTRIES = 500;
@@ -59,23 +61,38 @@ public class NlpService {
      * nghĩa Việt là dữ liệu dùng chung, không theo user; admin sửa nghĩa thì sơ đồ thấy sau ≤ 10 phút. Không gọi Gemini khi
      * thiếu nghĩa — meaningVi null, panel hiện Hán-Việt + nghĩa Anh và nút tra từ điển.
      */
-    public JsonNode kanjiDiagram(String q, String mode) {
+    public JsonNode kanjiDiagram(String q, String mode, String k) {
         String query = query("q", q);
-        String m = mode == null || mode.isBlank() ? DIAGRAM_MODES.get(0) : mode.trim();
-        if (!DIAGRAM_MODES.contains(m)) {
+        // mode trống → gửi trống để ai-service tự chọn (từ 2–4 chữ → word), spec 30/10 từ nhiều chữ §3
+        String m = mode == null || mode.isBlank() ? null : mode.trim();
+        if (m != null && !DIAGRAM_MODES.contains(m)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "mode không hợp lệ: " + m + " (chỉ nhận " + String.join(", ", DIAGRAM_MODES) + ").");
         }
-        return cached("diagram|" + query + "|" + m, () -> withMeaningVi(ai.kanjiDiagram(query, m)));
+        String ch = k == null || k.isBlank() ? null : k.trim();
+        if (ch != null && ch.length() > MAX_DIAGRAM_CHAR) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "k chỉ nhận một chữ Hán.");
+        }
+        return cached("diagram|" + query + "|" + (m == null ? "" : m) + "|" + (ch == null ? "" : ch),
+                () -> withMeaningVi(ai.kanjiDiagram(query, m, ch)));
     }
 
-    /** Ghép meaningVi cho node chữ (id k:X), node từ (key), ứng viên, và detail (chữ tâm, công thức, phonOf, từ ghép). */
+    /**
+     * Ghép meaningVi cho node chữ (id k:X), node từ (key), ứng viên chữ, detail (chữ tâm, công thức, phonOf, từ ghép), và ở
+     * chế độ từ: word (key), word.chars (k:X), wordCandidates (key) — vẫn một truy vấn dict_meanings.
+     */
     private JsonNode withMeaningVi(JsonNode res) {
         if (!(res instanceof ObjectNode obj)) return res;
         ObjectNode out = obj.deepCopy();
         Set<String> keys = new LinkedHashSet<>();
         for (JsonNode n : out.path("nodes")) keys.add(nodeKey(n));
         for (JsonNode c : out.path("candidates")) keys.add(kanjiKey(c.get("kanji")));
+        JsonNode word = out.path("word");
+        if (word.isObject()) {
+            keys.add(text(word.get("key")));
+            for (JsonNode c : word.path("chars")) keys.add(kanjiKey(c.get("kanji")));
+        }
+        for (JsonNode w : out.path("wordCandidates")) keys.add(text(w.get("key")));
         JsonNode detail = out.path("detail");
         if (detail.isObject()) {
             keys.add(kanjiKey(detail.get("kanji")));
@@ -87,6 +104,11 @@ public class NlpService {
         Map<String, DictionaryStore.Meaning> found = keys.isEmpty() ? Map.of() : dictionary.meanings(keys);
         for (JsonNode n : out.path("nodes")) putMeaningVi(n, nodeKey(n), found);
         for (JsonNode c : out.path("candidates")) putMeaningVi(c, kanjiKey(c.get("kanji")), found);
+        if (word.isObject()) {
+            putMeaningVi(word, text(word.get("key")), found);
+            for (JsonNode c : word.path("chars")) putMeaningVi(c, kanjiKey(c.get("kanji")), found);
+        }
+        for (JsonNode w : out.path("wordCandidates")) putMeaningVi(w, text(w.get("key")), found);
         if (detail.isObject()) {
             putMeaningVi(detail, kanjiKey(detail.get("kanji")), found);
             for (JsonNode f : detail.path("formula")) putMeaningVi(f, kanjiKey(f.get("part")), found);

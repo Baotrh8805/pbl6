@@ -269,10 +269,17 @@ public class AiServiceClient {
     }
 
     /** GET /api/kanji-info/diagram?q=&mode=: sơ đồ chữ Hán {query, mode, center, candidates, nodes, edges, detail, stats}. */
-    public JsonNode kanjiDiagram(String q, String mode) {
-        return call("tra sơ đồ chữ Hán", () -> nlpHttp.get().uri(u -> u.path("/api/kanji-info/diagram")
-                .queryParam("q", "{q}").queryParam("mode", "{mode}").build(Map.of("q", q, "mode", mode)))
-                .retrieve().body(JsonNode.class));
+    public JsonNode kanjiDiagram(String q, String mode, String k) {
+        // mode / k null hoặc rỗng → không gửi (mode trống = ai-service tự chọn: từ 2–4 chữ → word, spec 30/10 từ nhiều chữ §3)
+        Map<String, Object> vars = new LinkedHashMap<>();
+        vars.put("q", q);
+        if (mode != null && !mode.isBlank()) vars.put("mode", mode);
+        if (k != null && !k.isBlank()) vars.put("k", k);
+        return call("tra sơ đồ chữ Hán", () -> nlpHttp.get().uri(u -> {
+            u.path("/api/kanji-info/diagram");
+            vars.keySet().forEach(name -> u.queryParam(name, "{" + name + "}"));
+            return u.build(vars);
+        }).retrieve().body(JsonNode.class));
     }
 
     /** POST /api/kanji-info/kanji-cards {kanji, userLevel?}: {items: [...]}. */
