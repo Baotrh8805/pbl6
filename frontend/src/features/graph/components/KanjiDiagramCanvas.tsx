@@ -7,6 +7,7 @@ import {
   diagramStats,
   edgeLabel,
   fitViewBox,
+  isGuessedPhonEdge,
   mergeDiagram,
   sectorLayout,
   wordLayout,
@@ -209,6 +210,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
             { swatch: <Dot fill={NODE_FILL.component} />, text: "thành phần cấu tạo" },
             { swatch: <Line color={EDGE_COLOR.radical} />, text: "bộ" },
             { swatch: <Line color={EDGE_COLOR.phon} />, text: "chỉ âm" },
+            { swatch: <Line color={EDGE_COLOR.phon} dashed />, text: "chỉ âm đoán (?)" },
             { swatch: <Line color={EDGE_COLOR.part} />, text: "thành phần khác" },
           ]
       : [
@@ -269,7 +271,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
             if (!t) return null;
             const touched = selectedId !== null && (e.from === selectedId || e.to === selectedId);
             // chỉ âm do heuristic đoán: nét đứt + dấu hỏi để không khẳng định điều dữ liệu không có
-            const guessed = e.type === "phon" && e.to === centerId && Boolean(byId.get(e.from)?.guess);
+            const guessed = isGuessedPhonEdge(e, byId.get(e.from), centerId, layoutKind);
             return (
               <g key={`${e.from}|${e.to}|${e.type}|${i}`} className="pointer-events-none">
                 <path

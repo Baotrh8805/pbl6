@@ -11,11 +11,10 @@ import { KanjiDiagramCanvas } from "@/features/graph/components/KanjiDiagramCanv
 import { KanjiDiagramPanel } from "@/features/graph/components/KanjiDiagramPanel";
 import { DiagramCharBar } from "@/features/graph/components/DiagramCharBar";
 import {
-  WORD_MAX_CHARS,
-  WORD_MIN_CHARS,
   diagramKey,
   diagramStats,
-  placeAround, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
+  placeAround,
+  showWordTab, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
 import { fetchKanjiDiagram } from "@/services/kanjiDiagramService";
 import type { HanVietWordNode } from "@/types/api.types";
 import type { KanjiDiagramMode, KanjiDiagramResponse } from "@/types/kanjiDiagram.types";
@@ -133,7 +132,7 @@ export const KnowledgeGraphPage: React.FC = () => {
   useEffect(() => {
     if (data && modeUrl && data.query === q && data.mode !== modeUrl) go({ mode: data.mode === "word" ? null : data.mode }, true);
   }, [data, modeUrl, q, go]);
-  const hasWord = Boolean(data?.word) && (data?.chars.length ?? 0) >= WORD_MIN_CHARS && (data?.chars.length ?? 0) <= WORD_MAX_CHARS;
+  const hasWord = showWordTab(data?.word?.term ?? null, data?.chars ?? []);
   const tabs = MODES.filter((m) => m.key !== "word" || hasWord);
   const tabKeys = tabs.map((m) => m.key);
   const selectMode = (m: KanjiDiagramMode) => (m === "word" ? go({ mode: null, k: "" }) : go({ mode: m }));

@@ -57,7 +57,8 @@ def test_resolve_word_from_kanji_run():
     assert kanji_diagram.resolve("食べる")["term"] is None and kanji_diagram.resolve("食べる")["center"] == "食"
     long = kanji_diagram.resolve("日本語能力試験")
     assert long["term"] is None and long["center"] == "日" and len(long["chars"]) == 7
-    assert kanji_diagram.resolve("人々")["chars"] == ["人"]
+    assert kanji_diagram.resolve("人々")["chars"] == ["人"] and kanji_diagram.resolve("人々")["term"] == "人々"   # spec §2: 々 vẫn là từ
+    assert kanji_diagram.resolve("時時")["term"] == "時時" and kanji_diagram.resolve("時時")["chars"] == ["時"]
 
 
 def test_resolve_kana_gives_word_or_candidates():
@@ -270,7 +271,8 @@ def test_word_mode_k_and_fallbacks():
     assert long["mode"] == "structure" and long["word"] is None and len(long["chars"]) == 7
     cands = kanji_diagram.diagram("かみ")
     assert cands["center"] is None and cands["wordCandidates"] and cands["nodes"] == []
-    assert kanji_diagram.diagram("人々")["mode"] == "structure"
+    h = kanji_diagram.diagram("色々")
+    assert h["mode"] == "word" and h["center"] == "w:色々" and [n["id"] for n in h["nodes"]].count("k:色") == 1
 
 
 def test_word_mode_never_breaks_across_jlpt_words():

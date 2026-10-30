@@ -7,10 +7,12 @@ import {
   diagramStats,
   edgeLabel,
   fitViewBox,
+  isGuessedPhonEdge,
   mergeDiagram,
   panViewBox,
   placeAround,
   sectorLayout,
+  showWordTab,
   wordLayout,
   zoomViewBox,
 } from "../../src/features/graph/diagramLayout.ts";
@@ -178,6 +180,14 @@ export function runDiagramChecks(assert: (cond: boolean, msg: string) => void): 
     assert(chars.every((ch) => Math.abs(Math.hypot(wl["k:" + ch].x - c, wl["k:" + ch].y - c) - 0.24 * size) <= 1),
       `Phân tích từ: ${chars.length} chữ trên vòng 0,24 cạnh`);
   }
+  // review 30/10: từ có 々 / chữ lặp (人々 → chars [人]) vẫn có tab Phân tích từ; cụm > 4 chữ thì không
+  assert(showWordTab("人々", ["人"]) && showWordTab("学生", ["学", "生"]), "Tab Phân tích từ: hiện cho từ, kể cả 人々");
+  assert(!showWordTab(null, ["日", "本", "語", "能", "力"]) && !showWordTab(null, []), "Tab Phân tích từ: ẩn khi không có từ");
+  // review 30/10: chỉ âm đoán ở chế độ từ trỏ vào k:X chứ không vào tâm w:… mà vẫn phải nét đứt + chỉ âm?
+  const gEdge: KanjiDiagramEdge = { from: "k:肋", to: "k:筋", type: "phon" };
+  assert(isGuessedPhonEdge(gEdge, { id: "k:肋", type: "component", label: "肋", guess: true }, "w:一筋", "word"), "Chỉ âm đoán: chế độ từ vẫn đánh dấu");
+  assert(!isGuessedPhonEdge(gEdge, { id: "k:肋", type: "component", label: "肋" }, "w:一筋", "word"), "Chỉ âm chắc chắn: không đánh dấu");
+  assert(!isGuessedPhonEdge({ from: "k:寺", to: "k:持", type: "phon" }, { id: "k:寺", type: "component", label: "寺", guess: true }, "k:時", "sector"), "Cấu tạo: chỉ cạnh vào tâm mới là chỉ âm đoán");
   assert(diagramKey("学生", null, null) !== diagramKey("学生", "structure", "生"), "Khoá overlay gồm mode và k");
   assert(diagramKey("学生", "structure", "学") !== diagramKey("学生", "structure", "生"), "Khoá overlay: chữ khác trong từ là khoá khác");
 

@@ -139,6 +139,23 @@ export function wordLayout(
     return positions;
 }
 
+/** Tab "Phân tích từ" hiện khi câu tìm là từ (ai-service trả word): kể cả 人々 / 時時 chỉ còn một chữ sau khử trùng. */
+export const showWordTab = (word: string | null, chars: string[]): boolean =>
+    word !== null && chars.length >= 1 && chars.length <= WORD_MAX_CHARS;
+
+/**
+ * Cạnh chỉ âm do heuristic đoán (vẽ nét đứt + "chỉ âm?"): node nguồn mang guess và cạnh trỏ vào chữ được đoán — ở Cấu tạo là
+ * tâm, ở Phân tích từ là một chữ trong từ (tâm là w:…). Cạnh từ part chỉ âm sang họ chữ không phải suy đoán.
+ */
+export function isGuessedPhonEdge(
+    e: KanjiDiagramEdge,
+    from: KanjiDiagramNode | undefined,
+    centerId: string | null,
+    layout: "sector" | "word"
+): boolean {
+    return e.type === "phon" && Boolean(from?.guess) && (e.to === centerId || layout === "word");
+}
+
 /** Khoá trạng thái mở thêm / kéo / chọn node của một sơ đồ: đổi câu tìm, chế độ hay chữ chọn trong từ là sơ đồ khác. */
 export const diagramKey = (q: string, mode: KanjiDiagramMode | null, k: string | null): string => `${q}|${mode ?? ""}|${k ?? ""}`;
 

@@ -151,9 +151,11 @@ def _raw_run(text: str) -> str:
 
 
 def _from_run(text: str) -> dict:
-    """R1 (spec từ nhiều chữ §2): 1 chữ → tâm chữ; 2–4 chữ → từ (term = chuỗi gốc của cụm); ≥ 5 → chữ đầu, không có từ."""
+    """R1 (spec từ nhiều chữ §2): cụm gốc 1 ký tự → tâm chữ; 2–4 ký tự → từ (term = chuỗi gốc, kể cả 々 / chữ lặp: 人々, 時時 —
+    node chữ khử trùng); ≥ 5 → chữ đầu, không có từ. Độ dài tính trên cụm gốc, không trên chars đã khử trùng (review 30/10 #2)."""
     chars = kanji_run(text)
-    term = _raw_run(text) if MIN_WORD_CHARS <= len(chars) <= MAX_WORD_CHARS else None
+    raw = _raw_run(text)
+    term = raw if MIN_WORD_CHARS <= len(raw) <= MAX_WORD_CHARS else None
     return {"center": chars[0], "candidates": [], "term": term, "chars": chars, "wordCandidates": []}
 
 
