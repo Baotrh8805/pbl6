@@ -17,6 +17,8 @@ viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học si
   日本語能力試験 → Cấu tạo 日 + thanh chọn chữ; `?q=時&mode=word` → Cấu tạo. **Chưa bấm thử trên trình duyệt.**
 - **Không mất câu tìm khi rời trang**: mục sidebar dẫn về `/graph` không kèm `?q=` nên quay lại là trang trống. Trang nhớ q / mode / k
   gần nhất trong sessionStorage của tab (`diagramMemory.ts`) và khôi phục bằng `replace` khi mở `/graph` trống; selfcheck +6.
+- **Từ điển cũng vậy**: `/dictionary` nhớ tab + tham số của tab (q / e, s, t / dir, k / sub / r, reading / level) và khôi phục **một
+  lần lúc vào trang** (xoá ô tìm thì URL trống là ý người dùng, không bị đè). Đọc / ghi dùng chung `lib/searchMemory.ts`; selfcheck +6.
 
 ## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
 Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch

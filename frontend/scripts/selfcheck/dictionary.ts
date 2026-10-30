@@ -1,6 +1,8 @@
 // Self-check từ điển (spec docs/Plan/specs/2026-10-26-tu-dien-design.md §7): chọn chế độ tìm (Nhật / romaji / Việt-Anh), tiêu đề
 // mục, nghĩa chính không gắn nhãn "máy dịch" (D23), trường báo lỗi theo loại mục, giá trị hiện tại cho hộp báo lỗi, thẻ học dựng
 // từ mục từ, nhãn từ loại, thông báo từ điển, khoá cấu hình mới. scripts/selfCheck.ts gọi: runDictionaryChecks(assert).
+import { pickParams, restoreOnEnter } from "../../src/lib/searchMemory.ts";
+import { DICTIONARY_PARAMS } from "../../src/features/dictionary/dictionaryMemory.ts";
 import {
   cardMeaningOf,
   currentValueOf,
@@ -154,4 +156,13 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(tokenMeaning({ meaning: null, dictVi: null, glossEn: null, posVi: "dấu", particle: false }) === null, "Dịch: không có gì -> null");
   const tl = DICTIONARY_FIELDS.find((f) => f.key === "dictionary_translate_hourly_limit")!;
   assert(parseSettingNumber(tl, "20") === 20 && parseSettingNumber(tl, "0") === 0 && parseSettingNumber(tl, "1001") === null, "Dịch: trần lượt dịch câu 0..1000");
+
+  // ---- nhớ trạng thái khi rời trang (sidebar dẫn về /dictionary không kèm tham số) -------------------------------------------
+  const P = DICTIONARY_PARAMS;
+  assert(pickParams(new URLSearchParams("tab=kanji&k=食&x=1&utm=a"), P) === "tab=kanji&k=%E9%A3%9F", "Nhớ: chỉ tham số của từ điển");
+  assert(pickParams(new URLSearchParams(""), P) === "", "Nhớ: trang trống ghi chuỗi rỗng (người dùng xoá ô tìm)");
+  assert(restoreOnEnter(new URLSearchParams(""), "q=%E5%AD%A6%E7%94%9F", P)?.get("q") === "学生", "Khôi phục: vào trang trống thì lấy lại câu tìm");
+  assert(restoreOnEnter(new URLSearchParams("tab=notebook"), "q=a", P) === null, "Khôi phục: URL đã có trạng thái (link Tra chữ này, tab) thì không đè");
+  assert(restoreOnEnter(new URLSearchParams(""), "", P) === null && restoreOnEnter(new URLSearchParams(""), null, P) === null, "Khôi phục: đã nhớ trạng thái trống / chưa nhớ gì");
+  assert(restoreOnEnter(new URLSearchParams(""), "utm=x", P) === null, "Khôi phục: bỏ tham số lạ");
 }

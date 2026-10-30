@@ -1,6 +1,8 @@
 // Nhớ câu tìm gần nhất của Sơ đồ chữ Hán trong tab trình duyệt: mục sidebar dẫn tới /graph không kèm ?q= nên rời trang rồi quay
 // lại là mất từ đang tra. Trang ghi q / mode / k vào sessionStorage mỗi khi có q, và khi mở /graph trống thì khôi phục (replace).
-// Phần thuần (chọn tham số, kiểm dữ liệu đã lưu) tách riêng để scripts/selfcheck/diagram.ts kiểm được.
+// Phần thuần (chọn tham số, kiểm dữ liệu đã lưu) tách riêng để scripts/selfcheck/diagram.ts kiểm được. Đọc / ghi dùng chung
+// lib/searchMemory.ts với trang Từ điển.
+import { readSearchMemory, writeSearchMemory } from "../../lib/searchMemory.ts";
 
 export const DIAGRAM_MEMORY_KEY = "kanjiDiagram:lastSearch";
 const MAX_QUERY_CHARS = 32;
@@ -32,19 +34,5 @@ export function restoredSearch(current: URLSearchParams, stored: string | null):
     return out;
 }
 
-/** Đọc / ghi sessionStorage không bao giờ ném (chế độ riêng tư, chặn lưu trữ): lỗi thì coi như không nhớ. */
-export function readDiagramMemory(): string | null {
-    try {
-        return sessionStorage.getItem(DIAGRAM_MEMORY_KEY);
-    } catch {
-        return null;
-    }
-}
-
-export function writeDiagramMemory(value: string): void {
-    try {
-        sessionStorage.setItem(DIAGRAM_MEMORY_KEY, value);
-    } catch {
-        // không lưu được thì lần sau mở trang trống như trước, không ảnh hưởng gì khác
-    }
-}
+export const readDiagramMemory = (): string | null => readSearchMemory(DIAGRAM_MEMORY_KEY);
+export const writeDiagramMemory = (value: string): void => writeSearchMemory(DIAGRAM_MEMORY_KEY, value);
