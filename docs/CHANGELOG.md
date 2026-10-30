@@ -22,6 +22,9 @@ viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học si
 - **Bố cục sơ đồ rộng và thoáng hơn** (ảnh người dùng 企業): bỏ đoạn giải thích đầu trang, khung sơ đồ cao tối đa 78vh (trước 70vh);
   Phân tích từ quạt thành phần ra ngoài trong ≤ 150°, cách nhau ≥ 84 (trước 60, quạt tới 300° nên lấn chữ bên cạnh), nới bán kính khi
   nhiều thành phần; vòng tròn nhỏ lại (tâm 36→30, thành phần 26→22, chữ 22→20); nhãn cạnh 11→8,5 px, nét mảnh hơn. selfcheck +3.
+- **Từ 2 chữ không còn trải ngang**: hai chữ gần tâm hơn (vòng 0,15 thay 0,24), thành phần quạt chéo lên / xuống (120–220°, ép ngang
+  0,7 / giãn dọc 1,15), bán kính nới tới khi không đè node đã đặt. Khung vừa sơ đồ rộng / cao: 企業 2,42 → 1,23; 学生 2,03 → 1,13;
+  鬱学 1,82 → 1,02 (từ 3–4 chữ giữ nguyên, đã gần vuông). selfcheck +4.
 
 ## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
 Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch

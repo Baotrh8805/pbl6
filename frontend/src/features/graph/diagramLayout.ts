@@ -107,28 +107,58 @@ export const WORD_MIN_CHARS = 2;
 export const WORD_MAX_CHARS = 4;
 /** Quạt thành phần quanh từng chữ ở chế độ Phân tích từ: bán kính ban đầu, khoảng cách tối thiểu giữa hai node (đường kính node
  *  44 + nhãn Hán-Việt bên dưới), góc quạt tối đa hướng ra ngoài (không vòng lại phía từ ở giữa / chữ bên cạnh). */
-const WORD_PART_RADIUS = 120;
+const WORD_PART_RADIUS = 110;
 const WORD_MIN_GAP = 88; // 84 cần thiết + biên cho toạ độ làm tròn 1 chữ số
-const WORD_MAX_ARC = 150 * DEG;
+/** Từ 2 chữ: hai chữ gần tâm hơn (vòng 0,15 cạnh thay vì 0,24) và quạt thành phần chéo lên / xuống thay vì ra ngang, để khung vừa
+ *  sơ đồ không quá dẹt (企業 trước đây rộng / cao 2,4). Quạt rộng tối thiểu 120° (2 thành phần ở hai góc chéo), tối đa 220°;
+ *  toạ độ thành phần ép ngang 0,7 / giãn dọc 1,15 quanh chữ. Từ 3–4 chữ đã gần vuông: quạt ≤ 150°, không ép. */
+const R_WORD_PAIR = 0.15;
+const FAN_PAIR = { minArc: 120 * DEG, maxArc: 220 * DEG, sx: 0.7, sy: 1.15 };
+const FAN_MANY = { minArc: 0, maxArc: 150 * DEG, sx: 1, sy: 1 };
 
-/** Đặt ids trên cung tâm ``anchor`` hướng ``away``: bước góc đủ cho WORD_MIN_GAP, quá WORD_MAX_ARC thì nới bán kính. */
-function fanOut(anchor: DiagramPoint, away: number, ids: string[]): DiagramPositions {
-    const out: DiagramPositions = {};
-    if (ids.length === 0) return out;
-    let r = WORD_PART_RADIUS;
+/**
+ * Đặt ids trên cung quanh ``anchor`` hướng ``away`` (ép / giãn theo sx, sy). Bán kính nới dần tới khi mọi node mới cách nhau và cách
+ * mọi node đã đặt (chữ, từ, thành phần của chữ khác) ≥ WORD_MIN_GAP; tất định.
+ */
+function fanOut(
+    anchor: DiagramPoint,
+    away: number,
+    ids: string[],
+    placed: DiagramPositions,
+    fan: typeof FAN_PAIR
+): DiagramPositions {
+    if (ids.length === 0) return {};
+    const others = Object.values(placed);
     const stepAt = (radius: number) => 2 * Math.asin(Math.min(1, WORD_MIN_GAP / 2 / radius));
-    while ((ids.length - 1) * stepAt(r) > WORD_MAX_ARC) r *= 1.2;
-    const fan = (ids.length - 1) * stepAt(r);
-    spread(ids.length, away - fan / 2, away + fan / 2).forEach((theta, i) => {
-        out[ids[i]] = { x: round1(anchor.x + r * Math.cos(theta)), y: round1(anchor.y + r * Math.sin(theta)) };
-    });
-    return out;
+    const layoutAt = (r: number): DiagramPositions => {
+        const arc = ids.length === 1 ? 0 : Math.min(fan.maxArc, Math.max(fan.minArc, (ids.length - 1) * stepAt(r)));
+        const out: DiagramPositions = {};
+        spread(ids.length, away - arc / 2, away + arc / 2).forEach((theta, i) => {
+            out[ids[i]] = { x: round1(anchor.x + r * fan.sx * Math.cos(theta)), y: round1(anchor.y + r * fan.sy * Math.sin(theta)) };
+        });
+        return out;
+    };
+    const ok = (pos: DiagramPositions): boolean => {
+        const pts = Object.values(pos);
+        return pts.every((p, i) =>
+            others.every((o) => Math.hypot(p.x - o.x, p.y - o.y) >= WORD_MIN_GAP) &&
+            pts.slice(i + 1).every((q) => Math.hypot(p.x - q.x, p.y - q.y) >= WORD_MIN_GAP)
+        );
+    };
+    let r = WORD_PART_RADIUS;
+    let pos = layoutAt(r);
+    for (let i = 0; i < 40 && !ok(pos); i++) {
+        r *= 1.08;
+        pos = layoutAt(r);
+    }
+    return pos;
 }
 
 /**
  * Bố cục "Phân tích từ" (spec 30/10 từ nhiều chữ §4): từ ở giữa; các chữ (node có cạnh contains từ tâm, theo thứ tự cạnh)
- * chia đều trên vòng R = 0,24 cạnh bắt đầu từ bên trái (2 chữ trái – phải, 3 tam giác, 4 chữ thập); thành phần của mỗi chữ quạt
- * ra phía xa tâm bằng placeAround. Node còn lại → vòng ngoài. Tất định, làm tròn 1 chữ số.
+ * chia đều trên vòng bắt đầu từ bên trái (2 chữ trái – phải trên vòng 0,15 cạnh; 3 tam giác, 4 chữ thập trên vòng 0,24); thành
+ * phần của mỗi chữ quạt ra phía xa tâm bằng fanOut (từ 2 chữ: quạt chéo để khung không dẹt). Node còn lại → vòng ngoài. Tất định,
+ * làm tròn 1 chữ số.
  */
 export function wordLayout(
     nodes: KanjiDiagramNode[],
@@ -142,13 +172,14 @@ export function wordLayout(
     const has = new Set(nodes.map((n) => n.id));
     positions[centerId] = { x: c, y: c };
     const chars = edges.filter((e) => e.type === "contains" && e.from === centerId && has.has(e.to)).map((e) => e.to);
+    const pair = chars.length <= 2;
     chars.forEach((id, i) => {
-        positions[id] = polar(c, size * R_COMPONENT, Math.PI + (2 * Math.PI * i) / chars.length);
+        positions[id] = polar(c, size * (pair ? R_WORD_PAIR : R_COMPONENT), Math.PI + (2 * Math.PI * i) / chars.length);
     });
     for (const ch of chars) {
         const parts = edges.filter((e) => e.to === ch && e.type !== "contains" && has.has(e.from) && !(e.from in positions)).map((e) => e.from);
         const at = positions[ch];
-        Object.assign(positions, fanOut(at, Math.atan2(at.y - c, at.x - c), [...new Set(parts)]));
+        Object.assign(positions, fanOut(at, Math.atan2(at.y - c, at.x - c), [...new Set(parts)], positions, pair ? FAN_PAIR : FAN_MANY));
     }
     const rest = nodes.filter((n) => !(n.id in positions));
     rest.forEach((n, i) => {
