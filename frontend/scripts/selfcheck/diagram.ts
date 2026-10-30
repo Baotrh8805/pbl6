@@ -16,6 +16,7 @@ import {
   wordLayout,
   zoomViewBox,
 } from "../../src/features/graph/diagramLayout.ts";
+import { restoredSearch, searchToRemember } from "../../src/features/graph/diagramMemory.ts";
 import type { KanjiDiagramEdge, KanjiDiagramNode } from "../../src/types/kanjiDiagram.types.ts";
 
 export function runDiagramChecks(assert: (cond: boolean, msg: string) => void): void {
@@ -194,6 +195,13 @@ export function runDiagramChecks(assert: (cond: boolean, msg: string) => void): 
   // ---- nhãn cạnh, thống kê --------------------------------------------------------------------------------------------------
   assert(edgeLabel("phon") === "chỉ âm" && edgeLabel("family") === "cùng phần chỉ âm" && edgeLabel("radical") === "bộ", "Nhãn cạnh: chỉ âm / cùng phần chỉ âm / bộ");
   assert(edgeLabel("compound") === "ghép thành từ" && edgeLabel("contains") === "có chữ" && edgeLabel("part") === "thành phần", "Nhãn cạnh: từ ghép / có chữ / thành phần");
+  // ---- nhớ câu tìm khi rời trang (sidebar dẫn về /graph không có ?q=) -----------------------------------------------------
+  assert(searchToRemember(new URLSearchParams("q=学生&mode=structure&k=生&x=1")) === "q=%E5%AD%A6%E7%94%9F&mode=structure&k=%E7%94%9F", "Nhớ: chỉ q / mode / k");
+  assert(searchToRemember(new URLSearchParams("mode=word")) === null, "Nhớ: không có q thì không ghi");
+  assert(restoredSearch(new URLSearchParams(""), "q=%E5%AD%A6%E7%94%9F&k=%E7%94%9F")?.get("k") === "生", "Khôi phục: mở /graph trống thì lấy câu tìm đã nhớ");
+  assert(restoredSearch(new URLSearchParams("q=時"), "q=学生") === null, "Khôi phục: URL đã có q thì không đè");
+  assert(restoredSearch(new URLSearchParams(""), null) === null && restoredSearch(new URLSearchParams(""), "mode=word") === null, "Khôi phục: không có gì đã nhớ / dữ liệu hỏng");
+  assert(restoredSearch(new URLSearchParams(""), "q=" + "x".repeat(40)) === null, "Khôi phục: q quá 32 ký tự thì bỏ");
   assert(diagramStats(structureNodes) === "9 chữ", "Thống kê: chỉ chữ");
   assert(diagramStats(compoundNodes) === "5 chữ · 4 từ ghép", "Thống kê: chữ + từ ghép");
 }

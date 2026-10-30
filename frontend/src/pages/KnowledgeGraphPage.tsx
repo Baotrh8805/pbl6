@@ -16,6 +16,7 @@ import {
   placeAround,
   showWordTab, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
 import { fetchKanjiDiagram } from "@/services/kanjiDiagramService";
+import { readDiagramMemory, restoredSearch, searchToRemember, writeDiagramMemory } from "@/features/graph/diagramMemory";
 import type { HanVietWordNode } from "@/types/api.types";
 import type { KanjiDiagramMode, KanjiDiagramResponse } from "@/types/kanjiDiagram.types";
 
@@ -51,6 +52,16 @@ const emptyOverlay = (key: string): Overlay => ({ key, extra: EMPTY_GRAPH, expan
  */
 export const KnowledgeGraphPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
+  // Sidebar dẫn tới /graph không kèm ?q=: nhớ câu tìm gần nhất trong tab (sessionStorage) và khôi phục khi mở trang trống,
+  // bằng replace để Back không dừng ở trang trống. Ghi mỗi khi URL có q (Back / Forward / đổi tab chế độ đều cập nhật).
+  const pendingRestore = useMemo(() => restoredSearch(params, readDiagramMemory()), [params]);
+  useEffect(() => {
+    const v = searchToRemember(params);
+    if (v) writeDiagramMemory(v);
+  }, [params]);
+  useEffect(() => {
+    if (pendingRestore) setParams(pendingRestore, { replace: true });
+  }, [pendingRestore, setParams]);
   const q = (params.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
   const rawMode = params.get("mode") as KanjiDiagramMode | null;
   // mode trên URL: thiếu = để ai-service tự chọn (từ 2–4 chữ → Phân tích từ); k = chữ chọn trong từ (spec 30/10 từ nhiều chữ §3)
@@ -306,7 +317,7 @@ export const KnowledgeGraphPage: React.FC = () => {
       </p>
 
       <div id="kd-panel" role="tabpanel" aria-labelledby={`kd-tab-${mode}`} className="flex flex-col gap-space-md">
-        {!q && (
+        {!q && !pendingRestore && (
           <div className="rounded-2xl border border-dashed border-outline-variant bg-surface-container-lowest p-6 flex flex-col items-center text-center gap-2">
             <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-primary/60">account_tree</span>
             <h2 className="font-title-md text-title-md font-bold text-on-surface">Nhập một chữ Hán, một từ hoặc âm Hán-Việt</h2>

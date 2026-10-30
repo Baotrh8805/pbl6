@@ -15,6 +15,8 @@ viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học si
 - **Kiểm**: pytest 36 (quét mọi từ JLPT 2–4 chữ ở chế độ word: không node trùng / cạnh treo / tự nối), NlpIT 8 + AiServiceClientNlpTest 4,
   selfcheck / lint / tsc / build xanh; ai-service thật: 学生, 日本語, がくせい, học sinh → Phân tích từ; かみ → 5 ứng viên;
   日本語能力試験 → Cấu tạo 日 + thanh chọn chữ; `?q=時&mode=word` → Cấu tạo. **Chưa bấm thử trên trình duyệt.**
+- **Không mất câu tìm khi rời trang**: mục sidebar dẫn về `/graph` không kèm `?q=` nên quay lại là trang trống. Trang nhớ q / mode / k
+  gần nhất trong sessionStorage của tab (`diagramMemory.ts`) và khôi phục bằng `replace` khi mở `/graph` trống; selfcheck +6.
 
 ## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
 Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch
