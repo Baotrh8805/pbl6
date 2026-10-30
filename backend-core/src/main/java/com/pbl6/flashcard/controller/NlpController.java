@@ -44,6 +44,12 @@ public class NlpController {
         return service.hanVietSuggest(q, limit);
     }
 
+    /** Sơ đồ chữ Hán (spec 2026-10-30): ?q= chữ Hán hoặc âm Hán-Việt (≤ 32 ký tự), mode structure (mặc định) | compounds. */
+    @GetMapping("/kanji-diagram")
+    public JsonNode kanjiDiagram(@RequestParam(required = false) String q, @RequestParam(required = false) String mode) {
+        return service.kanjiDiagram(q, mode);
+    }
+
     /** {kanji: [≤ 200 chữ], userLevel?: N5..N1}. */
     @PostMapping("/kanji-cards")
     public JsonNode kanjiCards(@Valid @RequestBody NlpRequests.KanjiCards body) {

@@ -268,6 +268,13 @@ public class AiServiceClient {
                 .retrieve().body(JsonNode.class));
     }
 
+    /** GET /api/kanji-info/diagram?q=&mode=: sơ đồ chữ Hán {query, mode, center, candidates, nodes, edges, detail, stats}. */
+    public JsonNode kanjiDiagram(String q, String mode) {
+        return call("tra sơ đồ chữ Hán", () -> nlpHttp.get().uri(u -> u.path("/api/kanji-info/diagram")
+                .queryParam("q", "{q}").queryParam("mode", "{mode}").build(Map.of("q", q, "mode", mode)))
+                .retrieve().body(JsonNode.class));
+    }
+
     /** POST /api/kanji-info/kanji-cards {kanji, userLevel?}: {items: [...]}. */
     public JsonNode kanjiCards(List<String> kanji, String userLevel) {
         Map<String, Object> body = new LinkedHashMap<>();
