@@ -3,6 +3,7 @@
 import {
   DIAGRAM_SIZE,
   clientToDiagram,
+  diagramKey,
   diagramStats,
   edgeLabel,
   fitViewBox,
@@ -10,6 +11,7 @@ import {
   panViewBox,
   placeAround,
   sectorLayout,
+  wordLayout,
   zoomViewBox,
 } from "../../src/features/graph/diagramLayout.ts";
 import type { KanjiDiagramEdge, KanjiDiagramNode } from "../../src/types/kanjiDiagram.types.ts";
@@ -152,6 +154,32 @@ export function runDiagramChecks(assert: (cond: boolean, msg: string) => void): 
   assert(Math.abs(topLeft.x) < 1e-9 && Math.abs(topLeft.y) < 1e-9, "Chuột → sơ đồ: mép trái của vùng vẽ (sau lề) là x = 0");
   const scaled = clientToDiagram(rect, { x: 100, y: 100, w: 360, h: 360 }, 600, 300);
   assert(Math.abs(scaled.x - 280) < 1e-9 && Math.abs(scaled.y - 280) < 1e-9, "Chuột → sơ đồ: khung đã zoom / pan");
+
+  // ---- bố cục Phân tích từ (spec 30/10 từ nhiều chữ §4) ----------------------------------------------------------------
+  const wordNodes = (chars: string[], parts: Record<string, string[]>): KanjiDiagramNode[] => [
+    { id: "w:" + chars.join(""), type: "word", label: chars.join("") },
+    ...chars.map((ch): KanjiDiagramNode => ({ id: "k:" + ch, type: "kanji", label: ch })),
+    ...Object.values(parts).flat().map((p): KanjiDiagramNode => ({ id: "k:" + p, type: "component", label: p, role: "part" })),
+  ];
+  const wordEdges = (chars: string[], parts: Record<string, string[]>): KanjiDiagramEdge[] => [
+    ...chars.map((ch): KanjiDiagramEdge => ({ from: "w:" + chars.join(""), to: "k:" + ch, type: "contains" })),
+    ...Object.entries(parts).flatMap(([ch, ps]) => ps.map((p): KanjiDiagramEdge => ({ from: "k:" + p, to: "k:" + ch, type: "part" }))),
+  ];
+  const gParts = { 学: ["⺍", "冖", "子"] };
+  const w2 = wordLayout(wordNodes(["学", "生"], gParts), wordEdges(["学", "生"], gParts), "w:学生", size);
+  assert(w2["w:学生"].x === c && w2["w:学生"].y === c, "Phân tích từ: từ ở giữa");
+  assert(w2["k:学"].x < c && w2["k:生"].x > c, "Phân tích từ: 2 chữ trái – phải theo thứ tự");
+  assert(["⺍", "冖", "子"].every((p) => Math.hypot(w2["k:" + p].x - c, w2["k:" + p].y - c) > Math.hypot(w2["k:学"].x - c, w2["k:学"].y - c)),
+    "Phân tích từ: thành phần nằm xa tâm hơn chữ của nó");
+  assert(JSON.stringify(w2) === JSON.stringify(wordLayout(wordNodes(["学", "生"], gParts), wordEdges(["学", "生"], gParts), "w:学生", size)),
+    "Phân tích từ: tất định");
+  for (const chars of [["日", "本", "語"], ["図", "書", "館", "員"]]) {
+    const wl = wordLayout(wordNodes(chars, {}), wordEdges(chars, {}), "w:" + chars.join(""), size);
+    assert(chars.every((ch) => Math.abs(Math.hypot(wl["k:" + ch].x - c, wl["k:" + ch].y - c) - 0.24 * size) <= 1),
+      `Phân tích từ: ${chars.length} chữ trên vòng 0,24 cạnh`);
+  }
+  assert(diagramKey("学生", null, null) !== diagramKey("学生", "structure", "生"), "Khoá overlay gồm mode và k");
+  assert(diagramKey("学生", "structure", "学") !== diagramKey("学生", "structure", "生"), "Khoá overlay: chữ khác trong từ là khoá khác");
 
   // ---- nhãn cạnh, thống kê --------------------------------------------------------------------------------------------------
   assert(edgeLabel("phon") === "chỉ âm" && edgeLabel("family") === "cùng phần chỉ âm" && edgeLabel("radical") === "bộ", "Nhãn cạnh: chỉ âm / cùng phần chỉ âm / bộ");

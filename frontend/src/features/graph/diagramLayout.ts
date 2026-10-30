@@ -2,7 +2,7 @@
 // Bố cục theo cung tất định (không mô phỏng lực): tâm ở giữa, thành phần cấu tạo ở cung bên trái theo thứ tự viết, họ chữ
 // cùng chỉ âm quạt bên phải, từ ghép xếp vòng quanh tâm và chữ khác trong từ nằm ngoài trên cùng tia. Toạ độ làm tròn
 // 1 chữ số để JSON / so sánh ổn định.
-import type { KanjiDiagramEdge, KanjiDiagramEdgeType, KanjiDiagramNode } from "../../types/kanjiDiagram.types.ts";
+import type { KanjiDiagramEdge, KanjiDiagramEdgeType, KanjiDiagramMode, KanjiDiagramNode } from "../../types/kanjiDiagram.types.ts";
 
 export interface DiagramPoint {
     x: number;
@@ -101,6 +101,46 @@ export function sectorLayout(
     });
     return positions;
 }
+
+/** Chế độ "Phân tích từ" chỉ có cho từ 2–4 chữ Hán (spec 30/10 từ nhiều chữ W4). */
+export const WORD_MIN_CHARS = 2;
+export const WORD_MAX_CHARS = 4;
+/** Bán kính quạt thành phần quanh từng chữ ở chế độ Phân tích từ. */
+const WORD_PART_RADIUS = 90;
+
+/**
+ * Bố cục "Phân tích từ" (spec 30/10 từ nhiều chữ §4): từ ở giữa; các chữ (node có cạnh contains từ tâm, theo thứ tự cạnh)
+ * chia đều trên vòng R = 0,24 cạnh bắt đầu từ bên trái (2 chữ trái – phải, 3 tam giác, 4 chữ thập); thành phần của mỗi chữ quạt
+ * ra phía xa tâm bằng placeAround. Node còn lại → vòng ngoài. Tất định, làm tròn 1 chữ số.
+ */
+export function wordLayout(
+    nodes: KanjiDiagramNode[],
+    edges: KanjiDiagramEdge[],
+    centerId: string,
+    size: number
+): DiagramPositions {
+    const positions: DiagramPositions = {};
+    if (nodes.length === 0) return positions;
+    const c = size / 2;
+    const has = new Set(nodes.map((n) => n.id));
+    positions[centerId] = { x: c, y: c };
+    const chars = edges.filter((e) => e.type === "contains" && e.from === centerId && has.has(e.to)).map((e) => e.to);
+    chars.forEach((id, i) => {
+        positions[id] = polar(c, size * R_COMPONENT, Math.PI + (2 * Math.PI * i) / chars.length);
+    });
+    for (const ch of chars) {
+        const parts = edges.filter((e) => e.to === ch && e.type !== "contains" && has.has(e.from) && !(e.from in positions)).map((e) => e.from);
+        Object.assign(positions, placeAround(positions[ch], [...new Set(parts)], positions, WORD_PART_RADIUS));
+    }
+    const rest = nodes.filter((n) => !(n.id in positions));
+    rest.forEach((n, i) => {
+        positions[n.id] = polar(c, size * R_OUTER, -90 * DEG + (2 * Math.PI * i) / rest.length + 0.37);
+    });
+    return positions;
+}
+
+/** Khoá trạng thái mở thêm / kéo / chọn node của một sơ đồ: đổi câu tìm, chế độ hay chữ chọn trong từ là sơ đồ khác. */
+export const diagramKey = (q: string, mode: KanjiDiagramMode | null, k: string | null): string => `${q}|${mode ?? ""}|${k ?? ""}`;
 
 /** Gộp đồ thị mở thêm vào đồ thị đang vẽ: node trùng id và cạnh trùng (from, to, type) giữ bản cũ; không sửa mảng gốc. */
 export function mergeDiagram(base: DiagramGraph, extra: DiagramGraph): DiagramGraph {

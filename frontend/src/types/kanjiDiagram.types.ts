@@ -1,7 +1,8 @@
 // Sơ đồ chữ Hán (/graph, spec docs/Plan/specs/2026-10-30-so-do-chu-han-design.md §3.4): payload của GET /api/nlp/kanji-diagram.
 // ai-service dựng nodes / edges / detail từ KanjiVG + Unihan + JLPT + JMdict; backend chỉ ghép meaningVi từ dict_meanings.
 
-export type KanjiDiagramMode = "structure" | "compounds";
+/** word = "Phân tích từ" (spec 30/10 từ nhiều chữ): tâm là từ 2–4 chữ, mỗi chữ cùng thành phần trực tiếp. */
+export type KanjiDiagramMode = "structure" | "compounds" | "word";
 
 /** center = chữ tâm; component = thành phần cấu tạo (role radical / phon / part); phonetic = chữ cùng họ chỉ âm;
  *  word = từ ghép (chế độ Từ ghép); kanji = chữ khác trong từ ghép. */
@@ -118,14 +119,37 @@ export interface KanjiDiagramStats {
     jmdict: boolean;
 }
 
+/** Một chữ của từ đang phân tích (panel Phân tích từ). */
+export interface KanjiDiagramWordChar {
+    kanji: string;
+    hanViet: string | null;
+    meaningEn: string | null;
+    meaningVi?: string | null;
+    jlpt: string | null;
+    formula: KanjiDiagramFormulaPart[];
+    radical: KanjiDiagramRadical | null;
+}
+
+export type KanjiDiagramWordInfo = KanjiDiagramWord & { chars: KanjiDiagramWordChar[] };
+
 export interface KanjiDiagramResponse {
     query: string;
+    /** Chế độ thực tế (gửi word cho một chữ → structure). */
     mode: KanjiDiagramMode;
-    /** "k:<chữ>" hoặc null khi phải chọn chữ / không tìm thấy. */
+    /** "k:<chữ>", "w:<từ>" (chế độ word) hoặc null khi phải chọn chữ / chọn từ / không tìm thấy. */
     center: string | null;
     candidates: KanjiDiagramCandidate[];
     nodes: KanjiDiagramNode[];
     edges: KanjiDiagramEdge[];
+    /** Chi tiết chữ tâm; null ở chế độ word (panel dùng word). */
     detail: KanjiDiagramDetail | null;
     stats: KanjiDiagramStats;
+    /** Cụm chữ Hán của câu tìm (khử 々 / trùng); [] khi không gõ chữ Hán. */
+    chars: string[];
+    /** Chữ đang vẽ ở structure / compounds; null ở word. */
+    selectedChar: string | null;
+    /** Từ 2–4 chữ của câu tìm (có ở mọi chế độ để thanh chọn chữ quay về được); null khi không phải từ. */
+    word: KanjiDiagramWordInfo | null;
+    /** Gõ kana / Hán-Việt nhiều âm ứng với nhiều từ → chọn một từ (≤ 12). */
+    wordCandidates: KanjiDiagramWord[];
 }
