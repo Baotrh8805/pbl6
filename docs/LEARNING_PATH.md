@@ -6,7 +6,7 @@ cho xem bản nháp để chỉnh, rồi tạo **một thư mục, mỗi chươn
 Bản 2.0 (19/10, mục 9–11): lịch theo **từng thẻ** (`learning_path_cards`), phiên học gộp, trần thẻ / ngày và ngày học trong tuần, cân lại
 lịch, kiểm tra chương, hoàn thành, thẻ yếu + lộ trình bổ khuyết, nhắc học (trong app + email). Mục 1–8 là luồng tạo → nháp → kích hoạt
 (vẫn đúng), mục 9–11 là phần vận hành 2.0; chỗ nào hai bên khác nhau thì mục 9–11 thắng. GraphRAG gợi ý theo đồ thị tri thức: xem
-[Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md) (`/graph`, tab Gợi ý).
+[Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md) (API `/api/graph/recommend`; tab Gợi ý trên `/graph` đã gỡ 30/10 khi trang thành Sơ đồ chữ Hán).
 
 Spec: [Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md](Plan/specs/2026-10-14-lo-trinh-hoc-tap-design.md) ·
 Kế hoạch: [Plan/plans/2026-10-14-lo-trinh-hoc-tap.md](Plan/plans/2026-10-14-lo-trinh-hoc-tap.md).
@@ -183,7 +183,7 @@ chương CASCADE, job bóc tách ẩn bị xoá, bộ thẻ / thư mục giữ n
   LP-15 nhắc, kể cả khi bộ đã rời thư mục lộ trình — B5.8), thẻ xoá thì rời lịch (chương có thể thành "Trống").
 - Tiêu đề chương nhận sót / nhầm (xem mục 3); gộp trùng toàn tài liệu làm chương sau có thể ít thẻ.
 - Chưa lưu file gốc (chỉ giữ văn bản đã trích, sửa được bằng `PUT /{id}/text`); lộ trình FAILED chạy lại từ văn bản đó.
-- Cá nhân hoá: thẻ yếu + lộ trình bổ khuyết theo luật (mục 11) và gợi ý theo đồ thị tri thức (27/10, `/graph`); chưa có mô hình học máy
+- Cá nhân hoá: thẻ yếu + lộ trình bổ khuyết theo luật (mục 11) và gợi ý theo đồ thị tri thức (27/10, API `/api/graph/recommend`; giao diện đã gỡ 30/10); chưa có mô hình học máy
   dự đoán.
 
 ## 8. Test

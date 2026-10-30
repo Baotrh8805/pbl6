@@ -1,5 +1,26 @@
 # Nhật ký thay đổi
 
+## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1, nhánh `Graph`)
+Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch
+[Plan/plans/2026-10-30-so-do-chu-han.md](Plan/plans/2026-10-30-so-do-chu-han.md). Không có migration. Quyết định: thay giao diện người học
+của đồ thị Neo4j bằng sơ đồ cấu tạo chữ Hán chạy từ dữ liệu tĩnh; backend / ai-service / Admin của Neo4j giữ nguyên; nghĩa Việt từng chữ
+lấy từ `dict_meanings`, không gọi Gemini khi mở sơ đồ.
+- **Dữ liệu**: `kanji_parts.csv` (commit, 6 315 chữ) dựng từ KanjiVG bằng `build_dicts.py --only kanji_parts` — con trực tiếp theo thứ tự
+  viết, biến thể → chữ gốc, vị trí, bộ (`kvg:radical`), **phần chỉ âm** (`kvg:phon` chuẩn hoá về một chữ). KRADFILE không dùng được cho
+  việc này vì phẳng (時 chỉ có 寸 土 日, không có 寺). Phủ 1 908 / 1 971 chữ JLPT, 1 065 chữ có chỉ âm; họ 寺 ra đủ 時 持 待 特 等 詩 侍.
+- **ai-service**: `kanjidata.parts()` / `phon_family()` (cờ health `kanjiParts`); `kanji_diagram.py` + `GET /api/kanji-info/diagram?q=&mode=`:
+  tra bằng chữ Hán hoặc âm Hán-Việt (nhiều chữ → `candidates`), chế độ `structure` (thành phần, bộ KanjiVG hoặc Unihan, họ chỉ âm trong
+  JLPT ≤ 12 — cạnh `phon` khi trùng âm On, `family` khi chỉ cùng phần) và `compounds` (≤ 12 từ, JLPT trước, kèm `key` JMdict / JLPT),
+  `detail` cho panel (On / Kun, bộ, công thức, "làm phần chỉ âm", từ ghép). Test 22 + 5 + 14 + 2.
+- **Backend**: `GET /api/nlp/kanji-diagram` (USER) → `NlpService.kanjiDiagram`: kiểm q ≤ 32 / mode, ghép `meaningVi` cho mọi node chữ,
+  từ, ứng viên và detail bằng **một** truy vấn `dict_meanings`, cache 10 phút theo q|mode. `NlpIT` + 1, `AiServiceClientNlpTest` + 1.
+- **Frontend**: `/graph` viết lại — tab Cấu tạo / Từ ghép, ô tìm + chip, `?q=&mode=`; `KanjiDiagramCanvas` (SVG: tâm xanh dương, thành
+  phần cam, bộ viền đỏ, họ chỉ âm vàng, từ ghép tím, mũi tên + nhãn cạnh, chú thích); `KanjiDiagramPanel` (avatar, Hán-Việt, nghĩa Việt
+  hoặc Anh, JLPT, "Bắt đầu lại từ chữ này", "Tra chữ này", On / Kun, công thức, Từ có chữ, Làm phần chỉ âm, chọn chữ khi âm nhiều chữ);
+  bố cục theo cung tất định `diagramLayout.ts` (selfcheck `diagram.ts`). **Gỡ** `KnowledgeGraphSvg`, `GraphNodePanel`, `GraphAskPanel`,
+  `GraphRecommendations`, `GraphPathFinder`, `GraphBits`, `useGraphAsync`, `lib/graphLayout.ts`, `selfcheck/graph.ts`; `graphService` /
+  `graph.types` chỉ còn phần Admin. Sidebar: "Sơ Đồ Chữ Hán". Đợt 2 (zoom / kéo / mở tầng / lịch sử) và đợt 3 chưa làm.
+
 ## 28/10/2026 (chiều): Dịch offline dự phòng + tab Dịch không bao giờ báo lỗi (D34)
 Người dùng yêu cầu: luôn trả bản dịch, không bao giờ báo lỗi cho người học. Không có migration. Đảo phần "không dịch offline" của D33.
 - **Gỡ "Báo bản dịch sai"** (V40, revert 1ac673d): người dùng chốt báo cáo chỉ dành cho tra từ điển.

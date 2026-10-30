@@ -1,249 +1,220 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useCallback, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
-import { useShell } from "@/components/layout/shellContext";
-import { AddWordToDeckModal } from "@/features/hanviet/components/AddWordToDeckModal";
-import { KnowledgeGraphSvg } from "@/features/graph/components/KnowledgeGraphSvg";
-import { GraphNodePanel } from "@/features/graph/components/GraphNodePanel";
-import { GraphConflicts, GraphRecommendations } from "@/features/graph/components/GraphRecommendations";
-import { GraphPathFinder } from "@/features/graph/components/GraphPathFinder";
-import { GraphAskPanel } from "@/features/graph/components/GraphAskPanel";
-import { EmptyNote, GraphUnavailableNotice, TypeChip } from "@/features/graph/components/GraphBits";
-import { useGraphAsync } from "@/features/graph/useGraphAsync";
-import { exploreGraph, fetchGraphConflicts, fetchGraphRecommend, syncGraphMe } from "@/services/graphService";
-import { groupByType, wordNodeForDeck } from "@/lib/graphLayout";
-import type { HanVietWordNode } from "@/types/api.types";
-import type { GraphNode } from "@/types/graph.types";
+import { useAsync } from "@/lib/useAsync";
+import { KanjiDiagramCanvas } from "@/features/graph/components/KanjiDiagramCanvas";
+import { KanjiDiagramPanel } from "@/features/graph/components/KanjiDiagramPanel";
+import { fetchKanjiDiagram } from "@/services/kanjiDiagramService";
+import type { KanjiDiagramMode } from "@/types/kanjiDiagram.types";
 
-type GraphTab = "explore" | "suggest" | "ask" | "path";
-
-const TABS: { key: GraphTab; label: string; icon: string }[] = [
-  { key: "explore", label: "Khám phá", icon: "hub" },
-  { key: "suggest", label: "Gợi ý cho bạn", icon: "lightbulb" },
-  { key: "ask", label: "Hỏi đáp", icon: "forum" },
-  { key: "path", label: "Đường nối", icon: "route" },
+const MODES: { key: KanjiDiagramMode; label: string; icon: string; hint: string }[] = [
+  { key: "structure", label: "Cấu tạo", icon: "account_tree", hint: "thành phần, bộ thủ, họ chữ cùng chỉ âm" },
+  { key: "compounds", label: "Từ ghép", icon: "hub", hint: "từ thông dụng chứa chữ và các chữ ghép cùng" },
 ];
-const TAB_KEYS = TABS.map((t) => t.key);
-const QUICK: { label: string; q: string }[] = [
-  { label: "食", q: "食" },
-  { label: "食べる", q: "食べる" },
-  { label: "THỰC", q: "THỰC" },
-  { label: "日本", q: "日本" },
-  { label: "〜なければならない", q: "〜なければならない" },
-];
+const MODE_KEYS = MODES.map((m) => m.key);
+const QUICK: string[] = ["時", "寺", "青", "工", "生", "THỜI", "THANH"];
+export const MAX_QUERY_CHARS = 32;
 
 /**
- * Đồ thị tri thức Neo4j + GraphRAG (UC-34 / UC-35, spec 2026-10-27 §9). Trạng thái trên URL: ?tab=explore&q=食 | suggest | ask |
- * path. Khi mở trang, đồng bộ dữ liệu học của mình (POST /graph/sync/me, lỗi bỏ qua) để đồ thị thấy thẻ / lịch ôn mới nhất.
+ * Sơ đồ chữ Hán (/graph, spec 2026-10-30): thay bộ khám phá Neo4j cũ. Trạng thái trên URL: ?q=時&mode=compounds (mode mặc định
+ * structure không ghi). Đổi tâm = đổi q (push history) nên Back / Forward của trình duyệt đi lại các chữ đã xem. Node đang chọn
+ * gắn với (q, mode) tạo ra nó: đổi truy vấn thì về chữ tâm. Dữ liệu tĩnh ở ai-service, không cần Neo4j.
  */
 export const KnowledgeGraphPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
-  const rawTab = params.get("tab") as GraphTab | null;
-  const tab: GraphTab = rawTab && TAB_KEYS.includes(rawTab) ? rawTab : "explore";
-  const q = (params.get("q") ?? "").trim();
+  const q = (params.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
+  const rawMode = params.get("mode") as KanjiDiagramMode | null;
+  const mode: KanjiDiagramMode = rawMode && MODE_KEYS.includes(rawMode) ? rawMode : "structure";
   const [input, setInput] = useState(q);
   const [reload, setReload] = useState(0);
-  const { decks, statsLoading } = useShell();
-  const ownDecks = useMemo(() => decks.filter((d) => d.access === "owner"), [decks]);
-  const [addWord, setAddWord] = useState<HanVietWordNode | null>(null);
-
-  useEffect(() => {
-    // Đồng bộ lười dữ liệu học khi mở trang; 429 (vừa đồng bộ) hay 503 (Neo4j tắt) đều không phải lỗi của người dùng
-    syncGraphMe().catch(() => undefined);
-  }, []);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const go = useCallback(
-    (next: GraphTab, extra: Record<string, string | null> = {}) => {
-      setParams((prev) => {
-        const out = new URLSearchParams(prev);
-        if (next === "explore") out.delete("tab");
-        else out.set("tab", next);
-        for (const [k, v] of Object.entries(extra)) {
-          if (v) out.set(k, v);
-          else out.delete(k);
-        }
-        return out;
-      });
+    (next: { q?: string; mode?: KanjiDiagramMode }, replace = false) => {
+      setParams(
+        (prev) => {
+          const out = new URLSearchParams(prev);
+          if (next.q !== undefined) {
+            if (next.q) out.set("q", next.q);
+            else out.delete("q");
+          }
+          if (next.mode !== undefined) {
+            if (next.mode === "structure") out.delete("mode");
+            else out.set("mode", next.mode);
+          }
+          return out;
+        },
+        { replace }
+      );
     },
     [setParams]
   );
-  const explore = useCallback(
+  const draw = useCallback(
     (query: string) => {
-      setInput(query);
-      go("explore", { q: query });
+      const v = query.trim().slice(0, MAX_QUERY_CHARS);
+      setInput(v);
+      go({ q: v });
     },
     [go]
   );
 
-  const exploreRes = useGraphAsync(() => (q ? exploreGraph(q) : Promise.resolve(null)), [q], reload);
-  const suggestRes = useGraphAsync(() => (tab === "suggest" ? fetchGraphRecommend() : Promise.resolve(null)), [tab === "suggest"], reload);
-  const conflictRes = useGraphAsync(() => (tab === "suggest" ? fetchGraphConflicts() : Promise.resolve(null)), [tab === "suggest"], reload);
+  const res = useAsync(() => (q ? fetchKanjiDiagram(q, mode) : Promise.resolve(null)), [q, mode], reload);
+  const data = res.data ?? null;
+  const [sel, setSel] = useState<{ q: string; mode: KanjiDiagramMode; id: string | null }>({ q: "", mode: "structure", id: null });
+  const selectedId = sel.q === q && sel.mode === mode && sel.id ? sel.id : (data?.center ?? null);
+  const select = (id: string) => setSel({ q, mode, id });
 
-  // Node đang chọn gắn với truy vấn tạo ra nó: đổi q thì về node tâm, không cần setState trong effect.
-  const [sel, setSel] = useState<{ q: string; id: string | null }>({ q: "", id: null });
-  const data = exploreRes.data ?? null;
-  const selectedId = sel.q === q && sel.id ? sel.id : (data?.center ?? null);
-  const selectedNode = data?.nodes.find((n) => n.id === selectedId) ?? null;
-  const groups = useMemo(() => (data ? groupByType(data.nodes) : []), [data]);
-
-  const onAddWord = (node: GraphNode) => {
-    const w = wordNodeForDeck(node);
-    if (w) setAddWord(w);
+  const onTabKeyDown = (e: React.KeyboardEvent) => {
+    const i = MODE_KEYS.indexOf(mode);
+    let next: KanjiDiagramMode | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = MODE_KEYS[(i + 1) % MODE_KEYS.length];
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = MODE_KEYS[(i - 1 + MODE_KEYS.length) % MODE_KEYS.length];
+    else if (e.key === "Home") next = MODE_KEYS[0];
+    else if (e.key === "End") next = MODE_KEYS[MODE_KEYS.length - 1];
+    if (next) {
+      e.preventDefault();
+      go({ mode: next });
+      tabRefs.current[next]?.focus();
+    }
   };
 
   return (
     <section className="flex flex-col gap-space-md pb-space-xl">
       <header className="flex flex-col gap-1">
-        <h1 className="font-headline-sm text-headline-sm font-bold text-on-surface">Đồ thị tri thức</h1>
+        <h1 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2">
+          <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-primary">account_tree</span>
+          Sơ đồ chữ Hán
+        </h1>
         <p className="text-body-md text-on-surface-variant max-w-3xl">
-          Từ vựng – chữ Hán – bộ thủ – âm Hán-Việt – mẫu ngữ pháp – câu ví dụ nối với nhau trên Neo4j, cùng bộ thẻ và lịch ôn của bạn.
-          Khám phá quan hệ, nhận gợi ý tính từ đồ thị, hoặc hỏi bằng tiếng Việt.
+          Một chữ Hán được ghép từ những phần nào, phần nào là bộ, phần nào cho âm đọc, và những chữ nào mượn cùng phần chỉ âm (時 持 待
+          特 等 詩 侍 đều mang 寺). Chuyển sang <strong>Từ ghép</strong> để xem từ thông dụng chứa chữ đó.
         </p>
       </header>
 
-      <div role="tablist" aria-label="Chế độ xem" className="flex gap-1 overflow-x-auto border-b border-surface-container-high">
-        {TABS.map((t) => (
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div
+          role="tablist"
+          aria-label="Chế độ sơ đồ"
+          onKeyDown={onTabKeyDown}
+          className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start shrink-0"
+        >
+          {MODES.map((m) => {
+            const selected = m.key === mode;
+            return (
+              <button
+                key={m.key}
+                ref={(el) => {
+                  tabRefs.current[m.key] = el;
+                }}
+                id={`kd-tab-${m.key}`}
+                role="tab"
+                type="button"
+                aria-selected={selected}
+                aria-controls={selected ? "kd-panel" : undefined}
+                tabIndex={selected ? 0 : -1}
+                title={m.hint}
+                onClick={() => go({ mode: m.key })}
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 min-h-10 rounded-lg text-label-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  selected ? "bg-surface-container-lowest text-primary font-semibold shadow-sm" : "text-on-surface-variant hover:bg-surface-container"
+                }`}
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{m.icon}</span>
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (input.trim()) draw(input);
+          }}
+          className="flex flex-1 min-w-0 gap-2"
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            maxLength={MAX_QUERY_CHARS}
+            placeholder="Gõ chữ Hán (時) hoặc âm Hán-Việt (THỜI, thoi) rồi Enter"
+            aria-label="Chữ Hán hoặc âm Hán-Việt"
+            lang="ja"
+            className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-outline-variant bg-surface text-on-surface text-body-md font-japanese focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+          <Button type="submit" isLoading={res.loading && q !== ""} disabled={!input.trim()}>
+            Vẽ sơ đồ
+          </Button>
+        </form>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 text-label-sm -mt-1">
+        <span className="text-outline">Thử:</span>
+        {QUICK.map((it) => (
           <button
-            key={t.key}
-            role="tab"
+            key={it}
             type="button"
-            aria-selected={tab === t.key}
-            onClick={() => go(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-label-md font-semibold whitespace-nowrap border-b-2 -mb-px cursor-pointer ${
-              tab === t.key ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"
-            }`}
+            onClick={() => draw(it)}
+            lang="ja"
+            className={`font-japanese px-2 py-0.5 rounded-md bg-surface-container hover:bg-surface-container-high text-on-surface cursor-pointer ${q === it ? "ring-1 ring-primary" : ""}`}
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
-              {t.icon}
-            </span>
-            {t.label}
+            {it}
           </button>
         ))}
       </div>
 
-      {tab === "explore" && (
-        <div className="flex flex-col gap-space-md">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (input.trim()) explore(input.trim());
-            }}
-            className="flex flex-col gap-2"
-          >
-            <div className="flex gap-2">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                maxLength={64}
-                placeholder="Từ (食べる / 食べました), chữ Hán (食), âm Hán-Việt (THỰC), mẫu ngữ pháp (〜なければならない)…"
-                aria-label="Tìm trong đồ thị"
-                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-outline-variant bg-surface text-on-surface text-body-md focus:outline-none focus:ring-2 focus:ring-primary/40"
-              />
-              <Button type="submit" isLoading={exploreRes.loading && q !== ""} disabled={!input.trim()}>
-                Khám phá
-              </Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 text-label-sm">
-              <span className="text-outline">Thử:</span>
-              {QUICK.map((it) => (
-                <button
-                  key={it.q}
-                  type="button"
-                  onClick={() => explore(it.q)}
-                  lang="ja"
-                  className="font-japanese px-2 py-0.5 rounded-md bg-surface-container hover:bg-surface-container-high text-on-surface cursor-pointer"
-                >
-                  {it.label}
-                </button>
-              ))}
-            </div>
-          </form>
-
-          {!q && (
-            <EmptyNote icon="hub" title="Nhập một từ, chữ Hán, âm Hán-Việt hay mẫu ngữ pháp">
-              Đồ thị vẽ node tâm và láng giềng hai bậc: từ → chữ Hán → bộ thủ / âm Hán-Việt / chữ giống hình, câu ví dụ → mẫu ngữ pháp,
-              và thẻ của bạn chứa từ đó. Viền đỏ = đến hạn ôn, xanh = đã ôn, tím = có thẻ chưa ôn.
-            </EmptyNote>
-          )}
-          {q && exploreRes.unavailable && <GraphUnavailableNotice />}
-          {q && exploreRes.error && !exploreRes.unavailable && (
-            <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm flex items-center justify-between gap-2">
-              {exploreRes.error}
-              <Button size="sm" variant="outline" onClick={() => setReload((n) => n + 1)}>
-                Thử lại
-              </Button>
+      <div id="kd-panel" role="tabpanel" aria-labelledby={`kd-tab-${mode}`} className="flex flex-col gap-space-md">
+        {!q && (
+          <div className="rounded-2xl border border-dashed border-outline-variant bg-surface-container-lowest p-6 flex flex-col items-center text-center gap-2">
+            <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-primary/60">account_tree</span>
+            <h2 className="font-title-md text-title-md font-bold text-on-surface">Nhập một chữ Hán hoặc âm Hán-Việt</h2>
+            <p className="text-body-sm text-on-surface-variant max-w-xl">
+              Sơ đồ vẽ chữ ở giữa, thành phần cấu tạo bên trái (bộ thủ viền đỏ, phần chỉ âm nối bằng mũi tên xanh lá) và họ chữ cùng chỉ âm
+              bên phải. Bấm một chữ để xem chi tiết ở bảng bên; đúp chuột để lấy chữ đó làm tâm.
             </p>
-          )}
-          {q && data && !data.center && (
-            <EmptyNote icon="search_off" title={`Không có «${q}» trong đồ thị`}>
-              Thử dạng gốc của từ, một chữ Hán đơn, âm Hán-Việt viết hoa (THỰC) hoặc tên mẫu ngữ pháp (〜てもいい). Từ hiếm ngoài JLPT và
-              danh sách phổ biến của JMdict không có trong đồ thị.
-            </EmptyNote>
-          )}
-          {data && data.center && (
-            <>
-              <div className="grid gap-space-md lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
-                <div className="min-w-0 flex flex-col gap-2">
-                  <div className="overflow-x-auto rounded-2xl bg-surface-container-lowest border border-surface-container-high p-2">
-                    <KnowledgeGraphSvg
-                      nodes={data.nodes}
-                      edges={data.edges}
-                      centerId={data.center}
-                      selectedId={selectedId}
-                      onSelect={(id) => setSel({ q, id })}
-                      onExpand={(id) => explore(id)}
-                      className="min-w-[34rem] max-w-[52rem] mx-auto"
-                    />
-                  </div>
-                  <p className="text-label-sm text-outline sm:hidden">Kéo ngang để xem toàn bộ đồ thị.</p>
-                  <div className="flex flex-wrap items-center gap-1.5 text-label-sm">
-                    {groups.map((g) => (
-                      <span key={g.type} className="inline-flex items-center gap-1">
-                        <TypeChip type={g.type} />
-                        <span className="text-outline">{g.nodes.length}</span>
-                      </span>
-                    ))}
-                    <span className="ml-auto inline-flex items-center gap-2 text-outline">
-                      <span className="inline-flex items-center gap-1"><span aria-hidden="true" className="w-2.5 h-2.5 rounded-full border-2 border-error" /> đến hạn</span>
-                      <span className="inline-flex items-center gap-1"><span aria-hidden="true" className="w-2.5 h-2.5 rounded-full border-2 border-secondary" /> đã ôn</span>
-                      <span className="inline-flex items-center gap-1"><span aria-hidden="true" className="w-2.5 h-2.5 rounded-full border-2 border-primary" /> có thẻ</span>
-                    </span>
-                  </div>
-                </div>
-                <GraphNodePanel
-                  node={selectedNode}
+          </div>
+        )}
+        {q && res.error && (
+          <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm flex items-center justify-between gap-2">
+            {res.error}
+            <Button size="sm" variant="outline" onClick={() => setReload((n) => n + 1)}>
+              Thử lại
+            </Button>
+          </p>
+        )}
+        {q && res.loading && !res.error && <p className="text-body-sm text-on-surface-variant">Đang dựng sơ đồ «{q}»…</p>}
+        {q && data && (
+          <div className="grid gap-space-md lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
+            <div className="min-w-0 rounded-2xl bg-surface-container-lowest border border-surface-container-high p-3">
+              {data.center ? (
+                <KanjiDiagramCanvas
                   nodes={data.nodes}
                   edges={data.edges}
-                  onSelect={(id) => setSel({ q, id })}
-                  onExpand={(id) => explore(id)}
-                  onAddWord={onAddWord}
+                  centerId={data.center}
+                  mode={mode}
+                  selectedId={selectedId}
+                  onSelect={select}
+                  onRecenter={draw}
                 />
-              </div>
-            </>
-          )}
-        </div>
-      )}
+              ) : (
+                <div className="min-h-[18rem] flex flex-col items-center justify-center text-center gap-2 p-6">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">
+                    {data.candidates.length > 0 ? "touch_app" : "search_off"}
+                  </span>
+                  <p className="text-body-md text-on-surface-variant">
+                    {data.candidates.length > 0
+                      ? `Âm «${q.toUpperCase()}» ứng với ${data.candidates.length} chữ — chọn một chữ ở bảng bên để vẽ sơ đồ.`
+                      : `Không tìm thấy chữ nào cho «${q}».`}
+                  </p>
+                </div>
+              )}
+            </div>
+            <KanjiDiagramPanel data={data} selectedId={selectedId} mode={mode} onRecenter={draw} onSelect={select} onMode={(m) => go({ mode: m })} />
+          </div>
+        )}
+      </div>
 
-      {tab === "suggest" && (
-        <div className="flex flex-col gap-space-md">
-          {(suggestRes.unavailable || conflictRes.unavailable) && <GraphUnavailableNotice />}
-          {suggestRes.error && !suggestRes.unavailable && (
-            <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">{suggestRes.error}</p>
-          )}
-          {suggestRes.loading && <p className="text-body-sm text-on-surface-variant">Đang tính gợi ý từ đồ thị…</p>}
-          {suggestRes.data && <GraphRecommendations data={suggestRes.data} onExplore={explore} onAddWord={onAddWord} />}
-          <h2 className="font-title-md text-title-md font-bold text-on-surface mt-2">Mâu thuẫn giữa các bộ thẻ của bạn</h2>
-          {conflictRes.error && !conflictRes.unavailable && (
-            <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">{conflictRes.error}</p>
-          )}
-          {conflictRes.data && <GraphConflicts items={conflictRes.data.items} />}
-        </div>
-      )}
-
-      {tab === "ask" && <GraphAskPanel onExplore={explore} />}
-      {tab === "path" && <GraphPathFinder onExplore={explore} />}
-
-      <AddWordToDeckModal word={addWord} decks={ownDecks} decksLoading={statsLoading} onClose={() => setAddWord(null)} />
+      <p className="text-[11px] text-on-surface-variant">
+        Dữ liệu cấu tạo và phần chỉ âm từ KanjiVG (© Ulrich Apel, CC BY-SA 3.0); âm đọc, bộ thủ từ Unihan; từ ghép từ danh sách JLPT và
+        JMdict (EDRDG). <Link to="/about/data" className="hover:underline">Nguồn và giấy phép</Link>
+      </p>
     </section>
   );
 };

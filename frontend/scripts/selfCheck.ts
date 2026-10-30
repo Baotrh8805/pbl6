@@ -213,7 +213,7 @@ import { runStudyChecks } from "./selfcheck/study.ts";
 import { runDictionaryChecks } from "./selfcheck/dictionary.ts";
 import { runDeckShareChecks } from "./selfcheck/deckShare.ts";
 import { runQa2710Checks } from "./selfcheck/qa2710.ts";
-import { runGraphChecks } from "./selfcheck/graph.ts";
+import { runDiagramChecks } from "./selfcheck/diagram.ts";
 import { runDateFileChecks } from "./selfcheck/dateFile.ts";
 import { runModerationChecks } from "./selfcheck/moderation.ts";
 
@@ -1249,7 +1249,7 @@ async function runSelfCheck() {
   runDictionaryChecks(assertTrue);
   runDeckShareChecks(assertTrue);
   runQa2710Checks(assertTrue);
-  runGraphChecks(assertTrue);
+  runDiagramChecks(assertTrue);
   runDateFileChecks(assertTrue);
   runModerationChecks(assertTrue);
   assertStrictEqual(parseProfileTab("practice"), "practice", "Tab Luyện tập hợp lệ từ URL");
