@@ -6,13 +6,13 @@ Tạo lại toàn bộ bằng:
 cd ai-service
 venv\Scripts\python.exe -I scripts\build_dicts.py            # tất cả
 venv\Scripts\python.exe -I scripts\build_dicts.py --only jmdict
-venv\Scripts\python.exe -I scripts\build_dicts.py --only kanjivg    # jlpt | unihan | unihan_rs | unihan_def | jmdict | kanjivg | kradfile | pitch
+venv\Scripts\python.exe -I scripts\build_dicts.py --only kanjivg    # jlpt | unihan | unihan_rs | unihan_def | jmdict | kanjivg | kanji_parts | kradfile | pitch
 ```
 
 Script tải về thư mục cache `scripts/.download_cache/` (đã gitignore), chỉ parse bằng
 `json` / `zipfile` / `csv` / `re` của stdlib, không giải nén ra đĩa. File đã có trong cache (cùng tên) không tải lại.
 `kanjivg` và `pitch` lọc theo từ vựng JLPT nên cần `jlpt/n*.csv` (đã commit; mất thì chạy `--only jlpt` trước).
-Máy mới clone chỉ cần dựng 4 file không commit: `--only jmdict`, `--only kanjivg`, `--only kradfile`, `--only pitch`
+Máy mới clone chỉ cần dựng 3 file không commit: `--only jmdict`, `--only kanjivg`, `--only pitch`
 (hoặc chạy không tham số, dựng lại cả file đã commit — kiểm `git diff` trước khi commit vì nguồn Unihan / JLPT có thể đã đổi).
 
 | File | Commit? | Nguồn | Giấy phép |
@@ -30,7 +30,8 @@ Máy mới clone chỉ cần dựng 4 file không commit: `--only jmdict`, `--on
 | `jmdict.sqlite` | **Không** (~197 MB, gitignore; `--dict-scope compact` nhỏ hơn) | [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified) bản `jmdict-examples-eng` (JMdict đầy đủ + câu ví dụ Tatoeba qua JMdict_e_examp; thiếu asset này thì `jmdict-eng`, không ví dụ), dựng từ JMdict của EDRDG. Bảng `entries` (chỉ mục common, như trước) + bảng từ điển `words`, `word_forms`, `word_gloss_fts`, `examples`, `tags`, `meta` (xem `build_dicts.write_jmdict`) | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) — phải ghi nhận nguồn khi phân phối |
 | `example_vi.csv` | Có (~1,9 MB) | `tatoeba_id,vi` — bản dịch tiếng Việt cho **26 316 câu ví dụ Tatoeba** có trong `jmdict.sqlite` (mỗi câu một lần dù làm ví dụ cho nhiều mục), do Claude (`claude-fable-5-1`) dịch từ câu Nhật (câu Anh chỉ để đối chiếu) ngày 26/10/2026, mỗi lô qua script kiểm tra (đủ câu, không sót chữ Nhật, ≤ 400 ký tự). Nạp bởi `example_vi.py`: mục từ trả `viSeed` cho từng câu, tab Câu tìm được theo bản dịch; backend ưu tiên bản admin / Gemini đã lưu. Câu admin đã sửa (ghi đè `example_jpn`) thì bỏ bản dịch sẵn. Chưa có người rà tay. Không có script tải về: dịch lại thì sửa trực tiếp hoặc qua Admin Panel | Câu gốc: Tatoeba CC BY 2.0 FR; bản dịch là tác phẩm phái sinh, giữ cùng ghi nguồn |
 | `kanji_strokes.json` | **Không** (~9 MB, gitignore) | [KanjiVG](https://kanjivg.tagaini.net/) — [GitHub KanjiVG/kanjivg](https://github.com/KanjiVG/kanjivg), release `kanjivg-YYYYMMDD-all.zip` (API lỗi thì zip nhánh `master`); © Ulrich Apel. Chỉ giữ kanji xuất hiện trong từ vựng JLPT, bỏ biến thể (`-Kaisho`, …) | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) — phải ghi nhận KanjiVG / Ulrich Apel và chia sẻ cùng giấy phép khi phân phối |
-| `kradfile.csv` | **Không** (~300 KB, gitignore) | [KRADFILE / kradfile-u](https://www.edrdg.org/krad/kradinf.html) của EDRDG, tải từ thư mục [`pub/Nihongo/`](https://www.edrdg.org/pub/Nihongo/) (`kradfile-u.gz` UTF-8, dự phòng `kradfile.gz` EUC-JP); KRADFILE2 © Jim Rose | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) |
+| `kanji_parts.csv` | Có (~230 KB) | KanjiVG (cùng zip với `kanji_strokes.json`), dựng bằng `--only kanji_parts`: **cây phân rã** của mọi chữ trong zip có ít nhất một thành phần (~6 300 chữ; chữ đơn như 一 日 月 không có dòng). `kanji,parts,originals,positions,radical_part,phon_part,phon` — `parts` = `kvg:element` của các nhóm con **trực tiếp** theo thứ tự viết (時 → `日 寺`, 土 / 寸 nằm trong 寺 không tính), `originals` = `kvg:original` của biến thể (扌 → 手, `-` nếu không), `positions` = `kvg:position` (`-` nếu thiếu), `radical_part` = part mang `kvg:radical` (ưu tiên general > tradit > nelson > jis), `phon_part` / `phon` = part mang `kvg:phon` và giá trị đã chuẩn hoá thành một chữ (`之V` → 之; giá trị không ra một chữ như `3+6+1` thì để trống). Dùng cho sơ đồ cấu tạo chữ Hán `/graph` (spec 2026-10-30): họ chữ cùng thành phần chỉ âm (時 持 待 特 等 詩 侍 đều `phon` = 寺). Nhóm con không có `kvg:element` nhưng mang `kvg:phon` (氐 trong 低, 臤 trong 堅) là một part mang tên chỉ âm đó. Trên 1 971 chữ JLPT: 1 908 có dòng, 1 065 có `phon` | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) — file phái sinh **đã commit** nên repo phải giữ ghi nhận KanjiVG / Ulrich Apel (dòng này) và phân phối cùng giấy phép |
+| `kradfile.csv` | Có (~300 KB, commit từ 10/2026; dựng lại bằng `--only kradfile`) | [KRADFILE / kradfile-u](https://www.edrdg.org/krad/kradinf.html) của EDRDG, tải từ thư mục [`pub/Nihongo/`](https://www.edrdg.org/pub/Nihongo/) (`kradfile-u.gz` UTF-8, dự phòng `kradfile.gz` EUC-JP); KRADFILE2 © Jim Rose | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) |
 | `pitch_accent.csv` | **Không** (~200 KB, gitignore) | [mifunetoshiro/kanjium](https://github.com/mifunetoshiro/kanjium) `data/source_files/raw/accents.txt`, lọc theo từ vựng JLPT | [CC BY-SA 4.0](https://github.com/mifunetoshiro/kanjium/blob/master/LICENSE.txt) |
 | (Tatoeba, trong `jmdict.sqlite`) | — | Câu ví dụ Nhật – Anh của mục từ (bảng `examples`) | [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/) — ghi nguồn ở trang `/about/data` |
 | `dict_overrides.json` | **Không** (gitignore, ghi lúc chạy) | Bản sao lớp ghi đè từ điển của admin do backend đẩy sang (`overrides.py`) | — |
@@ -51,6 +52,7 @@ Không file nào bắt buộc để service khởi động; thiếu file thì t�
 | `jmdict.sqlite` | `jmdict` | Nghĩa EN chỉ còn cột `meaning` của CSV JLPT (từ ngoài JLPT không có nghĩa); đồ thị Hán-Việt (`han_viet_graph`) chỉ còn từ JLPT; từ đồng âm / từ dễ nhầm (`distractors`, `kanji_similar`) và cảnh báo mâu thuẫn (`conflicts`) chỉ còn đối chiếu danh sách JLPT; câu i+1 (`sentence_mining`) thiếu nghĩa |
 | `kanji_strokes.json` | `kanjivg`, `kanjiStrokes` | `/api/kanji/{ch}/strokes` và `/api/kanji/score` trả 404 → luyện viết không có nét mẫu, không chấm (frontend vẫn cho vẽ / hoàn tác / đếm nét) |
 | `kradfile.csv` | `kradfile` | Chữ Hán giống hình chỉ còn tín hiệu yếu (cùng bộ thủ, lệch ≤ 2 nét, điểm tối đa 0.3) → ít phương án nhiễu "giống hình", độ tin cậy thấp và bị ngưỡng `distractor_min_confidence` lọc bớt |
+| `kanji_parts.csv` (đã commit) | `kanjiParts` | Sơ đồ chữ Hán `/api/kanji-info/diagram` chế độ Cấu tạo chỉ còn bộ thủ (Unihan), không có thành phần / họ chữ chỉ âm; `stats.parts=false` |
 | `pitch_accent.csv` | `pitch` | `/api/audio/pitch-reference` trả 404; `/api/audio/pitch-score` chỉ chấm được khi client gửi `accentType` → luyện trọng âm không có mẫu chuẩn (luyện phát âm bằng Web Speech API không ảnh hưởng) |
 | `unihan_rs.csv` (đã commit) | `radicals` | Không tra được bộ thủ / số nét: thẻ chữ Hán và thẻ bộ thủ thiếu bộ; kanji giống hình mất tín hiệu bộ thủ / số nét (thiếu cả KRADFILE thì không còn ứng viên) |
 | `radicals_214.csv` (đã commit) | `radicalCards` | `/api/radicals/cards` vẫn trả thẻ nhưng không có bộ thủ; mẹo nhớ mẫu thiếu phần bộ |
@@ -62,8 +64,9 @@ Bảng nạp lười **một lần** (cache cả kết quả rỗng) → dựng 
 ## Ghi nguồn khi phân phối
 
 KanjiVG (CC BY-SA 3.0, © Ulrich Apel), JMdict / KRADFILE (giấy phép EDRDG, CC BY-SA 4.0) và kanjium (CC BY-SA 4.0) yêu cầu
-ghi nguồn và chia sẻ dữ liệu phái sinh cùng giấy phép khi phân phối. Bốn file phái sinh từ các nguồn này không commit; khi
-triển khai công khai cần thêm trang / chân trang ghi nguồn trên giao diện (hiện frontend chưa có).
+ghi nguồn và chia sẻ dữ liệu phái sinh cùng giấy phép khi phân phối. `jmdict.sqlite`, `kanji_strokes.json`, `pitch_accent.csv`
+không commit; `kradfile.csv` (EDRDG) và `kanji_parts.csv` (KanjiVG) **đã commit** nên repo phải giữ ghi nhận nguồn ở bảng trên;
+khi triển khai công khai cần thêm trang / chân trang ghi nguồn trên giao diện (hiện frontend chưa có).
 
 ## Dữ liệu chữ Hán (`app/extract/kanjidata.py`, lộ trình học 2 §0.1 LP-17)
 

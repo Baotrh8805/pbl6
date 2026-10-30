@@ -1,6 +1,6 @@
 """Tải và dựng dữ liệu từ điển cho app/extract.
 
-Chạy:  venv/Scripts/python.exe scripts/build_dicts.py [--only jlpt|unihan|unihan_rs|unihan_def|jmdict|kanjivg|kradfile|pitch]
+Chạy:  venv/Scripts/python.exe scripts/build_dicts.py [--only jlpt|unihan|unihan_rs|unihan_def|jmdict|kanjivg|kanji_parts|kradfile|pitch]
 
 Tạo ra:
   app/extract/data/jlpt/n1..n5.csv        (commit)
@@ -10,7 +10,9 @@ Tạo ra:
   app/extract/data/unihan_definitions.csv (commit; kDefinition = nghĩa EN của từng chữ, chữ JIS có âm Nhật, ~280 KB)
   app/extract/data/jmdict.sqlite          (KHÔNG commit; JMdict đầy đủ + ví dụ Tatoeba, xem write_jmdict)
   app/extract/data/kanji_strokes.json     (KHÔNG commit; nét viết KanjiVG 32 điểm/nét, chỉ kanji trong từ vựng JLPT)
-  app/extract/data/kradfile.csv           (KHÔNG commit; thành phần cấu tạo kanji theo KRADFILE của EDRDG)
+  app/extract/data/kanji_parts.csv        (commit; cây phân rã KanjiVG: con trực tiếp, vị trí, bộ, thành phần chỉ âm kvg:phon,
+                                           mọi chữ trong zip, ~6 700 dòng ~250 KB — sơ đồ chữ Hán /graph, spec 2026-10-30)
+  app/extract/data/kradfile.csv           (commit từ 10/2026; thành phần cấu tạo kanji theo KRADFILE của EDRDG)
   app/extract/data/pitch_accent.csv       (KHÔNG commit; trọng âm kanjium, chỉ từ vựng JLPT)
 
 Dữ liệu tải về là dữ liệu không tin cậy: chỉ ghi vào thư mục tạm mới,
@@ -30,6 +32,7 @@ import sqlite3
 import sys
 import tempfile
 import urllib.request
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Iterable
@@ -675,6 +678,157 @@ def build_kanjivg() -> None:
     print(f"  {out.name}: {len(data)} / {len(wanted)} kanji JLPT có nét viết, {out.stat().st_size // 1024} KB")
 
 
+# ----------------------------------------------------------------------------- kanji_parts (KanjiVG kvg:element / kvg:phon)
+
+# kvg:radical: "general" (bộ tra từ điển hiện đại) > "tradit" (Khang Hi) > "nelson" > "jis"
+_KVG_RADICAL_RANK = {"general": 0, "tradit": 1, "nelson": 2, "jis": 3}
+# ký hiệu phụ trong kvg:phon: V = biến thể, T = dạng truyền thống, số = thứ tự, right/left/top/bottom = vị trí
+_PHON_MARK_RE = re.compile(r"right|left|top|bottom|[A-Za-z0-9]")
+_KVG_ROOT_ID_RE = re.compile(r"kvg:[0-9a-f]{4,6}$")
+KANJI_PARTS_COLUMNS = ["kanji", "parts", "originals", "positions", "radical_part", "phon_part", "phon"]
+
+
+def normalise_phon(raw: str | None) -> str | None:
+    """Giá trị kvg:phon → một chữ Hán: '之V' → 之, '厶/弗' → 厶 (ứng viên đầu hợp lệ), '立口/否V' → 否, '3+6+1' → None."""
+    if not raw:
+        return None
+    for token in raw.split("/"):
+        t = _PHON_MARK_RE.sub("", token).strip()
+        if len(t) == 1 and _CJK_RE.fullmatch(t):
+            return t
+    return None
+
+
+def _kvg_attr(el: ET.Element, name: str) -> str | None:
+    """Thuộc tính kvg:<name> dù namespace khai báo là http hay https (DOCTYPE và xmlns của KanjiVG lệch nhau)."""
+    for k, v in el.attrib.items():
+        if k == name or k.endswith("}" + name):
+            return v
+    return None
+
+
+def _is_g(el: ET.Element) -> bool:
+    return el.tag == "g" or el.tag.endswith("}g")
+
+
+def _element_groups(parent: ET.Element) -> list[tuple[str, ET.Element]]:
+    """[(tên part, nhóm)] cho các con trực tiếp: nhóm có kvg:element lấy element; nhóm không có element nhưng mang kvg:phon
+    chuẩn hoá được (氐 trong 低, 臤 trong 堅, 雚 trong 観 — KanjiVG không coi là thành phần chuẩn nên không đặt element) là một
+    part mang tên chỉ âm đó; nhóm chỉ gom nét (position="kamae"…) hay phon không ra một chữ (品+木) thì lấy tiếp con của nó."""
+    out: list[tuple[str, ET.Element]] = []
+    for child in parent:
+        if not _is_g(child):
+            continue
+        element = _kvg_attr(child, "element")
+        if element:
+            out.append((element, child))
+            continue
+        phon = normalise_phon(_kvg_attr(child, "phon"))
+        if phon:
+            out.append((phon, child))
+        else:
+            out.extend(_element_groups(child))
+    return out
+
+
+def _subtree_best(el: ET.Element, attr: str, rank: dict[str, int] | None = None) -> str | None:
+    """Giá trị `attr` tốt nhất trong cây con (chính nó trước): có `rank` thì theo thứ hạng, không thì giá trị đầu gặp."""
+    best: tuple[int, str] | None = None
+    for node in el.iter():
+        v = _kvg_attr(node, attr)
+        if not v:
+            continue
+        if rank is None:
+            return v
+        r = rank.get(v, len(rank))
+        if best is None or r < best[0]:
+            best = (r, v)
+    return best[1] if best else None
+
+
+def parse_kanjivg_parts(text: str) -> dict | None:
+    """Một file SVG KanjiVG → {kanji, parts, originals, positions, radical_part, phon_part, phon} hoặc None.
+
+    parts = kvg:element của các nhóm con trực tiếp của nhóm gốc (土 / 寸 nằm trong 寺 không phải part của 時), theo thứ tự
+    tài liệu = thứ tự viết; originals = kvg:original (扌 → 手) hoặc None; positions = kvg:position hoặc None; radical_part =
+    part có kvg:radical tốt nhất trong cây con của nó; phon_part / phon = part mang kvg:phon (chính nó trước) và giá trị đã
+    chuẩn hoá. Không có part nào → None (chữ đơn 一). SVG hỏng → None. Chỉ parse bằng ElementTree của stdlib (dữ liệu tải về
+    không tin cậy: không entity ngoài, không exec)."""
+    if not text:
+        return None
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    main = next((g for g in root.iter() if _is_g(g) and _KVG_ROOT_ID_RE.search(g.get("id", ""))
+                 and _kvg_attr(g, "element")), None)
+    if main is None:
+        return None
+    named = _element_groups(main)
+    if not named:
+        return None
+    parts = [name for name, _ in named]
+    groups = [g for _, g in named]
+    radical_part: str | None = None
+    radical_rank = len(_KVG_RADICAL_RANK)
+    phon_part: str | None = None
+    phon: str | None = None
+    for g, part in zip(groups, parts):
+        rad = _subtree_best(g, "radical", _KVG_RADICAL_RANK)
+        if rad is not None and _KVG_RADICAL_RANK.get(rad, len(_KVG_RADICAL_RANK)) < radical_rank:
+            radical_rank = _KVG_RADICAL_RANK.get(rad, len(_KVG_RADICAL_RANK))
+            radical_part = part
+        if phon_part is None:
+            raw = _kvg_attr(g, "phon") or _subtree_best(g, "phon")
+            if raw:
+                phon_part, phon = part, normalise_phon(raw)
+    return {
+        "kanji": _kvg_attr(main, "element"),
+        "parts": parts,
+        "originals": [_kvg_attr(g, "original") for g in groups],
+        "positions": [_kvg_attr(g, "position") for g in groups],
+        "radical_part": radical_part,
+        "phon_part": phon_part,
+        "phon": phon,
+    }
+
+
+def extract_kanji_parts_zip(zpath: Path) -> list[dict]:
+    """Zip KanjiVG → hàng kanji_parts cho mọi chữ có ít nhất một part, xếp theo mã Unicode; bỏ biến thể font (-Kaisho…)."""
+    rows: dict[str, dict] = {}
+    with zipfile.ZipFile(zpath) as zf:
+        for info in zf.infolist():
+            m = _KANJIVG_NAME_RE.fullmatch(info.filename.rsplit("/", 1)[-1])
+            if not m or info.file_size > 1 << 20:
+                continue
+            row = parse_kanjivg_parts(zf.read(info).decode("utf-8", "replace"))
+            if row and row["kanji"]:
+                rows[row["kanji"]] = row
+    return [rows[k] for k in sorted(rows)]
+
+
+def write_kanji_parts(rows: list[dict], out: Path) -> None:
+    """CSV `kanji,parts,originals,positions,radical_part,phon_part,phon`; danh sách cách nhau bằng khoảng trắng, '-' = không có."""
+    with open(out, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(KANJI_PARTS_COLUMNS)
+        for r in rows:
+            w.writerow([r["kanji"], " ".join(r["parts"]), " ".join(o or "-" for o in r["originals"]),
+                        " ".join(p or "-" for p in r["positions"]), r["radical_part"] or "", r["phon_part"] or "",
+                        r["phon"] or ""])
+
+
+def build_kanji_parts() -> None:
+    print("[kanji_parts]")
+    name, url = _latest_kanjivg_asset()
+    zpath = _download(url, CACHE_DIR / name)
+    rows = extract_kanji_parts_zip(zpath)
+    out = DATA_DIR / "kanji_parts.csv"
+    write_kanji_parts(rows, out)
+    with_phon = sum(1 for r in rows if r["phon"])
+    print(f"  {out.name}: {len(rows)} chữ có cây phân rã, {with_phon} có thành phần chỉ âm, {out.stat().st_size // 1024} KB")
+
+
 # ----------------------------------------------------------------------------- kradfile
 
 def parse_kradfile(text: str) -> list[tuple[str, str]]:
@@ -789,6 +943,7 @@ BUILDERS = {
     "unihan_def": build_unihan_def,
     "jmdict": build_jmdict,
     "kanjivg": build_kanjivg,
+    "kanji_parts": build_kanji_parts,
     "kradfile": build_kradfile,
     "pitch": build_pitch,
 }
