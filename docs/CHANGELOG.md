@@ -1,5 +1,18 @@
 # Nhật ký thay đổi
 
+## 30/10/2026 (khuya): Thư viện cộng đồng — sửa thiếu sót sau rà soát "Cộng đồng & Khám phá"
+Rà soát ba trang Thư viện / Từ điển / Sơ đồ chữ Hán; người dùng chọn làm nhóm A (Thư viện). Không có migration. Đề xuất để sau:
+Từ điển (Sổ tay tạo bộ thẻ / xuất CSV, "Báo cáo của tôi", tìm theo nghĩa Việt / Anh), cộng đồng (trang tác giả, hữu ích / báo cáo từng
+bình luận Thư viện, tìm theo nội dung thẻ), học sâu (hoạt hình thứ tự nét, từ của ngày, lọc JLPT khi tra từ).
+- **Bỏ chữ cứng sai sự thật**: "+ Audio", "Tokyo Accent", "SRS Interval: 3 Ngày", nhãn "MIỄN PHÍ" trên mọi thẻ, "kèm audio & ví dụ";
+  ô tìm không còn hứa tìm theo từ khoá Kanji trong thẻ (backend chỉ tìm tên / mô tả / tác giả).
+- **Bộ lọc trên URL** (`?q=&level=&cat=&tab=&sort=&page=`, `libraryParams.ts`): Back quay lại bộ lọc trước, chia sẻ được link, quay lại
+  qua sidebar khôi phục bộ lọc (`lib/searchMemory.ts`); "Đặt lại bộ lọc" đặt lại cả sắp xếp.
+- **Không lưu trùng**: lưu lần hai → 409 `DECK_ALREADY_SAVED`; thẻ / banner / xem trước hiện "Đã lưu · Mở" (`savedDeckId`); lượt tải
+  đếm theo người lưu (`count(DISTINCT owner)`), bản trùng cũ không đếm hai lần.
+- **Phổ biến** cần TB ≥ 4,5 **và** ≥ 3 lượt đánh giá.
+- Kiểm: LibraryDeckIT +2 (7 xanh) cùng 7 lớp IT liên quan; selfcheck `library.ts` +14; lint / tsc / build xanh. **Chưa bấm thử trên trình duyệt.**
+
 ## 30/10/2026 (tối): Sơ đồ chữ Hán — tra bằng từ nhiều chữ, kana, Hán-Việt nhiều âm ("Phân tích từ")
 Spec [Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md](Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md), kế hoạch
 [Plan/plans/2026-10-30-so-do-chu-han-tu-nhieu-chu.md](Plan/plans/2026-10-30-so-do-chu-han-tu-nhieu-chu.md). Không có migration, không thêm thư

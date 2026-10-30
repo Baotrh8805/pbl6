@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Modal } from "@/components/ui/Modal";
 import type { CardDto } from "@/types/api.types";
 import { CardContent } from "./CardContent";
@@ -11,6 +12,8 @@ export interface DeckPreviewModalProps {
   description?: string;
   cards: CardDto[];
   onSaveToFolder?: () => void;
+  /** Đã lưu bộ này (Thư viện): hiện "Đã lưu · Mở" tới bản đã lưu thay cho nút lưu. */
+  savedHref?: string | null;
   /** Thẻ đang tải từ API / lỗi tải (xem trước bộ thẻ Thư viện). */
   loading?: boolean;
   error?: string;
@@ -26,6 +29,7 @@ export const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
   description,
   cards,
   onSaveToFolder,
+  savedHref,
   loading,
   error,
   extra,
@@ -52,7 +56,16 @@ export const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
         >
           Đóng
         </button>
-        {onSaveToFolder && (
+        {savedHref ? (
+          <Link
+            to={savedHref}
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-semibold hover:bg-primary-container transition-colors shadow-sm"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_added</span>
+            Đã lưu · Mở
+          </Link>
+        ) : onSaveToFolder && (
           <button
             type="button"
             onClick={() => {

@@ -105,6 +105,8 @@ export interface LibraryDeck {
     rating: number | null;
     ratingsCount: number;
     myRating: number | null;
+    /** Bản sao mình đã lưu (mới nhất); null = chưa lưu. Có thì nút lưu thành "Đã lưu · Mở". */
+    savedDeckId: string | null;
 }
 
 /** LibraryDeckResponse.Page */

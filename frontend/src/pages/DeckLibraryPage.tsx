@@ -101,18 +101,25 @@ export const DeckLibraryPage: React.FC = () => {
     []
   );
 
-  const handleSavedToFolder = (folderId: string | null) => {
-    setReloadKey((n) => n + 1);
-    setSuccessToast({
-      message: "Đã lưu bộ thẻ thành công vào tài khoản của bạn!",
-      folderId,
-    });
+  const showToast = (toast: { message: string; folderId: string | null }) => {
+    setSuccessToast(toast);
     // Toast mới thay toast cũ: huỷ hẹn giờ cũ trước khi đặt lại
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => {
       toastTimerRef.current = null;
       setSuccessToast(null);
     }, TOAST_DURATION_MS);
+  };
+
+  const handleSavedToFolder = (folderId: string | null) => {
+    setReloadKey((n) => n + 1);
+    showToast({ message: "Đã lưu bộ thẻ thành công vào tài khoản của bạn!", folderId });
+  };
+
+  // Lưu trùng (vd. đã lưu ở tab khác): tải lại để nút thành "Đã lưu · Mở", báo bằng toast thay cho lỗi đỏ (A4)
+  const handleAlreadySaved = () => {
+    setReloadKey((n) => n + 1);
+    showToast({ message: "Bộ thẻ này đã có trong tài khoản của bạn.", folderId: null });
   };
 
   // Đặt lại toàn bộ, kể cả sắp xếp (A3: trước đây sắp xếp bị bỏ sót)
@@ -234,6 +241,7 @@ export const DeckLibraryPage: React.FC = () => {
           onClose={() => setSavingDeck(null)}
           deck={savingDeck}
           onSaved={handleSavedToFolder}
+          onAlreadySaved={handleAlreadySaved}
         />
       )}
     </div>

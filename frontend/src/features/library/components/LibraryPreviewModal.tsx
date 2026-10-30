@@ -8,6 +8,7 @@ import { DeckPreviewModal } from "@/features/decks/components/DeckPreviewModal";
 import { DeckRatings } from "@/features/decks/components/DeckRatings";
 import { ReportDeckModal } from "./ReportDeckModal";
 import { useReportedByMe } from "../useReportedByMe";
+import { saveActionOf } from "../librarySave";
 
 interface LibraryPreviewModalProps {
   deck: LibraryDeck;
@@ -43,6 +44,10 @@ export const LibraryPreviewModal: React.FC<LibraryPreviewModalProps> = ({ deck, 
       loading={loading}
       error={error}
       onSaveToFolder={() => onSave(deck)}
+      savedHref={(() => {
+        const action = saveActionOf(deck);
+        return action.kind === "open" ? action.href : null;
+      })()}
       extra={
         <div className="mb-3">
           <DeckRatings deckId={deck.id} isOwner={deck.mine} onChanged={(r) => onRated(deck.id, r)} />

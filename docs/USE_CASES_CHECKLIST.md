@@ -70,7 +70,7 @@ Dự án gồm **7 phân hệ chức năng** và **42 use case**. Để nhóm v�
 - [x] UC-26: Thuật toán lặp lại ngắt quãng (Spaced Repetition System - SRS) nhắc ôn từ vựng. *(SM-2 cải tiến; đo thời gian phản xạ mỗi lần chấm (Lộ trình 2.0); dashboard có thẻ đến hạn, chuỗi ngày học)*
 
 ### Tiếp nối Phân hệ 4:
-- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(Thư viện cộng đồng + chấm sao / bình luận; chia sẻ bộ thẻ / thư mục qua email (xem & học hoặc sửa), link thư mục công khai. Link riêng cho từng bộ thẻ `/d/<token>` (`share_token`, quyết định D9): người đã đăng nhập mở link được quyền xem; chủ tạo / đổi / tắt ở hộp Chia sẻ (26/10); link đặt được mật khẩu (27/10))*
+- [x] UC-27: Chia sẻ bộ thẻ công khai cho cộng đồng người học. *(30/10 khuya: bộ lọc Thư viện trên URL, chặn lưu trùng + "Đã lưu · Mở", Phổ biến cần ≥ 3 đánh giá, bỏ chữ cứng sai sự thật; Thư viện cộng đồng + chấm sao / bình luận; chia sẻ bộ thẻ / thư mục qua email (xem & học hoặc sửa), link thư mục công khai. Link riêng cho từng bộ thẻ `/d/<token>` (`share_token`, quyết định D9): người đã đăng nhập mở link được quyền xem; chủ tạo / đổi / tắt ở hộp Chia sẻ (26/10); link đặt được mật khẩu (27/10))*
 - [x] UC-28: Tìm kiếm và sao chép bộ thẻ của người khác về tài khoản mình.
 - [x] UC-29: Xuất dữ liệu bộ thẻ ra file (Anki format / CSV / PDF). *(menu Xuất ở trang bộ thẻ: CSV UTF-8 cho Excel, tệp TSV nhập vào Anki, trang in `/decks/:id/print` để lưu PDF bằng trình duyệt (26/10); CSV mặc định không dòng tiêu đề, tuỳ chọn kèm (27/10))*
 
