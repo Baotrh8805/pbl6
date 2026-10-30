@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Ruby } from "@/lib/ja";
 import { LevelChip } from "@/features/hanviet/components/HanVietBits";
+import type { HanVietWordNode } from "@/types/api.types";
 import type {
   KanjiDiagramDetail,
   KanjiDiagramMode,
@@ -11,6 +12,7 @@ import type {
   KanjiDiagramWord,
 } from "@/types/kanjiDiagram.types";
 import { NODE_FILL } from "@/features/graph/diagramStyle";
+import { toHanVietWord } from "@/features/graph/diagramWords";
 
 /**
  * Panel bên phải (spec 2026-10-30 §3.5): chữ tâm → chi tiết đầy đủ (âm On / Kun, bộ, công thức cấu tạo, từ có chữ, làm phần
@@ -27,6 +29,8 @@ interface KanjiDiagramPanelProps {
   onRecenter: (kanji: string) => void;
   onSelect: (id: string) => void;
   onMode: (mode: KanjiDiagramMode) => void;
+  /** Thêm từ ghép vào bộ thẻ của mình (mở AddWordToDeckModal ở trang). */
+  onAddWord?: (word: HanVietWordNode) => void;
 }
 
 const kanjiHref = (ch: string) => `/dictionary?tab=kanji&k=${encodeURIComponent(ch)}`;
@@ -46,7 +50,7 @@ const meaningOf = (x: { meaningVi?: string | null; meaningEn?: string | null }):
 
 const ROLE_LABEL: Record<string, string> = { radical: "bộ", phon: "chỉ âm", part: "thành phần" };
 
-export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extraNodes = [], selectedId, mode, onRecenter, onSelect, onMode }) => {
+export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extraNodes = [], selectedId, mode, onRecenter, onSelect, onMode, onAddWord }) => {
   const box = "rounded-2xl bg-surface-container-lowest border border-surface-container-high p-4 flex flex-col gap-3";
   if (!data) {
     return (
@@ -99,9 +103,11 @@ export const KanjiDiagramPanel: React.FC<KanjiDiagramPanelProps> = ({ data, extr
 
   return (
     <aside className={box} aria-label="Chi tiết chữ Hán">
-      {node && node.type === "word" && <WordCard node={node} data={data} onSelect={onSelect} onRecenter={onRecenter} />}
+      {node && node.type === "word" && <WordCard node={node} data={data} onSelect={onSelect} onRecenter={onRecenter} onAddWord={onAddWord} />}
       {node && node.type !== "word" && !isCenter && <KanjiCard node={node} onRecenter={onRecenter} />}
-      {(!node || isCenter) && detail && <CenterDetail detail={detail} mode={mode} onRecenter={onRecenter} onSelect={onSelect} onMode={onMode} stats={data.stats} />}
+      {(!node || isCenter) && detail && (
+        <CenterDetail detail={detail} mode={mode} onRecenter={onRecenter} onSelect={onSelect} onMode={onMode} onAddWord={onAddWord} stats={data.stats} />
+      )}
     </aside>
   );
 };
@@ -144,7 +150,8 @@ const CenterDetail: React.FC<{
   onRecenter: (ch: string) => void;
   onSelect: (id: string) => void;
   onMode: (mode: KanjiDiagramMode) => void;
-}> = ({ detail, mode, stats, onRecenter, onSelect, onMode }) => (
+  onAddWord?: (word: HanVietWordNode) => void;
+}> = ({ detail, mode, stats, onRecenter, onSelect, onMode, onAddWord }) => (
   <>
     <div className="flex items-start gap-3">
       <Avatar ch={detail.kanji} fill={NODE_FILL.center} />
@@ -197,7 +204,7 @@ const CenterDetail: React.FC<{
                 <span lang="ja" className="font-japanese text-xl font-bold text-on-surface">{f.part}</span>
                 <span className="text-[10px] font-bold text-on-surface-variant">
                   {f.hanViet ?? "?"}
-                  {f.role !== "part" ? ` · ${ROLE_LABEL[f.role]}` : ""}
+                  {f.role !== "part" ? ` · ${ROLE_LABEL[f.role]}${f.guess ? "?" : ""}` : ""}
                 </span>
               </button>
             </React.Fragment>
@@ -209,6 +216,12 @@ const CenterDetail: React.FC<{
       {detail.phon && !detail.formula.some((f) => f.part === detail.phon) && (
         <p className="text-label-sm text-on-surface-variant">
           Phần chỉ âm là biến thể của <span lang="ja" className="font-japanese font-semibold">{detail.phon}</span>.
+        </p>
+      )}
+      {detail.phonGuess && (
+        <p className="text-[11px] text-outline">
+          KanjiVG chưa đánh dấu phần chỉ âm của chữ này; <span lang="ja" className="font-japanese font-semibold">{detail.phon}</span> được
+          đoán vì trùng âm On với chữ. Coi là gợi ý, không phải kết luận từ điển.
         </p>
       )}
     </section>
@@ -225,7 +238,7 @@ const CenterDetail: React.FC<{
       {detail.compounds.length === 0 ? (
         <p className="text-body-sm text-outline">{stats.jmdict ? "Chưa có từ thông dụng chứa chữ này." : "Chưa dựng từ điển JMdict trên máy này; chỉ còn từ JLPT."}</p>
       ) : (
-        <WordList words={detail.compounds} onPick={mode === "compounds" ? (w) => onSelect(`w:${w.term}`) : undefined} />
+        <WordList words={detail.compounds} onPick={mode === "compounds" ? (w) => onSelect(`w:${w.term}`) : undefined} onAddWord={onAddWord} />
       )}
     </section>
 
@@ -264,7 +277,9 @@ const KanjiCard: React.FC<{ node: KanjiDiagramNode; onRecenter: (ch: string) => 
   const role =
     node.type === "component"
       ? node.role === "phon"
-        ? `Thành phần chỉ âm${node.isRadical ? ", đồng thời là bộ" : ""}${node.phon && node.phon !== node.label ? ` (biến thể của ${node.phon})` : ""}`
+        ? node.guess
+          ? "Có thể là thành phần chỉ âm (đoán vì trùng âm On; KanjiVG chưa đánh dấu)"
+          : `Thành phần chỉ âm${node.isRadical ? ", đồng thời là bộ" : ""}${node.phon && node.phon !== node.label ? ` (biến thể của ${node.phon})` : ""}`
         : node.role === "radical"
           ? "Bộ thủ của chữ đang xét"
           : "Thành phần cấu tạo"
@@ -302,7 +317,8 @@ const WordCard: React.FC<{
   data: KanjiDiagramResponse;
   onSelect: (id: string) => void;
   onRecenter: (ch: string) => void;
-}> = ({ node, data, onSelect, onRecenter }) => {
+  onAddWord?: (word: HanVietWordNode) => void;
+}> = ({ node, data, onSelect, onRecenter, onAddWord }) => {
   const chars = Array.from(node.label).filter((c, i, arr) => arr.indexOf(c) === i && /[一-鿿㐀-䶿]/.test(c));
   return (
     <>
@@ -324,6 +340,12 @@ const WordCard: React.FC<{
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
+        {onAddWord && (
+          <Button size="sm" variant="secondary" onClick={() => onAddWord(toHanVietWord(node))}>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">playlist_add</span>
+            Thêm vào bộ thẻ
+          </Button>
+        )}
         <Link
           to={wordHref(node.key ?? null, node.label)}
           className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-outline-variant hover:border-primary text-on-surface bg-surface-container-lowest hover:bg-surface-container-low font-semibold"
@@ -355,7 +377,11 @@ const WordCard: React.FC<{
   );
 };
 
-const WordList: React.FC<{ words: KanjiDiagramWord[]; onPick?: (w: KanjiDiagramWord) => void }> = ({ words, onPick }) => (
+const WordList: React.FC<{
+  words: KanjiDiagramWord[];
+  onPick?: (w: KanjiDiagramWord) => void;
+  onAddWord?: (word: HanVietWordNode) => void;
+}> = ({ words, onPick, onAddWord }) => (
   <ul className="flex flex-col divide-y divide-surface-container-high">
     {words.map((w) => (
       <li key={w.term} className="flex items-center gap-2 py-1.5 min-w-0">
@@ -371,6 +397,17 @@ const WordList: React.FC<{ words: KanjiDiagramWord[]; onPick?: (w: KanjiDiagramW
         <span className="text-[10px] font-bold text-primary shrink-0 tracking-wide">{w.hanViet ?? ""}</span>
         <span className="flex-1 min-w-0 text-body-sm truncate">{meaningOf(w)}</span>
         <LevelChip level={w.jlpt} className="shrink-0" />
+        {onAddWord && (
+          <button
+            type="button"
+            onClick={() => onAddWord(toHanVietWord(w))}
+            aria-label={`Thêm ${w.term} vào bộ thẻ`}
+            title="Thêm vào bộ thẻ"
+            className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg text-outline hover:text-primary hover:bg-surface-container cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">playlist_add</span>
+          </button>
+        )}
       </li>
     ))}
   </ul>

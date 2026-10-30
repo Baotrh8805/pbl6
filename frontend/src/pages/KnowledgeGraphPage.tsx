@@ -1,12 +1,17 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
+import { useShell } from "@/components/layout/shellContext";
 import { useAsync } from "@/lib/useAsync";
+import { hasCjkIdeograph } from "@/lib/textUtils";
 import { extractErrorMessage } from "@/services/apiClient";
+import { suggestHanViet } from "@/services/nlpService";
+import { AddWordToDeckModal } from "@/features/hanviet/components/AddWordToDeckModal";
 import { KanjiDiagramCanvas } from "@/features/graph/components/KanjiDiagramCanvas";
 import { KanjiDiagramPanel } from "@/features/graph/components/KanjiDiagramPanel";
 import { diagramStats, placeAround, type DiagramGraph, type DiagramPoint, type DiagramPositions } from "@/features/graph/diagramLayout";
 import { fetchKanjiDiagram } from "@/services/kanjiDiagramService";
+import type { HanVietWordNode } from "@/types/api.types";
 import type { KanjiDiagramMode, KanjiDiagramResponse } from "@/types/kanjiDiagram.types";
 
 const MODES: { key: KanjiDiagramMode; label: string; icon: string; hint: string }[] = [
@@ -47,6 +52,19 @@ export const KnowledgeGraphPage: React.FC = () => {
   const [reload, setReload] = useState(0);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [history, setHistory] = useState<string[]>([]);
+  const { decks, statsLoading } = useShell();
+  const ownDecks = useMemo(() => decks.filter((d) => d.access === "owner"), [decks]);
+  const [addWord, setAddWord] = useState<HanVietWordNode | null>(null);
+
+  // gợi ý âm Hán-Việt khi gõ chữ Latinh (debounce 200 ms); gõ chữ Hán thì không gợi ý
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(input.trim()), 200);
+    return () => clearTimeout(t);
+  }, [input]);
+  const wantSuggest = debounced.length >= 1 && debounced.length <= 12 && !hasCjkIdeograph(debounced) && /^[\p{L}\s]+$/u.test(debounced);
+  const suggestRes = useAsync(() => (wantSuggest ? suggestHanViet(debounced, 8) : Promise.resolve([])), [wantSuggest ? debounced : ""]);
+  const suggestions = suggestRes.data ?? [];
 
   const go = useCallback(
     (next: { q?: string; mode?: KanjiDiagramMode }, replace = false) => {
@@ -220,8 +238,15 @@ export const KnowledgeGraphPage: React.FC = () => {
             placeholder="Gõ chữ Hán (時) hoặc âm Hán-Việt (THỜI, thoi) rồi Enter"
             aria-label="Chữ Hán hoặc âm Hán-Việt"
             lang="ja"
+            list="kd-suggest"
+            autoComplete="off"
             className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-outline-variant bg-surface text-on-surface text-body-md font-japanese focus:outline-none focus:ring-2 focus:ring-primary/40"
           />
+          <datalist id="kd-suggest">
+            {suggestions.map((s) => (
+              <option key={s.reading} value={s.reading} label={`${s.count} chữ · ${s.kanji.join(" ")}`} />
+            ))}
+          </datalist>
           <Button type="submit" isLoading={res.loading && q !== ""} disabled={!input.trim()}>
             Vẽ sơ đồ
           </Button>
@@ -320,10 +345,13 @@ export const KnowledgeGraphPage: React.FC = () => {
               onRecenter={draw}
               onSelect={select}
               onMode={(m) => go({ mode: m })}
+              onAddWord={setAddWord}
             />
           </div>
         )}
       </div>
+
+      <AddWordToDeckModal word={addWord} decks={ownDecks} decksLoading={statsLoading} onClose={() => setAddWord(null)} />
 
       <p className="text-[11px] text-on-surface-variant">
         Dữ liệu cấu tạo và phần chỉ âm từ KanjiVG (© Ulrich Apel, CC BY-SA 3.0); âm đọc, bộ thủ từ Unihan; từ ghép từ danh sách JLPT và

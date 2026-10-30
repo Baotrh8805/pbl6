@@ -40,16 +40,37 @@ export function useViewBox(base: DiagramViewBox, svgRef: RefObject<SVGSVGElement
         // base đổi → đăng ký lại để closure thấy base mới (giới hạn zoom tính theo base)
     }, [svgRef, baseKey, base]);
 
-    // kéo nền: chỉ khi bấm vào chính <svg> (không phải node); node tự xử lý kéo của nó và stopPropagation
+    // kéo nền: chỉ khi bấm vào chính <svg> (không phải node); node tự xử lý kéo của nó và stopPropagation.
+    // Hai ngón trên màn hình cảm ứng: pinch = zoom quanh điểm giữa hai ngón (theo dõi mọi con trỏ đang chạm).
     const pan = useRef<{ id: number; x: number; y: number; vb: DiagramViewBox; moved: boolean } | null>(null);
+    const touches = useRef(new Map<number, { x: number; y: number }>());
+    const pinch = useRef<{ dist: number } | null>(null);
     const [panning, setPanning] = useState(false);
     const panHandlers = {
         onPointerDown: (e: PointerEvent<SVGSVGElement>) => {
-            if (!e.isPrimary || e.button !== 0) return;
-            pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY, vb: viewRef.current, moved: false };
+            if (e.button !== 0) return;
+            touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
             e.currentTarget.setPointerCapture(e.pointerId);
+            if (touches.current.size === 2) {
+                const [a, b] = [...touches.current.values()];
+                pinch.current = { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+                pan.current = null;
+                return;
+            }
+            if (!e.isPrimary) return;
+            pan.current = { id: e.pointerId, x: e.clientX, y: e.clientY, vb: viewRef.current, moved: false };
         },
         onPointerMove: (e: PointerEvent<SVGSVGElement>) => {
+            if (touches.current.has(e.pointerId)) touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinch.current && touches.current.size >= 2) {
+                const [a, b] = [...touches.current.values()];
+                const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+                const factor = dist / pinch.current.dist;
+                pinch.current.dist = dist;
+                const mid = clientToDiagram(e.currentTarget.getBoundingClientRect(), viewRef.current, (a.x + b.x) / 2, (a.y + b.y) / 2);
+                zoomAt(factor, mid);
+                return;
+            }
             const p = pan.current;
             if (!p || e.pointerId !== p.id) return;
             const rect = e.currentTarget.getBoundingClientRect();
@@ -64,12 +85,16 @@ export function useViewBox(base: DiagramViewBox, svgRef: RefObject<SVGSVGElement
             set(panViewBox(p.vb, dx, dy));
         },
         onPointerUp: (e: PointerEvent<SVGSVGElement>) => {
+            touches.current.delete(e.pointerId);
+            if (touches.current.size < 2) pinch.current = null;
             if (pan.current && e.pointerId === pan.current.id) {
                 pan.current = null;
                 setPanning(false);
             }
         },
-        onPointerCancel: () => {
+        onPointerCancel: (e: PointerEvent<SVGSVGElement>) => {
+            touches.current.delete(e.pointerId);
+            pinch.current = null;
             pan.current = null;
             setPanning(false);
         },

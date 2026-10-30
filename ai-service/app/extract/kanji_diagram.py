@@ -49,6 +49,45 @@ def _has_structure(ch: str) -> bool:
     return kanjidata.parts(ch) is not None
 
 
+_PRIMARY_ON = 2          # chỉ so các âm On chính (âm hiếm như ホン của 体 sinh dương tính giả)
+_radical_chars: Optional[frozenset[str]] = None
+
+
+def _kangxi_chars() -> frozenset[str]:
+    """Ký tự 214 bộ thủ (dạng thống nhất + dạng khối Kangxi): bộ thủ hầu như không làm phần chỉ âm (口 厂 大 小 … trùng âm
+    On là tình cờ) nên heuristic bỏ qua chúng."""
+    global _radical_chars
+    if _radical_chars is None:
+        _radical_chars = frozenset(c for r in radicals.table() for c in (r.get("unified"), r.get("char")) if c)
+    return _radical_chars
+
+
+def _guess_phon(ch: str, p: kanjidata.Parts) -> Optional[tuple[str, str]]:
+    """KanjiVG không đánh dấu kvg:phon (≈ 42 % chữ JLPT): đoán (part, chữ chỉ âm) = part là chữ Hán thật, không phải bộ của chữ,
+    không phải bộ thủ Khang Hi, trùng ≥ 1 trong 2 âm On chính với chữ tâm (但 ← 旦 タン). Không chắc → None (không bịa)."""
+    center_on = set(_on_readings(ch)[:_PRIMARY_ON])
+    if not center_on:
+        return None
+    kangxi = _kangxi_chars()
+    for part, original in zip(p.parts, p.originals):
+        c = original or part
+        if part == p.radical_part or c == ch or c in kangxi or part in kangxi or not _is_real_kanji(c):
+            continue
+        if center_on & set(_on_readings(c)[:_PRIMARY_ON]):
+            return part, c
+    return None
+
+
+def _phon_of(ch: str, p: Optional[kanjidata.Parts]) -> tuple[Optional[str], Optional[str], bool]:
+    """(part mang chỉ âm, chữ chỉ âm, có phải suy đoán) — KanjiVG trước, heuristic sau."""
+    if not p:
+        return None, None, False
+    if p.phon and p.phon_part:
+        return p.phon_part, p.phon, False
+    g = _guess_phon(ch, p)
+    return (g[0], g[1], True) if g else (None, None, False)
+
+
 def _kanji_node(ch: str, type_: str, **extra) -> dict:
     rs = kanjidata.radical_strokes(ch)
     node = {
@@ -139,11 +178,15 @@ def _word_key(w: dict) -> Optional[str]:
 def detail(ch: str) -> dict:
     p = kanjidata.parts(ch)
     rs = kanjidata.radical_strokes(ch)
+    phon_part, phon, guessed = _phon_of(ch, p)
     formula = []
     if p:
         for part, original, position in zip(p.parts, p.originals, p.positions):
-            formula.append({"part": part, "original": original, "position": position, "role": _role(p, part),
-                            "hanViet": han_viet.han_viet(original or part)})
+            item = {"part": part, "original": original, "position": position, "role": _role(p, part, phon_part),
+                    "hanViet": han_viet.han_viet(original or part)}
+            if guessed and part == phon_part:
+                item["guess"] = True
+            formula.append(item)
     phon_of = [{"kanji": k, "hanViet": han_viet.han_viet(k), "jlpt": _jlpt(k), "sameOn": _same_on(k, ch)}
                for k in _family(ch)]
     return {
@@ -156,14 +199,15 @@ def detail(ch: str) -> dict:
         "jlpt": _jlpt(ch),
         "radical": _radical_info(ch),
         "formula": formula,
-        "phon": p.phon if p else None,
+        "phon": phon,
+        "phonGuess": guessed,
         "phonOf": phon_of,
         "compounds": _top_words(ch),
     }
 
 
-def _role(p: kanjidata.Parts, part: str) -> str:
-    if part == p.phon_part:
+def _role(p: kanjidata.Parts, part: str, phon_part: Optional[str]) -> str:
+    if part == phon_part:
         return "phon"
     if part == p.radical_part:
         return "radical"
@@ -188,26 +232,29 @@ def structure(ch: str) -> dict:
     edges: list[dict] = []
     p = kanjidata.parts(ch)
     if p:
+        phon_part, phon, guessed = _phon_of(ch, p)
         seen_parts: set[str] = set()
         for part, original, position in zip(p.parts, p.originals, p.positions):
-            role = _role(p, part)
+            role = _role(p, part, phon_part)
             if part not in seen_parts:
                 seen_parts.add(part)
                 extra = {"role": role, "position": position, "original": original}
-                if role == "phon" and p.phon and p.phon != part:
-                    extra["phon"] = p.phon
+                if role == "phon" and phon and phon != part:
+                    extra["phon"] = phon
                 if role == "phon" and part == p.radical_part:
                     extra["isRadical"] = True
+                if role == "phon" and guessed:
+                    extra["guess"] = True
                 nodes.append(_kanji_node(part, "component", **extra))
             edges.append({"from": f"k:{part}", "to": f"k:{ch}", "type": role})
         if p.radical_part is None:
             _attach_unihan_radical(ch, p, nodes, edges)
-        if p.phon and p.phon_part:
-            src = f"k:{p.phon_part}"
-            for k in _family(p.phon):
+        if phon and phon_part:
+            src = f"k:{phon_part}"
+            for k in _family(phon):
                 if k == ch:
                     continue
-                same = _same_on(k, p.phon)
+                same = _same_on(k, phon)
                 nodes.append(_kanji_node(k, "phonetic", sameOn=same))
                 edges.append({"from": src, "to": f"k:{k}", "type": "phon" if same else "family"})
     return {"nodes": nodes, "edges": edges, "detail": detail(ch), "stats": _stats(nodes)}

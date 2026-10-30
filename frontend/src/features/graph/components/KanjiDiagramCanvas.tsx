@@ -55,7 +55,7 @@ const kanjiOf = (n: KanjiDiagramNode): string | null => (n.id.startsWith("k:") ?
 
 const roleText = (n: KanjiDiagramNode): string => {
   if (n.type === "component") {
-    if (n.role === "phon") return n.isRadical ? "thành phần chỉ âm, cũng là bộ" : "thành phần chỉ âm";
+    if (n.role === "phon") return n.guess ? "có thể là thành phần chỉ âm (đoán theo âm On)" : n.isRadical ? "thành phần chỉ âm, cũng là bộ" : "thành phần chỉ âm";
     if (n.role === "radical") return "bộ thủ";
     return "thành phần";
   }
@@ -240,6 +240,8 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
             const t = trimmed(e);
             if (!t) return null;
             const touched = selectedId !== null && (e.from === selectedId || e.to === selectedId);
+            // chỉ âm do heuristic đoán: nét đứt + dấu hỏi để không khẳng định điều dữ liệu không có
+            const guessed = e.type === "phon" && e.to === centerId && Boolean(byId.get(e.from)?.guess);
             return (
               <g key={`${e.from}|${e.to}|${e.type}|${i}`} className="pointer-events-none">
                 <path
@@ -247,12 +249,12 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
                   fill="none"
                   stroke={EDGE_COLOR[e.type]}
                   strokeWidth={touched ? 2.6 : 1.8}
-                  strokeDasharray={e.type === "family" ? "6 4" : undefined}
+                  strokeDasharray={e.type === "family" || guessed ? "6 4" : undefined}
                   markerEnd={`url(#kd-arrow-${e.type})`}
                   opacity={selectedId && !touched ? 0.55 : 1}
                 />
                 <text x={t.mid.x} y={t.mid.y} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600} fill={EDGE_COLOR[e.type]} stroke="#ffffff" strokeWidth={3} paintOrder="stroke">
-                  {edgeLabel(e.type)}
+                  {guessed ? "chỉ âm?" : edgeLabel(e.type)}
                 </text>
               </g>
             );

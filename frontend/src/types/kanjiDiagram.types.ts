@@ -32,6 +32,8 @@ export interface KanjiDiagramNode {
     isRadical?: boolean;
     /** Bộ lấy từ Unihan vì KanjiVG không đánh dấu, không phải part thật. */
     virtual?: boolean;
+    /** Chỉ âm do heuristic đoán (trùng âm On chính, KanjiVG không đánh dấu) — hiện "chỉ âm?". */
+    guess?: boolean;
     // phonetic
     sameOn?: boolean;
     // word
@@ -60,6 +62,7 @@ export interface KanjiDiagramFormulaPart {
     role: KanjiDiagramRole;
     hanViet: string | null;
     meaningVi?: string | null;
+    guess?: boolean;
 }
 
 export interface KanjiDiagramWord {
@@ -100,6 +103,8 @@ export interface KanjiDiagramDetail {
     radical: KanjiDiagramRadical | null;
     formula: KanjiDiagramFormulaPart[];
     phon: string | null;
+    /** phon là suy đoán theo âm On (không có kvg:phon). */
+    phonGuess: boolean;
     phonOf: KanjiDiagramPhonOf[];
     compounds: KanjiDiagramWord[];
 }

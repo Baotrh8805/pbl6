@@ -96,6 +96,30 @@ def test_structure_without_phon_has_no_family():
     assert p["detail"]["phon"] is None
 
 
+def test_structure_guesses_phon_when_kanjivg_has_none():
+    # 但: KanjiVG không đánh dấu kvg:phon; part 旦 (タン) trùng âm On chính với 但 (タン) và không phải bộ → "có thể là chỉ âm"
+    p = kanji_diagram.structure("但")
+    n = _nodes(p)["k:旦"]
+    assert n["role"] == "phon" and n["guess"] is True
+    assert ("k:旦", "k:但", "phon") in _edges(p)
+    f = {x["part"]: x for x in p["detail"]["formula"]}
+    assert f["旦"]["role"] == "phon" and f["旦"]["guess"] is True and f["亻"]["role"] == "radical"
+    assert p["detail"]["phon"] == "旦" and p["detail"]["phonGuess"] is True
+    # part đã đánh dấu kvg:phon thật thì không có cờ guess
+    assert "guess" not in _nodes(kanji_diagram.structure("時"))["k:寺"]
+    assert kanji_diagram.structure("時")["detail"]["phonGuess"] is False
+
+
+def test_structure_guess_skips_radicals_and_rare_readings():
+    # 太: part 大 trùng âm タイ nhưng 大 là bộ thủ Khang Hi (và là bộ của 太) → không đoán; 明: 日 / 月 không trùng âm → không đoán
+    for ch in ("太", "明"):
+        p = kanji_diagram.structure(ch)
+        assert all(not n.get("guess") for n in p["nodes"]), ch
+        assert p["detail"]["phon"] is None and p["detail"]["phonGuess"] is False, ch
+    # 体: 本 chỉ trùng âm On hiếm (ホン không phải âm chính của 体) → không đoán
+    assert kanji_diagram.structure("体")["detail"]["phon"] is None
+
+
 def test_structure_single_kanji_only_center():
     p = kanji_diagram.structure("日")
     assert list(_nodes(p)) == ["k:日"] and p["edges"] == []
