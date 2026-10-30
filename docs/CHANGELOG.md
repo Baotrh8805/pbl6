@@ -1,6 +1,22 @@
 # Nhật ký thay đổi
 
-## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1, nhánh `Graph`)
+## 30/10/2026 (tối): Sơ đồ chữ Hán — tra bằng từ nhiều chữ, kana, Hán-Việt nhiều âm ("Phân tích từ")
+Spec [Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md](Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md), kế hoạch
+[Plan/plans/2026-10-30-so-do-chu-han-tu-nhieu-chu.md](Plan/plans/2026-10-30-so-do-chu-han-tu-nhieu-chu.md). Không có migration, không thêm thư
+viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học sinh` báo không tìm thấy.
+- **ai-service** `kanji_diagram`: phân giải câu tìm theo cụm chữ Hán liền nhau đầu tiên (2–4 chữ là từ, ≥ 5 chỉ chọn chữ), toàn kana
+  (từ JLPT rồi JMdict thông dụng, từ JMdict chỉ giữ khi mọi chữ thuộc bộ chữ JLPT để bỏ dạng cũ 學生 / 髮), Hán-Việt 2–4 âm có / không
+  dấu; nhiều từ → `wordCandidates` (≤ 12). Chế độ mới `word`: tâm là từ, mỗi chữ cùng thành phần trực tiếp, không họ chỉ âm / từ ghép.
+  `mode` trống = tự chọn, `k` = chữ chọn trong từ; payload thêm `chars`, `selectedChar`, `word`, `wordCandidates`.
+- **backend**: chuyển `mode` trống / `k` xuống ai-service, `k` > 2 ký tự → 400, cache theo `q|mode|k`, ghép nghĩa Việt cho từ,
+  các chữ của từ và ứng viên từ trong cùng một truy vấn `dict_meanings`.
+- **frontend**: tab "Phân tích từ" (chỉ khi từ 2–4 chữ), thanh chọn chữ trên sơ đồ, khung chọn từ, panel từ (thẻ từ + mỗi chữ có
+  công thức, bộ, "Xem cấu tạo"), bố cục `wordLayout`. URL `?q=学生`, `?q=学生&mode=structure&k=生`.
+- **Kiểm**: pytest 36 (quét mọi từ JLPT 2–4 chữ ở chế độ word: không node trùng / cạnh treo / tự nối), NlpIT 8 + AiServiceClientNlpTest 4,
+  selfcheck / lint / tsc / build xanh; ai-service thật: 学生, 日本語, がくせい, học sinh → Phân tích từ; かみ → 5 ứng viên;
+  日本語能力試験 → Cấu tạo 日 + thanh chọn chữ; `?q=時&mode=word` → Cấu tạo. **Chưa bấm thử trên trình duyệt.**
+
+## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
 Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch
 [Plan/plans/2026-10-30-so-do-chu-han.md](Plan/plans/2026-10-30-so-do-chu-han.md). Không có migration. Quyết định: thay giao diện người học
 của đồ thị Neo4j bằng sơ đồ cấu tạo chữ Hán chạy từ dữ liệu tĩnh; backend / ai-service / Admin của Neo4j giữ nguyên; nghĩa Việt từng chữ
@@ -19,7 +35,16 @@ lấy từ `dict_meanings`, không gọi Gemini khi mở sơ đồ.
   hoặc Anh, JLPT, "Bắt đầu lại từ chữ này", "Tra chữ này", On / Kun, công thức, Từ có chữ, Làm phần chỉ âm, chọn chữ khi âm nhiều chữ);
   bố cục theo cung tất định `diagramLayout.ts` (selfcheck `diagram.ts`). **Gỡ** `KnowledgeGraphSvg`, `GraphNodePanel`, `GraphAskPanel`,
   `GraphRecommendations`, `GraphPathFinder`, `GraphBits`, `useGraphAsync`, `lib/graphLayout.ts`, `selfcheck/graph.ts`; `graphService` /
-  `graph.types` chỉ còn phần Admin. Sidebar: "Sơ Đồ Chữ Hán". Đợt 2 (zoom / kéo / mở tầng / lịch sử) và đợt 3 chưa làm.
+  `graph.types` chỉ còn phần Admin. Sidebar: "Sơ Đồ Chữ Hán".
+- **Đợt 2 — tương tác canvas** (`useViewBox`): cuộn chuột phóng quanh con trỏ (wheel gắn native, không passive), kéo nền pan, pinch
+  hai ngón, nút + − ⤢, phím + − 0 (kẹp 0,4×–3×); kéo node sắp lại; huy hiệu **+** / đúp chuột mở thêm liên kết (gọi lại API cho chữ
+  đó, `mergeDiagram` khử trùng, `placeAround` đặt quanh node mẹ), "Mở thêm 1 tầng" (≤ 8 node), "Thu gọn"; nút "← Quay lại [chữ
+  trước]"; Shift+Enter đổi tâm; `aria-live`. Trạng thái mở thêm / kéo gắn với khoá q|mode.
+- **Đợt 3**: heuristic **"chỉ âm?"** cho chữ KanjiVG không đánh dấu `kvg:phon` (part là chữ Hán thật, không phải bộ / bộ thủ Khang Hi,
+  trùng ≥ 1 trong 2 âm On chính; 117 chữ JLPT, nét đứt + dấu hỏi + ghi chú, `guess` / `phonGuess` trong payload); autocomplete âm
+  Hán-Việt (datalist, `/nlp/han-viet-suggest`); thêm từ ghép vào bộ thẻ (tái dùng `AddWordToDeckModal`).
+- **Hiệu năng** (đo in-process TestClient, máy dev 8 GB): lần đầu 1,5 s (nạp bảng), sau đó Cấu tạo 8–23 ms, Từ ghép ~10 ms, âm nhiều
+  chữ (THANH) 85 ms; backend cache 10 phút. **Chưa kiểm tay trên trình duyệt** (xem báo cáo `Plan/reports/2026-10-30-so-do-chu-han.md`).
 
 ## 28/10/2026 (chiều): Dịch offline dự phòng + tab Dịch không bao giờ báo lỗi (D34)
 Người dùng yêu cầu: luôn trả bản dịch, không bao giờ báo lỗi cho người học. Không có migration. Đảo phần "không dịch offline" của D33.
