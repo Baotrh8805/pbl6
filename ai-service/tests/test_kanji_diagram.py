@@ -23,9 +23,11 @@ def _edges(payload):
 # ----------------------------------------------------------------------------- resolve: chữ Hán hoặc âm Hán-Việt
 
 def test_resolve_kanji_and_first_kanji_of_word():
-    assert kanji_diagram.resolve("時") == {"center": "時", "candidates": []}
-    assert kanji_diagram.resolve(" 時間 ")["center"] == "時"      # dán cả từ → lấy chữ Hán đầu
-    assert kanji_diagram.resolve("々") == {"center": None, "candidates": []}
+    r = kanji_diagram.resolve("時")
+    assert r["center"] == "時" and r["candidates"] == [] and r["term"] is None and r["chars"] == ["時"]
+    assert kanji_diagram.resolve(" 時間 ")["center"] == "時"      # dán cả từ → chữ đầu là chữ mặc định
+    e = kanji_diagram.resolve("々")
+    assert e["center"] is None and e["candidates"] == [] and e["term"] is None
 
 
 def test_resolve_han_viet_many_kanji_gives_candidates():
@@ -44,8 +46,35 @@ def test_resolve_han_viet_many_kanji_gives_candidates():
 def test_resolve_han_viet_without_diacritics_and_unknown():
     r = kanji_diagram.resolve("thoi")
     assert r["center"] == "時" or "時" in [c["kanji"] for c in r["candidates"]]
-    assert kanji_diagram.resolve("xyzxyz") == {"center": None, "candidates": []}
-    assert kanji_diagram.resolve("") == {"center": None, "candidates": []}
+    for q in ("xyzxyz", ""):
+        e = kanji_diagram.resolve(q)
+        assert e == {"center": None, "candidates": [], "term": None, "chars": [], "wordCandidates": []}, q
+
+
+def test_resolve_word_from_kanji_run():
+    r = kanji_diagram.resolve(" 学生です。")
+    assert r["term"] == "学生" and r["chars"] == ["学", "生"] and r["center"] == "学"
+    assert kanji_diagram.resolve("食べる")["term"] is None and kanji_diagram.resolve("食べる")["center"] == "食"
+    long = kanji_diagram.resolve("日本語能力試験")
+    assert long["term"] is None and long["center"] == "日" and len(long["chars"]) == 7
+    assert kanji_diagram.resolve("人々")["chars"] == ["人"]
+
+
+def test_resolve_kana_gives_word_or_candidates():
+    assert kanji_diagram.resolve("がくせい")["term"] == "学生"
+    assert kanji_diagram.resolve("ガクセイ")["term"] == "学生"
+    r = kanji_diagram.resolve("かみ")
+    terms = [w["term"] for w in r["wordCandidates"]]
+    assert r["term"] is None and len(terms) >= 2 and "紙" in terms and len(terms) <= kanji_diagram.MAX_WORD_CANDIDATES
+    assert set(r["wordCandidates"][0]) == {"term", "reading", "hanViet", "jlpt", "meaningEn", "key"}
+    jl = [w["jlpt"] is not None for w in r["wordCandidates"]]
+    assert jl == sorted(jl, reverse=True)          # JLPT trước
+
+
+def test_resolve_han_viet_multi_syllable():
+    for q in ("học sinh", "hoc sinh", "  Học   SINH "):
+        assert kanji_diagram.resolve(q)["term"] == "学生", q
+    assert kanji_diagram.resolve("xyz abc")["term"] is None
 
 
 # ----------------------------------------------------------------------------- structure

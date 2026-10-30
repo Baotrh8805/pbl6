@@ -7,10 +7,11 @@ chọn. Nhãn trung thực (D2): chữ cùng họ chỉ âm nhưng không trùng
 """
 from __future__ import annotations
 
+import sqlite3
 from typing import Optional
 
 from app.extract import han_viet, han_viet_graph, jmdict, kanji_meanings, kanjidata, radicals
-from app.extract.jachars import is_kanji
+from app.extract.jachars import is_kana_only, is_kanji, kata_to_hira
 from app.extract.jlpt import classifier
 from app.extract.kanji_readings import readings_split
 
@@ -18,6 +19,9 @@ MODES = ("structure", "compounds")
 MAX_FAMILY = 12          # họ chỉ âm lớn nhất trong JLPT là 8 chữ (莫, 方); trần để canvas không quá tải
 MAX_WORDS = 12           # từ ghép trên sơ đồ / panel
 MAX_CANDIDATES = 24      # âm Hán-Việt nhiều chữ (THỊ, HOÀ…): đủ để chọn, chữ hiếm không có từ bị cắt
+MIN_WORD_CHARS = 2       # từ = cụm 2–4 chữ Hán khác nhau (spec từ nhiều chữ W4)
+MAX_WORD_CHARS = 4
+MAX_WORD_CANDIDATES = 12 # ứng viên từ khi gõ kana / Hán-Việt nhiều âm
 _SKIP_CHARS = frozenset("々〆ヶ")
 
 
@@ -129,18 +133,119 @@ def _stats(nodes: list[dict]) -> dict:
 
 # ----------------------------------------------------------------------------- resolve
 
+def kanji_run(text: str) -> list[str]:
+    """Cụm chữ Hán liền nhau đầu tiên (々〆ヶ không cắt cụm nhưng bị bỏ khỏi kết quả), khử trùng giữ thứ tự: 学生です → 学 生,
+    人々 → 人, 食べる → 食. Không có chữ Hán thật → []."""
+    return list(dict.fromkeys(c for c in _raw_run(text) if _is_real_kanji(c)))
+
+
+def _raw_run(text: str) -> str:
+    """Chuỗi gốc của cụm chữ Hán đầu tiên (giữ 々), bắt đầu ở chữ Hán thật đầu tiên."""
+    start = next((i for i, c in enumerate(text or "") if _is_real_kanji(c)), None)
+    if start is None:
+        return ""
+    end = start
+    while end < len(text) and is_kanji(text[end]):
+        end += 1
+    return text[start:end]
+
+
+def _from_run(text: str) -> dict:
+    """R1 (spec từ nhiều chữ §2): 1 chữ → tâm chữ; 2–4 chữ → từ (term = chuỗi gốc của cụm); ≥ 5 → chữ đầu, không có từ."""
+    chars = kanji_run(text)
+    term = _raw_run(text) if MIN_WORD_CHARS <= len(chars) <= MAX_WORD_CHARS else None
+    return {"center": chars[0], "candidates": [], "term": term, "chars": chars, "wordCandidates": []}
+
+
+def word_candidate(w: dict) -> dict:
+    """Một mục của han_viet_graph.words_of → ứng viên từ {term, reading, hanViet, jlpt, meaningEn, key}."""
+    return {"term": w["term"], "reading": w["reading"], "hanViet": han_viet.han_viet(w["term"]), "jlpt": w["level"],
+            "meaningEn": w["meaning"], "key": _word_key(w)}
+
+
+def _usable_word(term: str, source: str = "jlpt") -> bool:
+    """Từ có 1–4 chữ Hán. Từ JMdict còn phải chỉ gồm chữ trong bộ chữ JLPT: JMdict đánh dấu thông dụng cả dạng chữ cũ
+    (學生, 髮) nên không lọc thì "がくせい" ra hai ứng viên thay vì đi thẳng vào 学生."""
+    kanji = [c for c in term if _is_real_kanji(c)]
+    if not 1 <= len(kanji) <= MAX_WORD_CHARS:
+        return False
+    return source == "jlpt" or all(c in classifier.jlpt_kanji_set() for c in kanji)
+
+
+def _words_by_kana(kana: str) -> list[dict]:
+    """R2: từ JLPT đọc là ``kana`` (cấp dễ → khó) rồi JMdict thông dụng, chỉ từ có 1–4 chữ Hán, mỗi từ một lần."""
+    hira = kata_to_hira(kana)
+    out: list[dict] = []
+    seen: set[str] = set()
+    for expr, meaning, level in classifier.homophones_jlpt(hira):
+        if expr not in seen and _usable_word(expr):
+            seen.add(expr)
+            out.append({"term": expr, "reading": hira, "meaning": meaning or None, "level": level, "source": "jlpt"})
+    for kanji, gloss in _jmdict_by_kana(hira):
+        if kanji not in seen and _usable_word(kanji, "jmdict"):
+            seen.add(kanji)
+            out.append({"term": kanji, "reading": hira, "meaning": gloss or None, "level": None, "source": "jmdict"})
+    return out
+
+
+def _jmdict_by_kana(hira: str) -> list[tuple[str, str]]:
+    path = jmdict.DATA_FILE
+    if not path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        try:
+            return conn.execute("SELECT kanji, gloss FROM entries WHERE common=1 AND kanji IS NOT NULL AND kana=?",
+                                (hira,)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:  # file hỏng / khác schema → chỉ còn từ JLPT
+        return []
+
+
+def _words_by_han_viet(syllables: list[str]) -> list[dict]:
+    """R4: từ có đúng n chữ, chữ thứ i thuộc tập chữ của âm thứ i (khớp có dấu, hoặc gập dấu khi gõ không dấu)."""
+    sets = [{c for _, chars in han_viet_graph.kanji_for(s) for c in chars} for s in syllables]
+    if not all(sets):
+        return []
+    n = len(syllables)
+    out: dict[str, dict] = {}
+    for c in sets[0]:
+        for w in han_viet_graph.words_of(c):
+            t = w["term"]
+            if t not in out and len(t) == n and all(t[i] in sets[i] for i in range(n)) and _usable_word(t, w["source"]):
+                out[t] = w
+    return sorted(out.values(), key=han_viet_graph._word_sort_key)
+
+
+def _pick_word(words: list[dict]) -> Optional[dict]:
+    """R2 / R4: một từ → như R1 với từ đó; nhiều từ → wordCandidates (≤ MAX_WORD_CANDIDATES); không có → None."""
+    if not words:
+        return None
+    if len(words) == 1:
+        return _from_run(words[0]["term"])
+    return {"center": None, "candidates": [], "term": None, "chars": [],
+            "wordCandidates": [word_candidate(w) for w in words[:MAX_WORD_CANDIDATES]]}
+
+
 def resolve(q: str) -> dict:
-    """{center: chữ | None, candidates: [{kanji, hanViet, jlpt, meaningEn}]}. Chữ Hán (hoặc chuỗi chứa chữ Hán: lấy chữ đầu)
-    → tâm; âm Hán-Việt (có / không dấu) → một chữ thì làm tâm, nhiều chữ thì liệt kê ứng viên cấp dễ trước; không khớp → rỗng."""
+    """{center, candidates, term, chars, wordCandidates} theo spec từ nhiều chữ §2: R1 cụm chữ Hán (1 chữ → tâm chữ, 2–4 →
+    từ, ≥ 5 → chữ đầu), R2 toàn kana → từ, R3 âm Hán-Việt đơn → chữ / ứng viên chữ, R4 Hán-Việt 2–4 âm → từ, R5 rỗng.
+    Khi có term, center là chữ đầu của từ (chữ mặc định cho structure / compounds)."""
     text = (q or "").strip()
-    empty = {"center": None, "candidates": []}
+    empty = {"center": None, "candidates": [], "term": None, "chars": [], "wordCandidates": []}
     if not text:
         return empty
-    for ch in text:
-        if _is_real_kanji(ch):
-            return {"center": ch, "candidates": []}
+    if kanji_run(text):
+        return _from_run(text)
     if any(is_kanji(ch) for ch in text):
         return empty  # chỉ có 々〆ヶ
+    compact = text.replace(" ", "").replace("　", "")
+    if is_kana_only(compact):
+        return _pick_word(_words_by_kana(compact)) or empty
+    syllables = text.split()
+    if MIN_WORD_CHARS <= len(syllables) <= MAX_WORD_CHARS:
+        return _pick_word(_words_by_han_viet(syllables)) or empty
     found: list[tuple[str, str]] = []
     seen: set[str] = set()
     for display, chars in han_viet_graph.kanji_for(text):
@@ -151,11 +256,11 @@ def resolve(q: str) -> dict:
     if not found:
         return empty
     if len(found) == 1:
-        return {"center": found[0][0], "candidates": []}
+        return {**empty, "center": found[0][0], "chars": [found[0][0]]}
     cands = [{"kanji": ch, "hanViet": display, "jlpt": _jlpt(ch), "meaningEn": kanji_meanings.meaning(ch)}
              for ch, display in found]
     cands.sort(key=lambda c: classifier.level_index(c["jlpt"]))  # ổn định: giữ xếp hạng của kanji_for trong cùng cấp
-    return {"center": None, "candidates": cands[:MAX_CANDIDATES]}
+    return {**empty, "candidates": cands[:MAX_CANDIDATES]}
 
 
 # ----------------------------------------------------------------------------- từ ghép (dùng chung cho detail)
