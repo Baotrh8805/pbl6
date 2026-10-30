@@ -79,13 +79,22 @@ def _guess_phon(ch: str, p: kanjidata.Parts) -> Optional[tuple[str, str]]:
 
 
 def _phon_of(ch: str, p: Optional[kanjidata.Parts]) -> tuple[Optional[str], Optional[str], bool]:
-    """(part mang chỉ âm, chữ chỉ âm, có phải suy đoán) — KanjiVG trước, heuristic sau."""
+    """(part mang chỉ âm, chữ chỉ âm, có phải suy đoán) — KanjiVG trước, heuristic sau. Chỉ âm trùng chính chữ (dữ liệu lệch)
+    → coi như không có."""
     if not p:
         return None, None, False
-    if p.phon and p.phon_part:
+    if p.phon and p.phon_part and p.phon != ch and p.phon_part != ch:
         return p.phon_part, p.phon, False
     g = _guess_phon(ch, p)
     return (g[0], g[1], True) if g else (None, None, False)
+
+
+def _real_parts(ch: str, p: kanjidata.Parts):
+    """(part, original, position) bỏ part trùng chính chữ (王 partial, nhóm đặt tên theo phon tự tham chiếu) — review 30/10 C1."""
+    for part, original, position in zip(p.parts, p.originals, p.positions):
+        if part == ch or (original or part) == ch:
+            continue
+        yield part, original, position
 
 
 def _kanji_node(ch: str, type_: str, **extra) -> dict:
@@ -181,7 +190,7 @@ def detail(ch: str) -> dict:
     phon_part, phon, guessed = _phon_of(ch, p)
     formula = []
     if p:
-        for part, original, position in zip(p.parts, p.originals, p.positions):
+        for part, original, position in _real_parts(ch, p):
             item = {"part": part, "original": original, "position": position, "role": _role(p, part, phon_part),
                     "hanViet": han_viet.han_viet(original or part)}
             if guessed and part == phon_part:
@@ -234,26 +243,28 @@ def structure(ch: str) -> dict:
     if p:
         phon_part, phon, guessed = _phon_of(ch, p)
         seen_parts: set[str] = set()
-        for part, original, position in zip(p.parts, p.originals, p.positions):
+        for part, original, position in _real_parts(ch, p):
             role = _role(p, part, phon_part)
-            if part not in seen_parts:
-                seen_parts.add(part)
-                extra = {"role": role, "position": position, "original": original}
-                if role == "phon" and phon and phon != part:
-                    extra["phon"] = phon
-                if role == "phon" and part == p.radical_part:
-                    extra["isRadical"] = True
-                if role == "phon" and guessed:
-                    extra["guess"] = True
-                nodes.append(_kanji_node(part, "component", **extra))
+            if part in seen_parts:
+                continue  # part lặp (三 = 一 一 一): một node, một cạnh — review 30/10 M1
+            seen_parts.add(part)
+            extra = {"role": role, "position": position, "original": original}
+            if role == "phon" and phon and phon != part:
+                extra["phon"] = phon
+            if role == "phon" and part == p.radical_part:
+                extra["isRadical"] = True
+            if role == "phon" and guessed:
+                extra["guess"] = True
+            nodes.append(_kanji_node(part, "component", **extra))
             edges.append({"from": f"k:{part}", "to": f"k:{ch}", "type": role})
         if p.radical_part is None:
             _attach_unihan_radical(ch, p, nodes, edges)
         if phon and phon_part:
             src = f"k:{phon_part}"
+            present = {n["id"] for n in nodes}
             for k in _family(phon):
-                if k == ch:
-                    continue
+                if k == ch or f"k:{k}" in present:
+                    continue  # 溶: KanjiVG đánh phon 谷 trên 容 nên 容 vừa là thành phần vừa thuộc họ — chỉ giữ thành phần (I1)
                 same = _same_on(k, phon)
                 nodes.append(_kanji_node(k, "phonetic", sameOn=same))
                 edges.append({"from": src, "to": f"k:{k}", "type": "phon" if same else "family"})

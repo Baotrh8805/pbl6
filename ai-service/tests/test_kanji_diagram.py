@@ -120,6 +120,31 @@ def test_structure_guess_skips_radicals_and_rare_readings():
     assert kanji_diagram.structure("体")["detail"]["phon"] is None
 
 
+def test_structure_never_duplicates_nodes_or_self_links_across_jlpt():
+    # review 30/10 C1 / I1 / M1: part trùng chữ tâm (侵 備 稲 陰, 王 partial), họ chỉ âm trùng thành phần (溶 → 容), part lặp (三)
+    jl = classifier.jlpt_kanji_set()
+    bad = []
+    for ch in sorted(jl):
+        p = kanji_diagram.structure(ch)
+        ids = [n["id"] for n in p["nodes"]]
+        if len(ids) != len(set(ids)):
+            bad.append((ch, "node trùng id"))
+        if any(e["from"] == e["to"] for e in p["edges"]):
+            bad.append((ch, "cạnh tự nối"))
+        keys = [(e["from"], e["to"], e["type"]) for e in p["edges"]]
+        if len(keys) != len(set(keys)):
+            bad.append((ch, "cạnh trùng"))
+        d = p["detail"]
+        if d["phon"] == ch or any(f["part"] == ch for f in d["formula"]):
+            bad.append((ch, "tự tham chiếu"))
+    assert bad == []
+    assert "k:侵" not in {n["id"] for n in kanji_diagram.structure("侵")["nodes"] if n["type"] != "center"}
+    assert kanji_diagram.structure("侵")["detail"]["phon"] is None
+    sol = kanji_diagram.structure("溶")
+    assert [n["id"] for n in sol["nodes"]].count("k:容") == 1
+    assert sum(1 for e in kanji_diagram.structure("三")["edges"]) == 1
+
+
 def test_structure_single_kanji_only_center():
     p = kanji_diagram.structure("日")
     assert list(_nodes(p)) == ["k:日"] and p["edges"] == []

@@ -6,20 +6,21 @@ const BUTTON_STEP = 1.4;   // nút + / −
 
 /**
  * Zoom / pan khung nhìn SVG của sơ đồ chữ Hán (spec 2026-10-30 đợt 2.1): cuộn chuột phóng quanh con trỏ, kéo nền để pan,
- * nút + − ⤢ và phím + − 0. Không thêm thư viện. Khung "vừa sơ đồ" (`base`) đổi (dữ liệu mới) thì về khung đó — trạng thái gắn
- * với khoá của base nên không cần setState trong effect. Wheel gắn bằng addEventListener không passive để chặn cuộn trang.
+ * nút + − ⤢ và phím + − 0. Không thêm thư viện. Trạng thái gắn với `resetKey` (sơ đồ nào: chữ tâm + chế độ): sơ đồ mới thì về
+ * khung vừa; còn khung vừa (`base`) đổi vì kéo node / mở thêm thì giữ nguyên mức zoom người dùng đang đặt (review 30/10 I3).
+ * Không cần setState trong effect. Wheel gắn bằng addEventListener không passive để chặn cuộn trang.
  */
-export function useViewBox(base: DiagramViewBox, svgRef: RefObject<SVGSVGElement | null>) {
+export function useViewBox(base: DiagramViewBox, svgRef: RefObject<SVGSVGElement | null>, resetKey: string) {
     const baseKey = `${base.x}|${base.y}|${base.w}|${base.h}`;
     const [state, setState] = useState<{ key: string; vb: DiagramViewBox } | null>(null);
-    const view = state && state.key === baseKey ? state.vb : base;
+    const view = state && state.key === resetKey ? state.vb : base;
     const viewRef = useRef(view);
     useEffect(() => {
         viewRef.current = view;
     });
-    const isFit = view === base;
+    const isFit = view.x === base.x && view.y === base.y && view.w === base.w && view.h === base.h;
 
-    const set = (vb: DiagramViewBox) => setState({ key: baseKey, vb });
+    const set = (vb: DiagramViewBox) => setState({ key: resetKey, vb });
     const zoomAt = (factor: number, focus: DiagramPoint) => set(zoomViewBox(viewRef.current, factor, focus, base));
     const centre = (): DiagramPoint => ({ x: viewRef.current.x + viewRef.current.w / 2, y: viewRef.current.y + viewRef.current.h / 2 });
     const zoomIn = () => zoomAt(BUTTON_STEP, centre());
@@ -33,12 +34,12 @@ export function useViewBox(base: DiagramViewBox, svgRef: RefObject<SVGSVGElement
             e.preventDefault();
             const factor = e.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP;
             const focus = clientToDiagram(svg.getBoundingClientRect(), viewRef.current, e.clientX, e.clientY);
-            setState({ key: baseKey, vb: zoomViewBox(viewRef.current, factor, focus, base) });
+            setState({ key: resetKey, vb: zoomViewBox(viewRef.current, factor, focus, base) });
         };
         svg.addEventListener("wheel", onWheel, { passive: false });
         return () => svg.removeEventListener("wheel", onWheel);
         // base đổi → đăng ký lại để closure thấy base mới (giới hạn zoom tính theo base)
-    }, [svgRef, baseKey, base]);
+    }, [svgRef, baseKey, base, resetKey]);
 
     // kéo nền: chỉ khi bấm vào chính <svg> (không phải node); node tự xử lý kéo của nó và stopPropagation.
     // Hai ngón trên màn hình cảm ứng: pinch = zoom quanh điểm giữa hai ngón (theo dõi mọi con trỏ đang chạm).

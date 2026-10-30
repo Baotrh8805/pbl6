@@ -171,7 +171,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 侭,亻 尽,人 -,left right,亻,,
 侮,亻 毎,人 -,left right,亻,毎,毎
 侯,亻 矢,人 -,left bottom,亻,,
-侵,亻 侵,人 -,left right,亻,侵,侵
+侵,亻 ⺕ 冖 又,人 彑 - -,left top - -,亻,,
 侶,亻 呂,人 -,left right,亻,,
 便,亻 更,人 -,left right,亻,,
 係,亻 系,人 -,left right,亻,系,系
@@ -205,7 +205,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 倆,亻 兩,人 -,left right,亻,,
 倉,人 口,- -,top -,人,,
 個,亻 固,人 -,left right,亻,固,固
-倍,亻 咅,人 -,left right,亻,咅,倍
+倍,亻 咅,人 -,left right,亻,咅,
 倏,攸 攸 犬,- - -,left top bottom,攸,,
 們,亻 門,人 -,left right,亻,,
 倒,亻 到,人 -,left right,亻,到,到
@@ -226,7 +226,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 倬,亻 卓,人 -,left right,亻,,
 倭,亻 委,人 -,left right,亻,,
 倶,亻 具,人 -,left right,亻,,
-倹,亻 㑒,人 僉,left right,亻,㑒,倹
+倹,亻 㑒,人 僉,left right,亻,㑒,僉
 偃,亻 匚 日 女 匚,人 - - - -,left - top bottom -,亻,,
 假,亻 叚,人 -,left right,亻,叚,叚
 偈,亻 曷,人 -,left right,亻,,
@@ -250,7 +250,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 傍,亻 旁,人 -,left right,亻,旁,旁
 傑,亻 桀,人 -,left right,亻,桀,桀
 傘,人 从 从 十,- - - -,top - - -,人,,
-備,亻 備,人 -,left right,亻,備,備
+備,亻 艹 厂 用,人 艸 - -,left - - -,亻,,
 傚,亻 效,人 -,left right,亻,,
 催,亻 崔,人 -,left right,亻,崔,崔
 傭,亻 庸,人 -,left right,亻,,
@@ -258,7 +258,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 傳,亻 專,人 -,left right,亻,專,專
 傴,亻 區,人 -,left right,亻,,
 債,亻 責,人 -,left right,亻,責,責
-傷,亻 𬀷,人 -,left right,亻,𬀷,傷
+傷,亻 𬀷,人 -,left right,亻,𬀷,
 傾,亻 頃,人 -,left right,亻,頃,頃
 僂,亻 婁,人 -,left right,亻,,
 僅,亻 艹 三,人 艸 -,left - -,亻,,
@@ -2817,7 +2817,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 渤,氵 勃,水 -,left right,氵,,
 渥,氵 屋,水 -,left right,氵,屋,屋
 渦,氵 咼,水 -,left right,氵,咼,咼
-温,氵 昷,水 -,left right,氵,昷,温
+温,氵 昷,水 -,left right,氵,昷,
 渫,氵 枼,水 -,left right,氵,,
 測,氵 則,水 -,left right,氵,則,則
 渭,氵 胃,水 -,left right,氵,,
@@ -3019,7 +3019,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 煎,前 灬,- 火,top bottom,灬,,
 煕,巸 灬,- 火,top bottom,灬,,
 煖,火 爰,- -,left right,火,,
-煙,火 垔,- -,left right,火,垔,煙
+煙,火 垔,- -,left right,火,垔,
 煢,𤇾 乙 十,- - -,top - -,𤇾,,
 煤,火 某,- -,left right,火,,
 煥,火 奐,- -,left right,火,,
@@ -3642,7 +3642,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 稠,禾 周,- -,left right,禾,,
 種,禾 重,- -,left right,禾,重,重
 稱,禾 ⺤ 冉,- 爪 -,left top bottom,禾,,
-稲,禾 稲,- -,left right,禾,稲,稲
+稲,禾 ⺤ 旧,- 爪 -,left - -,禾,,
 稷,禾 田 夂,- - -,left - bottom,禾,,
 稻,禾 舀,- -,left right,禾,,
 稼,禾 家,- -,left right,禾,家,家
@@ -5709,7 +5709,7 @@ kanji,parts,originals,positions,radical_part,phon_part,phon
 陦,⻖ 寿,阜 -,left right,⻖,,
 陪,⻖ 咅,阜 -,left right,⻖,咅,否
 陬,⻖ 取,阜 -,left right,⻖,,
-陰,⻖ 陰,阜 -,left right,⻖,陰,陰
+陰,⻖ 今 云,阜 - -,left top bottom,⻖,,
 陲,⻖ 垂,阜 -,left right,⻖,,
 陳,⻖ 東,阜 -,left right,⻖,東,東
 陵,⻖ 夌,阜 -,left right,⻖,夌,

@@ -302,7 +302,7 @@ const KanjiCard: React.FC<{ node: KanjiDiagramNode; onRecenter: (ch: string) => 
           <p className="text-label-sm text-on-surface-variant mt-0.5">{role}</p>
         </div>
       </div>
-      <Actions ch={ch} onRecenter={node.expandable || node.type !== "component" ? onRecenter : onRecenter} />
+      <Actions ch={ch} onRecenter={onRecenter} />
       {!node.expandable && node.type === "component" && (
         <p className="text-[11px] text-outline">Thành phần này không tách nhỏ hơn; "Bắt đầu lại" sẽ chỉ hiện bộ và từ ghép của nó.</p>
       )}

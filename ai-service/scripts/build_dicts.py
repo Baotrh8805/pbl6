@@ -682,17 +682,24 @@ def build_kanjivg() -> None:
 
 # kvg:radical: "general" (bộ tra từ điển hiện đại) > "tradit" (Khang Hi) > "nelson" > "jis"
 _KVG_RADICAL_RANK = {"general": 0, "tradit": 1, "nelson": 2, "jis": 3}
-# ký hiệu phụ trong kvg:phon: V = biến thể, T = dạng truyền thống, số = thứ tự, right/left/top/bottom = vị trí
-_PHON_MARK_RE = re.compile(r"right|left|top|bottom|[A-Za-z0-9]")
+# ký hiệu phụ trong kvg:phon: V = biến thể, T = dạng truyền thống, số = thứ tự
+_PHON_MARK_RE = re.compile(r"[A-Za-z0-9]")
+# "Xright" / "Xleft" / "Xtop" / "Xbottom" = "mảnh bên phải… CỦA chữ X" (thường là chính chữ đang vẽ: 侵right trong 侵, 倍right
+# trong 倍) — không phải chữ X làm chỉ âm; giữ lại sẽ tạo node tự tham chiếu (review 30/10 C1) → bỏ hẳn token đó
+_PHON_POSITIONAL_RE = re.compile(r"^.(right|left|top|bottom)$")
 _KVG_ROOT_ID_RE = re.compile(r"kvg:[0-9a-f]{4,6}$")
 KANJI_PARTS_COLUMNS = ["kanji", "parts", "originals", "positions", "radical_part", "phon_part", "phon"]
 
 
 def normalise_phon(raw: str | None) -> str | None:
-    """Giá trị kvg:phon → một chữ Hán: '之V' → 之, '厶/弗' → 厶 (ứng viên đầu hợp lệ), '立口/否V' → 否, '3+6+1' → None."""
+    """Giá trị kvg:phon → một chữ Hán: '之V' → 之, '厶/弗' → 厶 (ứng viên đầu hợp lệ), '立口/否V' → 否, '3+6+1' → None,
+    '倍right' → None (mảnh của chữ, không phải chữ)."""
     if not raw:
         return None
     for token in raw.split("/"):
+        token = token.strip()
+        if _PHON_POSITIONAL_RE.match(token):
+            continue
         t = _PHON_MARK_RE.sub("", token).strip()
         if len(t) == 1 and _CJK_RE.fullmatch(t):
             return t

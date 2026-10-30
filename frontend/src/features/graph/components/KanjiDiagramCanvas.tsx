@@ -103,7 +103,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
   const byId = useMemo(() => new Map(merged.nodes.map((n) => [n.id, n])), [merged]);
   const fitBox = useMemo(() => fitViewBox(positions, 64), [positions]);
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const { view, isFit, zoomIn, zoomOut, fit, panHandlers, panning, onKeyDown } = useViewBox(fitBox, svgRef);
+  const { view, isFit, zoomIn, zoomOut, fit, panHandlers, panning, onKeyDown } = useViewBox(fitBox, svgRef, `${centerId ?? ""}|${mode}`);
 
   // kéo node: bắt con trỏ trên <g>, quá 4 px mới coi là kéo; click sau một lần kéo bị nuốt (consumeDrag)
   const drag = useRef<{ id: string; pointer: number; x: number; y: number; moved: boolean } | null>(null);
@@ -150,6 +150,11 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       activate(n, e.shiftKey ? "recenter" : "select");
+    } else if ((e.key === "+" || e.key === "=") && canExpand(n)) {
+      // mở thêm bằng bàn phím (review 30/10 I4); chặn nổi bọt để khung không hiểu là phóng to
+      e.preventDefault();
+      e.stopPropagation();
+      onExpand(n.id);
     }
   };
 
@@ -180,8 +185,9 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
           { swatch: <Dot fill={NODE_FILL.component} />, text: "thành phần cấu tạo" },
           { swatch: <Dot fill={NODE_FILL.phonetic} />, text: "chữ cùng họ chỉ âm" },
           { swatch: <Line color={EDGE_COLOR.phon} />, text: "chỉ âm" },
-          { swatch: <Line color={EDGE_COLOR.family} dashed />, text: "cùng phần chỉ âm, đọc khác" },
+          { swatch: <Line color={EDGE_COLOR.family} dashed />, text: "nét đứt: cùng phần chỉ âm nhưng đọc khác, hoặc chỉ âm đoán (?)" },
           { swatch: <Line color={EDGE_COLOR.radical} />, text: "bộ" },
+          { swatch: <Line color={EDGE_COLOR.part} />, text: "thành phần khác" },
         ]
       : [
           { swatch: <Dot fill={NODE_FILL.center} />, text: "chữ đang xét" },
@@ -197,7 +203,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
         className="relative rounded-xl bg-surface-container-lowest focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
         tabIndex={0}
         onKeyDown={onKeyDown}
-        aria-label="Khung sơ đồ: phím + − để phóng / thu, 0 để vừa khung; kéo nền để di chuyển"
+        aria-label="Khung sơ đồ: phím + − để phóng / thu, 0 để vừa khung; kéo nền để di chuyển. Trên một chữ: Enter chọn, dấu + mở thêm liên kết, Shift+Enter lấy làm tâm"
       >
         {back && (
           <button
@@ -265,7 +271,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
             const r = nodeRadius(n);
             const isCenter = n.id === centerId;
             const selected = selectedId === n.id;
-            const tip = `${n.label}${n.hanViet ? ` (${n.hanViet})` : ""}${n.meaningVi ? ` — ${n.meaningVi}` : n.meaningEn ? ` — ${n.meaningEn}` : ""} · ${roleText(n)}${canExpand(n) ? " · có thể mở thêm" : ""}`;
+            const tip = `${n.label}${n.hanViet ? ` (${n.hanViet})` : ""}${n.meaningVi ? ` — ${n.meaningVi}` : n.meaningEn ? ` — ${n.meaningEn}` : ""} · ${roleText(n)}${canExpand(n) ? " · có thể mở thêm (phím +)" : ""}`;
             const isWord = n.type === "word";
             const w = isWord ? pillWidth(n.label, 16, 20) : r * 2;
             const radicalRing = n.type === "component" && (n.role === "radical" || n.isRadical);

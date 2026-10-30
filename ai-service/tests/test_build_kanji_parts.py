@@ -88,6 +88,18 @@ def test_group_without_element_and_unusable_phon_is_flattened():
     assert row["parts"] == ["品", "木"] and row["phon"] is None
 
 
+def test_group_with_positional_phon_is_flattened_not_self_named():
+    # 侵: nhóm phải không có element, kvg:phon="侵right" (mảnh bên phải của chính chữ) → lấy con (⺕ 冖 又), không tạo part "侵"
+    svg = _svg_of('<g id="kvg:04fb5-g1" kvg:element="亻" kvg:variant="true" kvg:original="人" kvg:position="left" '
+                  'kvg:radical="general"><path d="M0,0"/></g>'
+                  '<g id="kvg:04fb5-g2" kvg:position="right" kvg:phon="侵right">'
+                  '<g id="kvg:04fb5-g3" kvg:element="⺕"><path d="M0,0"/></g>'
+                  '<g id="kvg:04fb5-g4" kvg:element="冖"><path d="M0,0"/></g>'
+                  '<g id="kvg:04fb5-g5" kvg:element="又"><path d="M0,0"/></g></g>', code="04fb5", element="侵")
+    row = bd.parse_kanjivg_parts(svg)
+    assert row["parts"] == ["亻", "⺕", "冖", "又"] and row["phon"] is None and row["phon_part"] is None
+
+
 def test_group_without_element_or_phon_is_flattened():
     # 左: nhóm position="kamae" chỉ gom nét → lấy 工 bên trong
     svg = _svg_of('<g id="kvg:05de6-g1" kvg:position="kamae"><path d="M0,0"/>'
@@ -119,8 +131,9 @@ def test_parts_of_broken_svg_returns_none():
     ("立口/否V", "否"),          # "立口" hai chữ → bỏ, lấy ứng viên sau
     ("攸1", "攸"),
     ("育V1", "育"),
-    ("倍right", "倍"),
-    ("侵right/帚T＋又", "侵"),
+    ("倍right", None),           # "phần bên phải của 倍" = mảnh không có chữ riêng, KHÔNG phải chữ 倍 (tự tham chiếu)
+    ("侵right/帚T＋又", None),
+    ("温right", None),
     ("3+6+1", None),
     ("", None),
     (None, None),

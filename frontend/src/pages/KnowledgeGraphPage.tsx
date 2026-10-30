@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useShell } from "@/components/layout/shellContext";
 import { useAsync } from "@/lib/useAsync";
@@ -43,12 +43,14 @@ const emptyOverlay = (key: string): Overlay => ({ key, extra: EMPTY_GRAPH, expan
  */
 export const KnowledgeGraphPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const q = (params.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
   const rawMode = params.get("mode") as KanjiDiagramMode | null;
   const mode: KanjiDiagramMode = rawMode && MODE_KEYS.includes(rawMode) ? rawMode : "structure";
   const key = `${q}|${mode}`;
-  const [input, setInput] = useState(q);
+  // ô tìm gắn với q tạo ra nó: q đổi (Back / Forward, chọn ứng viên) thì ô hiện q mới, không cần setState trong effect (review I5)
+  const [typed, setTyped] = useState<{ q: string; value: string }>({ q, value: q });
+  const input = typed.q === q ? typed.value : q;
+  const setInput = (value: string) => setTyped({ q, value });
   const [reload, setReload] = useState(0);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [history, setHistory] = useState<string[]>([]);
@@ -89,18 +91,19 @@ export const KnowledgeGraphPage: React.FC = () => {
   const draw = useCallback(
     (query: string) => {
       const v = query.trim().slice(0, MAX_QUERY_CHARS);
-      setInput(v);
+      setTyped({ q, value: v });
       if (v && q && v !== q) setHistory((h) => [...h.slice(-19), q]);
-      go({ q: v });
+      go({ q: v }, v === q); // vẽ lại cùng chữ: thay entry thay vì push (review M3)
     },
     [go, q]
   );
+  // "Quay lại [chữ trước]" vẽ lại chữ đó bằng một entry mới (không navigate(-1): đổi tab / vẽ lại cũng push history nên lùi một bước
+  // không chắc về đúng chữ — review 30/10 I2)
   const goBack = () => {
     const prev = history[history.length - 1];
     if (!prev) return;
     setHistory((h) => h.slice(0, -1));
-    setInput(prev);
-    navigate(-1);
+    go({ q: prev });
   };
 
   const res = useAsync(() => (q ? fetchKanjiDiagram(q, mode) : Promise.resolve(null)), [q, mode], reload);
