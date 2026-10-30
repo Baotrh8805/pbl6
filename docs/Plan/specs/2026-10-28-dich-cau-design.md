@@ -58,12 +58,33 @@ tuỳ ngữ cảnh, kính ngữ và thành ngữ — câu ghép không trôi ch�
   dịch chậm không được tắt dịch nghĩa từ điển của mọi người 2 phút như hồ sơ mặc định). Chuỗi model / 404 / quota như mọi lời gọi khác.
 - `_parse_json_object`: nhận code fence và danh sách một phần tử; không phải object → `GeminiError("error")`.
 
+### 3.4 Dịch máy offline dự phòng (D34, bổ sung 28/10)
+
+Người dùng yêu cầu: luôn có bản dịch, không bao giờ báo lỗi cho người học. Khi không có bản Gemini (không khoá, `withAi=false` vì
+admin tắt / hết lượt, quota, quá tải, hết hạn chót, đầu ra không qua lọc), router gọi `offline_mt.translate` — vẫn dịch **cả câu**
+(seq2seq), không ghép nghĩa từng từ.
+
+| Mục | Chọn |
+|---|---|
+| Mô hình | `facebook/m2m100_418M`, giấy phép **MIT**, hai chiều ja ↔ vi. Lớp chính **CTranslate2 int8** (`models/mt/m2m100_418M-ct2`, ~470 MB, không commit) — chỉ cần `ctranslate2` + `sentencepiece` |
+| Lớp dự phòng thứ hai | bản **PyTorch** gốc (`models/mt/m2m100_418M`, 1,9 GB, giữ lại theo yêu cầu người dùng): chỉ dùng khi CTranslate2 thiếu / nạp hỏng / lỗi lúc dịch (đánh dấu hỏng tới khi khởi động lại; hết giờ hay đầu ra kém thì **không** chuyển — cùng mô hình). Int8 động `quantize_dynamic`; nạp ~27 s nên còn ít hơn 30 s thì nạp ở luồng nền, lượt đó không có bản dịch ("đợi vài giây"), lượt sau có. Đo: câu ngắn 2–3,5 s, 1 000 ký tự 16 s (beam tự hạ) |
+| Đã loại | `Helsinki-NLP/opus-mt-ja-vi` (Apache-2.0, chỉ Nhật → Việt): bịa nghĩa nhiều hơn khi đo ("日本語の勉強は難しいですが…" → "Vì vậy, tôi sẽ cho bạn thấy một số ví dụ."); NLLB (CC-BY-NC, D33); m2m100_1.2B (5 GB, chậm ~3 lần trên CPU) |
+| Tiền xử lý | tách câu (giữ xuống dòng, cắt mềm câu > 300 ký tự), tên người Nhật (Sudachi 固有名詞・人名) → romaji (田中 → Tanaka; không đổi thì mô hình dịch thành "Tanja") |
+| Tốc độ (máy dev 16 luồng) | nạp 2–3 s (nạp sẵn ở luồng nền lúc khởi động, `OFFLINE_MT_PRELOAD=0` để tắt); câu ngắn < 1 s; 1 000 ký tự Nhật → Việt ~9 s beam 4 (PyTorch fp32 cũ: 45 s) |
+| Hạn chót | backend đọc 30 s → Gemini hạ còn 12 s / lượt, hạn chót 16 s; router cho bản offline tới mốc 27 s kể từ lúc nhận request; beam tự hạ 4 → 2 → 1 khi gấp, quá hạn thì thôi (vẫn trả phân tích câu) |
+| Lọc | câu Việt còn chữ Nhật / câu Nhật không có chữ Nhật → bỏ; cụm lặp ≥ 4 lần → gọn; quá nửa số câu hỏng → không có bản dịch |
+| Đánh dấu | `engine` "offline", `model` "offline:m2m100_418M-ct2"; `reason` vẫn ghi vì sao không có bản Gemini. Việt → Nhật: cách đọc ghép từ Sudachi (`reading_of`), `readingAgrees` = null |
+
+Chất lượng đo 28/10 (16 câu thường gặp): đa số đúng ý ("Xin lỗi, nhà ga ở đâu?", "今週末は家族と一緒に京都に行きます。"), có lỗi từ
+(傘 → "gương", 先生 → "bác sĩ", sushi → スーシー) — giao diện luôn ghi "dịch máy offline… có thể sát chữ hoặc chưa chính xác".
+Kèm theo: romaji trợ từ は / へ đọc "wa" / "e"; 私 đọc わたし (Sudachi cho わたくし).
+
 ### 3.3 `POST /api/dict/translate-text` (`dict_router.py`, khoá nội bộ như mọi route `/dict/*`)
 
 | Vào | `{text ≤ 1000 (422), direction: auto \| ja-vi \| vi-ja, geminiModel?, withAi: true}`; `text` toàn khoảng trắng → 400 |
 |---|---|
-| Ra (**luôn 200**) | `{direction, source, translation, literal, alternatives, notes, reading, romaji, readingAgrees, tokens[], model, reason}` |
-| `reason` | `null` có bản dịch; `no_api_key` / `quota` / `aiOverloaded` / `error` (kể cả bản dịch không qua lọc) / `skipped` (`withAi=false`: backend hết lượt hay tắt → chỉ phân tích) |
+| Ra (**luôn 200**) | `{direction, source, translation, literal, alternatives, notes, reading, romaji, readingAgrees, tokens[], model, engine: ai \| offline \| null, reason}` |
+| `reason` | `null` có bản Gemini; `no_api_key` / `quota` / `aiOverloaded` / `error` (kể cả bản dịch không qua lọc) / `skipped` (`withAi=false`: backend hết lượt hay tắt) — khi đó `translation` là bản offline (§3.4) nếu dịch được |
 | `tokens` | ja-vi: phân tích câu **nguồn** (luôn có, kể cả khi không dịch được); vi-ja: phân tích câu Nhật **AI trả** (rỗng khi không có bản dịch) |
 
 Trả 200 kèm `reason` (khác `/dict/translate` trả 503) vì nửa còn lại — phân tích câu — vẫn có giá trị cho người học.
@@ -143,10 +164,19 @@ Chưa kiểm: chất lượng bản dịch với Gemini thật (prompt hai chi�
 - Admin chỉnh `dictionary_translate_hourly_limit` (0 = tắt, chỉ phân tích) ở Cấu hình › Từ điển; chống dồn đổi bằng
   `app.rate-limit.dict-translate.max / window` (mặc định 10 / PT1M).
 
+### Bổ sung D34 (28/10): không bao giờ báo lỗi
+
+- `DictionaryService.translateText` không ném vì dịch vụ phía sau: ai-service không tới được / quá giờ / trả rỗng → 200 với
+  `state = UNAVAILABLE` (hoàn lượt); chống dồn 10 / phút → `state = BUSY` (câu đã có trong bộ nhớ dịch vẫn trả, câu mới không gọi
+  ai-service) thay cho 429. Chỉ còn 400 khi văn bản rỗng / > 1 000 ký tự / hướng lạ — giao diện chặn trước.
+- Chỉ bản Gemini (`reason` null, `engine` khác "offline") vào bộ nhớ dịch chung; cache cũ không có `engine` được gắn "ai" lúc đọc.
+- Frontend: `translateStateNote(state, aiLeft, aiLimit, engine)` — bản offline nói rõ nguồn + lý do; BUSY / UNAVAILABLE / lỗi mạng
+  là lời nhắn xám nhẹ nhàng với nút **Thử lại**, không có chữ "lỗi", không có chữ đỏ; bấm Dịch lại cùng câu vẫn gửi lại.
+
 ## 9. Hạn chế, việc sau
 
-- Chất lượng phụ thuộc Gemini; câu mơ hồ / thành ngữ có thể sai — chân tab có nhắc; chưa có nút "báo bản dịch sai" (có thể nối vào
-  `dict_reports` sau).
+- Chất lượng phụ thuộc Gemini; câu mơ hồ / thành ngữ có thể sai — chân tab có nhắc. Bản dịch máy offline (D34) kém hơn rõ: sai từ,
+  sát chữ; chỉ là dự phòng để người học luôn có bản dịch.
 - Nghĩa theo ngữ cảnh chỉ cho 150 cụm đầu; đoạn dài hơn dùng nghĩa từ điển / gloss Anh cho phần sau.
 - Chưa có lịch sử dịch theo người dùng (chủ ý: không lưu câu người học theo tài khoản); chưa thêm câu dịch vào bộ thẻ trực tiếp (đi qua
   popover → mục từ → "Thêm vào bộ thẻ").

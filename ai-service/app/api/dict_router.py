@@ -14,7 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.security import require_internal_key
-from app.extract import dictionary, gemini, handwriting, overrides, translate_text
+import time
+
+from app.extract import dictionary, gemini, handwriting, offline_mt, overrides, translate_text
 from app.extract.jachars import has_japanese
 
 router = APIRouter(prefix="/dict", tags=["Từ điển"], dependencies=[Depends(require_internal_key)])
@@ -209,19 +211,27 @@ class TranslateTextRequest(BaseModel):
     withAi: bool = True
 
 
+# Backend chỉ đọc 30 s: Gemini (gemini.TEXT_DEADLINE_S = 16 s) + dịch offline phải xong trong REQUEST_BUDGET_S tính từ lúc
+# nhận request — dịch offline luôn còn ≥ 11 s.
+REQUEST_BUDGET_S = 27
+
+
 @router.post("/translate-text")
 def dict_translate_text(req: TranslateTextRequest) -> dict:
-    """Dịch câu / đoạn Nhật ↔ Việt cho tab Dịch (spec 2026-10-28-dich-cau-design §3, D33). Luôn 200: phần phân tích câu Nhật
-    (Sudachi + JMdict + JLPT + furigana, không tốn quota) có ngay cả khi không gọi được AI; bản dịch chỉ có khi Gemini trả lời
-    và qua lọc — ``reason`` ghi vì sao thiếu: no_api_key | quota | aiOverloaded | error | skipped. Không bao giờ ghép nghĩa
-    từng từ thành bản dịch. Việt → Nhật: phân tích câu Nhật mà AI trả, ``readingAgrees`` so cách đọc AI với Sudachi."""
+    """Dịch câu / đoạn Nhật ↔ Việt cho tab Dịch (spec 2026-10-28-dich-cau-design §3, D33 + D34). Luôn 200: phần phân tích câu
+    Nhật (Sudachi + JMdict + JLPT + furigana, không tốn quota) luôn có. Bản dịch: Gemini dịch cả đoạn (``engine`` "ai"); không
+    có / hỏng → **dịch máy offline** (``engine`` "offline", m2m100 / opus-mt trong models/mt, D34) — ``reason`` vẫn ghi vì sao
+    không có bản Gemini: no_api_key | quota | aiOverloaded | error | skipped. Không bao giờ ghép nghĩa từng từ thành bản dịch.
+    Việt → Nhật: phân tích câu Nhật đã dịch; bản AI có ``readingAgrees`` so cách đọc AI với Sudachi, bản offline lấy cách đọc
+    từ Sudachi."""
+    started = time.monotonic()
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="text rỗng")
     direction = req.direction if req.direction != "auto" else translate_text.detect_direction(text)
     out: dict = {"direction": direction, "source": text, "translation": None, "literal": None, "alternatives": [],
                  "notes": None, "reading": None, "romaji": None, "readingAgrees": None, "tokens": [], "model": None,
-                 "reason": None}
+                 "engine": None, "reason": None}
     tokens = translate_text.analyse(text) if direction == "ja-vi" else []
     if not req.withAi:
         out["reason"] = "skipped"
@@ -240,10 +250,25 @@ def dict_translate_text(req: TranslateTextRequest) -> dict:
             else:
                 out.update(cleaned)
                 out["model"] = used
+                out["engine"] = "ai"
                 if direction == "vi-ja":
                     tokens = translate_text.analyse(cleaned["translation"])
                     out["readingAgrees"] = translate_text.reading_agrees(tokens, cleaned["reading"])
                     out["romaji"] = translate_text.romaji_of(tokens)
+    if out["translation"] is None:
+        try:
+            offline = offline_mt.translate(text, direction, deadline=started + REQUEST_BUDGET_S)
+        except Exception:  # noqa: BLE001 — dự phòng không bao giờ làm hỏng phần phân tích câu
+            offline = None
+        if offline:
+            translation, name = offline
+            out["translation"] = translation
+            out["model"] = f"offline:{name}"
+            out["engine"] = "offline"
+            if direction == "vi-ja":
+                tokens = translate_text.analyse(translation)
+                out["reading"] = translate_text.reading_of(tokens)
+                out["romaji"] = translate_text.romaji_of(tokens)
     out["tokens"] = tokens
     return out
 

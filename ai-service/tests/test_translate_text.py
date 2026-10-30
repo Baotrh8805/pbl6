@@ -162,7 +162,7 @@ def test_translate_text_ja_vi_prompt_schema_and_parse(fake_client):
     cfg = call["config"]
     assert cfg.response_mime_type == "application/json" and cfg.temperature == 0.2
     assert cfg.response_schema["required"] == ["translation", "literal", "alternatives", "notes", "words"]
-    assert cfg.http_options.timeout == gemini.TEXT_PROFILE.timeout_ms, "hồ sơ tương tác 20 s, không phải 60 s mặc định"
+    assert cfg.http_options.timeout == gemini.TEXT_PROFILE.timeout_ms, "hồ sơ tương tác 12 s, không phải 60 s mặc định"
 
 
 def test_translate_text_vi_ja_prompt_and_schema(fake_client):
@@ -204,13 +204,13 @@ class _Boom(Exception):
 
 
 def test_translate_text_retries_once_then_hits_deadline_without_global_cooldown(fake_client, monkeypatch):
-    # Model trả 503 và mỗi lượt treo tới timeout 20 s: lượt 2 sẽ vượt hạn chót 26 s -> dừng với "budget" (thử lại được), KHÔNG
+    # Model trả 503 và mỗi lượt treo tới timeout 12 s: lượt 2 sẽ vượt hạn chót 16 s -> dừng với "budget" (thử lại được), KHÔNG
     # tạm ngưng Gemini toàn cục như hồ sơ mặc định (một câu dịch chậm không được tắt dịch nghĩa từ điển của mọi người).
     clock = {"t": 100.0}
     monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
 
     def responder(contents, config):
-        clock["t"] += 21.0   # lượt gọi treo tới timeout 20 s rồi mới trả 503
+        clock["t"] += 13.0   # lượt gọi treo tới timeout 12 s rồi mới trả 503
         raise _Boom(503)
     models = fake_client(responder)
     with pytest.raises(gemini.GeminiError) as exc:

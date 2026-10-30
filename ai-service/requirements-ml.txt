@@ -3,3 +3,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.5,<3
 transformers>=4.45
+# Dịch offline Nhật ↔ Việt (tab Dịch, D34): m2m100 chạy bằng CTranslate2 int8; mô hình tải + chuyển bằng
+# scripts/fetch_offline_mt.py (bước chuyển dùng torch + transformers ở trên)
+ctranslate2>=4.5
+sentencepiece>=0.2

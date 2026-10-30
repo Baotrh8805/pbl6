@@ -44,6 +44,10 @@ _NO_LEVEL_POS = _SYMBOL_POS | _PARTICLE_POS | frozenset({"接頭辞", "接尾辞
 _MERGE_HEAD_POS = frozenset({"動詞", "形容詞"})
 _MERGE_PARTICLES = frozenset({"て", "で"})
 _NON_KANA_RE = re.compile(r"[^ぁ-ゖァ-ヺーㇰ-ㇿ]")
+# Sudachi đọc 私 là わたくし (rất trang trọng); người học và hầu hết câu dùng わたし — furigana / cách đọc cả câu theo わたし
+_READING_FIX = {("私", "わたくし"): "わたし"}
+# Trợ từ đọc khác chữ viết: は → wa, へ → e (を → o đã đúng theo romaji.py)
+_PARTICLE_ROMAJI = {"は": "wa", "へ": "e"}
 _WS_RE = re.compile(r"[ \t　]+")
 
 
@@ -97,6 +101,7 @@ def analyse(text: str) -> list[dict]:
         particle = ja and head.pos1 in _PARTICLE_POS
         readings = [kata_to_hira(t.reading) for t in chunk if t.reading]
         reading = "".join(readings) if ja and len(readings) == len(chunk) else None
+        reading = _READING_FIX.get((surface, reading), reading)
         kana_reading = reading if reading and is_kana_only(reading) else None   # OOV: Sudachi trả chính surface (có kanji)
         key = None
         if ja and not symbol:
@@ -112,7 +117,8 @@ def analyse(text: str) -> list[dict]:
             "surface": surface,
             "lemma": head.lemma if ja else None,
             "reading": kana_reading,
-            "romaji": to_romaji(kana_reading) if kana_reading else None,
+            "romaji": (_PARTICLE_ROMAJI[surface] if particle and head.pos1 == "助詞" and surface in _PARTICLE_ROMAJI
+                       else to_romaji(kana_reading) if kana_reading else None),
             "rubies": ruby_segments(surface, kana_reading) if ja and has_kanji(surface) else None,
             "key": key,
             "jlpt": level,
@@ -221,6 +227,23 @@ def romaji_of(tokens: list[dict]) -> Optional[str]:
             parts.append(t["surface"].strip())
     s = " ".join(parts)
     s = re.sub(r"\s+([。、！？!?,.])", r"\1", s)
+    return s or None
+
+
+def reading_of(tokens: list[dict]) -> Optional[str]:
+    """Cách đọc hiragana cả câu Nhật ghép từ cách đọc Sudachi từng cụm (dấu câu giữ nguyên) — cho bản dịch offline Việt → Nhật,
+    vốn không có cách đọc AI. None khi có cụm chữ Nhật không biết cách đọc (OOV) để không hiện cách đọc thiếu."""
+    parts: list[str] = []
+    for t in tokens:
+        if t.get("reading"):
+            parts.append(t["reading"])
+        elif t.get("symbol"):
+            parts.append(t["surface"])
+        elif has_japanese(t.get("surface") or ""):
+            return None
+        else:
+            parts.append(t.get("surface") or "")
+    s = "".join(parts).strip()
     return s or None
 
 
