@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api import kanji_info_router
 from app.core.config import settings
-from app.extract import han_viet, han_viet_graph, kanji_cards, kanji_readings
+from app.extract import han_viet, han_viet_graph, kanji_cards, kanji_diagram, kanji_readings, kanjidata
 from app.extract.jlpt import classifier
 
 app = FastAPI()
@@ -30,9 +30,17 @@ def fakes(monkeypatch):
         calls["cards"] = (list(kanji_list), user_level)
         return [{"kanji": k} for k in kanji_list]
 
+    def diagram(q, mode="structure"):
+        calls["diagram"] = (q, mode)
+        if mode not in kanji_diagram.MODES:
+            raise ValueError("mode không hợp lệ")
+        return {"query": q, "mode": mode, "center": "k:時", "candidates": [], "nodes": [{"id": "k:時", "type": "center"}],
+                "edges": [], "detail": {"kanji": "時"}, "stats": {"kanji": 1, "words": 0, "parts": True, "jmdict": False}}
+
     monkeypatch.setattr(han_viet_graph, "graph", graph)
     monkeypatch.setattr(han_viet_graph, "suggest", suggest)
     monkeypatch.setattr(kanji_cards, "cards", cards)
+    monkeypatch.setattr(kanji_diagram, "diagram", diagram)
     return calls
 
 
@@ -93,6 +101,29 @@ def test_kanji_cards_body_and_validation(fakes):
     assert client.post("/api/kanji-info/kanji-cards", json={}).json() == {"items": []}
 
 
+# ----------------------------------------------------------------------------- GET /diagram (sơ đồ chữ Hán, spec 2026-10-30)
+
+def test_diagram_params_and_defaults(fakes):
+    r = client.get("/api/kanji-info/diagram", params={"q": "時"})
+    assert r.status_code == 200, r.text
+    assert r.json()["center"] == "k:時" and r.json()["mode"] == "structure"
+    assert fakes["diagram"] == ("時", "structure")
+    assert client.get("/api/kanji-info/diagram", params={"q": "thoi", "mode": "compounds"}).status_code == 200
+    assert fakes["diagram"] == ("thoi", "compounds")
+    assert client.get("/api/kanji-info/diagram", params={"q": "時", "mode": ""}).status_code == 200   # rỗng = mặc định
+    assert fakes["diagram"] == ("時", "structure")
+
+
+def test_diagram_validation(fakes):
+    url = "/api/kanji-info/diagram"
+    assert client.get(url).status_code == 422                                   # thiếu q
+    assert client.get(url, params={"q": ""}).status_code == 422
+    assert client.get(url, params={"q": "x" * (kanji_info_router.MAX_QUERY_CHARS + 1)}).status_code == 422
+    r = client.get(url, params={"q": "時", "mode": "tree"})
+    assert r.status_code == 400 and "mode" in r.json()["detail"]
+    assert "diagram" not in fakes                                                 # chặn trước khi gọi tầng module
+
+
 # ----------------------------------------------------------------------------- khoá nội bộ
 
 def test_internal_key_guards_all_routes(fakes, monkeypatch):
@@ -101,6 +132,7 @@ def test_internal_key_guards_all_routes(fakes, monkeypatch):
         ("get", "/api/kanji-info/han-viet-graph", {"params": {"reading": "NHẬT"}}),
         ("get", "/api/kanji-info/han-viet-suggest", {"params": {"q": "nh"}}),
         ("post", "/api/kanji-info/kanji-cards", {"json": {"kanji": ["学"]}}),
+        ("get", "/api/kanji-info/diagram", {"params": {"q": "時"}}),
     ]
     for method, path, kwargs in calls:
         assert getattr(client, method)(path, **kwargs).status_code == 401, path
@@ -128,5 +160,8 @@ def test_real_data_end_to_end():
         gaku = next(r for r in c["on"] if r["reading"] == "ガク")
         assert "学校" in [e["term"] for e in gaku["examples"]]
         assert "学ぶ" in [e["term"] for r in c["kun"] for e in r["examples"]]
+        if kanjidata.PARTS_FILE.exists():
+            d = client.get("/api/kanji-info/diagram", params={"q": "時"}).json()
+            assert d["center"] == "k:時" and {"k:日", "k:寺", "k:持"} <= {n["id"] for n in d["nodes"]}
     finally:
         han_viet_graph.reset()

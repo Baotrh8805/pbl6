@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.security import require_internal_key
-from app.extract import han_viet_graph, kanji_cards
+from app.extract import han_viet_graph, kanji_cards, kanji_diagram
 from app.extract.jlpt.classifier import LEVELS
 
 MAX_CARDS = 200          # một bộ thẻ gửi một lần; mỗi thẻ quét ~100 từ JLPT nên 200 chữ vẫn dưới 1 s khi đã nạp
@@ -54,6 +54,19 @@ def get_han_viet_suggest(
 ) -> dict:
     """Autocomplete âm Hán-Việt: {query, items: [{reading, count, kanji}]}."""
     return {"query": q, "items": han_viet_graph.suggest(q, limit)}
+
+
+@router.get("/diagram")
+def get_diagram(
+    q: str = Query(..., min_length=1, max_length=MAX_QUERY_CHARS, description="Chữ Hán hoặc âm Hán-Việt (có / không dấu)"),
+    mode: Optional[str] = Query(default=None, description="structure (mặc định) | compounds"),
+) -> dict:
+    """Sơ đồ chữ Hán (spec 2026-10-30): {query, mode, center, candidates, nodes, edges, detail, stats}. Âm nhiều chữ → center
+    null + candidates; không khớp → đồ thị rỗng (200). mode lạ → 400 (không âm thầm về mặc định)."""
+    m = mode or "structure"
+    if m not in kanji_diagram.MODES:
+        raise HTTPException(status_code=400, detail=f"mode không hợp lệ: {mode} (chỉ nhận {', '.join(kanji_diagram.MODES)})")
+    return kanji_diagram.diagram(q, m)
 
 
 @router.post("/kanji-cards")

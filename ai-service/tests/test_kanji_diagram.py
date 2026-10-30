@@ -1,0 +1,162 @@
+"""Sơ đồ chữ Hán (spec 2026-10-30 §3.4): app/extract/kanji_diagram.py trên dữ liệu đã commit (kanji_parts.csv, Unihan, JLPT).
+Từ ghép lấy từ danh sách JLPT nên không cần jmdict.sqlite; khoá JMdict chỉ kiểm khi có file."""
+import pytest
+
+from app.extract import han_viet, jmdict, kanji_diagram, kanjidata
+from app.extract.jlpt import classifier
+
+needs_real = pytest.mark.skipif(
+    not (kanjidata.PARTS_FILE.exists() and han_viet.DATA_FILE.exists() and (classifier.DATA_DIR / "n5.csv").exists()),
+    reason="chưa có kanji_parts.csv / unihan_vietnamese.csv / jlpt/n5.csv (python scripts/build_dicts.py)")
+
+pytestmark = needs_real
+
+
+def _nodes(payload, type_=None):
+    return {n["id"]: n for n in payload["nodes"] if type_ is None or n["type"] == type_}
+
+
+def _edges(payload):
+    return {(e["from"], e["to"], e["type"]) for e in payload["edges"]}
+
+
+# ----------------------------------------------------------------------------- resolve: chữ Hán hoặc âm Hán-Việt
+
+def test_resolve_kanji_and_first_kanji_of_word():
+    assert kanji_diagram.resolve("時") == {"center": "時", "candidates": []}
+    assert kanji_diagram.resolve(" 時間 ")["center"] == "時"      # dán cả từ → lấy chữ Hán đầu
+    assert kanji_diagram.resolve("々") == {"center": None, "candidates": []}
+
+
+def test_resolve_han_viet_many_kanji_gives_candidates():
+    r = kanji_diagram.resolve("THANH")
+    assert r["center"] is None
+    chars = [c["kanji"] for c in r["candidates"]]
+    assert {"青", "清"} <= set(chars)
+    assert len(chars) == len(set(chars)) <= kanji_diagram.MAX_CANDIDATES
+    first = r["candidates"][0]
+    assert set(first) == {"kanji", "hanViet", "jlpt", "meaningEn"} and first["hanViet"] == "THANH"
+    # cấp dễ trước: không có chữ N1 đứng trước chữ N5
+    idx = [classifier.level_index(c["jlpt"]) for c in r["candidates"]]
+    assert idx == sorted(idx)
+
+
+def test_resolve_han_viet_without_diacritics_and_unknown():
+    r = kanji_diagram.resolve("thoi")
+    assert r["center"] == "時" or "時" in [c["kanji"] for c in r["candidates"]]
+    assert kanji_diagram.resolve("xyzxyz") == {"center": None, "candidates": []}
+    assert kanji_diagram.resolve("") == {"center": None, "candidates": []}
+
+
+# ----------------------------------------------------------------------------- structure
+
+def test_structure_toki_parts_radical_phon_and_family():
+    p = kanji_diagram.structure("時")
+    nodes, edges = _nodes(p), _edges(p)
+    center = nodes["k:時"]
+    assert center["type"] == "center" and center["hanViet"] == "THỜI" and center["jlpt"] == "N5"
+    assert nodes["k:日"]["type"] == "component" and nodes["k:日"]["role"] == "radical"
+    assert nodes["k:寺"]["type"] == "component" and nodes["k:寺"]["role"] == "phon"
+    assert nodes["k:寺"]["expandable"] is True and nodes["k:寺"]["position"] == "right"
+    assert ("k:日", "k:時", "radical") in edges and ("k:寺", "k:時", "phon") in edges
+    family = _nodes(p, "phonetic")
+    assert {"k:持", "k:待", "k:特", "k:等", "k:詩", "k:侍"} <= set(family)
+    assert "k:時" not in family and "k:寺" not in family
+    assert family["k:持"]["sameOn"] is True and family["k:待"]["sameOn"] is False
+    assert ("k:寺", "k:持", "phon") in edges and ("k:寺", "k:待", "family") in edges
+    assert p["stats"]["kanji"] == len(nodes) and p["stats"]["words"] == 0 and p["stats"]["parts"] is True
+
+
+def test_structure_detail_for_panel():
+    d = kanji_diagram.structure("時")["detail"]
+    assert d["kanji"] == "時" and d["hanViet"] == "THỜI" and d["strokeCount"] == 10 and d["jlpt"] == "N5"
+    assert "ジ" in d["on"] and "とき" in d["kun"]
+    assert d["radical"]["no"] == 72 and d["radical"]["char"] == "日" and d["radical"]["nameVi"]
+    assert [(f["part"], f["role"]) for f in d["formula"]] == [("日", "radical"), ("寺", "phon")]
+    assert d["formula"][0]["hanViet"] == "NHẬT" and d["formula"][1]["hanViet"] == "TỰ"
+    assert d["phon"] == "寺" and d["phonOf"] == []                 # 時 không làm chỉ âm cho chữ JLPT nào
+    assert d["compounds"] and d["compounds"][0]["term"]              # panel "Từ có chữ" ở cả hai chế độ
+
+
+def test_structure_tera_variant_phon_and_phon_of():
+    p = kanji_diagram.structure("寺")
+    d = p["detail"]
+    assert [(f["part"], f["role"]) for f in d["formula"]] == [("土", "phon"), ("寸", "radical")]
+    assert d["phon"] == "之"
+    assert _nodes(p)["k:土"]["phon"] == "之"                        # part là biến thể của chỉ âm 之
+    assert {x["kanji"] for x in d["phonOf"]} >= {"時", "持", "待", "特", "等", "詩", "侍"}
+    same = {x["kanji"]: x["sameOn"] for x in d["phonOf"]}
+    assert same["持"] is True and same["待"] is False
+
+
+def test_structure_without_phon_has_no_family():
+    p = kanji_diagram.structure("明")
+    assert _nodes(p, "phonetic") == {}
+    assert [f["part"] for f in p["detail"]["formula"]] == ["日", "月"]
+    assert p["detail"]["phon"] is None
+
+
+def test_structure_single_kanji_only_center():
+    p = kanji_diagram.structure("日")
+    assert list(_nodes(p)) == ["k:日"] and p["edges"] == []
+    assert p["detail"]["formula"] == [] and p["stats"]["kanji"] == 1
+
+
+def test_structure_family_capped_and_jlpt_only():
+    p = kanji_diagram.structure("放")                                # họ 方: 8 chữ JLPT (訪 放 防 妨 房 芳 倣 肪)
+    family = _nodes(p, "phonetic")
+    assert 3 <= len(family) <= kanji_diagram.MAX_FAMILY and "k:放" not in family
+    jl = classifier.jlpt_kanji_set()
+    assert all(n["label"] in jl for n in family.values())
+    # chữ 方 làm tâm: không có part nào mang chỉ âm nên không có họ trên sơ đồ, nhưng panel liệt kê "làm phần chỉ âm (N)"
+    d = kanji_diagram.structure("方")["detail"]
+    assert {"放", "防", "訪"} <= {x["kanji"] for x in d["phonOf"]} and len(d["phonOf"]) <= kanji_diagram.MAX_FAMILY
+
+
+# ----------------------------------------------------------------------------- compounds
+
+def test_compounds_toki_words_and_other_kanji():
+    p = kanji_diagram.compounds("時")
+    words, edges = _nodes(p, "word"), _edges(p)
+    assert {"w:時間", "w:時代", "w:時計"} <= set(words)
+    assert len(words) <= kanji_diagram.MAX_WORDS
+    w = words["w:時間"]
+    assert w["reading"] == "じかん" and w["jlpt"] == "N5" and w["hanViet"] == "THỜI GIAN" and w["meaningEn"]
+    assert w["key"] is None or w["key"].startswith("w:")
+    if jmdict.available():
+        assert w["key"].startswith("w:") and w["key"][2:].isdigit()
+    assert ("k:時", "w:時間", "compound") in edges
+    assert _nodes(p)["k:間"]["type"] == "kanji" and ("w:時間", "k:間", "contains") in edges
+    assert "k:時" in _nodes(p, "center")
+    assert p["stats"]["words"] == len(words) and p["stats"]["jmdict"] is jmdict.available()
+    assert p["detail"]["kanji"] == "時"                              # panel vẫn đủ chi tiết ở chế độ từ ghép
+
+
+def test_compounds_sorted_easy_first():
+    p = kanji_diagram.compounds("時")
+    levels = [classifier.level_index(n["jlpt"]) for n in p["nodes"] if n["type"] == "word"]
+    assert levels == sorted(levels)
+
+
+# ----------------------------------------------------------------------------- diagram(q, mode)
+
+def test_diagram_shape_and_modes():
+    p = kanji_diagram.diagram("時", "compounds")
+    assert set(p) == {"query", "mode", "center", "candidates", "nodes", "edges", "detail", "stats"}
+    assert p["query"] == "時" and p["mode"] == "compounds" and p["center"] == "k:時"
+    s = kanji_diagram.diagram("時", "structure")
+    assert s["mode"] == "structure" and "k:寺" in _nodes(s)
+
+
+def test_diagram_candidates_and_unknown_are_empty_graphs():
+    p = kanji_diagram.diagram("THANH", "structure")
+    assert p["center"] is None and p["candidates"] and p["nodes"] == [] and p["edges"] == [] and p["detail"] is None
+    q = kanji_diagram.diagram("abc", "structure")
+    assert q == {"query": "abc", "mode": "structure", "center": None, "candidates": [], "nodes": [], "edges": [],
+                 "detail": None, "stats": {"kanji": 0, "words": 0, "parts": kanjidata.availability()["kanjiParts"],
+                                           "jmdict": jmdict.available()}}
+
+
+def test_diagram_rejects_bad_mode():
+    with pytest.raises(ValueError):
+        kanji_diagram.diagram("時", "tree")
