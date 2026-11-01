@@ -139,7 +139,8 @@ export const AdminModerationPage: React.FC = () => {
           <option value="rating">Bình luận đánh giá bộ thẻ</option>
         </select>
         <input
-          type="search"
+          type="text"
+          enterKeyHint="search"
           aria-label="Tìm theo nội dung / email"
           placeholder="Tìm nội dung, email, khoá mục…"
           defaultValue={q.get("q")}

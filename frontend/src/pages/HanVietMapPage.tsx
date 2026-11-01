@@ -98,7 +98,7 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
       e.preventDefault();
       pick(suggestItems[activeIndex].reading);
     } else if (e.key === "Escape" && showSuggest) {
-      e.preventDefault(); // type="search": Esc mặc định xoá cả ô nhập — ở đây chỉ đóng gợi ý
+      e.preventDefault(); // Esc chỉ đóng gợi ý, không làm gì khác với ô nhập
       closeSuggest();
     }
   };
@@ -143,7 +143,8 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
             </span>
             <input
               id={searchId}
-              type="search"
+              type="text"
+              enterKeyHint="search"
               role="combobox"
               aria-autocomplete="list"
               aria-expanded={showSuggest}

@@ -15,6 +15,9 @@ interface KanjiInfoCardViewProps {
   onSpeakError: (message: string) => void;
   /** Chuỗi đang tra (?k=): giữ trên link sang tab Bộ thủ để quay lại tab Tra vẫn thấy đủ các chữ. */
   query: string;
+  /** Thu gọn: chỉ còn dòng đầu (chữ, Hán-Việt, nghĩa, âm On / Kun tóm tắt); phần thân ẩn nhưng vẫn giữ trạng thái (mẹo đang viết). */
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
 interface ReadingRow {
@@ -61,8 +64,11 @@ const ReadingSection: React.FC<{
 
 // Thẻ một chữ Hán (C5): chữ lớn, Hán-Việt (link bản đồ Hán–Việt), nghĩa, số nét, bộ thủ (link sang tab Bộ thủ), mẹo nhớ
 // (C4: mẹo đã duyệt + mẹo mình đã gửi), âm On / Kun mỗi âm ≤ 3 từ ví dụ JLPT. Hai cột âm trên màn rộng, xếp chồng trên mobile.
-export const KanjiInfoCardView: React.FC<KanjiInfoCardViewProps> = ({ card, radical, onWrite, onSpeakError, query }) => {
+// Có onToggle thì thẻ thu gọn / mở rộng được (31/10: tra nhiều chữ một lúc không bị dài quá).
+export const KanjiInfoCardView: React.FC<KanjiInfoCardViewProps> = ({ card, radical, onWrite, onSpeakError, query, expanded = true, onToggle }) => {
   const headingId = useId();
+  const bodyId = useId();
+  const readingsSummary = [...card.on.map((r) => r.reading), ...card.kun.map((r) => kunLabel(r))].join("・");
   const onRows: ReadingRow[] = card.on.map((r) => ({ key: r.reading, label: r.reading, speak: r.reading, examples: r.examples }));
   const kunRows: ReadingRow[] = card.kun.map((r) => ({
     key: kunLabel(r),
@@ -77,8 +83,12 @@ export const KanjiInfoCardView: React.FC<KanjiInfoCardViewProps> = ({ card, radi
       className="p-space-md rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs flex flex-col gap-space-sm min-w-0"
     >
       <div className="flex items-start gap-space-md">
-        <div className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-surface-container-low border border-surface-container-high flex items-center justify-center">
-          <h2 id={headingId} lang="ja" className="font-japanese text-5xl sm:text-6xl font-bold text-on-surface leading-none">
+        <div
+          className={`shrink-0 rounded-2xl bg-surface-container-low border border-surface-container-high flex items-center justify-center transition-all ${
+            expanded ? "w-20 h-20 sm:w-24 sm:h-24" : "w-14 h-14"
+          }`}
+        >
+          <h2 id={headingId} lang="ja" className={`font-japanese font-bold text-on-surface leading-none ${expanded ? "text-5xl sm:text-6xl" : "text-4xl"}`}>
             {card.kanji}
           </h2>
         </div>
@@ -88,11 +98,14 @@ export const KanjiInfoCardView: React.FC<KanjiInfoCardViewProps> = ({ card, radi
           ) : (
             <span className="text-label-sm text-outline">Chưa có âm Hán-Việt</span>
           )}
-          <p className="text-body-sm text-on-surface-variant break-words">
+          <p className={`text-body-sm text-on-surface-variant break-words ${expanded ? "" : "line-clamp-1"}`}>
             {card.meaningEn ?? <span className="text-outline">Chưa có nghĩa</span>}
             {card.meaningEn && <span className="text-outline"> (tiếng Anh)</span>}
           </p>
-          <dl className="flex flex-wrap gap-x-4 gap-y-1 text-label-sm text-on-surface-variant">
+          {!expanded && readingsSummary && (
+            <p lang="ja" className="text-label-sm text-on-surface-variant font-japanese truncate">{readingsSummary}</p>
+          )}
+          <dl className={`${expanded ? "flex" : "hidden"} flex-wrap gap-x-4 gap-y-1 text-label-sm text-on-surface-variant`}>
             <div>
               <dt className="inline">Số nét: </dt>
               <dd className="inline font-semibold text-on-surface tabular-nums">{card.strokeCount ?? "—"}</dd>
@@ -122,8 +135,23 @@ export const KanjiInfoCardView: React.FC<KanjiInfoCardViewProps> = ({ card, radi
             </div>
           </dl>
         </div>
+        {onToggle && (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            aria-label={expanded ? `Thu gọn chữ ${card.kanji}` : `Mở rộng chữ ${card.kanji}`}
+            title={expanded ? "Thu gọn" : "Mở rộng"}
+            className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[22px]">{expanded ? "expand_less" : "expand_more"}</span>
+          </button>
+        )}
       </div>
 
+      {/* Ẩn bằng class, không bằng thuộc tính hidden (class flex của Tailwind thắng [hidden]); vẫn giữ mount để không mất mẹo đang viết. */}
+      <div id={bodyId} className={`${expanded ? "flex" : "hidden"} flex-col gap-space-sm`}>
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => onWrite(card)}>
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">draw</span>
@@ -149,6 +177,7 @@ export const KanjiInfoCardView: React.FC<KanjiInfoCardViewProps> = ({ card, radi
           emptyText="Chữ này không có âm Kun."
           onSpeakError={onSpeakError}
         />
+      </div>
       </div>
     </article>
   );

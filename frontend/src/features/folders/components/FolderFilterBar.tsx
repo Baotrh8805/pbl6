@@ -39,7 +39,8 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
         </span>
         <input
           id={searchId}
-          type="search"
+          type="text"
+          enterKeyHint="search"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={placeholder}

@@ -172,7 +172,8 @@ export const AdminKnowledgeDetailPage: React.FC = () => {
           ) : (
             <>
               <input
-                type="search"
+                type="text"
+                enterKeyHint="search"
                 value={entryQuery}
                 onChange={(e) => setEntryQuery(e.target.value)}
                 placeholder="Lọc theo từ, cách đọc, nghĩa…"

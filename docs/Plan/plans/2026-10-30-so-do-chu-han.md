@@ -1,6 +1,6 @@
 # Kế hoạch triển khai: Sơ đồ chữ Hán & từ vựng (`/graph`)
 
-Ngày 30/10/2026 · nhánh `Graph` · trạng thái: **đã duyệt 30/10, đang làm Đợt 1**.
+Ngày 30/10/2026 · nhánh `Graph` · trạng thái: **Đợt 1–3 đã làm 30/10 (test tự động xanh), mục 3.4 báo cáo ở `../reports/2026-10-30-so-do-chu-han.md`; kiểm tay trình duyệt chờ người dùng**.
 Spec (nhận xét kế hoạch gốc, quyết định D1–D10, hợp đồng API, thiết kế frontend): [../specs/2026-10-30-so-do-chu-han-design.md](../specs/2026-10-30-so-do-chu-han-design.md).
 
 ---

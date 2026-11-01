@@ -100,7 +100,8 @@ export const FolderManagerSection: React.FC<FolderManagerSectionProps> = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-surface-container-low rounded-lg text-body-md font-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container transition-colors"
             placeholder="Tìm kiếm folder, giáo trình, bộ thẻ từ vựng..."
-            type="search"
+            type="text"
+            enterKeyHint="search"
           />
         </div>
 

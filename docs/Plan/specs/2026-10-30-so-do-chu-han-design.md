@@ -1,6 +1,8 @@
 # Spec: Sơ đồ chữ Hán & từ vựng (`/graph`) — nhận xét kế hoạch gốc và thiết kế nâng cấp
 
-Ngày 30/10/2026 · nhánh `Graph` (tách từ `tudien` 694253e) · trạng thái: **đã duyệt 30/10, đang làm Đợt 1**.
+Ngày 30/10/2026 · nhánh `Graph` (tách từ `tudien` 694253e) · trạng thái: **đã làm Đợt 1–3 (30/10), chưa kiểm tay trên trình duyệt**.
+Khác với bản thiết kế: payload có thêm `phon_part` / `guess` / `phonGuess` (heuristic chỉ âm bật mặc định với nhãn "chỉ âm?"); cờ health
+là `kanjiParts`; đúp chuột = mở thêm (Shift+Enter đổi tâm); chip gợi ý theo cấp người học thay bằng autocomplete datalist.
 Kế hoạch triển khai theo đợt: [../plans/2026-10-30-so-do-chu-han.md](../plans/2026-10-30-so-do-chu-han.md).
 
 ---

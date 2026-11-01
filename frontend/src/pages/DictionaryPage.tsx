@@ -4,20 +4,18 @@ import { KanjiPage } from "@/pages/KanjiPage";
 import { HanVietMapPage } from "@/pages/HanVietMapPage";
 import { WordsTab } from "@/features/dictionary/components/WordsTab";
 import { NotebookTab } from "@/features/dictionary/components/NotebookTab";
-import { SentencesTab } from "@/features/dictionary/components/SentencesTab";
-import { TranslateTab } from "@/features/dictionary/components/TranslateTab";
+import { SentenceTranslateTab } from "@/features/dictionary/components/SentenceTranslateTab";
 import { HandwritingPad } from "@/features/dictionary/components/HandwritingPad";
 import { KanjiCommunity } from "@/features/dictionary/components/KanjiCommunity";
 import { useSearchMemory } from "@/lib/useSearchMemory";
 import { DICTIONARY_MEMORY_KEY, DICTIONARY_PARAMS } from "@/features/dictionary/dictionaryMemory";
 import type { DictKey, DictTranslateDirection } from "@/types/dictionary.types";
 
-type DictTab = "words" | "sentences" | "translate" | "kanji" | "hanviet" | "notebook";
+type DictTab = "words" | "sentences" | "kanji" | "hanviet" | "notebook";
 
 const TABS: { key: DictTab; label: string; icon: string }[] = [
   { key: "words", label: "Từ vựng", icon: "menu_book" },
-  { key: "sentences", label: "Câu", icon: "format_quote" },
-  { key: "translate", label: "Dịch", icon: "g_translate" },
+  { key: "sentences", label: "Câu & Dịch", icon: "g_translate" },
   { key: "kanji", label: "Hán tự", icon: "translate" },
   { key: "hanviet", label: "Hán-Việt", icon: "hub" },
   { key: "notebook", label: "Sổ tay", icon: "bookmarks" },
@@ -26,8 +24,7 @@ const TAB_KEYS = TABS.map((t) => t.key);
 // tham số riêng của từng tab: đổi tab thì bỏ tham số của tab cũ để URL gọn và không lẫn (r = bộ thủ ở Hán tự)
 const TAB_PARAMS: Record<DictTab, string[]> = {
   words: ["q", "e"],
-  sentences: ["s"],
-  translate: ["t", "dir"],
+  sentences: ["s", "t", "dir"],
   kanji: ["k", "sub", "r"],
   hanviet: ["reading", "level"],
   notebook: [],
@@ -35,16 +32,19 @@ const TAB_PARAMS: Record<DictTab, string[]> = {
 const KANJI_RE = /[㐀-䶿一-鿿豈-﫿]/u;
 
 const TRANSLATE_DIRS: DictTranslateDirection[] = ["auto", "ja-vi", "vi-ja"];
+// Câu và Dịch gộp thành một tab (31/10): link / lịch sử cũ ?tab=translate vẫn mở tab gộp
+const TAB_ALIASES: Record<string, DictTab> = { translate: "sentences" };
 
-// Từ điển (D14): Từ vựng (mới) + Câu + Dịch (D33) + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay. Mọi trạng thái trên URL:
-// ?tab=words&q=…&e=<khoá mục>, ?tab=sentences&s=…, ?tab=translate&t=…&dir=ja-vi|vi-ja, ?tab=kanji&k=食&sub=radicals&r=85,
+// Từ điển (D14): Từ vựng (mới) + Câu & Dịch (D33, gộp 31/10) + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay. Mọi trạng thái
+// trên URL: ?tab=words&q=…&e=<khoá mục>, ?tab=sentences&s=…&t=…&dir=ja-vi|vi-ja, ?tab=kanji&k=食&sub=radicals&r=85,
 // ?tab=hanviet&reading=…, ?tab=notebook.
 export const DictionaryPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
   // Sidebar dẫn tới /dictionary không kèm tham số: nhớ trạng thái URL trong tab và khôi phục MỘT LẦN khi vào trang trống
   // (xem useSearchMemory — gắn với mục lịch sử lúc vào trang, đổi tab sau đó không bị kéo về).
   const restoring = useSearchMemory(DICTIONARY_MEMORY_KEY, DICTIONARY_PARAMS);
-  const raw = params.get("tab") as DictTab | null;
+  const rawTab = params.get("tab");
+  const raw = (rawTab && TAB_ALIASES[rawTab]) || (rawTab as DictTab | null);
   const tab: DictTab = raw && TAB_KEYS.includes(raw) ? raw : "words";
   const tabRefs = useRef<Partial<Record<DictTab, HTMLButtonElement | null>>>({});
 
@@ -103,8 +103,7 @@ export const DictionaryPage: React.FC = () => {
           Từ điển Nhật–Việt
         </h1>
         <p className="text-body-sm text-on-surface-variant mt-1 max-w-2xl">
-          Tra từ, cách đọc, âm Hán-Việt, nghĩa tiếng Việt và câu ví dụ; dịch câu Nhật ↔ Việt bằng AI kèm phân tích từng cụm; bình luận
-          chia sẻ mẹo nhớ; báo lỗi để quản trị viên sửa từ điển gốc cho mọi người.
+          Tra từ, âm Hán-Việt, câu ví dụ và dịch câu Nhật ↔ Việt — kèm mẹo nhớ của cộng đồng.
         </p>
       </header>
 
@@ -112,7 +111,7 @@ export const DictionaryPage: React.FC = () => {
         role="tablist"
         aria-label="Loại tra cứu"
         onKeyDown={onTabKeyDown}
-        className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start max-w-full overflow-x-auto"
+        className="flex gap-1 p-1 rounded-2xl bg-surface-container-low border border-surface-container-high self-start max-w-full overflow-x-auto"
       >
         {TABS.map((t) => {
           const selected = t.key === tab;
@@ -128,13 +127,14 @@ export const DictionaryPage: React.FC = () => {
               aria-selected={selected}
               aria-controls={selected ? `dict-panel-${t.key}` : undefined}
               tabIndex={selected ? 0 : -1}
+              title={t.label}
               onClick={() => go(t.key)}
-              className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 min-h-10 rounded-lg text-label-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                selected ? "bg-surface-container-lowest text-primary font-semibold shadow-sm" : "text-on-surface-variant hover:bg-surface-container"
+              className={`shrink-0 inline-flex items-center gap-1.5 px-3 min-[400px]:px-3.5 py-2 min-h-10 rounded-xl text-label-md transition-all duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                selected ? "bg-surface-container-lowest text-primary font-semibold shadow-sm ring-1 ring-surface-container-high" : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
               }`}
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{t.icon}</span>
-              {t.label}
+              <span className="sr-only min-[400px]:not-sr-only">{t.label}</span>
             </button>
           );
         })}
@@ -147,22 +147,16 @@ export const DictionaryPage: React.FC = () => {
             entryKey={params.get("e")}
             onQuery={(q) => go("words", { q: q || null, e: null }, true)}
             onOpen={openKey}
-            onTranslate={(t) => go("translate", { t })}
+            onTranslate={(t) => go("sentences", { t, s: t.length <= 64 ? t : null })}
           />
         )}
         {tab === "sentences" && (
-          <SentencesTab
-            query={params.get("s") ?? ""}
-            onQuery={(s) => go("sentences", { s: s || null }, true)}
-            onOpen={(k) => go("words", { e: k })}
-            onTranslate={(t) => go("translate", { t })}
-          />
-        )}
-        {tab === "translate" && (
-          <TranslateTab
+          <SentenceTranslateTab
+            search={params.get("s") ?? ""}
             text={params.get("t") ?? ""}
             direction={translateDir}
-            onChange={(t, dir) => go("translate", { t: t || null, dir: dir === "auto" ? null : dir }, true)}
+            onSearch={(s) => go("sentences", { s: s || null }, true)}
+            onTranslate={(t, dir) => go("sentences", { t, dir: dir === "auto" ? null : dir, s: t.length <= 64 ? t : null })}
             onOpen={(k) => go("words", { e: k })}
           />
         )}

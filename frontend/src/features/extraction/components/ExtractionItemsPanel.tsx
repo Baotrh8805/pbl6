@@ -266,7 +266,8 @@ export const ExtractionItemsPanel: React.FC<ExtractionItemsPanelProps> = ({ item
           </span>
           <input
             id={searchId}
-            type="search"
+            type="text"
+            enterKeyHint="search"
             value={filter.query}
             onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
             placeholder="Tìm từ, cách đọc, nghĩa…"

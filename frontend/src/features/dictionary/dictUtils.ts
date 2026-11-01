@@ -249,6 +249,32 @@ export const entryToWordNode = (e: DictEntry) => {
     };
 };
 
+// Màu chip JLPT (plan 2026-10-31): N5 xanh lá → N1 tím, dùng chung cho danh sách, chi tiết, tra nhanh, tab Dịch. Cấp lạ → primary.
+const JLPT_CHIP: Record<string, string> = {
+    N5: "bg-emerald-100 text-emerald-800",
+    N4: "bg-teal-100 text-teal-800",
+    N3: "bg-amber-100 text-amber-800",
+    N2: "bg-indigo-100 text-indigo-800",
+    N1: "bg-purple-100 text-purple-800",
+};
+
+export const jlptChipClass = (level: string | null | undefined): string =>
+    JLPT_CHIP[(level ?? "").trim().toUpperCase()] ?? "bg-primary/10 text-primary";
+
+// pitch.accent_kind của ai-service: heiban / atamadaka / nakadaka / odaka.
+const PITCH_KIND_LABELS: Record<string, string> = {
+    heiban: "Bằng",
+    atamadaka: "Cao đầu",
+    nakadaka: "Cao giữa",
+    odaka: "Cao đuôi",
+};
+
+/** Tên kiểu trọng âm cho người Việt, kèm tên Nhật: "Bằng (heiban)". Kiểu lạ giữ nguyên. */
+export const pitchKindLabel = (kind: string): string => {
+    const k = kind.trim().toLowerCase();
+    return PITCH_KIND_LABELS[k] ? `${PITCH_KIND_LABELS[k]} (${k})` : kind;
+};
+
 /** Mức H/L theo mora → các đoạn để vẽ bậc thang trọng âm. */
 export const pitchSteps = (moras: string[], hl: ("H" | "L")[]): { mora: string; high: boolean; drop: boolean }[] =>
     moras.map((m, i) => ({ mora: m, high: hl[i] === "H", drop: hl[i] === "H" && hl[i + 1] === "L" }));

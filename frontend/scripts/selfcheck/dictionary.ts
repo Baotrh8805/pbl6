@@ -10,6 +10,8 @@ import {
   detectTranslateDirection,
   highlightParts,
   entryToWordNode,
+  jlptChipClass,
+  pitchKindLabel,
   headOf,
   looksLikeSentence,
   needsSubKey,
@@ -128,6 +130,12 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(hp("食べた。食べたい", "食べ") === "[食べ]た。[食べ]たい", "Từ điển (Câu): chữ Nhật tô mọi chỗ");
   assert(hp("Tôi ăn cơm", "an com") === "Tôi ăn cơm", "Từ điển (Câu): gõ không dấu thì không tô (không đoán)");
   assert(hp("abc", "  ") === "abc" && highlightParts("", "a").length === 0, "Từ điển (Câu): q rỗng / text rỗng");
+
+  // ---------- giao diện 31/10: chip JLPT, nhãn trọng âm ----------
+  assert(jlptChipClass("N5").includes("emerald") && jlptChipClass("n1").includes("purple"), "Từ điển: chip JLPT theo cấp, không phân biệt hoa thường");
+  assert(jlptChipClass(null) === jlptChipClass("N9") && jlptChipClass(null).includes("primary"), "Từ điển: cấp lạ / thiếu -> màu primary");
+  assert(pitchKindLabel("heiban") === "Bằng (heiban)" && pitchKindLabel("odaka") === "Cao đuôi (odaka)", "Từ điển: nhãn trọng âm tiếng Việt");
+  assert(pitchKindLabel("lạ") === "lạ", "Từ điển: kiểu trọng âm lạ giữ nguyên");
 
   // ---------- tab Dịch (spec 2026-10-28, D33) ----------
   assert(detectTranslateDirection("ご飯を食べました。") === "ja-vi" && detectTranslateDirection("Tôi ăn cơm") === "vi-ja", "Dịch: tự nhận hướng");
