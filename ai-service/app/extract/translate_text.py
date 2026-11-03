@@ -1,12 +1,7 @@
-"""Dịch câu / đoạn Nhật ↔ Việt cho tab Dịch của từ điển (spec docs/Plan/specs/2026-10-28-dich-cau-design.md §3, D33).
+"""Sentence analysis and translation response utilities for the dictionary tab.
 
-Hai phần tách bạch, không bao giờ trộn:
-- **Phân tích câu Nhật tại chỗ** (Sudachi + JMdict + JLPT + furigana + romaji): luôn chạy, không tốn quota, là lớp hỗ trợ học
-  dưới bản dịch — KHÔNG phải bản dịch. Ghép nghĩa từng từ thành câu là điều module này không làm (câu ghép không trôi chảy,
-  sai nghĩa; xem spec §2).
-- **Bản dịch**: chỉ Gemini dịch cả đoạn (``gemini.translate_text``); ``clean_result`` lọc đầu ra (đúng ngôn ngữ, không quá dài,
-  không trùng câu nguồn) rồi gắn nghĩa theo ngữ cảnh của từng từ vào token theo chỉ số ``i`` mà prompt đã gửi, để phần phân
-  tích khớp với bản dịch thay vì nghĩa từ điển chung chung.
+The primary translation is produced by local_translation; Sudachi and dictionary
+analysis remains independent. Legacy Gemini parsing helpers are retained for callers.
 """
 from __future__ import annotations
 

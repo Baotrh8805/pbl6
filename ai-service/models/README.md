@@ -23,3 +23,12 @@ python scripts/fetch_models.py --phobert-tokenizer
 
 Biến môi trường: `MODELS_DIR` đổi thư mục; `MODERATION_SPANS=0` tắt PhoBERT (máy ít RAM); `MODERATION_THREADS` số luồng torch.
 Cờ `GET /api/extract/health`: `moderation`, `moderationSpans`, `hlr`.
+
+## Dịch câu Nhật ↔ Việt: `translation/`
+
+Thư mục gồm `model.safetensors`, `config.json`, tokenizer, chat template và generation config
+đã xuất từ notebook train. Trọng số LoRA đã gộp vào model gốc theo cell xuất model.
+Tab Dịch luôn dùng model này, không dùng cache hay Gemini/M2M100 dự phòng.
+
+Hướng dẫn chạy, cấu hình CPU/GPU và kết quả kiểm tra câu dài:
+[translation-local.md](../../docs/validation/translation-local.md).

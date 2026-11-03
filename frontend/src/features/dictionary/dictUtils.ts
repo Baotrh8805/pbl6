@@ -44,6 +44,14 @@ export const translateStateNote = (
     aiLimit?: number,
     engine?: DictTranslateEngine | null
 ): string | null => {
+    if (state === "TOO_LONG") return "Câu quá dài để dịch ổn định. Hãy chia thành các câu ngắn hơn rồi thử lại.";
+    if (state === "BUSY") return "Bạn dịch hơi nhanh. Đợi vài giây rồi bấm Dịch lại nhé.";
+    if (engine === "local") {
+        if (state === "OK") return null;
+        return state === "UNAVAILABLE"
+            ? "Model đang khởi động hoặc dịch quá thời gian chờ. Vui lòng thử lại."
+            : "Model chưa dịch được câu này. Vui lòng thử lại hoặc rút ngắn câu.";
+    }
     if (engine === "offline") {
         const why =
             state === "LIMIT"
@@ -55,8 +63,6 @@ export const translateStateNote = (
     }
     if (engine === "ai" || state === "OK") return null;
     switch (state) {
-        case "BUSY":
-            return "Bạn dịch hơi nhanh. Đợi vài giây rồi bấm Dịch lại nhé.";
         case "UNAVAILABLE":
             return "Dịch vụ dịch đang khởi động hoặc bận, chưa trả lời kịp. Đợi vài giây rồi bấm Dịch lại nhé.";
         case "LIMIT":

@@ -463,7 +463,7 @@ class DictionaryIT extends IntegrationTest {
                             "key":"%s","jlpt":"N5","pos":"動詞","posVi":"động từ","particle":false,"symbol":false,"glossEn":"to eat","meaning":"đã ăn"},
                            {"i":3,"surface":"。","lemma":null,"reading":null,"romaji":null,"rubies":null,"key":null,"jlpt":null,
                             "pos":"補助記号","posVi":"dấu","particle":false,"symbol":true,"glossEn":null,"meaning":null}],
-                 "model":"gemini-test","reason":null}
+                 "model":"local:hy-mt1.5-1.8b-ja-vi","engine":"local","reason":null}
                 """.formatted(key));
     }
 
@@ -483,78 +483,51 @@ class DictionaryIT extends IntegrationTest {
     }
 
     @Test
-    void translate_text_calls_ai_once_then_serves_cache_and_overlays_dictionary_meaning() throws Exception {
+    void translate_text_always_runs_local_and_overlays_current_dictionary_meaning() throws Exception {
         String token = newUser();
         String key = "w:" + id;
         jdbc.update("INSERT INTO dict_meanings (entry_key, term, reading, meaning_vi, status, source) VALUES (?,?,?,?, 'MACHINE','SEED')",
                 key, "食べる", "たべる", "ăn; dùng bữa");
-        Mockito.when(ai.translateText(eq("ご飯を食べました。"), eq("ja-vi"), eq(true))).thenReturn(aiTranslation(key));
-
-        JsonNode r = translate(token, "  ご飯を食べました。 ");   // khoảng trắng hai đầu bị cắt, câu trùng bộ nhớ dịch
+        Mockito.when(ai.translateText(eq("ご飯を食べました。"), eq("ja-vi"), eq(false))).thenReturn(aiTranslation(key));
+        // An old cached result must never bypass local inference.
+        jdbc.update("INSERT INTO dict_text_translations (text_hash, direction, source_text, result, model) VALUES (?, 'ja-vi', ?, ?, ?)",
+                java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                        .digest("ja-vi\nご飯を食べました。".getBytes(java.nio.charset.StandardCharsets.UTF_8))),
+                "ご飯を食べました。", "{}", "gemini-old");
+        JsonNode r = translate(token, "  ご飯を食べました。 ");
         assertEquals("OK", r.get("state").asText());
-        assertEquals("ja-vi", r.get("direction").asText());
+        assertEquals("local", r.get("engine").asText());
         assertEquals("Tôi đã ăn cơm.", r.get("translation").asText());
-        assertEquals("cơm / (tân ngữ) / đã ăn", r.get("literal").asText());
         assertFalse(r.get("cached").asBoolean());
-        assertEquals(19, r.get("aiLeft").asInt());
-        assertEquals(20, r.get("aiLimit").asInt());
-        assertEquals("gemini-test", r.get("model").asText());
-        assertEquals("ai", r.get("engine").asText(), "bản Gemini (cache cũ không có trường engine) được đánh dấu ai");
-        assertTrue(r.path("reason").isMissingNode(), "reason là chuyện giữa backend và ai-service");
-        JsonNode eat = r.get("tokens").get(2);
-        assertEquals("đã ăn", eat.get("meaning").asText(), "nghĩa theo ngữ cảnh của AI");
-        assertEquals("ăn; dùng bữa", eat.get("dictVi").asText(), "nghĩa Việt của từ điển áp theo khoá");
-        assertTrue(r.get("tokens").get(0).get("dictVi").isNull(), "cụm không có mục từ điển");
-
-        // lần hai (cả người khác): bộ nhớ dịch, không gọi AI, không tốn lượt; nghĩa từ điển mới áp lúc đọc
+        assertEquals(0, r.get("aiLimit").asInt());
+        assertEquals("ăn; dùng bữa", r.get("tokens").get(2).get("dictVi").asText());
         jdbc.update("UPDATE dict_meanings SET meaning_vi = 'ăn' WHERE entry_key = ?", key);
-        JsonNode again = translate(newUser(), "ご飯を食べました。");
-        assertTrue(again.get("cached").asBoolean());
-        assertEquals("Tôi đã ăn cơm.", again.get("translation").asText());
+        JsonNode again = translate(token, "ご飯を食べました。");
+        assertFalse(again.get("cached").asBoolean());
         assertEquals("ăn", again.get("tokens").get(2).get("dictVi").asText());
-        assertEquals(20, again.get("aiLeft").asInt(), "lượt của người thứ hai còn nguyên");
-        Mockito.verify(ai, Mockito.times(1)).translateText(anyString(), anyString(), anyBoolean());
-        assertEquals(1, jdbc.queryForObject("SELECT hit_count FROM dict_text_translations WHERE direction = 'ja-vi'", Integer.class));
-        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE source_text = ?", Integer.class, "ご飯を食べました。"), "DB dùng chung giữa các test: chỉ đếm câu của test này");
+        Mockito.verify(ai, Mockito.times(2)).translateText(eq("ご飯を食べました。"), eq("ja-vi"), eq(false));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE model = 'local:hy-mt1.5-1.8b-ja-vi'", Integer.class));
     }
 
     @Test
-    void translate_text_states_off_limit_and_ai_down() throws Exception {
+    void translate_text_ignores_gemini_quota_and_maps_local_failures() throws Exception {
         String token = newUser();
-        // không có khoá AI → OFF, hoàn lượt, vẫn có phân tích câu
-        Mockito.when(ai.translateText(eq("ご飯"), eq("ja-vi"), eq(true))).thenReturn(aiFailure("ご飯", "ja-vi", "no_api_key"));
-        JsonNode r = translate(token, "ご飯");
-        assertEquals("OFF", r.get("state").asText());
-        assertTrue(r.get("translation").isNull());
-        assertEquals(1, r.get("tokens").size());
-        assertEquals(20, r.get("aiLeft").asInt(), "không có khoá AI: không tính lượt");
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE source_text = ?", Integer.class, "ご飯"), "không cache kết quả thiếu bản dịch");
-
-        // admin tắt (trần 0) → OFF, chỉ hỏi ai-service phần phân tích (withAi=false)
         jdbc.update("UPDATE app_settings SET value = '0' WHERE key = 'dictionary_translate_hourly_limit'");
-        Mockito.when(ai.translateText(eq("ご飯"), eq("ja-vi"), eq(false))).thenReturn(aiFailure("ご飯", "ja-vi", "skipped"));
-        r = translate(token, "ご飯");
-        assertEquals("OFF", r.get("state").asText());
-        assertEquals(0, r.get("aiLimit").asInt());
-        Mockito.verify(ai, Mockito.times(1)).translateText(eq("ご飯"), eq("ja-vi"), eq(false));
-
-        // trần 1: AI quá tải → AI_DOWN (lượt vẫn tính), lượt sau LIMIT (chỉ phân tích)
-        jdbc.update("UPDATE app_settings SET value = '1' WHERE key = 'dictionary_translate_hourly_limit'");
-        String other = newUser();
-        Mockito.when(ai.translateText(eq("学校"), eq("ja-vi"), eq(true))).thenReturn(aiFailure("学校", "ja-vi", "aiOverloaded"));
-        Mockito.when(ai.translateText(eq("学校"), eq("ja-vi"), eq(false))).thenReturn(aiFailure("学校", "ja-vi", "skipped"));
-        assertEquals("AI_DOWN", translate(other, "学校").get("state").asText());
-        JsonNode lim = translate(other, "学校");
-        assertEquals("LIMIT", lim.get("state").asText());
-        assertEquals(0, lim.get("aiLeft").asInt());
-        assertEquals(1, lim.get("tokens").size(), "hết lượt vẫn có phân tích câu");
-        Mockito.verify(ai, Mockito.times(1)).translateText(eq("学校"), eq("ja-vi"), eq(false));
-
-        // Việt → Nhật tự nhận hướng; hướng gửi tay được tôn trọng
-        Mockito.when(ai.translateText(eq("Tôi ăn cơm."), eq("vi-ja"), anyBoolean())).thenReturn(aiFailure("Tôi ăn cơm.", "vi-ja", "skipped"));
-        assertEquals("vi-ja", translate(other, "Tôi ăn cơm.").get("direction").asText());
-        Mockito.when(ai.translateText(eq("学校"), eq("vi-ja"), anyBoolean())).thenReturn(aiFailure("学校", "vi-ja", "skipped"));
-        JsonNode forced = read(call(post("/api/dictionary/translate"), other, Map.of("text", "学校", "direction", "vi-ja"))
+        Mockito.when(ai.translateText(eq("学校"), eq("ja-vi"), eq(false))).thenReturn(aiTranslation("w:" + id));
+        assertEquals("OK", translate(token, "学校").get("state").asText());
+        for (String reason : List.of("model_missing", "input_too_long", "timeout")) {
+            Mockito.when(ai.translateText(eq("学校"), eq("ja-vi"), eq(false))).thenReturn(aiFailure("学校", "ja-vi", reason));
+            JsonNode r = translate(token, "学校");
+            assertEquals(reason.equals("input_too_long") ? "TOO_LONG" : reason.equals("timeout") ? "UNAVAILABLE" : "AI_DOWN",
+                    r.get("state").asText());
+            assertTrue(r.get("translation").isNull());
+            assertEquals(1, r.get("tokens").size());
+            assertTrue(r.path("reason").isMissingNode());
+        }
+        Mockito.when(ai.translateText(eq("Tôi ăn cơm."), eq("vi-ja"), eq(false))).thenReturn(aiFailure("Tôi ăn cơm.", "vi-ja", "model_missing"));
+        assertEquals("vi-ja", translate(token, "Tôi ăn cơm.").get("direction").asText());
+        Mockito.when(ai.translateText(eq("学校"), eq("vi-ja"), eq(false))).thenReturn(aiFailure("学校", "vi-ja", "model_missing"));
+        JsonNode forced = read(call(post("/api/dictionary/translate"), token, Map.of("text", "学校", "direction", "vi-ja"))
                 .andExpect(status().isOk()));
         assertEquals("vi-ja", forced.get("direction").asText());
     }
@@ -566,53 +539,14 @@ class DictionaryIT extends IntegrationTest {
         call(post("/api/dictionary/translate"), token, Map.of("text", "x".repeat(1001))).andExpect(status().isBadRequest());
         call(post("/api/dictionary/translate"), token, Map.of("text", "x", "direction", "en-vi")).andExpect(status().isBadRequest());
         call(post("/api/dictionary/translate"), null, Map.of("text", "ご飯")).andExpect(status().isUnauthorized());
-
-        // ai-service tắt → vẫn 200 (D34: không báo lỗi cho người học), state UNAVAILABLE, lượt được hoàn
         Mockito.when(ai.translateText(anyString(), anyString(), anyBoolean()))
                 .thenThrow(new AiServiceClient.AiServiceException("Không kết nối được dịch vụ AI"));
         JsonNode down = translate(token, "ご飯");
         assertEquals("UNAVAILABLE", down.get("state").asText());
-        assertTrue(down.get("translation").isNull() && down.get("tokens").isEmpty());
-        assertEquals("ja-vi", down.get("direction").asText());
-        Mockito.reset(ai);
-        Mockito.when(ai.translateText(eq("ご飯"), eq("ja-vi"), eq(true))).thenReturn(aiFailure("ご飯", "ja-vi", "no_api_key"));
-        assertEquals(20, translate(token, "ご飯").get("aiLeft").asInt(), "lời gọi hỏng không tốn lượt");
-
-        // chống dồn 10 / phút (tính cả lượt ai-service tắt và trúng cache): đã gọi 2 lần → 8 lần nữa ok, lần 11 là BUSY (200, không
-        // gọi ai-service) thay vì 429
-        for (int i = 0; i < 8; i++) translate(token, "ご飯");
+        assertTrue(down.get("translation").isNull());
+        for (int i = 0; i < 9; i++) translate(token, "ご飯");
         Mockito.clearInvocations(ai);
-        JsonNode busy = translate(token, "ご飯");
-        assertEquals("BUSY", busy.get("state").asText());
+        assertEquals("BUSY", translate(token, "ご飯").get("state").asText());
         Mockito.verify(ai, Mockito.never()).translateText(anyString(), anyString(), anyBoolean());
-    }
-
-    /** D34: không có bản Gemini → ai-service trả bản dịch máy offline; hiện cho người học nhưng không vào bộ nhớ dịch chung. */
-    @Test
-    void translate_text_offline_fallback_is_shown_but_not_cached() throws Exception {
-        String token = newUser();
-        String src = "駅はどこですか。" + id;
-        Mockito.when(ai.translateText(eq(src), eq("ja-vi"), eq(true))).thenReturn(json.readTree("""
-                {"direction":"ja-vi","source":"%s","translation":"Nhà ga ở đâu?","literal":null,"alternatives":[],"notes":null,
-                 "reading":null,"romaji":null,"readingAgrees":null,"tokens":[{"i":0,"surface":"駅","key":null,"symbol":false}],
-                 "model":"offline:m2m100_418M-ct2","engine":"offline","reason":"no_api_key"}
-                """.formatted(src)));
-        JsonNode r = translate(token, src);
-        assertEquals("Nhà ga ở đâu?", r.get("translation").asText());
-        assertEquals("offline", r.get("engine").asText());
-        assertEquals("OFF", r.get("state").asText(), "state vẫn nói vì sao không có bản AI");
-        assertEquals(20, r.get("aiLeft").asInt(), "không có khoá AI: không tính lượt");
-        assertFalse(r.get("cached").asBoolean());
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE source_text = ?", Integer.class, src),
-                "bản offline không vào bộ nhớ dịch chung");
-
-        // Gemini lỗi (quota) nhưng có bản offline → AI_DOWN + engine offline, cũng không lưu
-        Mockito.when(ai.translateText(eq(src), eq("ja-vi"), eq(true))).thenReturn(json.readTree("""
-                {"direction":"ja-vi","source":"%s","translation":"Nhà ga ở đâu?","tokens":[],"engine":"offline","reason":"quota"}
-                """.formatted(src)));
-        JsonNode down = translate(token, src);
-        assertEquals("AI_DOWN", down.get("state").asText());
-        assertEquals("offline", down.get("engine").asText());
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM dict_text_translations WHERE source_text = ?", Integer.class, src));
     }
 }

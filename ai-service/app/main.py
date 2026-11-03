@@ -1,6 +1,4 @@
 import logging
-import os
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,11 +15,8 @@ _docs = settings.AI_SERVICE_DOCS or not settings.AI_SERVICE_KEY
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    # Dịch offline (tab Dịch, dự phòng khi không có Gemini): nạp mô hình ở luồng nền để lượt dịch đầu không chờ vài giây.
-    # OFFLINE_MT_PRELOAD=0 để tắt (máy ít RAM: mô hình được nạp lúc cần).
-    if os.getenv("OFFLINE_MT_PRELOAD", "1") != "0":
-        from app.extract import offline_mt  # noqa: PLC0415
-        threading.Thread(target=offline_mt.preload, name="offline-mt-preload", daemon=True).start()
+    # Local HY-MT loads lazily on the first translation request. Do not preload
+    # the retired M2M100 fallback alongside the primary model.
     yield
 
 

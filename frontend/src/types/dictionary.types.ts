@@ -291,9 +291,9 @@ export type DictTranslateDirection = "auto" | "ja-vi" | "vi-ja";
  * vẫn có phân tích câu — không bao giờ ghép nghĩa từng từ thành bản dịch.
  */
 /** Vì sao không có bản AI (OK = có). BUSY: dịch quá nhanh; UNAVAILABLE: dịch vụ dịch chưa trả lời (D34, vẫn 200). */
-export type DictTranslateState = "OK" | "OFF" | "LIMIT" | "AI_DOWN" | "BUSY" | "UNAVAILABLE";
-/** ai = Gemini dịch cả đoạn; offline = dịch máy offline m2m100 dự phòng (D34); null = không có bản dịch. */
-export type DictTranslateEngine = "ai" | "offline";
+export type DictTranslateState = "OK" | "OFF" | "LIMIT" | "AI_DOWN" | "BUSY" | "UNAVAILABLE" | "TOO_LONG";
+/** local = HY-MT chính; ai/offline giữ tương thích kiểu dữ liệu cũ. */
+export type DictTranslateEngine = "ai" | "offline" | "local";
 
 export interface DictRuby {
     text: string;

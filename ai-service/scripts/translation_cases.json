@@ -1,0 +1,32 @@
+[
+  {
+    "name": "long_ja",
+    "source": "来週の月曜日に東京で開かれる国際会議に参加するため、私は日曜日の朝にベトナムを出発する予定ですが、台風の影響で飛行機が欠航になった場合は、オンラインで発表できるように、事前に資料と録画した説明動画を主催者に送っておかなければなりません。",
+    "direction": "ja-vi",
+    "expected_error": null
+  },
+  {
+    "name": "long_vi",
+    "source": "Mặc dù nhóm chúng tôi đã hoàn thành phần lớn các chức năng của ứng dụng học tiếng Nhật, chúng tôi vẫn cần kiểm tra khả năng dịch những câu dài có nhiều mệnh đề, sửa các lỗi phát sinh khi nhiều người sử dụng cùng lúc và bảo đảm rằng bản dịch giữ đầy đủ tên riêng, con số cũng như các điều kiện được nêu trong câu gốc trước khi đưa hệ thống vào sử dụng chính thức.",
+    "direction": "vi-ja",
+    "expected_error": null
+  },
+  {
+    "name": "paragraph_ja",
+    "source": "昨日、田中さんから、来週の金曜日午後三時までに新しい翻訳システムのテスト結果を提出してほしいと連絡がありました。ところが、まだ長い文章を翻訳するときに一部の情報が抜け落ちる問題が残っているため、私たちは公開日を変更する必要があるかどうか検討しています。\n\n問題が解決したら、利用者にメールでお知らせします。",
+    "direction": "ja-vi",
+    "expected_error": null
+  },
+  {
+    "name": "paragraph_vi",
+    "source": "Hôm qua, anh Tanaka yêu cầu nhóm chúng tôi gửi kết quả kiểm thử hệ thống dịch mới trước 15 giờ thứ Sáu tuần tới. Tuy nhiên, vì hệ thống đôi khi bỏ sót thông tin trong câu dài, chúng tôi đang cân nhắc việc lùi ngày phát hành.\n\nNếu vấn đề được giải quyết trước ngày 20 tháng 11, chúng tôi sẽ thông báo cho người dùng qua email.",
+    "direction": "vi-ja",
+    "expected_error": null
+  },
+  {
+    "name": "over_limit",
+    "source": "このシステムは、利用者が入力した日本語をベトナム語に翻訳するときに、名前や日付や数字や条件を正確に保持する必要があり、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、複雑な条件についても十分に確認し、最後まで内容を省略してはいけません。",
+    "direction": "ja-vi",
+    "expected_error": "input_too_long"
+  }
+]

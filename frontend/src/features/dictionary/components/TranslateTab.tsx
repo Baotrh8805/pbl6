@@ -112,13 +112,16 @@ const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) =
         <span className="inline-flex items-center gap-2">
           <span className="font-semibold text-on-surface">{translateDirectionLabel(r.direction)}</span>
           {r.cached && <span title="Câu này đã được dịch trước đó, lấy từ bộ nhớ dịch chung">· từ bộ nhớ dịch</span>}
+          {r.engine === "local" && (
+            <span className="px-1.5 rounded-full bg-surface-container text-on-surface-variant">HY-MT Nhật ↔ Việt</span>
+          )}
           {r.engine === "offline" && (
             <span className="px-1.5 rounded-full bg-surface-container text-on-surface-variant" title="Dịch bằng mô hình chạy trên máy chủ, không dùng AI trực tuyến">
               dịch máy offline
             </span>
           )}
         </span>
-        {r.aiLimit > 0 && <span>Còn {r.aiLeft}/{r.aiLimit} lượt dịch AI trong giờ này</span>}
+        {r.engine !== "local" && r.aiLimit > 0 && <span>Còn {r.aiLeft}/{r.aiLimit} lượt dịch AI trong giờ này</span>}
       </div>
 
       {note && (
@@ -198,7 +201,7 @@ const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) =
         <section aria-label={analysisTitle} className="flex flex-col gap-2">
           <h3 className="font-semibold text-on-surface">{analysisTitle}</h3>
           <p className="text-xs text-on-surface-variant">
-            Nghĩa từng cụm theo đúng ngữ cảnh của câu, không phải bản dịch. Bấm cụm có gạch chấm để tra từ điển.
+            Nghĩa từng cụm tham khảo từ từ điển, có thể khác nghĩa trong ngữ cảnh câu. Bấm cụm có gạch chấm để tra từ điển.
           </p>
           <div className="rounded-xl border border-surface-container-high bg-surface-container-lowest px-4 py-3">
             <TokenSentence tokens={r.tokens} onPick={setPopKey} />
@@ -220,7 +223,7 @@ const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) =
 
 // Tab Dịch (spec 2026-10-28-dich-cau-design, D33): dịch câu / đoạn Nhật ↔ Việt bằng AI dịch CẢ đoạn (không bao giờ ghép nghĩa từng từ)
 // + phân tích câu Nhật (cụm từ, cách đọc, bậc JLPT, nghĩa theo ngữ cảnh). Trạng thái trên URL: ?tab=translate&t=…&dir=ja-vi|vi-ja
-// (tự nhận thì bỏ dir); chỉ dịch khi bấm Dịch / Ctrl+Enter vì mỗi lượt tốn hạn mức AI.
+// (tự nhận thì bỏ dir); mỗi lần bấm Dịch / Ctrl+Enter đều chạy model local.
 export const TranslateTab: React.FC<{
   text: string;
   direction: DictTranslateDirection;
@@ -331,11 +334,10 @@ export const TranslateTab: React.FC<{
 
       {!text && (
         <p className="text-body-sm text-on-surface-variant">
-          Dán một câu hoặc đoạn ngắn tiếng Nhật để dịch sang tiếng Việt, hoặc tiếng Việt để dịch sang tiếng Nhật. AI dịch cả câu để bản
-          dịch tự nhiên; bên dưới là phân tích từng cụm (cách đọc, bậc JLPT, nghĩa theo ngữ cảnh) để bạn học cấu trúc câu.
+          Dán một câu hoặc đoạn ngắn tiếng Nhật để dịch sang tiếng Việt, hoặc tiếng Việt để dịch sang tiếng Nhật. Model HY-MT dịch từng câu; bên dưới là phân tích từng cụm (cách đọc, bậc JLPT và nghĩa từ điển) để bạn học cấu trúc câu.
         </p>
       )}
-      {loading && <p className="text-body-sm text-on-surface-variant">Đang dịch…</p>}
+      {loading && <p className="text-body-sm text-on-surface-variant">Đang dịch bằng HY-MT… Lần đầu có thể lâu hơn do cần nạp model.</p>}
       {error && (
         <div role="status" className="flex flex-wrap items-center gap-3 text-body-sm text-on-surface rounded-xl bg-surface-container-low px-4 py-3">
           <span className="flex-1 min-w-0">Chưa dịch được lúc này, có thể do mạng chập chờn hoặc máy chủ đang khởi động. Đợi vài giây rồi thử lại nhé.</span>
@@ -347,8 +349,7 @@ export const TranslateTab: React.FC<{
       {result && <TranslationResult r={result} onOpen={onOpen} />}
       {result && (
         <p className="text-[11px] text-on-surface-variant">
-          Bản dịch do AI tạo, có thể sai ở câu mơ hồ hoặc thành ngữ; câu bạn nhập được gửi tới dịch vụ AI để dịch và lưu trong bộ nhớ dịch
-          chung 30 ngày, không gắn với tài khoản.
+          Bản dịch do model HY-MT tạo trên máy chủ và có thể sai nghĩa, nhất là câu dài hoặc thành ngữ. Mỗi lần dịch đều chạy model; kết quả không được lưu vào bộ nhớ dịch chung.
         </p>
       )}
     </div>

@@ -6,6 +6,7 @@ sao lớp ghi đè của admin; nghĩa tiếng Việt, bình luận, báo cáo n
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from typing import Annotated, Optional
@@ -16,7 +17,7 @@ from pydantic import BaseModel, Field
 from app.core.security import require_internal_key
 import time
 
-from app.extract import dictionary, gemini, handwriting, offline_mt, overrides, translate_text
+from app.extract import dictionary, gemini, handwriting, local_translation, overrides, translate_text
 from app.extract.jachars import has_japanese
 
 router = APIRouter(prefix="/dict", tags=["Từ điển"], dependencies=[Depends(require_internal_key)])
@@ -207,23 +208,17 @@ class TranslateTextRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=translate_text.MAX_CHARS)
     direction: str = Field(default="auto", pattern="^(auto|ja-vi|vi-ja)$")
     geminiModel: Optional[str] = None
-    # false: backend hết lượt / tắt dịch → chỉ phân tích câu, không gọi Gemini (reason "skipped")
+    # Legacy field: local translation always runs, regardless of Gemini quota.
     withAi: bool = True
 
 
-# Backend chỉ đọc 30 s: Gemini (gemini.TEXT_DEADLINE_S = 16 s) + dịch offline phải xong trong REQUEST_BUDGET_S tính từ lúc
-# nhận request — dịch offline luôn còn ≥ 11 s.
-REQUEST_BUDGET_S = 27
+# The local model may run on CPU. This budget stays below the long HTTP timeout (180s).
+REQUEST_BUDGET_S = 150
 
 
 @router.post("/translate-text")
 def dict_translate_text(req: TranslateTextRequest) -> dict:
-    """Dịch câu / đoạn Nhật ↔ Việt cho tab Dịch (spec 2026-10-28-dich-cau-design §3, D33 + D34). Luôn 200: phần phân tích câu
-    Nhật (Sudachi + JMdict + JLPT + furigana, không tốn quota) luôn có. Bản dịch: Gemini dịch cả đoạn (``engine`` "ai"); không
-    có / hỏng → **dịch máy offline** (``engine`` "offline", m2m100 / opus-mt trong models/mt, D34) — ``reason`` vẫn ghi vì sao
-    không có bản Gemini: no_api_key | quota | aiOverloaded | error | skipped. Không bao giờ ghép nghĩa từng từ thành bản dịch.
-    Việt → Nhật: phân tích câu Nhật đã dịch; bản AI có ``readingAgrees`` so cách đọc AI với Sudachi, bản offline lấy cách đọc
-    từ Sudachi."""
+    """Always run the local fine-tuned model; no online fallback or translation cache."""
     started = time.monotonic()
     text = req.text.strip()
     if not text:
@@ -231,44 +226,31 @@ def dict_translate_text(req: TranslateTextRequest) -> dict:
     direction = req.direction if req.direction != "auto" else translate_text.detect_direction(text)
     out: dict = {"direction": direction, "source": text, "translation": None, "literal": None, "alternatives": [],
                  "notes": None, "reading": None, "romaji": None, "readingAgrees": None, "tokens": [], "model": None,
-                 "engine": None, "reason": None}
-    tokens = translate_text.analyse(text) if direction == "ja-vi" else []
-    if not req.withAi:
-        out["reason"] = "skipped"
-    elif not gemini.available():
-        out["reason"] = "no_api_key"
-    else:
+                 "engine": "local", "reason": None}
+    def analyse_japanese(sentence: str) -> list[dict]:
         try:
-            raw, used = gemini.translate_text(text, direction, translate_text.ai_words(tokens),
-                                              model=gemini.resolve_model(req.geminiModel))
-        except gemini.GeminiError as exc:
-            out["reason"] = ai_reason(exc)
-        else:
-            cleaned = translate_text.clean_result(raw, direction, tokens)
-            if cleaned is None:
-                out["reason"] = "error"
-            else:
-                out.update(cleaned)
-                out["model"] = used
-                out["engine"] = "ai"
-                if direction == "vi-ja":
-                    tokens = translate_text.analyse(cleaned["translation"])
-                    out["readingAgrees"] = translate_text.reading_agrees(tokens, cleaned["reading"])
-                    out["romaji"] = translate_text.romaji_of(tokens)
-    if out["translation"] is None:
-        try:
-            offline = offline_mt.translate(text, direction, deadline=started + REQUEST_BUDGET_S)
-        except Exception:  # noqa: BLE001 — dự phòng không bao giờ làm hỏng phần phân tích câu
-            offline = None
-        if offline:
-            translation, name = offline
-            out["translation"] = translation
-            out["model"] = f"offline:{name}"
-            out["engine"] = "offline"
-            if direction == "vi-ja":
-                tokens = translate_text.analyse(translation)
-                out["reading"] = translate_text.reading_of(tokens)
-                out["romaji"] = translate_text.romaji_of(tokens)
+            return translate_text.analyse(sentence)
+        except Exception:
+            logging.getLogger(__name__).exception("Sentence analysis unavailable")
+            return []
+
+    tokens = analyse_japanese(text) if direction == "ja-vi" else []
+    try:
+        translation = local_translation.translate(text, direction, deadline=started + REQUEST_BUDGET_S)
+        if not translation or len(translation) > translate_text.MAX_TRANSLATION_CHARS:
+            raise local_translation.TranslationError("invalid_output")
+        out["translation"] = translation
+        out["model"] = local_translation.MODEL_NAME
+        if direction == "vi-ja":
+            tokens = analyse_japanese(translation)
+            out["reading"] = translate_text.reading_of(tokens)
+            out["romaji"] = translate_text.romaji_of(tokens)
+    except local_translation.TranslationError as exc:
+        out["reason"] = exc.reason
+    except Exception:
+        # Keep the source analysis usable even if inference fails unexpectedly.
+        logging.getLogger(__name__).exception("Local sentence translation failed")
+        out["reason"] = "model_error"
     out["tokens"] = tokens
     return out
 

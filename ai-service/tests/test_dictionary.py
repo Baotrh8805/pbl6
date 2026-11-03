@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.extract import dictionary, example_vi, gemini, han_viet, jmdict, kanji_meanings, offline_mt, overrides, pipeline
+from app.extract import dictionary, example_vi, gemini, han_viet, jmdict, kanji_meanings, local_translation, offline_mt, overrides, pipeline
 
 FIXTURE = Path(__file__).parent / "fixtures" / "jmdict_mini.json"
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "build_dicts.py"
@@ -383,113 +383,68 @@ def test_gemini_translate_dictionary_parses(monkeypatch):
 
 # ----------------------------------------------------------------------------- dịch câu (tab Dịch, spec 2026-10-28, D33)
 
-def test_router_translate_text_analysis_without_ai(client, monkeypatch):
-    monkeypatch.setattr(offline_mt, "translate", lambda *a, **k: None)   # không có mô hình offline
-    monkeypatch.setattr(gemini, "available", lambda: False)
+def test_router_translate_text_local_failure_keeps_analysis(client, monkeypatch):
+    def missing(*a, **k):
+        raise local_translation.TranslationError("model_missing")
+    monkeypatch.setattr(local_translation, "translate", missing)
     r = client.post("/api/dict/translate-text", json={"text": " 日本語を食べました。 "}).json()
     assert r["direction"] == "ja-vi" and r["source"] == "日本語を食べました。"
-    assert r["translation"] is None and r["reason"] == "no_api_key" and r["model"] is None and r["engine"] is None
+    assert r["translation"] is None and r["reason"] == "model_missing" and r["engine"] == "local"
     keys = {t["surface"]: t["key"] for t in r["tokens"]}
-    assert keys["日本語"] == "w:1464530" and keys["食べました"] == "w:1358280" and keys["。"] is None
-    assert keys["を"].startswith("w:"), "trợ từ có mục JMdict thì vẫn bấm tra được"
-    nihongo = r["tokens"][0]
-    assert nihongo["jlpt"] == "N5" and nihongo["reading"] == "にほんご" and nihongo["meaning"] is None and nihongo["glossEn"]
-
-    def boom(*a, **k):
-        raise AssertionError("không được gọi Gemini")
-    monkeypatch.setattr(gemini, "available", lambda: True)
-    monkeypatch.setattr(gemini, "translate_text", boom)
-    r2 = client.post("/api/dict/translate-text", json={"text": "学校", "withAi": False}).json()
-    assert r2["reason"] == "skipped" and r2["tokens"][0]["key"] == "w:1206730"
-    r3 = client.post("/api/dict/translate-text", json={"text": "Tôi ăn cơm", "withAi": False}).json()
-    assert r3["direction"] == "vi-ja" and r3["tokens"] == [] and r3["translation"] is None
-    assert client.post("/api/dict/translate-text", json={"text": "食べる", "direction": "vi-ja", "withAi": False}).json()["direction"] == "vi-ja"
+    assert keys["日本語"] == "w:1464530" and keys["食べました"] == "w:1358280"
     assert client.post("/api/dict/translate-text", json={"text": "   "}).status_code == 400
     assert client.post("/api/dict/translate-text", json={"text": "x" * 1001}).status_code == 422
     assert client.post("/api/dict/translate-text", json={"text": "x", "direction": "en-vi"}).status_code == 422
 
 
-def test_router_translate_text_with_ai(client, monkeypatch):
-    monkeypatch.setattr(offline_mt, "translate", lambda *a, **k: None)
-    monkeypatch.setattr(gemini, "available", lambda: True)
-    monkeypatch.setattr(gemini, "resolve_model", lambda m: m or "gemini-default")
-    calls = []
-
-    def fake(text, direction, words=None, model=None):
-        calls.append((text, direction, words, model))
-        if direction == "ja-vi":
-            return ({"translation": "Tôi đã học tiếng Nhật.", "literal": "tiếng Nhật / (tân ngữ) / đã học", "alternatives": [],
-                     "notes": "", "words": [{"i": 0, "meaning": "tiếng Nhật"}, {"i": 1, "meaning": "trợ từ chỉ tân ngữ"}]}, model)
-        return ({"translation": "日本語を勉強しました。", "reading": "にほんごをべんきょうしました。",
-                 "alternatives": [{"text": "日本語を勉強した。", "reading": "にほんごをべんきょうした。", "note": "thể thường"}],
-                 "notes": "勉強する: học"}, model)
-    monkeypatch.setattr(gemini, "translate_text", fake)
-
-    r = client.post("/api/dict/translate-text", json={"text": "日本語を勉強しました。", "geminiModel": "gemini-test"}).json()
-    assert r["translation"] == "Tôi đã học tiếng Nhật." and r["literal"] == "tiếng Nhật / (tân ngữ) / đã học"
-    assert r["reason"] is None and r["model"] == "gemini-test" and r["readingAgrees"] is None and r["engine"] == "ai"
-    assert r["tokens"][0]["meaning"] == "tiếng Nhật" and r["tokens"][1]["meaning"] == "trợ từ chỉ tân ngữ"
-    assert [w["surface"] for w in calls[0][2]] == ["日本語", "を", "勉強", "しました"] and calls[0][3] == "gemini-test"
-
-    r = client.post("/api/dict/translate-text", json={"text": "Tôi đã học tiếng Nhật."}).json()
-    assert r["direction"] == "vi-ja" and r["translation"] == "日本語を勉強しました。" and r["reading"] == "にほんごをべんきょうしました。"
-    assert r["readingAgrees"] is True and r["romaji"] == "nihongo o benkyou shimashita。"
-    assert [t["surface"] for t in r["tokens"]] == ["日本語", "を", "勉強", "しました", "。"] and r["tokens"][0]["key"] == "w:1464530"
-    assert r["alternatives"] == [{"text": "日本語を勉強した。", "reading": "にほんごをべんきょうした。", "note": "thể thường"}]
-    assert r["notes"] == "勉強する: học" and calls[1][2] == [] and calls[1][3] == "gemini-default"
-
-    # Gemini lỗi → reason theo mã /dict/translate, phân tích câu vẫn có
-    def quota(*a, **k):
-        raise gemini.GeminiError("quota", "x", retryable=True)
-    monkeypatch.setattr(gemini, "translate_text", quota)
-    r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
-    assert r["reason"] == "quota" and r["translation"] is None and r["tokens"][0]["key"] == "w:1206730"
-
-    def budget(*a, **k):
-        raise gemini.GeminiError("budget", "hết hạn chót", retryable=True)
-    monkeypatch.setattr(gemini, "translate_text", budget)
-    assert client.post("/api/dict/translate-text", json={"text": "学校"}).json()["reason"] == "aiOverloaded"
-
-    def bad(*a, **k):
-        return {"translation": "学校 còn chữ Nhật", "literal": "", "alternatives": [], "notes": "", "words": []}, "m"
-    monkeypatch.setattr(gemini, "translate_text", bad)
-    r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
-    assert r["reason"] == "error" and r["translation"] is None and r["model"] is None
-
-
-def test_router_translate_text_falls_back_to_offline_mt(client, monkeypatch):
-    """D34: không có bản Gemini (không khoá / skipped / quota / đầu ra hỏng) → dịch máy offline; reason vẫn ghi lý do."""
+def test_router_translate_text_always_local_both_directions(client, monkeypatch):
     seen = []
-
-    def fake_offline(text, direction, deadline=None):
-        seen.append((text, direction, deadline is not None))
-        return ("Tôi đã ăn cơm." if direction == "ja-vi" else "私はご飯を食べました。"), "m2m100_418M"
-    monkeypatch.setattr(offline_mt, "translate", fake_offline)
-    monkeypatch.setattr(gemini, "available", lambda: False)
-
-    r = client.post("/api/dict/translate-text", json={"text": "ご飯を食べました。"}).json()
-    assert r["translation"] == "Tôi đã ăn cơm." and r["engine"] == "offline" and r["model"] == "offline:m2m100_418M"
-    assert r["reason"] == "no_api_key" and r["literal"] is None and r["tokens"][0]["surface"] == "ご飯"
-    assert seen[-1] == ("ご飯を食べました。", "ja-vi", True), "luôn có hạn chót để kịp trước 30 s của backend"
-
-    # Việt → Nhật: phân tích câu Nhật đã dịch, cách đọc ghép từ Sudachi
-    r = client.post("/api/dict/translate-text", json={"text": "Tôi đã ăn cơm.", "withAi": False}).json()
-    assert r["direction"] == "vi-ja" and r["translation"] == "私はご飯を食べました。" and r["reason"] == "skipped"
+    def forbidden(*a, **k):
+        raise AssertionError("No online or M2M100 fallback")
+    monkeypatch.setattr(gemini, "translate_text", forbidden)
+    monkeypatch.setattr(offline_mt, "translate", forbidden)
+    def fake(text, direction, deadline):
+        seen.append((text, direction, deadline))
+        return "Tôi đã ăn cơm." if direction == "ja-vi" else "私はご飯を食べました。"
+    monkeypatch.setattr(local_translation, "translate", fake)
+    for _ in range(2):
+        r = client.post("/api/dict/translate-text", json={"text": "ご飯を食べました。", "withAi": False}).json()
+        assert r["translation"] == "Tôi đã ăn cơm."
+        assert r["engine"] == "local" and r["reason"] is None
+        assert r["model"] == local_translation.MODEL_NAME and r["literal"] is None and not r["alternatives"]
+    assert len(seen) == 2, "Repeated requests must run the local model again"
+    r = client.post("/api/dict/translate-text", json={"text": "Tôi đã ăn cơm."}).json()
+    assert r["direction"] == "vi-ja" and r["translation"] == "私はご飯を食べました。"
     assert r["reading"] == "わたしはごはんをたべました。" and r["romaji"].startswith("watashi wa gohan o tabemashita")
-    assert r["readingAgrees"] is None and [t["surface"] for t in r["tokens"]][:2] == ["私", "は"]
+    assert r["readingAgrees"] is None and r["tokens"]
 
-    # Gemini hỏng → vẫn có bản offline
-    monkeypatch.setattr(gemini, "available", lambda: True)
 
-    def quota(*a, **k):
-        raise gemini.GeminiError("quota", "x", retryable=True)
-    monkeypatch.setattr(gemini, "translate_text", quota)
+@pytest.mark.parametrize("reason", ["input_too_long", "timeout", "output_truncated", "invalid_output"])
+def test_router_translate_text_does_not_fallback(client, monkeypatch, reason):
+    def failed(*a, **k):
+        raise local_translation.TranslationError(reason)
+    def forbidden(*a, **k):
+        raise AssertionError("Must not call fallback")
+    monkeypatch.setattr(local_translation, "translate", failed)
+    monkeypatch.setattr(gemini, "translate_text", forbidden)
+    monkeypatch.setattr(offline_mt, "translate", forbidden)
     r = client.post("/api/dict/translate-text", json={"text": "学校"}).json()
-    assert r["reason"] == "quota" and r["engine"] == "offline" and r["translation"]
+    assert r["reason"] == reason and r["translation"] is None and r["tokens"]
 
-    # dự phòng lỗi bất ngờ cũng không làm hỏng response
+
+def test_router_translate_text_unexpected_failure(client, monkeypatch):
     def broken(*a, **k):
-        raise RuntimeError("torch hỏng")
-    monkeypatch.setattr(offline_mt, "translate", broken)
+        raise RuntimeError("inference crashed")
+    monkeypatch.setattr(local_translation, "translate", broken)
     r = client.post("/api/dict/translate-text", json={"text": "学校"})
-    assert r.status_code == 200 and r.json()["translation"] is None and r.json()["tokens"]
+    assert r.status_code == 200 and r.json()["reason"] == "model_error" and r.json()["tokens"]
+
+
+def test_translation_remains_usable_when_sentence_analysis_fails(client, monkeypatch):
+    from app.extract import translate_text
+    def broken(*a, **k):
+        raise RuntimeError("Sudachi unavailable")
+    monkeypatch.setattr(translate_text, "analyse", broken)
+    monkeypatch.setattr(local_translation, "translate", lambda *a, **k: "Tôi đi học.")
+    r = client.post("/api/dict/translate-text", json={"text": "学校に行きます。"}).json()
+    assert r["translation"] == "Tôi đi học." and r["reason"] is None and r["tokens"] == []

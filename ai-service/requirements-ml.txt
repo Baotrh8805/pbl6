@@ -1,8 +1,10 @@
+# Cần cho model dịch HY-MT local ở models/translation; cũng dùng cho PhoBERT.
 # Tuỳ chọn: PhoBERT đánh dấu từ vi phạm (app/moderation/vihos.py). Không cài vẫn chạy được model 3 lớp (numpy) và HLR.
 # CPU là đủ (≈ 80 ms/câu, +400 MB RAM); muốn GPU thì cài torch theo hướng dẫn pytorch.org thay dòng dưới.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.5,<3
-transformers>=4.45
+transformers>=4.56,<6
+safetensors>=0.4
 # Dịch offline Nhật ↔ Việt (tab Dịch, D34): m2m100 chạy bằng CTranslate2 int8; mô hình tải + chuyển bằng
 # scripts/fetch_offline_mt.py (bước chuyển dùng torch + transformers ở trên)
 ctranslate2>=4.5

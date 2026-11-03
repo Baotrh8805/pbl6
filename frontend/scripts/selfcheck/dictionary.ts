@@ -136,6 +136,9 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(limitNote.includes("0/20") && limitNote.includes("phân tích"), "Dịch: hết lượt nói rõ số lượt và vẫn có phân tích");
   assert((translateStateNote("OFF") ?? "").includes("tắt") && (translateStateNote("AI_DOWN") ?? "").includes("lại"), "Dịch: OFF / AI_DOWN có hướng xử lý");
   assert(!(translateStateNote("OFF") ?? "").toLowerCase().includes("ghép"), "Dịch: không hứa ghép từ thành câu");
+  assert(translateStateNote("OK", 0, 0, "local") === null, "Dịch local thành công không báo thiếu quota");
+  assert((translateStateNote("TOO_LONG", 0, 0, "local") ?? "").includes("ngắn"), "Câu dài cần hướng dẫn rút ngắn");
+  assert((translateStateNote("UNAVAILABLE", 0, 0, "local") ?? "").includes("thử lại"), "Model chưa sẵn sàng có hướng thử lại");
   // D34: bản dịch máy offline nói rõ nguồn + lý do; BUSY / UNAVAILABLE nhẹ nhàng, có hướng làm tiếp, không chữ "lỗi"
   const offNote = translateStateNote("OFF", 20, 20, "offline") ?? "";
   assert(offNote.includes("offline") && offNote.includes("tắt"), "Dịch: bản offline nói rõ nguồn và lý do");

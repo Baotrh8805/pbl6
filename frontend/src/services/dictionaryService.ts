@@ -35,9 +35,9 @@ export const translateDictExamples = async (
 export const tokenizeForDictionary = async (text: string): Promise<DictToken[]> =>
     (await apiClient.post<{ tokens: DictToken[] }>("/dictionary/tokenize", { text })).data.tokens;
 
-/** Tab Dịch (D33): dịch câu / đoạn Nhật ↔ Việt bằng AI (cả đoạn, có bộ nhớ dịch, trần giờ riêng) + phân tích câu Nhật. */
+/** Tab Dịch: HY-MT local cho mỗi request, không cache/quota Gemini; chờ cả lượt nạp model đầu tiên. */
 export const translateText = async (text: string, direction: DictTranslateDirection = "auto", signal?: AbortSignal): Promise<DictTranslation> =>
-    (await apiClient.post<DictTranslation>("/dictionary/translate", { text, direction }, { signal })).data;
+    (await apiClient.post<DictTranslation>("/dictionary/translate", { text, direction }, { signal, timeout: 200_000 })).data;
 
 // ---------- bình luận ----------
 
