@@ -3,10 +3,12 @@ package com.pbl6.flashcard.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.pbl6.flashcard.model.Role;
 import com.pbl6.flashcard.service.AiServiceClient;
+import com.pbl6.flashcard.service.dictionary.DictionaryStore;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.Collections;
@@ -15,6 +17,7 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -34,6 +37,9 @@ class NlpIT extends IntegrationTest {
 
     @MockitoBean
     AiServiceClient ai;
+
+    @Autowired
+    DictionaryStore store;
 
     @BeforeEach
     void resetAi() {
@@ -245,6 +251,113 @@ class NlpIT extends IntegrationTest {
                 .thenThrow(new AiServiceClient.AiServiceException("Forbidden", 403, null));
         call(post("/api/nlp/kanji-cards"), user, Map.of("kanji", List.of("雷"))).andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.message", containsString("không khả dụng")));
+    }
+
+    /**
+     * Sơ đồ chữ Hán (spec 2026-10-30 D3 / D4): proxy GET /api/nlp/kanji-diagram, kiểm q / mode trước khi gọi, ghép meaningVi từ
+     * dict_meanings cho mọi node chữ (k:X), node từ (key w:…), detail (chữ tâm, công thức, phonOf, từ ghép, ứng viên) bằng một
+     * truy vấn, rồi cache 10 phút theo q|mode. Không gọi Gemini khi thiếu nghĩa (meaningVi null).
+     */
+    @Test
+    void kanji_diagram_validates_fills_meaning_vi_and_caches() throws Exception {
+        String user = newUser();
+        // nghĩa có sẵn trong dict_meanings (seed / đã dịch khi tra từ điển); không cần actor như bản admin
+        store.insertMachineMeaning("k:時", "時", null, null, "thời gian, giờ", "SEED", null);
+        store.insertMachineMeaning("k:日", "日", null, null, "mặt trời, ngày", "SEED", null);
+        store.insertMachineMeaning("w:1315920", "時間", "じかん", "N5", "thời gian", "SEED", null);
+        store.insertMachineMeaning("w:jlpt:時計|とけい", "時計", "とけい", "N5", "đồng hồ", "SEED", null);
+        JsonNode payload = node("""
+                {"query":"時","mode":"structure","center":"k:時","candidates":[{"kanji":"日","hanViet":"NHẬT"}],
+                 "nodes":[{"id":"k:時","type":"center","label":"時"},{"id":"k:日","type":"component","label":"日","role":"radical"},
+                          {"id":"k:寺","type":"component","label":"寺","role":"phon"},
+                          {"id":"w:時間","type":"word","label":"時間","key":"w:1315920"},
+                          {"id":"w:時計","type":"word","label":"時計","key":"w:jlpt:時計|とけい"},
+                          {"id":"w:時代","type":"word","label":"時代","key":null}],
+                 "edges":[{"from":"k:日","to":"k:時","type":"radical"}],
+                 "detail":{"kanji":"時","formula":[{"part":"日","role":"radical"},{"part":"寺","role":"phon"}],
+                           "phonOf":[{"kanji":"日"}],"compounds":[{"term":"時間","key":"w:1315920"},{"term":"時代","key":null}]},
+                 "stats":{"kanji":3,"words":3,"parts":true,"jmdict":false}}""");
+        Mockito.when(ai.kanjiDiagram("時", null, null)).thenReturn(payload);
+
+        JsonNode got = read(call(get("/api/nlp/kanji-diagram").param("q", " 時 "), user, null).andExpect(status().isOk()));
+        assertEquals("k:時", got.path("center").asText());
+        assertEquals("thời gian, giờ", got.path("nodes").get(0).path("meaningVi").asText());
+        assertEquals("mặt trời, ngày", got.path("nodes").get(1).path("meaningVi").asText());
+        assertTrue(got.path("nodes").get(2).path("meaningVi").isNull(), "chưa ai tra 寺 → null, không gọi Gemini");
+        assertEquals("thời gian", got.path("nodes").get(3).path("meaningVi").asText());
+        assertEquals("đồng hồ", got.path("nodes").get(4).path("meaningVi").asText(), "khoá JLPT không có trong JMdict");
+        assertTrue(got.path("nodes").get(5).path("meaningVi").isNull());
+        assertEquals("thời gian, giờ", got.path("detail").path("meaningVi").asText());
+        assertEquals("mặt trời, ngày", got.path("detail").path("formula").get(0).path("meaningVi").asText());
+        assertTrue(got.path("detail").path("formula").get(1).path("meaningVi").isNull());
+        assertEquals("mặt trời, ngày", got.path("detail").path("phonOf").get(0).path("meaningVi").asText());
+        assertEquals("thời gian", got.path("detail").path("compounds").get(0).path("meaningVi").asText());
+        assertEquals("mặt trời, ngày", got.path("candidates").get(0).path("meaningVi").asText());
+        assertEquals(payload.path("edges"), got.path("edges"), "phần còn lại giữ nguyên văn");
+
+        // cache theo q|mode|k (mode trống gửi trống để ai-service tự chọn): cùng tham số không gọi lại ai-service; mode khác = khoá khác
+        call(get("/api/nlp/kanji-diagram").param("q", "時").param("mode", ""), user, null).andExpect(status().isOk());
+        Mockito.verify(ai, Mockito.times(1)).kanjiDiagram("時", null, null);
+        Mockito.when(ai.kanjiDiagram("時", "compounds", null)).thenReturn(payload);
+        call(get("/api/nlp/kanji-diagram").param("q", "時").param("mode", "compounds"), user, null).andExpect(status().isOk());
+        Mockito.verify(ai, Mockito.times(1)).kanjiDiagram("時", "compounds", null);
+
+        // kiểm tham số trước khi gọi: thiếu q, q quá 32 ký tự, mode lạ
+        call(get("/api/nlp/kanji-diagram"), user, null).andExpect(status().isBadRequest());
+        call(get("/api/nlp/kanji-diagram").param("q", "x".repeat(33)), user, null).andExpect(status().isBadRequest());
+        call(get("/api/nlp/kanji-diagram").param("q", "寺").param("mode", "tree"), user, null).andExpect(status().isBadRequest());
+        Mockito.verify(ai, Mockito.never()).kanjiDiagram(eq("寺"), any(), any());
+
+        // payload không có detail (âm nhiều chữ): chỉ ghép ứng viên, không ném lỗi
+        JsonNode cands = node("{\"query\":\"THANH\",\"mode\":\"structure\",\"center\":null,\"candidates\":[{\"kanji\":\"日\"}],"
+                + "\"nodes\":[],\"edges\":[],\"detail\":null,\"stats\":{\"kanji\":0,\"words\":0,\"parts\":true,\"jmdict\":false}}");
+        Mockito.when(ai.kanjiDiagram("THANH", null, null)).thenReturn(cands);
+        JsonNode c = read(call(get("/api/nlp/kanji-diagram").param("q", "THANH"), user, null).andExpect(status().isOk()));
+        assertEquals("mặt trời, ngày", c.path("candidates").get(0).path("meaningVi").asText());
+        assertTrue(c.path("detail").isNull());
+    }
+
+    /**
+     * Spec 30/10 từ nhiều chữ §3: chế độ word / tham số k. Ghép meaningVi cho word (key), word.chars (k:X) và wordCandidates (key);
+     * khoá cache q|mode|k; k dài hơn 2 ký tự → 400 trước khi gọi ai-service.
+     */
+    @Test
+    void kanji_diagram_word_mode_meaning_and_cache_key() throws Exception {
+        String user = newUser();
+        store.insertMachineMeaning("w:1206900", "学生", "がくせい", "N5", "học sinh", "SEED", null);
+        store.insertMachineMeaning("k:学", "学", null, null, "học", "SEED", null);
+        store.insertMachineMeaning("w:9999", "紙", "かみ", "N5", "giấy", "SEED", null);
+        JsonNode word = node("""
+                {"query":"学生","mode":"word","center":"w:学生","candidates":[],"nodes":[{"id":"w:学生","type":"word","key":"w:1206900"}],
+                 "edges":[],"detail":null,"stats":{"kanji":0,"words":1,"parts":true,"jmdict":true},"chars":["学","生"],
+                 "selectedChar":null,"word":{"term":"学生","key":"w:1206900","chars":[{"kanji":"学"},{"kanji":"生"}]},
+                 "wordCandidates":[]}""");
+        Mockito.when(ai.kanjiDiagram("学生", null, null)).thenReturn(word);
+        JsonNode got = read(call(get("/api/nlp/kanji-diagram").param("q", "学生"), user, null).andExpect(status().isOk()));
+        assertEquals("học sinh", got.path("word").path("meaningVi").asText());
+        assertEquals("học", got.path("word").path("chars").get(0).path("meaningVi").asText());
+        assertTrue(got.path("word").path("chars").get(1).path("meaningVi").isNull());
+        assertEquals("học sinh", got.path("nodes").get(0).path("meaningVi").asText());
+
+        JsonNode kami = node("""
+                {"query":"かみ","mode":"structure","center":null,"candidates":[],"nodes":[],"edges":[],"detail":null,
+                 "stats":{"kanji":0,"words":0,"parts":true,"jmdict":true},"chars":[],"selectedChar":null,"word":null,
+                 "wordCandidates":[{"term":"紙","key":"w:9999"},{"term":"神","key":null}]}""");
+        Mockito.when(ai.kanjiDiagram("かみ", null, null)).thenReturn(kami);
+        JsonNode k = read(call(get("/api/nlp/kanji-diagram").param("q", "かみ"), user, null).andExpect(status().isOk()));
+        assertEquals("giấy", k.path("wordCandidates").get(0).path("meaningVi").asText());
+        assertTrue(k.path("wordCandidates").get(1).path("meaningVi").isNull());
+
+        Mockito.when(ai.kanjiDiagram("学生", "structure", "生")).thenReturn(word);
+        for (int i = 0; i < 2; i++) {
+            call(get("/api/nlp/kanji-diagram").param("q", "学生").param("mode", "structure").param("k", "生"), user, null)
+                    .andExpect(status().isOk());
+        }
+        Mockito.verify(ai, Mockito.times(1)).kanjiDiagram("学生", "structure", "生");
+        Mockito.when(ai.kanjiDiagram("学生", "word", null)).thenReturn(word);
+        call(get("/api/nlp/kanji-diagram").param("q", "学生").param("mode", "word"), user, null).andExpect(status().isOk());
+        call(get("/api/nlp/kanji-diagram").param("q", "学生").param("k", "学生x"), user, null).andExpect(status().isBadRequest());
+        Mockito.verify(ai, Mockito.never()).kanjiDiagram(eq("学生"), any(), eq("学生x"));
     }
 
     @Test

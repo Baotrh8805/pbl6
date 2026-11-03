@@ -235,7 +235,7 @@ def test_health():
     assert r.status_code == 200
     body = r.json()
     assert set(body) == {"sudachi", "jmdict", "jlpt", "unihan", "grammar", "tesseract", "gemini", "geminiModel", "geminiModels",
-                         "radicals", "kradfile", "kanjivg", "pitch", "distractors",
+                         "radicals", "kradfile", "kanjivg", "pitch", "kanjiParts", "distractors",
                          "kanjiStrokes", "hanVietGraph", "kanjiCards", "conjugation", "conflicts",
                          "radicalCards", "mining", "dictWords", "dictExamples", "dictFts", "dictOverridesVersion", "graph",
                          # kiểm duyệt bình luận + HLR (spec 2026-10-27 đêm)

@@ -1,5 +1,7 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import type { Card, LibraryDeck } from "@/types/api.types";
+import { saveActionOf } from "@/features/library/librarySave";
 import { formatCompactCount, initials, ratingSummary } from "./libraryOptions";
 import { CardContent } from "@/features/decks/components/CardContent";
 
@@ -76,19 +78,27 @@ export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sample
           </div>
           <div className="flex items-center gap-1">
             <span aria-hidden="true" className="material-symbols-outlined text-[17px]">style</span>
-            <span className="text-on-primary font-bold">{deck.cardsCount}</span> thẻ câu hỏi + Audio
+            <span className="text-on-primary font-bold">{deck.cardsCount}</span> thẻ
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => onSave(deck)}
-            className="flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-tertiary-container text-on-tertiary-container font-label-md text-label-md font-bold shadow-lg hover:brightness-110 transition-all cursor-pointer"
-          >
-            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_add</span>
-            <span>Lưu Về Thư Viện Cá Nhân</span>
-          </button>
+          {(() => {
+            const action = saveActionOf(deck);
+            const cls =
+              "flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-tertiary-container text-on-tertiary-container font-label-md text-label-md font-bold shadow-lg hover:brightness-110 transition-all cursor-pointer";
+            return action.kind === "open" ? (
+              <Link to={action.href} className={cls}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_added</span>
+                <span>{action.label}</span>
+              </Link>
+            ) : (
+              <button type="button" onClick={() => onSave(deck)} className={cls}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_add</span>
+                <span>Lưu Về Thư Viện Cá Nhân</span>
+              </button>
+            );
+          })()}
           <button
             type="button"
             onClick={() => onPreview(deck)}
@@ -129,13 +139,9 @@ export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sample
               </span>
             </span>
             <span className="flex items-center justify-between text-[11px] text-on-surface-variant font-label-sm pt-1">
-              <span className="flex items-center gap-1">
-                <span aria-hidden="true" className="material-symbols-outlined text-[14px]">volume_up</span> Tokyo
-                Accent
-              </span>
-              <span className="text-secondary font-semibold">
-                {"SRS Interval: 3 Ngày"}
-              </span>
+              {/* trước đây "Tokyo Accent" / "SRS Interval: 3 Ngày" cố định, không có dữ liệu thật phía sau (rà soát 30/10 A1) */}
+              <span>Thẻ mẫu trong bộ</span>
+              <span className="text-secondary font-semibold">{deck.cardsCount} thẻ</span>
             </span>
           </button>
         </div>

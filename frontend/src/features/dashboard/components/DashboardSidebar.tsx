@@ -168,7 +168,7 @@ const SECTIONS: NavSectionConfig[] = [
       // Từ điển (spec 2026-10-26): tra từ vựng + Hán tự & bộ thủ + bản đồ Hán-Việt + sổ tay, bình luận, báo lỗi
       { to: "/dictionary", icon: "menu_book", label: "Từ Điển" },
       // Đồ thị tri thức Neo4j + GraphRAG (spec 2026-10-27): khám phá quan hệ từ – chữ Hán – ngữ pháp, gợi ý, hỏi đáp
-      { to: "/graph", icon: "hub", label: "Đồ Thị Tri Thức" },
+      { to: "/graph", icon: "account_tree", label: "Sơ Đồ Chữ Hán" },
     ],
   },
 ];

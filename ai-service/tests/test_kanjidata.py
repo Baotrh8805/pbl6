@@ -220,6 +220,9 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(kanjidata, "KRAD_FILE", tmp_path / "kradfile.csv")
     monkeypatch.setattr(kanjidata, "STROKES_FILE", tmp_path / "kanji_strokes.json")
     monkeypatch.setattr(kanjidata, "PITCH_FILE", tmp_path / "pitch_accent.csv")
+    (tmp_path / "kanji_parts.csv").write_text(
+        "kanji,parts,originals,positions,radical_part,phon_part,phon\n明,日 月,- -,left right,日,,\n", encoding="utf-8")
+    monkeypatch.setattr(kanjidata, "PARTS_FILE", tmp_path / "kanji_parts.csv")
     kanjidata.reset()
     yield tmp_path
     kanjidata.reset()
@@ -261,7 +264,8 @@ def test_pitch_accent(data_dir):
 
 
 def test_availability_flags(data_dir):
-    assert kanjidata.availability() == {"radicals": True, "kradfile": True, "kanjivg": True, "pitch": True}
+    assert kanjidata.availability() == {"radicals": True, "kradfile": True, "kanjivg": True, "pitch": True,
+                                        "kanjiParts": True}
     assert kanjidata._cache == {}   # /health chỉ stat file, không parse 8 MB (backend chờ 2 s)
     (data_dir / "kanji_strokes.json").write_text("", encoding="utf-8")
     assert kanjidata.availability()["kanjivg"] is False   # file rỗng = chưa build xong
@@ -287,11 +291,12 @@ def test_table_parses_once_under_concurrent_first_calls(data_dir, monkeypatch):
 
 
 def test_missing_files_degrade_gracefully(tmp_path, monkeypatch):
-    for attr in ("RS_FILE", "KRAD_FILE", "STROKES_FILE", "PITCH_FILE"):
+    for attr in ("RS_FILE", "KRAD_FILE", "STROKES_FILE", "PITCH_FILE", "PARTS_FILE"):
         monkeypatch.setattr(kanjidata, attr, tmp_path / "missing")
     kanjidata.reset()
     try:
-        assert kanjidata.availability() == {"radicals": False, "kradfile": False, "kanjivg": False, "pitch": False}
+        assert kanjidata.availability() == {"radicals": False, "kradfile": False, "kanjivg": False, "pitch": False,
+                                            "kanjiParts": False}
         assert kanjidata.radical_strokes("日") is None
         assert kanjidata.components("日") == ()
         assert kanjidata.strokes("日") is None

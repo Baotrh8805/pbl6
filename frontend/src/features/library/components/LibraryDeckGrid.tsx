@@ -1,5 +1,7 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import type { LibraryDeck } from "@/types/api.types";
+import { saveActionOf } from "@/features/library/librarySave";
 import {
   categoryLabel,
   categoryShortLabel,
@@ -14,6 +16,25 @@ interface LibraryDeckCardProps {
   onPreview: (deck: LibraryDeck) => void;
   onSave: (deck: LibraryDeck) => void;
 }
+
+const saveButtonClass =
+  "py-2 px-3 rounded-lg bg-primary text-on-primary hover:bg-primary-container font-label-md text-xs font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-xs";
+
+/** Chưa lưu → "Lưu Thẻ" (mở hộp chọn thư mục); đã lưu → "Đã lưu · Mở" tới bản của mình, không cho lưu trùng (A4). */
+const SaveButton: React.FC<{ deck: LibraryDeck; onSave: (deck: LibraryDeck) => void }> = ({ deck, onSave }) => {
+  const action = saveActionOf(deck);
+  return action.kind === "open" ? (
+    <Link to={action.href} className={saveButtonClass}>
+      <span aria-hidden="true" className="material-symbols-outlined text-[15px]">bookmark_added</span>
+      {action.label}
+    </Link>
+  ) : (
+    <button type="button" onClick={() => onSave(deck)} className={saveButtonClass}>
+      <span aria-hidden="true" className="material-symbols-outlined text-[15px]">bookmark_add</span>
+      Lưu Thẻ
+    </button>
+  );
+};
 
 // Một thẻ bộ thẻ trong lưới thư viện.
 export const LibraryDeckCard: React.FC<LibraryDeckCardProps> = ({ deck, onPreview, onSave }) => (
@@ -34,9 +55,12 @@ export const LibraryDeckCard: React.FC<LibraryDeckCardProps> = ({ deck, onPrevie
             </span>
           )}
         </div>
-        <span className="px-2 py-0.5 rounded-full font-label-sm text-[10px] font-bold bg-secondary-container text-on-secondary-container">
-          MIỄN PHÍ
-        </span>
+        {/* trước đây nhãn "MIỄN PHÍ" cố định trên mọi thẻ (không phân biệt gì); nay chỉ báo khi mình đã lưu bộ này */}
+        {deck.savedDeckId && (
+          <span className="px-2 py-0.5 rounded-full font-label-sm text-[10px] font-bold bg-secondary-container text-on-secondary-container">
+            Đã lưu
+          </span>
+        )}
       </div>
 
       <h3 className="font-headline-sm text-headline-sm font-bold text-primary group-hover:text-tertiary transition-colors line-clamp-2 leading-snug">
@@ -112,14 +136,7 @@ export const LibraryDeckCard: React.FC<LibraryDeckCardProps> = ({ deck, onPrevie
         >
           Chi Tiết
         </button>
-        <button
-          type="button"
-          onClick={() => onSave(deck)}
-          className="py-2 px-3 rounded-lg bg-primary text-on-primary hover:bg-primary-container font-label-md text-xs font-semibold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-xs"
-        >
-          <span aria-hidden="true" className="material-symbols-outlined text-[15px]">bookmark_add</span>
-          Lưu Thẻ
-        </button>
+        <SaveButton deck={deck} onSave={onSave} />
       </div>
     </div>
   </div>

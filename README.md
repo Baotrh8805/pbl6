@@ -113,7 +113,11 @@ Hệ thống được chia thành 3 phần độc lập (Service-oriented):
    - **Đồ thị tri thức + GraphRAG trên Neo4j (27/10, D30):** `app/graph/` dựng đồ thị từ – chữ Hán – bộ thủ – âm Hán-Việt – mẫu
      ngữ pháp – câu ví dụ trên Neo4j (`docker compose up -d neo4j`), backend đồng bộ bộ thẻ / lịch ôn / lộ trình từ Postgres sang,
      truy vấn Cypher (lân cận, đường nối, gợi ý, mâu thuẫn giữa bộ thẻ) và hỏi đáp GraphRAG (Gemini; thiếu khoá → trả lời mẫu từ
-     đồ thị). Trang `/graph`; Admin › Tổng quan dựng lại / đồng bộ. Spec `docs/Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md`.
+     đồ thị). API `/api/graph/*` + Admin › Tổng quan dựng lại / đồng bộ. Spec `docs/Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md`.
+     **30/10:** giao diện người học của đồ thị Neo4j (4 tab ở `/graph`) đã gỡ; API và Admin giữ nguyên.
+   - **Sơ đồ chữ Hán `/graph` (30/10):** cấu tạo chữ (thành phần, bộ thủ, phần chỉ âm theo KanjiVG `kvg:phon`), họ chữ cùng chỉ âm
+     (時 持 待 特 等 詩 侍 ← 寺), từ ghép; tra bằng chữ Hán hoặc âm Hán-Việt; chạy từ `kanji_parts.csv` + Unihan + JLPT + JMdict, không
+     cần Neo4j; nghĩa Việt ghép từ từ điển cộng đồng. Spec `docs/Plan/specs/2026-10-30-so-do-chu-han-design.md`.
 
 ---
 

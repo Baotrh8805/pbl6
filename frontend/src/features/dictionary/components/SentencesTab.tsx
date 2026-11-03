@@ -4,7 +4,7 @@ import { extractErrorMessage } from "@/services/apiClient";
 import { searchDictSentences } from "@/services/dictionaryService";
 import { canSpeak, speakJa } from "@/lib/speech";
 import type { DictKey, DictSentence, DictSentenceResult } from "@/types/dictionary.types";
-import { highlightParts, looksLikeSentence } from "../dictUtils";
+import { highlightParts } from "../dictUtils";
 
 const PAGE = 20;
 
@@ -58,21 +58,10 @@ const SentenceRow: React.FC<{ s: DictSentence; q: string; onOpen: (key: DictKey)
   </li>
 );
 
-// Tab Câu (cải tiến 26/10): tìm câu ví dụ theo cụm — chữ Nhật khớp đúng chuỗi, tiếng Anh khớp từ đầu một từ, tiếng Việt có hoặc
-// không dấu. Mỗi câu: bản dịch Việt (dịch sẵn hoặc admin sửa), câu Anh, các mục từ mà câu làm ví dụ (bấm để mở ở tab Từ vựng).
-export const SentencesTab: React.FC<{
-  query: string;
-  onQuery: (q: string) => void;
-  onOpen: (key: DictKey) => void;
-  /** Không có câu ví dụ chứa cụm mà cụm trông như cả câu → gợi ý tab Dịch (D33). */
-  onTranslate?: (text: string) => void;
-}> = ({ query, onQuery, onOpen, onTranslate }) => {
-  const [input, setInput] = useState(query);
-  const [prevQuery, setPrevQuery] = useState(query);
-  if (query !== prevQuery) {
-    setPrevQuery(query);
-    setInput(query);
-  }
+// Phần Câu ví dụ của tab Câu & Dịch (cải tiến 26/10, gộp tab 31/10): tìm câu ví dụ theo cụm — chữ Nhật khớp đúng chuỗi, tiếng
+// Anh khớp từ đầu một từ, tiếng Việt có hoặc không dấu. Mỗi câu: bản dịch Việt (dịch sẵn hoặc admin sửa), câu Anh, các mục từ mà
+// câu làm ví dụ (bấm để mở ở tab Từ vựng). Miễn phí nên tìm ngay khi gõ (q đã debounce ở tab cha).
+export const SentenceResults: React.FC<{ query: string; onOpen: (key: DictKey) => void }> = ({ query, onOpen }) => {
   const q = query.trim();
   const [res, setRes] = useState<{ key: string; data?: DictSentenceResult; error?: string; page: number }>({ key: "", page: 0 });
   const abortRef = useRef<AbortController | null>(null);
@@ -87,12 +76,6 @@ export const SentencesTab: React.FC<{
       .catch((e) => !ctl.signal.aborted && setRes({ key: q, error: extractErrorMessage(e), page: 0 }));
     return () => ctl.abort();
   }, [q]);
-
-  useEffect(() => {
-    if (input.trim() === query.trim()) return;
-    const t = setTimeout(() => onQuery(input.trim()), 350);
-    return () => clearTimeout(t);
-  }, [input, query, onQuery]);
 
   const current = q && res.key === q ? res : null;
   const result = current?.data ?? null;
@@ -110,58 +93,22 @@ export const SentencesTab: React.FC<{
     }
   };
 
-  return (
-    <div className="flex flex-col gap-3 max-w-3xl">
-      <form
-        role="search"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onQuery(input.trim());
-        }}
-        className="relative"
-      >
-        <label htmlFor="dict-sentence-q" className="sr-only">
-          Cụm từ cần tìm trong câu ví dụ
-        </label>
-        <span aria-hidden="true" className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">
-          format_quote
-        </span>
-        <input
-          id="dict-sentence-q"
-          type="search"
-          value={input}
-          maxLength={64}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="食べた, ご飯を, ăn cơm, eat…"
-          className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest pl-10 pr-3 py-2.5 text-body-md focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      </form>
+  if (!q) return null;
 
-      {!q && (
-        <p className="text-body-sm text-on-surface-variant">
-          Gõ một cụm tiếng Nhật (ví dụ 食べた, ご飯を), tiếng Việt hoặc tiếng Anh để xem câu ví dụ có cụm đó. Câu ngắn hiện trước.
-        </p>
-      )}
+  return (
+    <section aria-labelledby="dict-sentences-head" className="flex flex-col gap-3">
+      <h3 id="dict-sentences-head" className="font-semibold text-on-surface inline-flex flex-wrap items-center gap-1.5">
+        <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-primary">format_quote</span>
+        Câu ví dụ chứa «<span lang="ja">{q}</span>»
+        {result && items.length > 0 && (
+          <span role="status" className="font-normal text-on-surface-variant">
+            · {result.total >= 500 ? "hơn 500" : result.total.toLocaleString("vi-VN")} câu
+          </span>
+        )}
+      </h3>
       {loading && <p className="text-body-sm text-on-surface-variant">Đang tìm…</p>}
       {current?.error && <p role="alert" className="text-body-sm text-error">{current.error}</p>}
-      {result && items.length === 0 && (
-        <p className="text-body-sm text-on-surface-variant">
-          Không có câu ví dụ nào chứa «{q}».
-          {onTranslate && looksLikeSentence(q) && (
-            <>
-              {" "}
-              <button type="button" onClick={() => onTranslate(q)} className="text-primary font-semibold hover:underline">
-                Dịch cả câu này
-              </button>
-            </>
-          )}
-        </p>
-      )}
-      {result && items.length > 0 && (
-        <p className="text-xs text-on-surface-variant" role="status">
-          {result.total >= 500 ? "Hơn 500" : result.total.toLocaleString("vi-VN")} câu
-        </p>
-      )}
+      {result && items.length === 0 && <p className="text-body-sm text-on-surface-variant">Không có câu ví dụ nào chứa cụm này.</p>}
       {items.length > 0 && (
         <ul className="flex flex-col gap-2" aria-label="Câu ví dụ">
           {items.map((s) => (
@@ -174,6 +121,6 @@ export const SentencesTab: React.FC<{
           Tải thêm
         </Button>
       )}
-    </div>
+    </section>
   );
 };

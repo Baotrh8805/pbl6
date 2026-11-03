@@ -91,7 +91,7 @@ export const LibraryFilterBar: React.FC<LibraryFilterBarProps> = ({
         type="text"
         value={searchTerm}
         onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Tìm kiếm bộ thẻ theo tên giáo trình, từ khóa Kanji, chủ đề (kinh tế, IT, hội thoại)..."
+        placeholder="Tìm theo tên bộ thẻ, mô tả hoặc tác giả..."
         className="w-full pl-12 pr-28 py-3.5 rounded-xl bg-surface-container-low text-on-surface font-body-md text-body-md placeholder:text-outline focus:outline-none focus:bg-surface-container transition-all"
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -123,6 +123,7 @@ export const LibraryFilterBar: React.FC<LibraryFilterBarProps> = ({
         type="button"
         aria-pressed={selectedTab === "popular"}
         onClick={() => onTabChange("popular")}
+        title="Điểm trung bình từ 4,5 sao và có ít nhất 3 lượt đánh giá"
         className={`flex items-center gap-1 ${tabClass(selectedTab === "popular")}`}
       >
         <span>Phổ biến nhất</span>

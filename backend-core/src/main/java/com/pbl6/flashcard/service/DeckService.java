@@ -219,10 +219,17 @@ public class DeckService {
         return DeckResponse.of(deckRepository.save(deck), Access.OWNER.json());
     }
 
-    /** Lưu bộ thẻ xem được (Thư viện, được chia sẻ) thành bản riêng. Bản sao ghi nguồn -> lượt tải của bản gốc. */
+    /**
+     * Lưu bộ thẻ xem được (Thư viện, được chia sẻ) thành bản riêng. Bản sao ghi nguồn -> lượt tải của bản gốc. Đã có bản sao của
+     * bộ này → 409 DECK_ALREADY_SAVED (rà soát 30/10 A4: lưu trùng làm phồng lượt tải và rối "Bộ thẻ của tôi"; frontend tải lại
+     * Thư viện và mở bản đã lưu qua savedDeckId).
+     */
     @Transactional
     public DeckResponse cloneDeck(Long uid, String deckId, UUID folderId) {
         Deck source = readable(uid, deckId);
+        if (deckRepository.existsBySourceDeckIdAndOwnerId(source.getId(), uid)) {
+            throw new CodedStatusException(HttpStatus.CONFLICT, "DECK_ALREADY_SAVED", "Bạn đã lưu bộ thẻ này rồi.");
+        }
         Deck copy = new Deck();
         copy.setId(UUID.randomUUID().toString());
         copy.setTitle(source.getTitle());

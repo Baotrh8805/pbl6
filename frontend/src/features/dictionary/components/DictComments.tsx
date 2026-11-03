@@ -2,7 +2,9 @@ import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { useDialog } from "@/components/ui/dialogContext";
+import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
+import { getInitials } from "@/lib/textUtils";
 import { runOnce } from "@/lib/inFlight";
 import { extractErrorMessage } from "@/services/apiClient";
 import {
@@ -18,12 +20,16 @@ import type { ModerationInfo } from "@/types/moderation.types";
 
 const MAX = 1000;
 const PAGE = 20;
+/** Bình luận đứng đầu (sắp theo Hữu ích) có từ ngần này lượt thì làm nổi như "mẹo hay". */
+const TOP_HELPFUL = 3;
 
 const timeOf = (iso: string) => new Date(iso).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" });
 
 // Bình luận phẳng dưới mỗi mục (D19): sắp theo Hữu ích / Mới nhất, sửa / xoá của mình, "Hữu ích", báo cáo bình luận xấu.
 export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: number) => void }> = ({ entryKey, onCountChange }) => {
   const dialog = useDialog();
+  const { userEmail, userProfile } = useAuth();
+  const myInitials = getInitials(userProfile?.fullName || (userEmail ? userEmail.split("@")[0] : ""));
   const [sort, setSort] = useState<"helpful" | "newest">("helpful");
   const [size, setSize] = useState(PAGE);
   const [reload, setReload] = useState(0);
@@ -109,14 +115,14 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
           <span aria-hidden="true" className="material-symbols-outlined text-[20px] text-primary">forum</span>
           Bình luận {total > 0 && <span className="text-on-surface-variant font-normal">({total})</span>}
         </h3>
-        <div role="group" aria-label="Sắp xếp bình luận" className="flex gap-1 text-label-md">
+        <div role="group" aria-label="Sắp xếp bình luận" className="flex gap-0.5 p-0.5 rounded-full bg-surface-container-low text-xs">
           {(["helpful", "newest"] as const).map((s) => (
             <button
               key={s}
               type="button"
               aria-pressed={sort === s}
               onClick={() => setSort(s)}
-              className={`px-2.5 py-1 rounded-lg ${sort === s ? "bg-primary/10 text-primary font-semibold" : "text-on-surface-variant hover:bg-surface-container"}`}
+              className={`px-3 py-1 rounded-full transition-colors ${sort === s ? "bg-surface-container-lowest text-primary font-semibold shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
             >
               {s === "helpful" ? "Hữu ích" : "Mới nhất"}
             </button>
@@ -124,7 +130,9 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
         </div>
       </div>
 
-      <form onSubmit={submit} className="flex flex-col gap-2" noValidate>
+      <form onSubmit={submit} className="flex gap-3" noValidate>
+        <span aria-hidden="true" className="w-9 h-9 shrink-0 rounded-full bg-primary/10 text-primary text-xs font-bold inline-flex items-center justify-center">{myInitials}</span>
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
         <label htmlFor={`cmt-${entryKey}`} className="sr-only">Viết bình luận</label>
         <textarea
           id={`cmt-${entryKey}`}
@@ -133,13 +141,14 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
           onChange={(e) => setText(e.target.value)}
           rows={2}
           placeholder="Chia sẻ mẹo nhớ, cách dùng, lưu ý… (không đăng thông tin cá nhân)"
-          className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-body-sm focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10"
         />
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-on-surface-variant">{text.length}/{MAX}</span>
           <Button type="submit" size="sm" isLoading={busy} disabled={!text.trim()}>Gửi bình luận</Button>
         </div>
         {error && <p role="alert" className="text-xs text-error">{error}</p>}
+        </div>
       </form>
 
       {list.error && <p role="alert" className="text-body-sm text-error">{list.error}</p>}
@@ -147,10 +156,28 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
         <p className="text-body-sm text-on-surface-variant">Chưa có bình luận. Hãy là người đầu tiên chia sẻ kiến thức về mục này.</p>
       )}
       <ul className="flex flex-col gap-2">
-        {items.map((c) => (
-          <li key={c.id} className={`rounded-xl border p-3 ${c.hidden ? "border-error/40 bg-error/5" : "border-surface-container-high bg-surface-container-lowest"}`}>
+        {items.map((c, i) => {
+          const top = sort === "helpful" && i === 0 && !c.hidden && c.helpfulCount >= TOP_HELPFUL;
+          return (
+          <li
+            key={c.id}
+            className={`rounded-xl border p-3 ${
+              c.hidden ? "border-error/40 bg-error/5" : top ? "border-primary/40 bg-primary/5" : "border-surface-container-high bg-surface-container-lowest"
+            }`}
+          >
+            {top && (
+              <p className="mb-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">lightbulb</span>
+                Mẹo được nhiều người thấy hữu ích
+              </p>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-on-surface-variant">
-              <span className="font-semibold text-on-surface">{c.displayName}{c.mine && " (bạn)"}</span>
+              <span className="inline-flex items-center gap-2 font-semibold text-on-surface">
+                <span aria-hidden="true" className="w-6 h-6 rounded-full bg-surface-container-high text-[10px] font-bold text-on-surface-variant inline-flex items-center justify-center">
+                  {getInitials(c.displayName || "?")}
+                </span>
+                {c.displayName}{c.mine && " (bạn)"}
+              </span>
               <span>{timeOf(c.createdAt)}{c.updatedAt !== c.createdAt && " · đã sửa"}</span>
             </div>
             {c.hidden && <p className="mt-1 text-xs text-error">Bình luận này đã bị quản trị viên ẩn, chỉ bạn thấy.</p>}
@@ -199,7 +226,8 @@ export const DictComments: React.FC<{ entryKey: DictKey; onCountChange?: (n: num
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
       {items.length < total && (
         <Button type="button" variant="outline" size="sm" onClick={() => setSize((s) => s + PAGE)} className="self-center">

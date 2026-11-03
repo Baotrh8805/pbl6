@@ -81,6 +81,7 @@ import {
   defaultDeckLevel,
   levelDistribution,
   levelDistributionSummary,
+  ocrDegradedNotice,
   overallLevelLabel,
   roundToHundred,
 } from "../src/features/extraction/extractionUtils.ts";
@@ -212,9 +213,10 @@ import { runStudyChecks } from "./selfcheck/study.ts";
 import { runDictionaryChecks } from "./selfcheck/dictionary.ts";
 import { runDeckShareChecks } from "./selfcheck/deckShare.ts";
 import { runQa2710Checks } from "./selfcheck/qa2710.ts";
-import { runGraphChecks } from "./selfcheck/graph.ts";
+import { runDiagramChecks } from "./selfcheck/diagram.ts";
 import { runDateFileChecks } from "./selfcheck/dateFile.ts";
 import { runModerationChecks } from "./selfcheck/moderation.ts";
+import { runLibraryChecks } from "./selfcheck/library.ts";
 
 function assertStrictEqual(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -831,6 +833,19 @@ async function runSelfCheck() {
     "Phân bố cấp JLPT (toàn tài liệu): N5 50 (50%), N4 30 (30%), N3 15 (15%), N2 4 (4%), N1 1 (1%) · chưa rõ 7",
     "Tóm tắt bằng chữ cho aria-label / tooltip"
   );
+  // Kiểm thử 28/10 (L-05): trang bóc tách báo OCR hạ cấp (Gemini quá tải → giữ bản Tesseract)
+  assertStrictEqual(ocrDegradedNotice(null), null, "Không có meta -> không cảnh báo");
+  assertStrictEqual(ocrDegradedNotice({ pages: 1 }), null, "Đọc file / OCR bình thường -> không cảnh báo");
+  assertStrictEqual(
+    ocrDegradedNotice({ ocrDegraded: true, ocrDegradedPages: 1, pages: 1 }),
+    "Ảnh chưa được AI soát lại (dịch vụ AI quá tải); văn bản dưới đây là bản OCR thô, có thể sai chữ — hãy đối chiếu và sửa rồi phân tích lại.",
+    "Một trang -> nói 'Ảnh'"
+  );
+  assertStrictEqual(
+    ocrDegradedNotice({ ocrDegraded: true, ocrDegradedPages: 3, pages: 10 }),
+    "3/10 trang chưa được AI soát lại (dịch vụ AI quá tải); văn bản dưới đây là bản OCR thô, có thể sai chữ — hãy đối chiếu và sửa rồi phân tích lại.",
+    "Nhiều trang -> nêu số trang hạ cấp / tổng"
+  );
   const distPct = levelDistribution({ byLevel: {}, byLevelAll: { N5: 1, N4: 1 }, levelPct: { N5: 70.4, N4: 29.6 } })!;
   assertStrictEqual(distPct.segments.slice(0, 2).map((s) => s.pct).join(","), "70,30", "Có levelPct thì tỉ lệ theo ai-service, làm tròn về số nguyên");
   const distOld = levelDistribution({ byLevel: { N5: 1, N4: 1, N3: 1, unknown: 2 } })!;
@@ -1235,9 +1250,10 @@ async function runSelfCheck() {
   runDictionaryChecks(assertTrue);
   runDeckShareChecks(assertTrue);
   runQa2710Checks(assertTrue);
-  runGraphChecks(assertTrue);
+  runDiagramChecks(assertTrue);
   runDateFileChecks(assertTrue);
   runModerationChecks(assertTrue);
+  runLibraryChecks(assertTrue);
   assertStrictEqual(parseProfileTab("practice"), "practice", "Tab Luyện tập hợp lệ từ URL");
 
   // Báo cáo của tôi (UC-41): tab trên URL + câu kết quả nói với người gửi + thông báo dẫn về tab

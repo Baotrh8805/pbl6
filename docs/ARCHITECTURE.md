@@ -46,7 +46,8 @@
 
 **Trạng thái 27/10/2026 (D30):** Neo4j chạy thật (`docker compose up -d neo4j`, `neo4j:5-community`). ai-service là tầng duy nhất
 nối Neo4j (`app/graph/`): dựng lớp tham chiếu (từ – chữ Hán – bộ thủ – âm Hán-Việt – mẫu ngữ pháp – câu ví dụ) từ dữ liệu của chính
-nó; backend đẩy lớp người học (bộ thẻ, thẻ, lịch ôn, lộ trình, nghĩa Việt) từ Postgres sang qua `POST /api/graph/sync` theo lô
+nó (từ 30/10 chỉ còn API + Admin: trang `/graph` của người học là **Sơ đồ chữ Hán** dựng từ `kanji_parts.csv` (KanjiVG) + Unihan +
+JLPT + JMdict qua `GET /api/kanji-info/diagram`, không nối Neo4j — spec 2026-10-30); backend đẩy lớp người học (bộ thẻ, thẻ, lịch ôn, lộ trình, nghĩa Việt) từ Postgres sang qua `POST /api/graph/sync` theo lô
 (job đêm 03:50 + đồng bộ lười theo người dùng + Admin "Đồng bộ ngay"). Chi tiết mô hình node / quan hệ, Cypher và GraphRAG:
 [Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md](Plan/specs/2026-10-27-do-thi-tri-thuc-neo4j-design.md). Redis trong sơ đồ
 vẫn chưa dùng (bộ đếm hạn mức nằm trong RAM).

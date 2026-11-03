@@ -121,7 +121,8 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
           </label>
           <input
             id={searchId}
-            type="search"
+            type="text"
+            enterKeyHint="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"

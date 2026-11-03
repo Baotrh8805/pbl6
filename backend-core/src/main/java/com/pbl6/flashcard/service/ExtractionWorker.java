@@ -299,6 +299,8 @@ public class ExtractionWorker {
             for (ExtractionItem i : need) {
                 com.pbl6.flashcard.service.dictionary.DictionaryStore.Meaning m = dictKeys.containsKey(i.getId()) ? byKey.get(dictKeys.get(i.getId())) : null;
                 if (m == null) m = byTerm.get(com.pbl6.flashcard.service.dictionary.DictionaryStore.termKey(i.getTerm(), i.getReading()));
+                // cách đọc lệch (Sudachi きょう, từ điển giữ こんにち): dạng viết chỉ có một nghĩa thì vẫn dùng
+                if (m == null) m = byTerm.get(com.pbl6.flashcard.service.dictionary.DictionaryStore.termKey(i.getTerm(), ""));
                 if (m != null) found.put(i.getId(), m.meaningVi());
             }
             if (found.isEmpty()) return 0;

@@ -1,8 +1,9 @@
 """Dữ liệu chữ Hán cho lộ trình học và luyện viết (spec lộ trình 2 §0.1 LP-17).
 
-Bốn nguồn, mỗi nguồn một file trong data/ do scripts/build_dicts.py dựng:
+Năm nguồn, mỗi nguồn một file trong data/ do scripts/build_dicts.py dựng:
   unihan_rs.csv       (commit)        bộ thủ Khang Hi + số nét   ← Unihan kRSUnicode / kTotalStrokes
-  kradfile.csv        (không commit)  thành phần cấu tạo         ← KRADFILE (EDRDG)
+  kradfile.csv        (commit)        thành phần phẳng (bộ gõ)   ← KRADFILE (EDRDG)
+  kanji_parts.csv     (commit)        cây phân rã + chỉ âm       ← KanjiVG kvg:element / kvg:phon (sơ đồ /graph, spec 2026-10-30)
   kanji_strokes.json  (không commit)  nét viết mẫu, 32 điểm/nét  ← KanjiVG
   pitch_accent.csv    (không commit)  trọng âm (mora rơi)        ← kanjium
 
@@ -16,18 +17,30 @@ import json
 import threading
 from array import array
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional
 
 from app.extract.jachars import is_kana_only, kata_to_hira
 
 DATA_DIR = Path(__file__).parent / "data"
 RS_FILE = DATA_DIR / "unihan_rs.csv"
 KRAD_FILE = DATA_DIR / "kradfile.csv"
+PARTS_FILE = DATA_DIR / "kanji_parts.csv"
 STROKES_FILE = DATA_DIR / "kanji_strokes.json"
 PITCH_FILE = DATA_DIR / "pitch_accent.csv"
 
 Point = tuple[float, float]
 Stroke = list[Point]
+
+
+class Parts(NamedTuple):
+    """Một dòng kanji_parts.csv: con trực tiếp theo thứ tự viết (時 → 日 寺), biến thể → chữ gốc (扌 → 手), vị trí KanjiVG,
+    part là bộ thủ, part mang chỉ âm và chỉ âm đã chuẩn hoá (寺 có part 土 mang phon 之)."""
+    parts: tuple[str, ...]
+    originals: tuple[Optional[str], ...]
+    positions: tuple[Optional[str], ...]
+    radical_part: Optional[str]
+    phon_part: Optional[str]
+    phon: Optional[str]
 
 _cache: dict[str, object] = {}  # tên nguồn → bảng đã nạp; reset() xoá để test nạp lại
 _lock = threading.Lock()        # nạp lười chạy đúng một lần dù nhiều request đầu tiên đến cùng lúc (threadpool)
@@ -64,6 +77,31 @@ def parse_krad_csv(path: Path) -> dict[str, tuple[str, ...]]:
             comps = tuple((row.get("components") or "").split())
             if ch and comps:
                 table[ch] = comps
+    return table
+
+
+def _dash_list(cell: Optional[str], n: int) -> tuple[Optional[str], ...]:
+    """'手 -' → ('手', None), bù None cho đủ ``n`` phần tử khi cột thiếu."""
+    vals = [None if v == "-" else v for v in (cell or "").split()]
+    vals += [None] * (n - len(vals))
+    return tuple(vals[:n])
+
+
+def parse_parts_csv(path: Path) -> dict[str, Parts]:
+    """kanji_parts.csv (kanji,parts,originals,positions,radical_part,phon_part,phon; danh sách cách nhau bằng khoảng trắng,
+    '-' = không có) → {chữ: Parts}. Dòng thiếu chữ / không có part → bỏ."""
+    table: dict[str, Parts] = {}
+    if not path.exists():
+        return table
+    with open(path, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            ch = (row.get("kanji") or "").strip()
+            parts = tuple((row.get("parts") or "").split())
+            if not ch or not parts:
+                continue
+            table[ch] = Parts(parts, _dash_list(row.get("originals"), len(parts)), _dash_list(row.get("positions"), len(parts)),
+                              (row.get("radical_part") or "").strip() or None, (row.get("phon_part") or "").strip() or None,
+                              (row.get("phon") or "").strip() or None)
     return table
 
 
@@ -117,6 +155,8 @@ _SOURCES: dict[str, Callable[[], tuple[Path, Callable[[Path], dict]]]] = {
     "kradfile": lambda: (KRAD_FILE, parse_krad_csv),
     "kanjivg": lambda: (STROKES_FILE, parse_strokes_json),
     "pitch": lambda: (PITCH_FILE, parse_pitch_csv),
+    # camelCase như kanjiStrokes vì availability() đổ thẳng vào /extract/health
+    "kanjiParts": lambda: (PARTS_FILE, parse_parts_csv),
 }
 
 
@@ -159,6 +199,29 @@ def radical_strokes(ch: str) -> Optional[tuple[int, int]]:
 def components(ch: str) -> tuple[str, ...]:
     """Thành phần cấu tạo theo KRADFILE (vd 明 → ('日', '月')); thiếu dữ liệu → ()."""
     return _table("kradfile").get(ch, ())
+
+
+def parts(ch: str) -> Optional[Parts]:
+    """Cây phân rã KanjiVG của một chữ (con trực tiếp); chữ đơn (一 日) hay thiếu dữ liệu → None."""
+    if not ch:
+        return None
+    return _table("kanjiParts").get(ch)
+
+
+def phon_family(component: str) -> tuple[str, ...]:
+    """Các chữ có thành phần chỉ âm ``component`` (寺 → 時 持 待 特 等 詩 侍), xếp theo mã Unicode; không có → ()."""
+    if not component:
+        return ()
+    if "parts_rev" not in _cache:
+        table = _table("kanjiParts")  # nạp NGOÀI khoá: _table cũng lấy _lock (không tái nhập) → giữ khoá rồi gọi là deadlock
+        with _lock:
+            if "parts_rev" not in _cache:
+                rev: dict[str, list[str]] = {}
+                for ch, p in table.items():
+                    if p.phon:
+                        rev.setdefault(p.phon, []).append(ch)
+                _cache["parts_rev"] = {k: tuple(sorted(v)) for k, v in rev.items()}
+    return _cache["parts_rev"].get(component, ())  # type: ignore[union-attr]
 
 
 def strokes(ch: str) -> Optional[list[Stroke]]:

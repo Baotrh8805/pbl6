@@ -1,6 +1,8 @@
 // Self-check từ điển (spec docs/Plan/specs/2026-10-26-tu-dien-design.md §7): chọn chế độ tìm (Nhật / romaji / Việt-Anh), tiêu đề
 // mục, nghĩa chính không gắn nhãn "máy dịch" (D23), trường báo lỗi theo loại mục, giá trị hiện tại cho hộp báo lỗi, thẻ học dựng
 // từ mục từ, nhãn từ loại, thông báo từ điển, khoá cấu hình mới. scripts/selfCheck.ts gọi: runDictionaryChecks(assert).
+import { pickParams, restoreOnEnter } from "../../src/lib/searchMemory.ts";
+import { DICTIONARY_PARAMS } from "../../src/features/dictionary/dictionaryMemory.ts";
 import {
   cardMeaningOf,
   currentValueOf,
@@ -8,6 +10,8 @@ import {
   detectTranslateDirection,
   highlightParts,
   entryToWordNode,
+  jlptChipClass,
+  pitchKindLabel,
   headOf,
   looksLikeSentence,
   needsSubKey,
@@ -127,6 +131,12 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(hp("Tôi ăn cơm", "an com") === "Tôi ăn cơm", "Từ điển (Câu): gõ không dấu thì không tô (không đoán)");
   assert(hp("abc", "  ") === "abc" && highlightParts("", "a").length === 0, "Từ điển (Câu): q rỗng / text rỗng");
 
+  // ---------- giao diện 31/10: chip JLPT, nhãn trọng âm ----------
+  assert(jlptChipClass("N5").includes("emerald") && jlptChipClass("n1").includes("purple"), "Từ điển: chip JLPT theo cấp, không phân biệt hoa thường");
+  assert(jlptChipClass(null) === jlptChipClass("N9") && jlptChipClass(null).includes("primary"), "Từ điển: cấp lạ / thiếu -> màu primary");
+  assert(pitchKindLabel("heiban") === "Bằng (heiban)" && pitchKindLabel("odaka") === "Cao đuôi (odaka)", "Từ điển: nhãn trọng âm tiếng Việt");
+  assert(pitchKindLabel("lạ") === "lạ", "Từ điển: kiểu trọng âm lạ giữ nguyên");
+
   // ---------- tab Dịch (spec 2026-10-28, D33) ----------
   assert(detectTranslateDirection("ご飯を食べました。") === "ja-vi" && detectTranslateDirection("Tôi ăn cơm") === "vi-ja", "Dịch: tự nhận hướng");
   assert(detectTranslateDirection("Từ 食べる nghĩa là gì?") === "ja-vi", "Dịch: văn bản trộn coi là tiếng Nhật (như backend)");
@@ -157,4 +167,13 @@ export function runDictionaryChecks(assert: (cond: boolean, msg: string) => void
   assert(tokenMeaning({ meaning: null, dictVi: null, glossEn: null, posVi: "dấu", particle: false }) === null, "Dịch: không có gì -> null");
   const tl = DICTIONARY_FIELDS.find((f) => f.key === "dictionary_translate_hourly_limit")!;
   assert(parseSettingNumber(tl, "20") === 20 && parseSettingNumber(tl, "0") === 0 && parseSettingNumber(tl, "1001") === null, "Dịch: trần lượt dịch câu 0..1000");
+
+  // ---- nhớ trạng thái khi rời trang (sidebar dẫn về /dictionary không kèm tham số) -------------------------------------------
+  const P = DICTIONARY_PARAMS;
+  assert(pickParams(new URLSearchParams("tab=kanji&k=食&x=1&utm=a"), P) === "tab=kanji&k=%E9%A3%9F", "Nhớ: chỉ tham số của từ điển");
+  assert(pickParams(new URLSearchParams(""), P) === "", "Nhớ: trang trống ghi chuỗi rỗng (người dùng xoá ô tìm)");
+  assert(restoreOnEnter(new URLSearchParams(""), "q=%E5%AD%A6%E7%94%9F", P)?.get("q") === "学生", "Khôi phục: vào trang trống thì lấy lại câu tìm");
+  assert(restoreOnEnter(new URLSearchParams("tab=notebook"), "q=a", P) === null, "Khôi phục: URL đã có trạng thái (link Tra chữ này, tab) thì không đè");
+  assert(restoreOnEnter(new URLSearchParams(""), "", P) === null && restoreOnEnter(new URLSearchParams(""), null, P) === null, "Khôi phục: đã nhớ trạng thái trống / chưa nhớ gì");
+  assert(restoreOnEnter(new URLSearchParams(""), "utm=x", P) === null, "Khôi phục: bỏ tham số lạ");
 }

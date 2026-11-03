@@ -4,7 +4,7 @@ import { useCopyToClipboard } from "@/lib/clipboard";
 import { canSpeak, speakJa } from "@/lib/speech";
 import { translateText } from "@/services/dictionaryService";
 import type { DictKey, DictTranslateDirection, DictTranslateToken, DictTranslation } from "@/types/dictionary.types";
-import { TRANSLATE_MAX_CHARS, detectTranslateDirection, tokenMeaning, translateDirectionLabel, translateStateNote } from "../dictUtils";
+import { jlptChipClass, tokenMeaning, translateDirectionLabel, translateStateNote } from "../dictUtils";
 import { DictPopover } from "./DictQuickLookup";
 
 const DIRECTIONS: { key: DictTranslateDirection; label: string }[] = [
@@ -13,7 +13,6 @@ const DIRECTIONS: { key: DictTranslateDirection; label: string }[] = [
   { key: "vi-ja", label: "Việt → Nhật" },
 ];
 
-const jlptChip = "text-[11px] px-1 rounded bg-primary/10 text-primary font-semibold";
 
 /** Chữ Nhật có furigana theo run kanji (rubies từ ai-service); không có rubies thì chữ thường. */
 const RubyText: React.FC<{ token: DictTranslateToken }> = ({ token }) => {
@@ -82,7 +81,7 @@ const TokenRow: React.FC<{ t: DictTranslateToken; onPick: (key: DictKey) => void
             ← {t.lemma}
           </span>
         )}
-        {t.jlpt && <span className={jlptChip}>{t.jlpt}</span>}
+        {t.jlpt && <span className={`text-[11px] px-1 rounded font-semibold ${jlptChipClass(t.jlpt)}`}>{t.jlpt}</span>}
       </div>
       <div className="text-xs text-on-surface-variant">
         {t.reading && <span lang="ja">{t.reading}</span>}
@@ -221,30 +220,37 @@ const TranslationResult: React.FC<{ r: DictTranslation; onOpen: (key: DictKey) =
   );
 };
 
-// Tab Dịch (spec 2026-10-28-dich-cau-design, D33): dịch câu / đoạn Nhật ↔ Việt bằng AI dịch CẢ đoạn (không bao giờ ghép nghĩa từng từ)
-// + phân tích câu Nhật (cụm từ, cách đọc, bậc JLPT, nghĩa theo ngữ cảnh). Trạng thái trên URL: ?tab=translate&t=…&dir=ja-vi|vi-ja
-// (tự nhận thì bỏ dir); mỗi lần bấm Dịch / Ctrl+Enter đều chạy model local.
-export const TranslateTab: React.FC<{
+/** Hướng dịch (dùng ở ô nhập của tab Câu & Dịch). */
+export const TranslateDirectionPicker: React.FC<{ value: DictTranslateDirection; onChange: (d: DictTranslateDirection) => void }> = ({ value, onChange }) => (
+  <div role="group" aria-label="Hướng dịch" className="inline-flex rounded-full bg-surface-container-low p-0.5">
+    {DIRECTIONS.map((d) => (
+      <button
+        key={d.key}
+        type="button"
+        aria-pressed={value === d.key}
+        onClick={() => onChange(d.key)}
+        className={`px-3 py-1 rounded-full text-xs transition-colors ${
+          value === d.key ? "bg-surface-container-lowest text-primary font-semibold shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+        }`}
+      >
+        {d.label}
+      </button>
+    ))}
+  </div>
+);
+
+// Phần Dịch của tab Câu & Dịch (spec 2026-10-28-dich-cau-design, D33; gộp tab 31/10): dịch câu / đoạn Nhật ↔ Việt bằng AI dịch CẢ
+// đoạn (không bao giờ ghép nghĩa từng từ) + phân tích câu Nhật (cụm từ, cách đọc, bậc JLPT, nghĩa theo ngữ cảnh). Chỉ chạy với
+// `text` đã chốt trên URL (?t=…&dir=…) — tức sau khi bấm Dịch / Ctrl+Enter. Mỗi lượt đều chạy HY-MT local; `attempt` tăng = gửi lại.
+export const TranslationPanel: React.FC<{
   text: string;
   direction: DictTranslateDirection;
-  onChange: (text: string, direction: DictTranslateDirection) => void;
+  attempt: number;
+  onRetry: () => void;
   onOpen: (key: DictKey) => void;
-}> = ({ text, direction, onChange, onOpen }) => {
-  const [input, setInput] = useState(text);
-  const [prevText, setPrevText] = useState(text);
-  if (text !== prevText) {
-    setPrevText(text);
-    setInput(text);
-  }
-  const [dir, setDir] = useState<DictTranslateDirection>(direction);
-  const [prevDir, setPrevDir] = useState(direction);
-  if (direction !== prevDir) {
-    setPrevDir(direction);
-    setDir(direction);
-  }
+}> = ({ text, direction, attempt, onRetry, onOpen }) => {
   const key = text ? `${direction}|${text}` : "";
-  const [res, setRes] = useState<{ key: string; data?: DictTranslation; error?: boolean }>({ key: "" });
-  const [attempt, setAttempt] = useState(0);
+  const [res, setRes] = useState<{ key: string; attempt: number; data?: DictTranslation; error?: boolean }>({ key: "", attempt: 0 });
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -254,94 +260,30 @@ export const TranslateTab: React.FC<{
     abortRef.current = ctl;
     const [d, ...rest] = key.split("|");
     translateText(rest.join("|"), d as DictTranslateDirection, ctl.signal)
-      .then((r) => !ctl.signal.aborted && setRes({ key, data: r }))
-      .catch(() => !ctl.signal.aborted && setRes({ key, error: true }));
+      .then((r) => !ctl.signal.aborted && setRes({ key, attempt, data: r }))
+      .catch(() => !ctl.signal.aborted && setRes({ key, attempt, error: true }));
     return () => ctl.abort();
   }, [key, attempt]);
 
-  const current = key && res.key === key ? res : null;
-  const retry = () => {
-    setRes({ key: "" });
-    setAttempt((n) => n + 1);
-  };
+  const current = key && res.key === key && res.attempt === attempt ? res : null;
   const result = current?.data ?? null;
   const error = current?.error ?? null;
   const loading = !!key && !current;
-  const trimmed = input.trim();
-  const previewDir = dir === "auto" ? detectTranslateDirection(trimmed) : dir;
-
-  const submit = () => {
-    if (!trimmed) return;
-    const next = trimmed.slice(0, TRANSLATE_MAX_CHARS);
-    if (next === text && dir === direction) retry();   // cùng câu: bấm Dịch lại vẫn gửi lại (vd. sau BUSY / chưa trả lời)
-    else onChange(next, dir);
-  };
+  if (!key) return null;
 
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-        className="flex flex-col gap-2"
-      >
-        <label htmlFor="dict-translate-text" className="sr-only">
-          Câu hoặc đoạn cần dịch
-        </label>
-        <textarea
-          id="dict-translate-text"
-          value={input}
-          rows={3}
-          maxLength={TRANSLATE_MAX_CHARS}
-          autoFocus
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          aria-describedby="dict-translate-hint"
-          placeholder="昨日は友達と映画を見ました。 — hoặc — Hôm qua tôi đi xem phim với bạn."
-          className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-body-md leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div role="group" aria-label="Hướng dịch" className="inline-flex rounded-lg bg-surface-container-low p-0.5">
-            {DIRECTIONS.map((d) => (
-              <button
-                key={d.key}
-                type="button"
-                aria-pressed={dir === d.key}
-                onClick={() => setDir(d.key)}
-                className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
-                  dir === d.key ? "bg-surface-container-lowest text-primary font-semibold shadow-sm" : "text-on-surface-variant hover:bg-surface-container"
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-          <span id="dict-translate-hint" className="text-xs text-on-surface-variant">
-            {trimmed && dir === "auto" ? `${translateDirectionLabel(previewDir)} · ` : ""}
-            {input.length}/{TRANSLATE_MAX_CHARS} · Ctrl + Enter để dịch
-          </span>
-          <Button type="submit" variant="primary" size="sm" isLoading={loading} disabled={!trimmed}>
-            Dịch
-          </Button>
+    <div className="flex flex-col gap-3">
+      {loading && (
+        <div aria-busy="true" className="rounded-2xl border border-surface-container-high bg-surface-container-lowest p-5 animate-pulse">
+          <p role="status" className="mb-3 text-body-sm text-on-surface-variant">Đang dịch bằng HY-MT… Lần đầu có thể lâu hơn do cần nạp model.</p>
+          <span className="block h-6 w-3/4 rounded bg-surface-container-high" />
+          <span className="block mt-3 h-4 w-1/2 rounded bg-surface-container" />
         </div>
-      </form>
-
-      {!text && (
-        <p className="text-body-sm text-on-surface-variant">
-          Dán một câu hoặc đoạn ngắn tiếng Nhật để dịch sang tiếng Việt, hoặc tiếng Việt để dịch sang tiếng Nhật. Model HY-MT dịch từng câu; bên dưới là phân tích từng cụm (cách đọc, bậc JLPT và nghĩa từ điển) để bạn học cấu trúc câu.
-        </p>
       )}
-      {loading && <p className="text-body-sm text-on-surface-variant">Đang dịch bằng HY-MT… Lần đầu có thể lâu hơn do cần nạp model.</p>}
       {error && (
         <div role="status" className="flex flex-wrap items-center gap-3 text-body-sm text-on-surface rounded-xl bg-surface-container-low px-4 py-3">
           <span className="flex-1 min-w-0">Chưa dịch được lúc này, có thể do mạng chập chờn hoặc máy chủ đang khởi động. Đợi vài giây rồi thử lại nhé.</span>
-          <Button type="button" variant="outline" size="sm" onClick={retry}>
+          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
             Thử lại
           </Button>
         </div>

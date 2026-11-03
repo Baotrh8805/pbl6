@@ -2,7 +2,7 @@ import React, { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { fieldClass } from "@/components/ui/formStyles";
 import type { ExtractionJob } from "@/types/api.types";
-import { TEXT_MAX_CHARS, geminiReasonText } from "../extractionUtils";
+import { TEXT_MAX_CHARS, geminiReasonText, ocrDegradedNotice } from "../extractionUtils";
 
 interface ExtractedTextPanelProps {
   job: ExtractionJob;
@@ -33,6 +33,8 @@ export const ExtractedTextPanel: React.FC<ExtractedTextPanelProps> = ({ job, onR
   const meta = job.textMeta;
   const dirty = text !== original;
   const lowLines = meta?.lowLines ?? [];
+  // geminiError đã nói cùng ý (Gemini không chép lại được) thì không hiện thêm cảnh báo hạ cấp
+  const degradedNotice = meta?.geminiError ? null : ocrDegradedNotice(meta);
 
   // Bấm một dòng nghi sai → bôi đen đúng dòng đó trong textarea để sửa ngay (dòng đã bị sửa thì không còn tìm thấy)
   const selectLine = (lineText: string) => {
@@ -81,6 +83,13 @@ export const ExtractedTextPanel: React.FC<ExtractedTextPanelProps> = ({ job, onR
         <p role="status" className="flex items-start gap-2 p-3 rounded-lg bg-tertiary-fixed/50 text-on-tertiary-fixed text-body-sm">
           <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">warning</span>
           <span>Độ tin cậy nhận dạng thấp. Hãy đối chiếu văn bản bên dưới với tài liệu gốc trước khi tạo bộ thẻ.</span>
+        </p>
+      )}
+
+      {degradedNotice && (
+        <p role="status" className="flex items-start gap-2 p-3 rounded-lg bg-tertiary-fixed/50 text-on-tertiary-fixed text-body-sm">
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">warning</span>
+          <span>{degradedNotice}</span>
         </p>
       )}
 

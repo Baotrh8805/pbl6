@@ -2,8 +2,10 @@ package com.pbl6.flashcard.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.pbl6.flashcard.model.KanjiMnemonic;
 import com.pbl6.flashcard.repository.KanjiMnemonicRepository;
+import com.pbl6.flashcard.service.dictionary.DictionaryStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -12,6 +14,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,18 +35,105 @@ public class NlpService {
     public static final int MAX_SUGGEST_LIMIT = 50;
     public static final int RADICAL_COUNT = 214;
     private static final Set<String> LEVELS = Set.of("N5", "N4", "N3", "N2", "N1");
+    /** Chế độ sơ đồ chữ Hán (kanji_diagram.MODES của ai-service); rỗng = structure. */
+    static final List<String> DIAGRAM_MODES = List.of("structure", "compounds", "word");
+    /** Tham số k: một chữ Hán (chữ ngoài BMP là 2 đơn vị UTF-16), như max_length của ai-service. */
+    static final int MAX_DIAGRAM_CHAR = 2;
 
     static final Duration CACHE_TTL = Duration.ofMinutes(10);
     static final int CACHE_MAX_ENTRIES = 500;
 
     private final AiServiceClient ai;
     private final KanjiMnemonicRepository mnemonics;
+    private final DictionaryStore dictionary;
     private final TtlCache<String, JsonNode> cache =
             new TtlCache<>(CACHE_TTL.toMillis(), CACHE_MAX_ENTRIES, System::currentTimeMillis);
 
-    public NlpService(AiServiceClient ai, KanjiMnemonicRepository mnemonics) {
+    public NlpService(AiServiceClient ai, KanjiMnemonicRepository mnemonics, DictionaryStore dictionary) {
         this.ai = ai;
         this.mnemonics = mnemonics;
+        this.dictionary = dictionary;
+    }
+
+    /**
+     * Sơ đồ chữ Hán (spec 2026-10-30 D3 / D4): q là chữ Hán hoặc âm Hán-Việt (≤ 32 ký tự), mode structure | compounds. Trả JSON
+     * của ai-service sau khi ghép {@code meaningVi} từ dict_meanings (một truy vấn cho mọi khoá k:X / w:…) rồi cache theo q|mode:
+     * nghĩa Việt là dữ liệu dùng chung, không theo user; admin sửa nghĩa thì sơ đồ thấy sau ≤ 10 phút. Không gọi Gemini khi
+     * thiếu nghĩa — meaningVi null, panel hiện Hán-Việt + nghĩa Anh và nút tra từ điển.
+     */
+    public JsonNode kanjiDiagram(String q, String mode, String k) {
+        String query = query("q", q);
+        // mode trống → gửi trống để ai-service tự chọn (từ 2–4 chữ → word), spec 30/10 từ nhiều chữ §3
+        String m = mode == null || mode.isBlank() ? null : mode.trim();
+        if (m != null && !DIAGRAM_MODES.contains(m)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "mode không hợp lệ: " + m + " (chỉ nhận " + String.join(", ", DIAGRAM_MODES) + ").");
+        }
+        String ch = k == null || k.isBlank() ? null : k.trim();
+        if (ch != null && ch.length() > MAX_DIAGRAM_CHAR) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "k chỉ nhận một chữ Hán.");
+        }
+        return cached("diagram|" + query + "|" + (m == null ? "" : m) + "|" + (ch == null ? "" : ch),
+                () -> withMeaningVi(ai.kanjiDiagram(query, m, ch)));
+    }
+
+    /**
+     * Ghép meaningVi cho node chữ (id k:X), node từ (key), ứng viên chữ, detail (chữ tâm, công thức, phonOf, từ ghép), và ở
+     * chế độ từ: word (key), word.chars (k:X), wordCandidates (key) — vẫn một truy vấn dict_meanings.
+     */
+    private JsonNode withMeaningVi(JsonNode res) {
+        if (!(res instanceof ObjectNode obj)) return res;
+        ObjectNode out = obj.deepCopy();
+        Set<String> keys = new LinkedHashSet<>();
+        for (JsonNode n : out.path("nodes")) keys.add(nodeKey(n));
+        for (JsonNode c : out.path("candidates")) keys.add(kanjiKey(c.get("kanji")));
+        JsonNode word = out.path("word");
+        if (word.isObject()) {
+            keys.add(text(word.get("key")));
+            for (JsonNode c : word.path("chars")) keys.add(kanjiKey(c.get("kanji")));
+        }
+        for (JsonNode w : out.path("wordCandidates")) keys.add(text(w.get("key")));
+        JsonNode detail = out.path("detail");
+        if (detail.isObject()) {
+            keys.add(kanjiKey(detail.get("kanji")));
+            for (JsonNode f : detail.path("formula")) keys.add(kanjiKey(f.get("part")));
+            for (JsonNode p : detail.path("phonOf")) keys.add(kanjiKey(p.get("kanji")));
+            for (JsonNode w : detail.path("compounds")) keys.add(text(w.get("key")));
+        }
+        keys.remove(null);
+        Map<String, DictionaryStore.Meaning> found = keys.isEmpty() ? Map.of() : dictionary.meanings(keys);
+        for (JsonNode n : out.path("nodes")) putMeaningVi(n, nodeKey(n), found);
+        for (JsonNode c : out.path("candidates")) putMeaningVi(c, kanjiKey(c.get("kanji")), found);
+        if (word.isObject()) {
+            putMeaningVi(word, text(word.get("key")), found);
+            for (JsonNode c : word.path("chars")) putMeaningVi(c, kanjiKey(c.get("kanji")), found);
+        }
+        for (JsonNode w : out.path("wordCandidates")) putMeaningVi(w, text(w.get("key")), found);
+        if (detail.isObject()) {
+            putMeaningVi(detail, kanjiKey(detail.get("kanji")), found);
+            for (JsonNode f : detail.path("formula")) putMeaningVi(f, kanjiKey(f.get("part")), found);
+            for (JsonNode p : detail.path("phonOf")) putMeaningVi(p, kanjiKey(p.get("kanji")), found);
+            for (JsonNode w : detail.path("compounds")) putMeaningVi(w, text(w.get("key")), found);
+        }
+        return out;
+    }
+
+    private static String nodeKey(JsonNode node) {
+        String id = text(node.get("id"));
+        if (id != null && id.startsWith("k:")) return id;
+        return "word".equals(text(node.get("type"))) ? text(node.get("key")) : null;
+    }
+
+    private static String kanjiKey(JsonNode ch) {
+        String c = text(ch);
+        return c == null ? null : "k:" + c;
+    }
+
+    private static void putMeaningVi(JsonNode target, String key, Map<String, DictionaryStore.Meaning> found) {
+        if (!(target instanceof ObjectNode o)) return;
+        DictionaryStore.Meaning m = key == null ? null : found.get(key);
+        if (m != null && m.meaningVi() != null) o.put("meaningVi", m.meaningVi());
+        else o.putNull("meaningVi");
     }
 
     public JsonNode hanVietGraph(String reading, String level, Integer limit) {

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { extractErrorMessage } from "@/services/apiClient";
 import { fetchDictEntry, searchDictionary, tokenizeForDictionary } from "@/services/dictionaryService";
 import type { DictEntry, DictKey, DictToken } from "@/types/dictionary.types";
-import { headOf, primaryMeaning } from "../dictUtils";
+import { headOf, jlptChipClass, primaryMeaning } from "../dictUtils";
 
 /**
  * Tra nhanh (D25, spec §7.3): popover nhỏ cho một từ — từ, cách đọc, Hán-Việt, nghĩa, nút "Mở trong từ điển". Dùng ở câu ví dụ
@@ -83,7 +83,7 @@ export const DictPopover: React.FC<{
         <div className="mt-2 flex flex-col gap-1.5 text-body-sm">
           <div className="flex flex-wrap gap-2 text-xs">
             {entry.hanViet && <span className="font-semibold text-tertiary tracking-wide">{entry.hanViet}</span>}
-            {entry.jlpt && <span className="px-1.5 rounded bg-primary/10 text-primary font-semibold">{entry.jlpt}</span>}
+            {entry.jlpt && <span className={`px-1.5 rounded font-semibold ${jlptChipClass(entry.jlpt)}`}>{entry.jlpt}</span>}
           </div>
           {meaning && <p lang={meaning.lang} className="text-on-surface">{meaning.text}</p>}
           {onOpen && (

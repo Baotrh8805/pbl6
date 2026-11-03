@@ -299,7 +299,8 @@ Thư mục con và bộ thẻ bên trong sẽ được chuyển ra ngoài cùng,
                 </label>
                 <input
                     id="deck-search"
-                    type="search"
+                    type="text"
+                    enterKeyHint="search"
                     value={q}
                     onChange={(e) => setParam("q", e.target.value)}
                     placeholder="Tìm bộ thẻ..."

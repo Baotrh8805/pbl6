@@ -1,5 +1,82 @@
 # Nhật ký thay đổi
 
+## 30/10/2026 (khuya): Thư viện cộng đồng — sửa thiếu sót sau rà soát "Cộng đồng & Khám phá"
+Rà soát ba trang Thư viện / Từ điển / Sơ đồ chữ Hán; người dùng chọn làm nhóm A (Thư viện). Không có migration. Đề xuất để sau:
+Từ điển (Sổ tay tạo bộ thẻ / xuất CSV, "Báo cáo của tôi", tìm theo nghĩa Việt / Anh), cộng đồng (trang tác giả, hữu ích / báo cáo từng
+bình luận Thư viện, tìm theo nội dung thẻ), học sâu (hoạt hình thứ tự nét, từ của ngày, lọc JLPT khi tra từ).
+- **Bỏ chữ cứng sai sự thật**: "+ Audio", "Tokyo Accent", "SRS Interval: 3 Ngày", nhãn "MIỄN PHÍ" trên mọi thẻ, "kèm audio & ví dụ";
+  ô tìm không còn hứa tìm theo từ khoá Kanji trong thẻ (backend chỉ tìm tên / mô tả / tác giả).
+- **Bộ lọc trên URL** (`?q=&level=&cat=&tab=&sort=&page=`, `libraryParams.ts`): Back quay lại bộ lọc trước, chia sẻ được link, quay lại
+  qua sidebar khôi phục bộ lọc (`lib/searchMemory.ts`); "Đặt lại bộ lọc" đặt lại cả sắp xếp.
+- **Không lưu trùng**: lưu lần hai → 409 `DECK_ALREADY_SAVED`; thẻ / banner / xem trước hiện "Đã lưu · Mở" (`savedDeckId`); lượt tải
+  đếm theo người lưu (`count(DISTINCT owner)`), bản trùng cũ không đếm hai lần.
+- **Phổ biến** cần TB ≥ 4,5 **và** ≥ 3 lượt đánh giá.
+- Kiểm: LibraryDeckIT +2 (7 xanh) cùng 7 lớp IT liên quan; selfcheck `library.ts` +14; lint / tsc / build xanh. **Chưa bấm thử trên trình duyệt.**
+- **Sửa lỗi kẹt trang (Từ điển, Thư viện)**: khôi phục trạng thái đã nhớ chạy lại sau mỗi lần đổi tab / bộ lọc vì effect phụ thuộc
+  `setSearchParams` (react-router đổi danh tính mỗi khi URL đổi) → bấm "Từ vựng" / "Câu" bị kéo về `?tab=kanji&k=結`; tab Từ vựng (URL
+  trống) còn bị coi là "đang chờ khôi phục" nên không vẽ. Gom vào hook `lib/useSearchMemory.ts`: chỉ khôi phục cho đúng mục lịch sử
+  lúc vào trang (`location.key`), một lần.
+
+## 30/10/2026 (tối): Sơ đồ chữ Hán — tra bằng từ nhiều chữ, kana, Hán-Việt nhiều âm ("Phân tích từ")
+Spec [Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md](Plan/specs/2026-10-30-so-do-chu-han-tu-nhieu-chu-design.md), kế hoạch
+[Plan/plans/2026-10-30-so-do-chu-han-tu-nhieu-chu.md](Plan/plans/2026-10-30-so-do-chu-han-tu-nhieu-chu.md). Không có migration, không thêm thư
+viện. Trước đây gõ `学生` chỉ vẽ 学, `がくせい` và `học sinh` báo không tìm thấy.
+- **ai-service** `kanji_diagram`: phân giải câu tìm theo cụm chữ Hán liền nhau đầu tiên (2–4 chữ là từ, ≥ 5 chỉ chọn chữ), toàn kana
+  (từ JLPT rồi JMdict thông dụng, từ JMdict chỉ giữ khi mọi chữ thuộc bộ chữ JLPT để bỏ dạng cũ 學生 / 髮), Hán-Việt 2–4 âm có / không
+  dấu; nhiều từ → `wordCandidates` (≤ 12). Chế độ mới `word`: tâm là từ, mỗi chữ cùng thành phần trực tiếp, không họ chỉ âm / từ ghép.
+  `mode` trống = tự chọn, `k` = chữ chọn trong từ; payload thêm `chars`, `selectedChar`, `word`, `wordCandidates`.
+- **backend**: chuyển `mode` trống / `k` xuống ai-service, `k` > 2 ký tự → 400, cache theo `q|mode|k`, ghép nghĩa Việt cho từ,
+  các chữ của từ và ứng viên từ trong cùng một truy vấn `dict_meanings`.
+- **frontend**: tab "Phân tích từ" (chỉ khi từ 2–4 chữ), thanh chọn chữ trên sơ đồ, khung chọn từ, panel từ (thẻ từ + mỗi chữ có
+  công thức, bộ, "Xem cấu tạo"), bố cục `wordLayout`. URL `?q=学生`, `?q=学生&mode=structure&k=生`.
+- **Kiểm**: pytest 36 (quét mọi từ JLPT 2–4 chữ ở chế độ word: không node trùng / cạnh treo / tự nối), NlpIT 8 + AiServiceClientNlpTest 4,
+  selfcheck / lint / tsc / build xanh; ai-service thật: 学生, 日本語, がくせい, học sinh → Phân tích từ; かみ → 5 ứng viên;
+  日本語能力試験 → Cấu tạo 日 + thanh chọn chữ; `?q=時&mode=word` → Cấu tạo. **Chưa bấm thử trên trình duyệt.**
+- **Không mất câu tìm khi rời trang**: mục sidebar dẫn về `/graph` không kèm `?q=` nên quay lại là trang trống. Trang nhớ q / mode / k
+  gần nhất trong sessionStorage của tab (`diagramMemory.ts`) và khôi phục bằng `replace` khi mở `/graph` trống; selfcheck +6.
+- **Từ điển cũng vậy**: `/dictionary` nhớ tab + tham số của tab (q / e, s, t / dir, k / sub / r, reading / level) và khôi phục **một
+  lần lúc vào trang** (xoá ô tìm thì URL trống là ý người dùng, không bị đè). Đọc / ghi dùng chung `lib/searchMemory.ts`; selfcheck +6.
+- **Bố cục sơ đồ rộng và thoáng hơn** (ảnh người dùng 企業): bỏ đoạn giải thích đầu trang, khung sơ đồ cao tối đa 78vh (trước 70vh);
+  Phân tích từ quạt thành phần ra ngoài trong ≤ 150°, cách nhau ≥ 84 (trước 60, quạt tới 300° nên lấn chữ bên cạnh), nới bán kính khi
+  nhiều thành phần; vòng tròn nhỏ lại (tâm 36→30, thành phần 26→22, chữ 22→20); nhãn cạnh 11→8,5 px, nét mảnh hơn. selfcheck +3.
+- **Từ 2 chữ không còn trải ngang**: hai chữ gần tâm hơn (vòng 0,15 thay 0,24), thành phần quạt chéo lên / xuống (120–220°, ép ngang
+  0,7 / giãn dọc 1,15), bán kính nới tới khi không đè node đã đặt. Khung vừa sơ đồ rộng / cao: 企業 2,42 → 1,23; 学生 2,03 → 1,13;
+  鬱学 1,82 → 1,02 (từ 3–4 chữ giữ nguyên, đã gần vuông). selfcheck +4.
+- **Mũi tên ngắn còn ~60%** (yêu cầu người dùng): các vòng không còn theo tỉ lệ cạnh khung (0,24 / 0,4 / 0,3 / 0,43) mà theo độ dài
+  mũi tên mong muốn + phần nằm trong hai node, chỉ nới khi đông node (không đè). Mũi tên trung bình: 時 Cấu tạo 288 → 179, Từ ghép
+  100 → 65, 企業 65 → 37, 学生 64 → 36, 図書館員 72 → 46, 鬱学 115 → 73. Từ 2 chữ quạt 170–240° không ép trục (rộng / cao 1,27–1,33).
+  Độ dài mũi tên đo bằng `visibleArrowLength` dùng chung với canvas; selfcheck +12. Node mở thêm (dấu +) giữ khoảng cách cũ.
+
+## 30/10/2026: Sơ đồ chữ Hán thay trang `/graph` (Đợt 1–3, nhánh `Graph`)
+Spec [Plan/specs/2026-10-30-so-do-chu-han-design.md](Plan/specs/2026-10-30-so-do-chu-han-design.md), kế hoạch
+[Plan/plans/2026-10-30-so-do-chu-han.md](Plan/plans/2026-10-30-so-do-chu-han.md). Không có migration. Quyết định: thay giao diện người học
+của đồ thị Neo4j bằng sơ đồ cấu tạo chữ Hán chạy từ dữ liệu tĩnh; backend / ai-service / Admin của Neo4j giữ nguyên; nghĩa Việt từng chữ
+lấy từ `dict_meanings`, không gọi Gemini khi mở sơ đồ.
+- **Dữ liệu**: `kanji_parts.csv` (commit, 6 315 chữ) dựng từ KanjiVG bằng `build_dicts.py --only kanji_parts` — con trực tiếp theo thứ tự
+  viết, biến thể → chữ gốc, vị trí, bộ (`kvg:radical`), **phần chỉ âm** (`kvg:phon` chuẩn hoá về một chữ). KRADFILE không dùng được cho
+  việc này vì phẳng (時 chỉ có 寸 土 日, không có 寺). Phủ 1 908 / 1 971 chữ JLPT, 1 065 chữ có chỉ âm; họ 寺 ra đủ 時 持 待 特 等 詩 侍.
+- **ai-service**: `kanjidata.parts()` / `phon_family()` (cờ health `kanjiParts`); `kanji_diagram.py` + `GET /api/kanji-info/diagram?q=&mode=`:
+  tra bằng chữ Hán hoặc âm Hán-Việt (nhiều chữ → `candidates`), chế độ `structure` (thành phần, bộ KanjiVG hoặc Unihan, họ chỉ âm trong
+  JLPT ≤ 12 — cạnh `phon` khi trùng âm On, `family` khi chỉ cùng phần) và `compounds` (≤ 12 từ, JLPT trước, kèm `key` JMdict / JLPT),
+  `detail` cho panel (On / Kun, bộ, công thức, "làm phần chỉ âm", từ ghép). Test 22 + 5 + 14 + 2.
+- **Backend**: `GET /api/nlp/kanji-diagram` (USER) → `NlpService.kanjiDiagram`: kiểm q ≤ 32 / mode, ghép `meaningVi` cho mọi node chữ,
+  từ, ứng viên và detail bằng **một** truy vấn `dict_meanings`, cache 10 phút theo q|mode. `NlpIT` + 1, `AiServiceClientNlpTest` + 1.
+- **Frontend**: `/graph` viết lại — tab Cấu tạo / Từ ghép, ô tìm + chip, `?q=&mode=`; `KanjiDiagramCanvas` (SVG: tâm xanh dương, thành
+  phần cam, bộ viền đỏ, họ chỉ âm vàng, từ ghép tím, mũi tên + nhãn cạnh, chú thích); `KanjiDiagramPanel` (avatar, Hán-Việt, nghĩa Việt
+  hoặc Anh, JLPT, "Bắt đầu lại từ chữ này", "Tra chữ này", On / Kun, công thức, Từ có chữ, Làm phần chỉ âm, chọn chữ khi âm nhiều chữ);
+  bố cục theo cung tất định `diagramLayout.ts` (selfcheck `diagram.ts`). **Gỡ** `KnowledgeGraphSvg`, `GraphNodePanel`, `GraphAskPanel`,
+  `GraphRecommendations`, `GraphPathFinder`, `GraphBits`, `useGraphAsync`, `lib/graphLayout.ts`, `selfcheck/graph.ts`; `graphService` /
+  `graph.types` chỉ còn phần Admin. Sidebar: "Sơ Đồ Chữ Hán".
+- **Đợt 2 — tương tác canvas** (`useViewBox`): cuộn chuột phóng quanh con trỏ (wheel gắn native, không passive), kéo nền pan, pinch
+  hai ngón, nút + − ⤢, phím + − 0 (kẹp 0,4×–3×); kéo node sắp lại; huy hiệu **+** / đúp chuột mở thêm liên kết (gọi lại API cho chữ
+  đó, `mergeDiagram` khử trùng, `placeAround` đặt quanh node mẹ), "Mở thêm 1 tầng" (≤ 8 node), "Thu gọn"; nút "← Quay lại [chữ
+  trước]"; Shift+Enter đổi tâm; `aria-live`. Trạng thái mở thêm / kéo gắn với khoá q|mode.
+- **Đợt 3**: heuristic **"chỉ âm?"** cho chữ KanjiVG không đánh dấu `kvg:phon` (part là chữ Hán thật, không phải bộ / bộ thủ Khang Hi,
+  trùng ≥ 1 trong 2 âm On chính; 117 chữ JLPT, nét đứt + dấu hỏi + ghi chú, `guess` / `phonGuess` trong payload); autocomplete âm
+  Hán-Việt (datalist, `/nlp/han-viet-suggest`); thêm từ ghép vào bộ thẻ (tái dùng `AddWordToDeckModal`).
+- **Hiệu năng** (đo in-process TestClient, máy dev 8 GB): lần đầu 1,5 s (nạp bảng), sau đó Cấu tạo 8–23 ms, Từ ghép ~10 ms, âm nhiều
+  chữ (THANH) 85 ms; backend cache 10 phút. **Chưa kiểm tay trên trình duyệt** (xem báo cáo `Plan/reports/2026-10-30-so-do-chu-han.md`).
+
 ## 28/10/2026 (chiều): Dịch offline dự phòng + tab Dịch không bao giờ báo lỗi (D34)
 Người dùng yêu cầu: luôn trả bản dịch, không bao giờ báo lỗi cho người học. Không có migration. Đảo phần "không dịch offline" của D33.
 - **Gỡ "Báo bản dịch sai"** (V40, revert 1ac673d): người dùng chốt báo cáo chỉ dành cho tra từ điển.

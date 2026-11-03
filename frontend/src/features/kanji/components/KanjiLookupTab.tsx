@@ -44,11 +44,14 @@ export const KanjiLookupTab: React.FC<KanjiLookupTabProps> = ({ kanji, truncated
 
   // Chữ trên URL đổi từ ngoài (link từ tab Bộ thủ / trang bộ thẻ, Back): đồng bộ ô nhập (so khoá trong render, không cần effect).
   const [lastQuery, setLastQuery] = useState(query);
+  // Thu gọn / mở rộng từng thẻ (31/10): tra ≥ 3 chữ thì chỉ chữ đầu mở sẵn; bấm thì ghi đè cho chữ đó. Đổi chữ tra = về mặc định.
+  const [openOverride, setOpenOverride] = useState<Record<string, boolean>>({});
   if (query !== lastQuery) {
     setLastQuery(query);
     setInput(query);
     setInputError(null);
     setCreateError(null);
+    setOpenOverride({});
   }
 
   const level = isLevel(userLevel) ? userLevel : null;
@@ -59,6 +62,11 @@ export const KanjiLookupTab: React.FC<KanjiLookupTabProps> = ({ kanji, truncated
   const cards = result.data ?? [];
   const missing = result.data ? kanji.filter((k) => !cards.some((c) => c.kanji === k)) : [];
   const deckCards = onKunDeckCards(cards);
+  const defaultOpen = (i: number) => cards.length <= 2 || i === 0;
+  const isOpen = (k: string, i: number) => openOverride[k] ?? defaultOpen(i);
+  const toggle = (k: string, i: number) => setOpenOverride((o) => ({ ...o, [k]: !(o[k] ?? defaultOpen(i)) }));
+  const allOpen = cards.length > 0 && cards.every((c, i) => isOpen(c.kanji, i));
+  const setAllOpen = (v: boolean) => setOpenOverride(Object.fromEntries(cards.map((c) => [c.kanji, v])));
 
   const submit = (text: string) => {
     const list = extractKanji(text);
@@ -107,7 +115,8 @@ export const KanjiLookupTab: React.FC<KanjiLookupTabProps> = ({ kanji, truncated
         <div className="flex gap-2">
           <input
             id={inputId}
-            type="search"
+            type="text"
+            enterKeyHint="search"
             lang="ja"
             value={input}
             onChange={(e) => {
@@ -216,7 +225,18 @@ export const KanjiLookupTab: React.FC<KanjiLookupTabProps> = ({ kanji, truncated
             </p>
           ) : (
             <div className="flex flex-col gap-space-md">
-              {cards.map((c) => (
+              {cards.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setAllOpen(!allOpen)}
+                  aria-pressed={allOpen}
+                  className="self-end -mb-1 inline-flex items-center gap-1 text-label-md font-semibold text-primary hover:underline"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{allOpen ? "unfold_less" : "unfold_more"}</span>
+                  {allOpen ? "Thu gọn tất cả" : "Mở rộng tất cả"}
+                </button>
+              )}
+              {cards.map((c, i) => (
                 <KanjiInfoCardView
                   key={c.kanji}
                   card={c}
@@ -224,6 +244,8 @@ export const KanjiLookupTab: React.FC<KanjiLookupTabProps> = ({ kanji, truncated
                   onWrite={setWriteCard}
                   onSpeakError={setSpeakError}
                   query={query}
+                  expanded={isOpen(c.kanji, i)}
+                  onToggle={() => toggle(c.kanji, i)}
                 />
               ))}
             </div>

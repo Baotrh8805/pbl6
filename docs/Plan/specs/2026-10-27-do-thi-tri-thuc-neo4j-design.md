@@ -3,6 +3,11 @@
 Ngày 27/10/2026 · nhánh `a` · thay quyết định 19/10 ("GraphRAG / Neo4j thật ngoài phạm vi") bằng **D30** (xem §13 và
 [2026-10-19-quyet-dinh-da-chot.md](2026-10-19-quyet-dinh-da-chot.md)). Kế hoạch việc: [plans/2026-10-27-do-thi-tri-thuc-neo4j.md](../plans/2026-10-27-do-thi-tri-thuc-neo4j.md).
 
+> **Cập nhật 30/10/2026 (nhánh `Graph`):** trang `/graph` của người học (4 tab Khám phá / Gợi ý / Hỏi đáp / Đường nối, §9) đã được
+> thay bằng **Sơ đồ chữ Hán** chạy từ dữ liệu tĩnh, không cần Neo4j — xem
+> [2026-10-30-so-do-chu-han-design.md](2026-10-30-so-do-chu-han-design.md). Backend `/api/graph/*`, ai-service `app/graph/`, job
+> đồng bộ đêm và thẻ Admin › Đồ thị **giữ nguyên**; gỡ hẳn Neo4j là quyết định riêng, chưa chốt.
+
 ## 1. Mục tiêu và phạm vi
 
 Làm **đúng đề cương**: dùng Neo4j thật, đồng bộ dữ liệu từ Postgres sang, truy vấn bằng Cypher, và hỏi đáp GraphRAG (đồ thị +
