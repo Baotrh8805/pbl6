@@ -25,36 +25,40 @@ export const LearningPathCard: React.FC<LearningPathCardProps> = ({ path, now, o
   const completion = active ? (path.completion ?? null) : null;
 
   return (
-    <li className="relative p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-outline-variant transition-colors">
-      <Link to={`/roadmap/${encodeURIComponent(path.id)}`} className="flex flex-col gap-2 min-w-0 group">
+    <li className="relative p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-blue-300 hover:shadow-md transition-all flex flex-col justify-between gap-3">
+      <Link to={`/roadmap/${encodeURIComponent(path.id)}`} className="flex flex-col gap-2.5 min-w-0 group">
         <div className="flex items-center gap-2 flex-wrap pr-10">
           <PathStatusChip status={path.status} completed={!!path.completedAt} />
           {path.sourceType === "remedial" ? (
             <RemedialChip />
           ) : (
-            <span className="text-label-sm text-outline">{SOURCE_TYPE_LABELS[path.sourceType]}</span>
+            <span className="text-xs font-medium text-slate-500">{SOURCE_TYPE_LABELS[path.sourceType]}</span>
           )}
         </div>
-        <h2 className="text-title-md font-semibold text-on-surface truncate group-hover:text-primary">{path.title}</h2>
-        <p className="text-label-sm text-outline">{dayLabel}</p>
+        <h2 className="text-base font-bold text-slate-900 truncate group-hover:text-blue-600 transition-colors">
+          {path.title}
+        </h2>
+        <p className="text-xs font-medium text-slate-500">{dayLabel}</p>
         {today && hasCounts ? (
           today.state === "during" || today.state === "after" ? (
-            <p className="text-label-md text-primary font-semibold">Hôm nay: {todayCountsLabel({
-              newCount: today.newCount ?? 0,
-              dueCount: today.dueCount ?? 0,
-              behindCount: today.behindCount ?? 0,
-            })}</p>
+            <p className="text-xs font-semibold text-blue-600">
+              Hôm nay: {todayCountsLabel({
+                newCount: today.newCount ?? 0,
+                dueCount: today.dueCount ?? 0,
+                behindCount: today.behindCount ?? 0,
+              })}
+            </p>
           ) : today.state === "rest" && (today.dueCount ?? 0) > 0 ? (
-            <p className="text-label-md text-on-surface-variant font-semibold">Nghỉ theo lịch · ôn {today.dueCount} nếu muốn</p>
+            <p className="text-xs font-medium text-slate-500">Nghỉ theo lịch · ôn {today.dueCount} nếu muốn</p>
           ) : null
         ) : (
           today?.state === "during" && (
-            <p className="text-label-md text-primary font-semibold">Hôm nay: {todayCardCount(today.tasks ?? [])} thẻ</p>
+            <p className="text-xs font-semibold text-blue-600">Hôm nay: {todayCardCount(today.tasks ?? [])} thẻ</p>
           )
         )}
         {completion && completion.total > 0 && (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between text-label-sm text-on-surface-variant">
+          <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
               <span>Đã học {completion.learnedPct}%</span>
               <span>{completion.mastered} đã thuộc</span>
             </div>
@@ -66,13 +70,36 @@ export const LearningPathCard: React.FC<LearningPathCardProps> = ({ path, now, o
         <button
           type="button"
           onClick={() => onDelete(path)}
-          className="absolute top-2 right-2 p-2 rounded-lg text-outline hover:text-error hover:bg-surface-container transition-colors cursor-pointer"
+          className="absolute top-3 right-3 p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
           title="Xoá lộ trình này"
           aria-label={`Xoá ${path.title}`}
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">delete</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
         </button>
       )}
     </li>
   );
 };
+
+export const LearningPathCardSkeleton: React.FC = () => (
+  <li className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col justify-between gap-3 animate-pulse" aria-hidden="true">
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="h-5 w-20 rounded-full bg-slate-200" />
+        <div className="h-4 w-16 rounded bg-slate-100" />
+      </div>
+      <div className="space-y-1.5">
+        <div className="h-5 w-4/5 rounded bg-slate-200" />
+        <div className="h-3.5 w-1/3 rounded bg-slate-100" />
+      </div>
+      <div className="h-4 w-3/5 rounded bg-slate-100" />
+    </div>
+    <div className="pt-3 border-t border-slate-100 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="h-3 w-20 rounded bg-slate-100" />
+        <div className="h-3 w-16 rounded bg-slate-100" />
+      </div>
+      <div className="w-full h-2 rounded-full bg-slate-100" />
+    </div>
+  </li>
+);

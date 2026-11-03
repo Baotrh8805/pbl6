@@ -1019,7 +1019,7 @@ async function runSelfCheck() {
   assertStrictEqual(`${canReEnrichPath(jobOf("FAILED", false, "quota"))},${canReEnrichPath(jobOf("FAILED", false, "error"))},${canReEnrichPath(jobOf("FAILED", false, "no_api_key"))},${canReEnrichPath(jobOf("FAILED", true, "quota"))}`, "true,true,false,false", "Job lộ trình FAILED (dịch lại bị ngắt) vẫn cho Dịch lại nghĩa; vẫn đòi lý do quota/lỗi và chưa dịch được");
   assertStrictEqual(sessionCountsLabel({ new: 3, due: 2, catchup: 0, total: 10 }, 5), "Ôn 2 · Mới 3 · Luyện 5", "Phiên chương: thêm Luyện = thẻ đã học chưa đến hạn để cộng đủ số thẻ");
   assertStrictEqual(sessionCountsLabel({ new: 10, due: 5, catchup: 3, total: 18 }, 0), "Ôn 5 · Nợ 3 · Mới 10", "Không có thẻ luyện -> nhãn như cũ");
-  assertStrictEqual(`${sessionDoneHeading(null)}|${sessionDoneHeading("today")}|${sessionDoneHeading("chapter")}|${sessionDoneHeading("catchup")}|${sessionDoneHeading("due")}`, "Xong phiên hôm nay 🎉|Xong phiên hôm nay 🎉|Xong phiên học chương 🎉|Xong phiên học bù 🎉|Xong phiên ôn thẻ đến hạn 🎉", "Tiêu đề kết thúc theo loại phiên; học bộ thẻ giữ câu cũ");
+  assertStrictEqual(`${sessionDoneHeading(null)}|${sessionDoneHeading("today")}|${sessionDoneHeading("chapter")}|${sessionDoneHeading("catchup")}|${sessionDoneHeading("due")}`, "Xong phiên hôm nay!|Xong phiên hôm nay!|Xong phiên học chương!|Xong phiên học bù!|Xong phiên ôn thẻ đến hạn!", "Tiêu đề kết thúc theo loại phiên; học bộ thẻ giữ câu cũ");
   assertStrictEqual(`${MAX_REACTION_MS},${clampReactionMs(MAX_REACTION_MS + 1)}`, "600000,600000", "Trần phản xạ một nguồn (lib/srs) = CHECK review_logs; kẹp đúng tại trần");
 
   // 25. E5 — chế độ chỉ nghe (audio-only)

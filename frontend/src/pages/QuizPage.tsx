@@ -45,6 +45,30 @@ type SaveState = "saved" | "saving" | "error";
 /** Lỗi do trạng thái lượt làm (đã nộp / hết giờ / không còn): tải lại từ server thay vì thử lại. */
 const isStateConflict = (e: unknown) => isAxiosError(e) && (e.response?.status === 409 || e.response?.status === 404);
 
+const QuizPageSkeleton: React.FC = () => (
+    <section className="min-h-screen bg-slate-50 py-8 px-4" aria-busy="true" aria-live="polite">
+        <div className="max-w-2xl mx-auto flex flex-col gap-6 animate-pulse">
+            <div className="flex items-center justify-between pb-2">
+                <div className="h-5 w-36 rounded bg-slate-200" />
+                <div className="h-5 w-24 rounded bg-slate-200" />
+            </div>
+            <div className="p-8 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col items-center gap-4">
+                <div className="h-4 w-20 rounded bg-slate-100" />
+                <div className="h-10 w-48 rounded bg-slate-200" />
+                <div className="h-5 w-32 rounded bg-slate-100" />
+            </div>
+            <div className="flex flex-col gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-14 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center px-4 gap-3">
+                        <div className="w-6 h-6 rounded bg-slate-100" />
+                        <div className="h-4 w-3/5 rounded bg-slate-200" />
+                    </div>
+                ))}
+            </div>
+        </div>
+    </section>
+);
+
 export const QuizPage: React.FC = () => {
     const { deckId = "" } = useParams(); // server kiểm quyền bộ thẻ, sai thì 404
     const [params, setParams] = useSearchParams();
@@ -182,12 +206,13 @@ export const QuizPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deckId]);
 
-    const start = async (m: QuizMode) => {
+    const start = async (m: QuizMode, customSize?: number) => {
         setBusy(true);
         setError("");
         try {
             // Server chưa hỗ trợ loại câu (capabilities 404/405) -> undefined: gửi đúng body cũ.
-            const state = await createQuizAttempt(deckId, size, m, requestTypes);
+            const targetSize = customSize ?? size;
+            const state = await createQuizAttempt(deckId, targetSize, m, requestTypes);
             if (!state?.attemptId || state.questions.length === 0) {
                 setError(
                     requestTypes && requestTypes.some((t) => t !== "meaning")
@@ -383,13 +408,13 @@ export const QuizPage: React.FC = () => {
             .catch(() => setOpenAttempt(null));
     };
 
+    const handleRetakeIncorrect = (incorrectCardIds: string[]) => {
+        void start("practice", Math.min(20, incorrectCardIds.length));
+    };
+
     // ---------- giao diện ----------
     if (loading) {
-        return (
-            <section className={shell} aria-busy="true" aria-live="polite">
-                <p className="max-w-md mx-auto text-on-surface-variant">Đang tải...</p>
-            </section>
-        );
+        return <QuizPageSkeleton />;
     }
 
     // Đã nộp: tổng kết + xem lại toàn bộ đáp án và lời giải
@@ -403,6 +428,7 @@ export const QuizPage: React.FC = () => {
                 flagNotice={flagNotice}
                 onFlag={openFlag}
                 onRestart={backToStart}
+                onRetakeIncorrect={handleRetakeIncorrect}
             >
                 <FlagQuestionModal target={flagTarget} onClose={() => setFlagTarget(null)} onFlagged={onFlagged} />
             </QuizReview>
@@ -453,7 +479,8 @@ export const QuizPage: React.FC = () => {
                     {isExam ? (
                         <>
                             {/* role="timer" không tự đọc mỗi giây; chỉ báo cho screen reader ở vài mốc. */}
-                            <span role="timer" className={left <= 30 ? "text-error font-semibold" : ""}>
+                            <span role="timer" className={left <= 30 ? "text-error font-semibold flex items-center gap-1" : "flex items-center gap-1"}>
+                                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">timer</span>
                                 Còn {mmss(left)}
                             </span>
                             <span aria-live="assertive" className="sr-only">
@@ -468,6 +495,23 @@ export const QuizPage: React.FC = () => {
                 </div>
 
                 {isExam && (
+                    <div className="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden -mt-2">
+                        <div
+                            className={`h-full rounded-full transition-all duration-1000 ${
+                                left <= 10
+                                    ? "bg-error animate-pulse"
+                                    : left <= 30
+                                      ? "bg-amber-500"
+                                      : "bg-secondary"
+                            }`}
+                            style={{
+                                width: `${Math.min(100, Math.max(0, (left / (attempt.timeLimitSeconds || (total * 30))) * 100))}%`,
+                            }}
+                        />
+                    </div>
+                )}
+
+                {isExam && (
                     <nav aria-label="Danh sách câu hỏi" className="flex gap-1.5 overflow-x-auto pb-1">
                         {attempt.questions.map((q, i) => (
                             <button
@@ -476,12 +520,12 @@ export const QuizPage: React.FC = () => {
                                 onClick={() => setIndex(i)}
                                 aria-label={`Câu ${i + 1}${answers[q.cardId] ? ", đã làm" : ", chưa làm"}`}
                                 aria-current={i === index ? "step" : undefined}
-                                className={`shrink-0 w-11 h-11 rounded-lg text-label-md font-semibold border ${
+                                className={`shrink-0 w-11 h-11 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                                     i === index
-                                        ? "border-primary bg-primary text-on-primary"
+                                        ? "border-blue-600 bg-blue-600 text-white shadow-xs"
                                         : answers[q.cardId]
-                                          ? "border-primary/40 bg-primary/10"
-                                          : "border-surface-container-high bg-surface-container-lowest"
+                                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                 }`}
                             >
                                 {i + 1}
@@ -519,13 +563,13 @@ export const QuizPage: React.FC = () => {
                             const revealed = feedback !== null;
                             const tone = revealed
                                 ? isCorrect
-                                    ? "border-secondary bg-secondary-container/40"
+                                    ? "border-emerald-500 bg-emerald-50/70 text-emerald-900"
                                     : isChosen
-                                      ? "border-error bg-error-container/30"
-                                      : "border-surface-container-high opacity-70"
+                                      ? "border-rose-500 bg-rose-50/70 text-rose-900"
+                                      : "border-slate-200 bg-white opacity-60 text-slate-500"
                                 : isChosen
-                                  ? "border-primary bg-primary/10"
-                                  : "border-surface-container-high bg-surface-container-lowest hover:bg-surface-container";
+                                  ? "border-blue-500 bg-blue-50/80 ring-2 ring-blue-500/20 text-blue-900 font-semibold"
+                                  : "border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-800";
                             return (
                                 <button
                                     key={`${i}-${option}`}
@@ -534,9 +578,9 @@ export const QuizPage: React.FC = () => {
                                     aria-checked={isChosen}
                                     onClick={() => void choose(option)}
                                     disabled={busy || revealed}
-                                    className={`text-left p-space-sm min-h-11 rounded-lg border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${tone}`}
+                                    className={`text-left p-3.5 min-h-12 rounded-2xl border shadow-xs transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer ${tone}`}
                                 >
-                                    <kbd className="text-label-sm text-outline mr-2">{i + 1}</kbd>
+                                    <kbd className="text-xs font-mono text-slate-500 mr-2.5 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">{i + 1}</kbd>
                                     <span lang={display.optionsLang} className={display.optionsLang ? "font-japanese text-title-md" : undefined}>
                                         {option}
                                     </span>
@@ -605,8 +649,8 @@ export const QuizPage: React.FC = () => {
             <FlagQuestionModal target={flagTarget} onClose={() => setFlagTarget(null)} onFlagged={onFlagged} />
 
             {/* Thanh hành động cố định ở đáy: dễ chạm bằng ngón cái trên điện thoại */}
-            <div className="fixed bottom-0 inset-x-0 bg-surface/95 border-t border-surface-container-high px-gutter py-space-sm">
-                <div className="max-w-2xl mx-auto flex items-center justify-between gap-space-sm">
+            <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-sm border-t border-slate-200/90 px-4 py-3 shadow-md z-10">
+                <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
                     {isExam ? (
                         <>
                             <button

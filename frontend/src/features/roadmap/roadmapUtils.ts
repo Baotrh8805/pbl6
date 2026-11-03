@@ -1,4 +1,4 @@
-import { dayKey } from "../../lib/learningStats.ts";
+﻿import { dayKey } from "../../lib/learningStats.ts";
 import { splitContent } from "../../lib/cardContent.ts";
 import { calcDeckProgress, type DeckProgress } from "../../lib/deckUtils.ts";
 import { MAX_REACTION_MS, isDue, type Review } from "../../lib/srs.ts";
@@ -344,7 +344,7 @@ export function sessionCountsLabel(counts: SessionCounts, cram = 0): string {
 
 /** Tiêu đề màn hình kết thúc theo loại phiên; học bộ thẻ / dải 1.0 (kind null) giữ câu cũ. */
 export const sessionDoneHeading = (kind: SessionKind | null): string =>
-    kind === null || kind === "today" ? "Xong phiên hôm nay 🎉" : `Xong phiên ${SESSION_KIND_LABELS[kind].toLowerCase()} 🎉`;
+    kind === null || kind === "today" ? "Xong phiên hôm nay!" : `Xong phiên ${SESSION_KIND_LABELS[kind].toLowerCase()}!`;
 
 /** Lời nhắn khi phiên rỗng, theo loại phiên và trạng thái ngày của lộ trình (spec §7). */
 export function sessionEmptyMessage(kind: SessionKind, state: LearningPathTodayState): string {

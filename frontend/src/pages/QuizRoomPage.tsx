@@ -13,6 +13,14 @@ import { Ruby } from "@/lib/ja";
 
 const SECONDS_PER_Q = 30; // QuizService.SECONDS_PER_QUESTION
 
+const LEVEL_BADGES: Record<string, string> = {
+  N5: "bg-blue-100 text-blue-900 border-blue-300",
+  N4: "bg-emerald-100 text-emerald-900 border-emerald-300",
+  N3: "bg-amber-100 text-amber-900 border-amber-300",
+  N2: "bg-rose-100 text-rose-900 border-rose-300",
+  N1: "bg-purple-100 text-purple-900 border-purple-300",
+};
+
 /** Nhãn mức nắm vững từ độ chính xác thật; chưa có bài thi thì nói rõ. */
 const masteryLabel = (accuracy: number | null): { title: string; hint: string } =>
     accuracy === null
@@ -25,6 +33,60 @@ const masteryLabel = (accuracy: number | null): { title: string; hint: string } 
               ? { title: "Cần ôn thêm", hint: "Nên ôn SRS trước khi thi lại" }
               : { title: "Cần ôn nhiều", hint: "Học lại thẻ rồi quay lại thi" };
 
+const QuizRoomSkeleton: React.FC = () => (
+    <div className="flex flex-col gap-6 animate-pulse" aria-label="Đang tải dữ liệu phòng thi">
+        {/* Header Skeleton */}
+        <div className="flex flex-col xl:flex-row items-start xl:items-end justify-between gap-4 pb-1 border-b border-slate-200/80">
+            <div className="space-y-2 max-w-2xl w-full">
+                <div className="h-5 w-48 rounded-full bg-slate-200" />
+                <div className="h-8 w-3/4 rounded-xl bg-slate-200" />
+                <div className="h-4 w-5/6 rounded-lg bg-slate-100" />
+            </div>
+            <div className="flex gap-2">
+                <div className="h-10 w-36 rounded-xl bg-slate-200" />
+                <div className="h-10 w-28 rounded-xl bg-slate-100" />
+            </div>
+        </div>
+
+        {/* 4 Bento Stat Skeletons */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between gap-3 h-36">
+                    <div className="flex items-center justify-between">
+                        <div className="h-4 w-24 rounded bg-slate-100" />
+                        <div className="w-9 h-9 rounded-xl bg-slate-100" />
+                    </div>
+                    <div className="h-8 w-20 rounded bg-slate-200" />
+                    <div className="h-2 w-full rounded-full bg-slate-100" />
+                </div>
+            ))}
+        </div>
+
+        {/* Filter Bar Skeleton */}
+        <div className="h-12 w-full bg-slate-100 rounded-2xl" />
+
+        {/* 4 Exam Card Skeletons */}
+        <div className="grid gap-5 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between gap-4 h-48">
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <div className="h-5 w-12 rounded-full bg-slate-200" />
+                            <div className="h-4 w-24 rounded bg-slate-100" />
+                        </div>
+                        <div className="h-5 w-3/4 rounded bg-slate-200" />
+                        <div className="h-4 w-1/2 rounded bg-slate-100" />
+                    </div>
+                    <div className="flex gap-2 pt-3 border-t border-slate-100">
+                        <div className="h-10 flex-1 rounded-xl bg-slate-200" />
+                        <div className="h-10 w-24 rounded-xl bg-slate-100" />
+                    </div>
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
 export const QuizRoomPage: React.FC = () => {
     const { data, error, loading } = useAsync(
         async () => {
@@ -35,6 +97,7 @@ export const QuizRoomPage: React.FC = () => {
     );
 
     const [selectedLevel, setSelectedLevel] = useState<string>("");
+    const [searchQuery, setSearchQuery] = useState<string>("");
     const [previewDeckId, setPreviewDeckId] = useState<string | null>(null);
     const [sampleQuestions, setSampleQuestions] = useState<TypedQuestion[]>([]);
     const [previewBusy, setPreviewBusy] = useState(false);
@@ -65,21 +128,14 @@ export const QuizRoomPage: React.FC = () => {
     };
 
     if (loading) {
-        return (
-            <section aria-live="polite" className="py-space-xl flex flex-col items-center justify-center gap-space-sm">
-                <span className="material-symbols-outlined text-[32px] text-primary animate-spin">
-                    progress_activity
-                </span>
-                <p className="text-on-surface-variant text-body-md font-medium">Đang tải trung tâm luyện thi Quiz...</p>
-            </section>
-        );
+        return <QuizRoomSkeleton />;
     }
 
     if (error || !data) {
         return (
-            <section aria-live="polite" className="py-space-lg flex flex-col items-start gap-space-sm">
-                <p className="text-error">{error || "Không thể tải danh sách phòng thi."}</p>
-                <Link to="/" className="text-primary hover:underline font-semibold">
+            <section aria-live="polite" className="py-6 flex flex-col items-start gap-3">
+                <p className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">{error || "Không thể tải danh sách phòng thi."}</p>
+                <Link to="/" className="text-blue-600 hover:underline font-semibold text-sm">
                     ← Về trang tổng quan
                 </Link>
             </section>
@@ -88,8 +144,17 @@ export const QuizRoomPage: React.FC = () => {
 
     const { decks, results } = data;
 
-    // Lọc theo level nếu người dùng chọn
-    const filteredDecks = selectedLevel ? decks.filter((d: Deck) => d.level === selectedLevel) : decks;
+    // Lọc theo level và từ khoá tìm kiếm
+    const filteredDecks = decks.filter((d: Deck) => {
+        if (selectedLevel && d.level !== selectedLevel) return false;
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const matchTitle = d.title.toLowerCase().includes(q);
+            const matchDesc = (d.description ?? "").toLowerCase().includes(q);
+            if (!matchTitle && !matchDesc) return false;
+        }
+        return true;
+    });
 
     // Thống kê từ 10 bài gần nhất (server chấm). Chưa có bài nào -> không bịa số.
     // Chỉ bài thi (exam): luyện tập thấy đáp án ngay nên không đưa vào số liệu trình độ.
@@ -100,39 +165,29 @@ export const QuizRoomPage: React.FC = () => {
     const mastery = masteryLabel(accuracyRate);
 
     return (
-        <section className="flex flex-col gap-space-lg pb-space-xl">
-            {/* Ambient Background Accents */}
+        <section className="flex flex-col gap-6 pb-12">
             <div className="relative w-full">
-                {/* NEW-01: vệt -right-8 thò ra ngoài khung nội dung làm cả trang cuộn ngang (scrollWidth 389 > 375 ở 375 px).
-                    Gom vệt vào một lớp riêng cắt theo chiều ngang (overflow-x-clip: không tạo vùng cuộn, chiều dọc vẫn tràn
-                    mềm như cũ) thay vì overflow-hidden ở khung ngoài — khung ngoài chứa nút thật, cắt ở đó sẽ mất viền
-                    focus / bóng của nút sát mép. */}
-                <div aria-hidden="true" className="absolute inset-0 overflow-x-clip pointer-events-none -z-10">
-                    <div className="absolute -right-8 -top-8 w-72 h-72 bg-secondary-container/20 rounded-full blur-3xl" />
-                    <div className="absolute left-1/3 bottom-0 w-64 h-64 bg-primary-fixed/20 rounded-full blur-2xl" />
-                </div>
-
                 {/* 1. Top Header & Action Buttons */}
-                <div className="flex flex-col xl:flex-row items-start xl:items-end justify-between gap-space-md mb-space-lg">
+                <div className="flex flex-col xl:flex-row items-start xl:items-end justify-between gap-4 pb-1 border-b border-slate-200/80 mb-6">
                     <div className="max-w-2xl space-y-2">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm">
-                            <span className="inline-block w-2 h-2 rounded-full bg-secondary" />
-                            <span className="font-bold tracking-wider">AI EXAM ENGINE 3.4 • ADAPTIVE SRS ACTIVE</span>
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>AI EXAM ENGINE 3.4 • ADAPTIVE SRS ACTIVE</span>
                         </div>
-                        <h1 className="font-headline-lg text-headline-lg text-primary tracking-tight font-bold">
+                        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
                             Trung Tâm Luyện Thi Quiz &amp; Trắc Nghiệm AI
                         </h1>
-                        <p className="font-body-md text-body-md text-on-surface-variant">
+                        <p className="text-sm md:text-base text-slate-600">
                             Luyện tập trắc nghiệm thông minh theo chuẩn đề thi JLPT N5–N1, tự động sinh từ giáo trình và
                             bộ thẻ của bạn với đồng hồ đếm ngược tiêu chuẩn.
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-space-xs sm:gap-space-sm w-full xl:w-auto">
+                    <div className="flex flex-wrap items-center gap-2.5 w-full xl:w-auto">
                         {decks[0] && (
                             <Link
                                 to={`/decks/${decks[0].id}/quiz`}
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-on-primary hover:bg-primary-container transition-all font-label-md text-label-md shadow-sm active:scale-95"
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-semibold text-xs shadow-xs active:scale-95 cursor-pointer"
                             >
                                 <span className="material-symbols-outlined text-[18px]">flash_on</span>
                                 <span>Luyện Thi Cấp Tốc</span>
@@ -140,35 +195,35 @@ export const QuizRoomPage: React.FC = () => {
                         )}
                         <a
                             href="#history"
-                            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-surface-container-lowest border border-surface-container-high text-on-surface hover:bg-surface-container transition-all font-label-md text-label-md shadow-sm"
+                            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all font-medium text-xs shadow-xs"
                         >
-                            <span className="material-symbols-outlined text-[18px] text-outline">history</span>
+                            <span className="material-symbols-outlined text-[18px] text-slate-400">history</span>
                             <span>Lịch Sử ({results.length})</span>
                         </a>
                     </div>
                 </div>
 
                 {/* 2. Performance Metagrid (4 Bento Stat Cards) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md mb-space-lg">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
                     {/* Stat 1: Accuracy Rate */}
-                    <div className="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-sm flex flex-col justify-between">
+                    <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
                         <div className="flex items-center justify-between">
-                            <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">
+                            <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">
                                 Độ chính xác TB
                             </span>
-                            <span className="p-1.5 rounded-lg bg-secondary-container text-on-secondary-container flex items-center justify-center">
-                                <span className="material-symbols-outlined text-[18px]">done_all</span>
-                            </span>
+                            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-[20px]">done_all</span>
+                            </div>
                         </div>
-                        <div className="my-space-xs flex items-baseline gap-2">
-                            <span className="font-headline-lg text-headline-lg text-primary font-bold">
+                        <div className="my-2 flex items-baseline gap-2">
+                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
                                 {accuracyRate === null ? "—" : `${accuracyRate}%`}
                             </span>
                         </div>
-                        <div className="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-secondary h-full rounded-full" style={{ width: `${accuracyRate ?? 0}%` }} />
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${accuracyRate ?? 0}%` }} />
                         </div>
-                        <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
+                        <span className="text-xs text-slate-500 mt-2">
                             {examResults.length > 0
                                 ? `Dựa trên ${examResults.length} bài thi gần nhất`
                                 : "Chưa có bài thi nào"}
@@ -176,117 +231,133 @@ export const QuizRoomPage: React.FC = () => {
                     </div>
 
                     {/* Stat 2: Total Solved */}
-                    <div className="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-sm flex flex-col justify-between">
+                    <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
                         <div className="flex items-center justify-between">
-                            <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">
+                            <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">
                                 Tổng câu đã giải
                             </span>
-                            <span className="p-1.5 rounded-lg bg-surface-container text-primary flex items-center justify-center">
-                                <span className="material-symbols-outlined text-[18px]">task_alt</span>
-                            </span>
+                            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-[20px]">task_alt</span>
+                            </div>
                         </div>
-                        <div className="my-space-xs flex items-baseline gap-2">
-                            <span className="font-headline-lg text-headline-lg text-primary font-bold">
+                        <div className="my-2 flex items-baseline gap-1.5">
+                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
                                 {totalSolved}
                             </span>
-                            <span className="font-label-sm text-label-sm text-on-surface-variant">câu</span>
+                            <span className="text-xs text-slate-500 font-medium">câu</span>
                         </div>
-                        <div className="text-on-surface-variant font-label-sm text-label-sm">
-                            Đúng: <span className="text-secondary font-bold">{totalScore}</span> câu
+                        <div className="text-xs text-slate-600 font-medium">
+                            Đúng: <span className="text-emerald-700 font-bold">{totalScore}</span> câu
                         </div>
-                        <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
+                        <span className="text-xs text-slate-500 mt-2">
                             Trong 10 bài thi gần nhất
                         </span>
                     </div>
 
                     {/* Stat 3: Avg Time per Question */}
-                    <div className="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-sm flex flex-col justify-between">
+                    <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
                         <div className="flex items-center justify-between">
-                            <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">
+                            <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">
                                 Thời gian cho mỗi câu
                             </span>
-                            <span className="p-1.5 rounded-lg bg-surface-container text-primary flex items-center justify-center">
-                                <span className="material-symbols-outlined text-[18px]">timer</span>
-                            </span>
+                            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-[20px]">timer</span>
+                            </div>
                         </div>
-                        <div className="my-space-xs flex items-baseline gap-2">
-                            <span className="font-headline-lg text-headline-lg text-primary font-bold">
+                        <div className="my-2 flex items-baseline gap-1.5">
+                            <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
                                 {SECONDS_PER_Q}
                             </span>
-                            <span className="font-label-sm text-label-sm text-on-surface-variant">giây</span>
+                            <span className="text-xs text-slate-500 font-medium">giây</span>
                         </div>
-                        <span className="font-label-sm text-label-sm text-on-surface-variant mt-2">
+                        <span className="text-xs text-slate-500 mt-2">
                             Hết giờ bài tự nộp; câu bỏ trống tính là sai
                         </span>
                     </div>
 
                     {/* Stat 4: Mastery Status */}
-                    <div className="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-sm flex flex-col justify-between">
+                    <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
                         <div className="flex items-center justify-between">
-                            <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">
+                            <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">
                                 Cấp độ làm chủ
                             </span>
-                            <span className="p-1.5 rounded-lg bg-surface-container text-primary flex items-center justify-center">
-                                <span className="material-symbols-outlined text-[18px]">military_tech</span>
-                            </span>
+                            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-[20px]">military_tech</span>
+                            </div>
                         </div>
-                        <div className="my-space-xs">
-                            <div className="font-headline-sm text-headline-sm text-primary font-bold">
+                        <div className="my-2">
+                            <div className="text-lg font-bold text-slate-900">
                                 {mastery.title}
                             </div>
-                            <div className="font-label-sm text-label-sm text-secondary font-semibold flex items-center gap-1 mt-0.5">
+                            <div className="text-xs text-emerald-700 font-semibold flex items-center gap-1 mt-0.5">
                                 <span className="material-symbols-outlined text-[14px]">verified</span>
                                 {mastery.hint}
                             </div>
                         </div>
-                        <span className="font-label-sm text-label-sm text-outline mt-2">
+                        <span className="text-xs text-slate-500 mt-2">
                             Theo độ chính xác 10 bài gần nhất
                         </span>
                     </div>
                 </div>
 
                 {/* 3. Category & Filter Navigation Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-space-sm p-space-sm bg-surface-container-lowest rounded-xl border border-surface-container-high shadow-sm mb-space-md">
-                    <div className="flex items-center gap-1 overflow-x-auto">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 sm:p-2.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs mb-6">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                         <button
                             type="button"
                             onClick={() => setSelectedLevel("")}
-                            className={`px-3 py-1.5 rounded-lg font-label-md text-label-md transition-colors ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                                 selectedLevel === ""
-                                    ? "bg-primary text-on-primary font-semibold shadow-sm"
-                                    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+                                    ? "bg-blue-600 text-white shadow-xs"
+                                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                             }`}
                         >
-                            Tất cả đề ({decks.length})
+                            Tất cả ({decks.length})
                         </button>
-                        {JLPT_LEVELS.map((lvl) => (
-                            <button
-                                key={lvl}
-                                type="button"
-                                onClick={() => setSelectedLevel(lvl === selectedLevel ? "" : lvl)}
-                                className={`px-2.5 py-1 rounded-lg font-label-sm text-label-sm transition-colors ${
-                                    selectedLevel === lvl
-                                        ? "bg-primary text-on-primary font-bold shadow-sm"
-                                        : "bg-surface-container text-on-surface hover:bg-surface-container-highest"
-                                }`}
-                            >
-                                {lvl}
-                            </button>
-                        ))}
+                        {JLPT_LEVELS.map((lvl) => {
+                            const count = decks.filter((d: Deck) => d.level === lvl).length;
+                            const isSelected = selectedLevel === lvl;
+                            return (
+                                <button
+                                    key={lvl}
+                                    type="button"
+                                    onClick={() => setSelectedLevel(isSelected ? "" : lvl)}
+                                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer ${
+                                        isSelected
+                                            ? "bg-blue-600 text-white shadow-xs"
+                                            : LEVEL_BADGES[lvl] ?? "bg-slate-100 text-slate-700"
+                                    }`}
+                                >
+                                    <span>{lvl}</span>
+                                    <span className="opacity-75 text-[11px]">({count})</span>
+                                </button>
+                            );
+                        })}
                     </div>
-                    <span className="text-label-sm text-outline px-2">
-                        {filteredDecks.length} đề thi sẵn sàng
-                    </span>
+                    <div className="relative min-w-[200px] sm:w-64">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                            search
+                        </span>
+                        <input
+                            type="search"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Tìm đề thi..."
+                            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500 text-slate-900 placeholder:text-slate-400"
+                        />
+                    </div>
                 </div>
 
                 {/* 4. Danh Sách Phòng Thi (Exam Cards Grid) */}
-                <div className="flex flex-col gap-space-sm mb-space-lg">
+                <div className="flex flex-col gap-3 mb-8">
                     {filteredDecks.length === 0 ? (
-                        <p className="text-on-surface-variant py-space-md">
-                            Không có bộ thẻ nào phù hợp với bộ lọc cấp độ đã chọn.
-                        </p>
+                        <div className="p-8 text-center rounded-2xl bg-white border border-dashed border-slate-200/90 shadow-xs">
+                            <p className="text-slate-500 text-sm">
+                                Không có bộ thẻ nào phù hợp với bộ lọc đã chọn.
+                            </p>
+                        </div>
                     ) : (
-                        <ul className="grid gap-space-md sm:grid-cols-2">
+                        <ul className="grid gap-5 sm:grid-cols-2">
                             {filteredDecks.map((deck: Deck) => {
                                 const qCount = Math.min(10, deck.cards.length);
                                 const durSec = secondsLeft(qCount * SECONDS_PER_Q * 1000, 0);
@@ -295,39 +366,49 @@ export const QuizRoomPage: React.FC = () => {
                                 return (
                                     <li
                                         key={deck.id}
-                                        className="p-space-md rounded-xl bg-surface-container-lowest border border-surface-container-high flex flex-col justify-between gap-space-md hover:shadow-md transition-shadow"
+                                        className="p-5 rounded-2xl bg-white border border-slate-200/90 flex flex-col justify-between gap-4 hover:border-blue-300 hover:shadow-md transition-all"
                                     >
-                                        <div className="flex flex-col gap-1.5">
+                                        <div className="flex flex-col gap-2">
                                             <div className="flex items-center justify-between">
-                                                <span className="px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary text-label-sm font-semibold">
+                                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${LEVEL_BADGES[deck.level] ?? "bg-slate-100 text-slate-800"}`}>
                                                     {deck.level}
                                                 </span>
-                                                <span className="text-label-sm text-outline flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[15px]">timer</span>
-                                                    ~{durMin} phút ({durSec}s)
-                                                </span>
+                                                <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                                                    <span className="flex items-center gap-1">
+                                                        <span aria-hidden="true" className="material-symbols-outlined text-[15px]">style</span>
+                                                        {deck.cards.length} thẻ
+                                                    </span>
+                                                    <span className="flex items-center gap-1">
+                                                        <span aria-hidden="true" className="material-symbols-outlined text-[15px]">timer</span>
+                                                        ~{durMin} phút ({durSec}s)
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <h3 className="font-title-md text-title-md font-bold text-on-surface">
+                                            <h3 className="text-base font-bold text-slate-900 line-clamp-1">
                                                 {deck.title}
                                             </h3>
-                                            <p className="text-body-sm text-on-surface-variant line-clamp-2">
-                                                {deck.description ?? `${deck.cards.length} thẻ từ vựng`}
+                                            <p className="text-xs text-slate-600 line-clamp-2">
+                                                {deck.description ?? `${deck.cards.length} thẻ từ vựng trong bộ`}
                                             </p>
                                         </div>
 
-                                        <div className="flex flex-col gap-2 pt-2 border-t border-surface-container-high/60">
+                                        <div className="flex flex-col gap-2 pt-3 border-t border-slate-100">
                                             <div className="flex items-center gap-2">
                                                 <Link
                                                     to={`/decks/${deck.id}/quiz`}
-                                                    className="flex-1 text-center py-2.5 px-3 rounded-xl bg-primary text-on-primary font-label-md font-semibold hover:bg-primary-container transition-colors shadow-sm active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                                 >
+                                                    <span aria-hidden="true" className="material-symbols-outlined text-[18px]">quiz</span>
                                                     Vào thi ngay
                                                 </Link>
                                                 <button
                                                     type="button"
                                                     onClick={() => void loadPreview(deck.id)}
-                                                    className="py-2.5 px-3 rounded-xl bg-surface-container-high text-on-surface font-label-md font-semibold hover:bg-surface-container-highest transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                                    className="inline-flex items-center justify-center gap-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
                                                 >
+                                                    <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                                                        {previewDeckId === deck.id ? "expand_less" : "visibility"}
+                                                    </span>
                                                     {previewDeckId === deck.id ? "Đóng mẫu" : "Xem câu mẫu"}
                                                 </button>
                                             </div>
@@ -336,43 +417,42 @@ export const QuizRoomPage: React.FC = () => {
                                             {previewDeckId === deck.id && (
                                                 <div
                                                     aria-live="polite"
-                                                    className="mt-2 p-space-sm rounded-xl bg-surface-container-low border border-surface-container text-body-sm flex flex-col gap-2"
+                                                    className="mt-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-col gap-2"
                                                 >
                                                     {previewBusy && (
-                                                        <p className="text-on-surface-variant flex items-center gap-1 text-label-sm">
-                                                            <span className="material-symbols-outlined text-[16px] animate-spin">
+                                                        <p className="text-slate-500 flex items-center gap-1.5">
+                                                            <span className="material-symbols-outlined text-[16px] animate-spin text-blue-600">
                                                                 progress_activity
                                                             </span>
                                                             Đang tải câu hỏi mẫu...
                                                         </p>
                                                     )}
-                                                    {previewError && <p className="text-error">{previewError}</p>}
+                                                    {previewError && <p className="text-rose-700">{previewError}</p>}
                                                     {!previewBusy &&
                                                         !previewError &&
                                                         sampleQuestions.length === 0 && (
-                                                            <p className="text-on-surface-variant">
+                                                            <p className="text-slate-500">
                                                                 Không có câu hỏi mẫu hợp lệ.
                                                             </p>
                                                         )}
                                                     {sampleQuestions.map((q, idx) => (
                                                         <div
                                                             key={q.cardId}
-                                                            className="p-2 rounded-lg bg-surface-container-lowest border border-surface-container-high/60 flex flex-col gap-1"
+                                                            className="p-2.5 rounded-lg bg-white border border-slate-200 flex flex-col gap-1"
                                                         >
-                                                            <div className="font-bold text-on-surface text-title-md">
+                                                            <div className="font-bold text-slate-900 text-sm">
                                                                 Câu {idx + 1}:{" "}
                                                                 <Ruby term={q.term} reading={q.reading ?? undefined} />
                                                                 {q.type !== "meaning" && (
-                                                                    <span className="ml-2 align-middle px-2 py-0.5 rounded-full bg-surface-container text-label-sm font-semibold text-on-surface-variant">
+                                                                    <span className="ml-2 align-middle px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
                                                                         {QUESTION_TYPE_LABELS[q.type]}
                                                                     </span>
                                                                 )}
                                                             </div>
                                                             {q.prompt && (
-                                                                <div className="text-body-sm text-on-surface-variant">{q.prompt}</div>
+                                                                <div className="text-xs text-slate-600">{q.prompt}</div>
                                                             )}
-                                                            <div className="text-label-sm text-outline">
-                                                                {/* Câu gõ (đợt 2) không có phương án: nói rõ thay vì in dòng trống */}
+                                                            <div className="text-xs text-slate-500">
                                                                 {q.inputMode === "typing"
                                                                     ? "Tự gõ cách đọc, không có phương án gợi ý"
                                                                     : `Phương án: ${q.options.join(" · ")}`}
@@ -390,71 +470,71 @@ export const QuizRoomPage: React.FC = () => {
                 </div>
 
                 {/* 5. Lịch Sử Làm Bài Gần Đây (Recent History) */}
-                <div id="history" className="flex flex-col gap-space-sm pt-space-md border-t border-surface-container-high">
+                <div id="history" className="flex flex-col gap-3 pt-6 border-t border-slate-200/80">
                     <div className="flex items-center justify-between">
-                        <h2 className="font-title-md text-title-md font-bold text-on-surface flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[20px] text-primary">history</span>
+                        <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[20px] text-blue-600">history</span>
                             Lịch Sử Bài Thi Gần Đây
                         </h2>
-                        <span className="text-label-sm text-outline">10 lần thi gần nhất</span>
+                        <span className="text-xs text-slate-500 font-medium">10 lần thi gần nhất</span>
                     </div>
 
                     {results.length === 0 ? (
-                        <p className="text-body-sm text-on-surface-variant py-space-sm">
+                        <p className="text-xs text-slate-500 py-3">
                             Bạn chưa có bài thi nào. Chọn một bộ thẻ ở trên để bắt đầu!
                         </p>
                     ) : (
-                        <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-lowest">
-                            <table className="w-full text-body-sm text-left">
+                        <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white shadow-xs">
+                            <table className="w-full text-xs text-left">
                                 <caption className="sr-only">10 bài kiểm tra gần nhất</caption>
-                                <thead className="text-label-md text-on-surface-variant bg-surface-container-low border-b border-surface-container-high">
+                                <thead className="text-xs text-slate-600 font-semibold bg-slate-50 border-b border-slate-200/80">
                                     <tr>
-                                        <th scope="col" className="p-3">
+                                        <th scope="col" className="p-3.5">
                                             Bộ thẻ
                                         </th>
-                                        <th scope="col" className="p-3">
+                                        <th scope="col" className="p-3.5">
                                             Điểm số
                                         </th>
-                                        <th scope="col" className="p-3">
+                                        <th scope="col" className="p-3.5">
                                             Tỷ lệ
                                         </th>
-                                        <th scope="col" className="p-3">
+                                        <th scope="col" className="p-3.5">
                                             Thời gian nộp
                                         </th>
-                                        <th scope="col" className="p-3 text-right">
+                                        <th scope="col" className="p-3.5 text-right">
                                             Thao tác
                                         </th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-surface-container-high/60">
+                                <tbody className="divide-y divide-slate-100">
                                     {results.map((r: QuizResult) => {
                                         const pct = r.total ? Math.round((r.score / r.total) * 100) : 0;
                                         return (
-                                            <tr key={`${r.deckId}-${r.createdAt}`} className="hover:bg-surface-container-low/40">
-                                                <td className="p-3 font-semibold text-primary">
+                                            <tr key={`${r.deckId}-${r.createdAt}`} className="hover:bg-slate-50/70 transition-colors">
+                                                <td className="p-3.5 font-semibold text-blue-700">
                                                     {r.deckTitle ?? decks.find((d) => d.id === r.deckId)?.title ?? "Bộ thẻ"}
                                                 </td>
-                                                <td className="p-3 font-bold">
+                                                <td className="p-3.5 font-bold text-slate-900">
                                                     {r.score}/{r.total}
                                                 </td>
-                                                <td className="p-3">
+                                                <td className="p-3.5">
                                                     <span
-                                                        className={`px-2 py-0.5 rounded-full text-label-sm font-bold ${
+                                                        className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
                                                             pct >= 80
-                                                                ? "bg-secondary-container text-on-secondary-container"
-                                                                : "bg-surface-container-high text-on-surface"
+                                                                ? "bg-emerald-100 text-emerald-900"
+                                                                : "bg-slate-100 text-slate-700"
                                                         }`}
                                                     >
                                                         {pct}%
                                                     </span>
                                                 </td>
-                                                <td className="p-3 text-on-surface-variant">
+                                                <td className="p-3.5 text-slate-500">
                                                     {new Date(r.createdAt).toLocaleString("vi-VN")}
                                                 </td>
-                                                <td className="p-3 text-right">
+                                                <td className="p-3.5 text-right">
                                                     <Link
                                                         to={`/decks/${encodeURIComponent(r.deckId)}/quiz`}
-                                                        className="px-3 py-1 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-primary font-label-md font-semibold text-label-sm inline-block transition-colors"
+                                                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-blue-700 font-semibold text-xs inline-block transition-colors"
                                                     >
                                                         Thi lại
                                                     </Link>
