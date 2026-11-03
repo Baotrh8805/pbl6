@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { useAsync } from "@/lib/useAsync";
 import { extractErrorMessage } from "@/services/apiClient";
@@ -49,14 +50,14 @@ export const ResultRow: React.FC<{ item: DictSummary; active?: boolean; query?: 
       data-result
       onClick={onClick}
       aria-current={active ? "true" : undefined}
-      className={`group relative w-full text-left pl-3.5 pr-8 py-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+      className={`group relative w-full text-left pl-3.5 pr-8 py-2.5 rounded-xl border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer ${
         active ? "border-primary bg-primary/5" : "border-transparent hover:bg-surface-container hover:border-surface-container-high"
       }`}
     >
       {active && <span aria-hidden="true" className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary" />}
       <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span lang="ja" className="text-lg leading-tight font-semibold text-on-surface"><Hl text={head.main} q={query} /></span>
-        {head.reading && <span lang="ja" className="text-body-sm text-on-surface-variant"><Hl text={head.reading} q={query} /></span>}
+        <span lang="ja" className="font-japanese text-lg leading-tight font-semibold text-on-surface"><Hl text={head.main} q={query} /></span>
+        {head.reading && <span lang="ja" className="font-japanese text-body-sm text-on-surface-variant"><Hl text={head.reading} q={query} /></span>}
         {item.jlpt && <span className={`text-[11px] px-1.5 py-px rounded-md font-semibold self-center ${jlptChipClass(item.jlpt)}`}>{item.jlpt}</span>}
         {item.common && <span aria-label="thông dụng" title="Thông dụng" className="w-1.5 h-1.5 rounded-full bg-sky-500 self-center" />}
       </span>
@@ -89,7 +90,7 @@ const ResultSkeleton: React.FC = () => (
   </ul>
 );
 
-/** Trang trống: các mục đã tra gần đây (lỗi / chưa tra gì thì chỉ hiện gợi ý, không báo đỏ) + vài từ gợi ý. */
+/** Trang trống: các mục đã tra gần đây + vài từ gợi ý. */
 const EmptyStart: React.FC<{ onOpen: (key: DictKey) => void; onTry: (q: string) => void }> = ({ onOpen, onTry }) => {
   const recent = useAsync(() => fetchDictHistory(8), []);
   const items = recent.data ?? [];
@@ -122,7 +123,7 @@ const EmptyStart: React.FC<{ onOpen: (key: DictKey) => void; onTry: (q: string) 
               key={s}
               type="button"
               onClick={() => onTry(s)}
-              className="px-2.5 py-1 rounded-full border border-outline-variant bg-surface-container-lowest text-body-sm hover:border-primary hover:text-primary"
+              className="px-2.5 py-1 rounded-full border border-outline-variant bg-surface-container-lowest text-body-sm hover:border-primary hover:text-primary cursor-pointer transition-colors"
             >
               {s}
             </button>
@@ -133,21 +134,118 @@ const EmptyStart: React.FC<{ onOpen: (key: DictKey) => void; onTry: (q: string) 
   );
 };
 
-// Tab Từ vựng (D14, D18): ô tìm (kanji / kana / romaji / Việt / Anh, debounce, huỷ request cũ), danh sách kết quả, chi tiết mục.
-// ≥ 1024 px hai cột, cột trái dính khi cuộn chi tiết; hẹp hơn: mở mục thì danh sách thu lại thành thanh "← Kết quả".
-// Ô vẽ (plan 2026-10-31): popover dưới ô tìm đè lên cột phải (desktop) / bảng trượt từ đáy (mobile) — không đẩy danh sách xuống.
-// Phím: "/" về ô tìm, "↓" từ ô tìm vào kết quả, "↑/↓" giữa các kết quả, Enter mở, Esc đóng ô vẽ.
+/** Khung hiển thị gợi ý khám phá & từ hay hôm nay khi chưa chọn mục từ ở cột phải. */
+const DictDiscoveryShowcase: React.FC<{
+  onTry: (q: string) => void;
+}> = ({ onTry }) => {
+  return (
+    <div className="hidden lg:flex flex-col gap-5 p-6 rounded-3xl bg-surface-container-lowest border border-surface-container-high/60 shadow-xs">
+      <div className="flex items-center justify-between pb-3 border-b border-surface-container-high/40">
+        <div>
+          <span className="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-bold uppercase tracking-wider">
+            Gợi ý hôm nay
+          </span>
+          <h3 className="font-headline-sm text-headline-sm font-bold text-primary mt-1">
+            Khám phá từ vựng & Hán tự
+          </h3>
+        </div>
+        <span aria-hidden="true" className="material-symbols-outlined text-[32px] text-primary/30">
+          auto_stories
+        </span>
+      </div>
+
+      {/* Card Từ vựng nổi bật */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-primary/5 via-primary-container/5 to-transparent border border-primary/10 flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span lang="ja" className="font-japanese text-2xl font-bold text-primary">
+              一期一会
+            </span>
+            <span lang="ja" className="font-japanese text-xs text-on-surface-variant font-medium">
+              【いちごいちえ】
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+              JLPT N1
+            </span>
+          </div>
+          <p className="text-xs text-primary/80 font-bold mt-1">NHẤT KÌ NHẤT HỘI</p>
+          <p className="text-body-sm text-on-surface-variant mt-1">
+            "Mỗi cuộc gặp gỡ trong đời đều là duyên phận chỉ có một lần duy nhất — hãy trân trọng từng khoảnh khắc."
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onTry("一期一会")}
+          className="shrink-0 px-3 py-1.5 rounded-xl bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-colors cursor-pointer"
+        >
+          Tra chi tiết
+        </button>
+      </div>
+
+      {/* Các chủ đề tra cứu nhanh */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-outline">
+          Bộ từ vựng trọng tâm theo cấp độ
+        </h4>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {[
+            { level: "N5", label: "Căn bản khởi đầu", sample: "食べる" },
+            { level: "N4", label: "Giao tiếp hàng ngày", sample: "約束" },
+            { level: "N3", label: "Trung cấp thông dụng", sample: "経験" },
+            { level: "N2", label: "Công sở & Báo chí", sample: "担当" },
+            { level: "N1", label: "Thành ngữ & Cao cấp", sample: "躊躇" },
+            { level: "IT", label: "Tiếng Nhật CNTT", sample: "開発" },
+          ].map((item) => (
+            <button
+              key={item.level}
+              type="button"
+              onClick={() => onTry(item.sample)}
+              className="p-2.5 text-left rounded-xl bg-surface-container-low hover:bg-surface-container border border-surface-container-high/40 transition-colors group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary">{item.level}</span>
+                <span lang="ja" className="font-japanese text-xs text-on-surface-variant group-hover:text-primary">
+                  {item.sample}
+                </span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant mt-0.5 truncate">{item.label}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Banner liên kết sang Sơ đồ chữ Hán */}
+      <div className="p-3.5 rounded-2xl bg-surface-container-low flex items-center justify-between gap-3 border border-surface-container-high/40">
+        <div className="flex items-center gap-2.5">
+          <span aria-hidden="true" className="material-symbols-outlined text-[24px] text-primary">
+            account_tree
+          </span>
+          <div>
+            <p className="text-xs font-bold text-on-surface">Muốn nhìn thấy cấu tạo chữ Hán?</p>
+            <p className="text-[11px] text-on-surface-variant">Khám phá họ chữ cùng chỉ âm và mạng lưới từ ghép trong Sơ đồ chữ Hán.</p>
+          </div>
+        </div>
+        <Link
+          to="/graph"
+          className="shrink-0 px-3 py-1.5 rounded-lg bg-surface-container-highest hover:bg-surface-container-high text-primary font-semibold text-xs transition-colors"
+        >
+          Mở sơ đồ →
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+// Tab Từ vựng: ô tìm, danh sách kết quả, chi tiết mục, liên kết tri thức.
 export const WordsTab: React.FC<{
   query: string;
   entryKey: string | null;
   onQuery: (q: string) => void;
   onOpen: (key: DictKey | null) => void;
-  /** Ô tìm nhận cả câu tiếng Nhật → gợi ý sang tab Dịch (D33). */
   onTranslate?: (text: string) => void;
 }> = ({ query, entryKey, onQuery, onOpen, onTranslate }) => {
   const [input, setInput] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
-  // URL đổi từ bên ngoài (Back, link) → ô tìm theo URL (điều chỉnh lúc render, không dùng effect)
   if (query !== prevQuery) {
     setPrevQuery(query);
     setInput(query);
@@ -159,7 +257,6 @@ export const WordsTab: React.FC<{
   const listRef = useRef<HTMLUListElement>(null);
   const prepared = prepareQuery(query, romaji);
   const searchKey = prepared.q ? `${prepared.mode}|${prepared.q}` : "";
-  // Kết quả gắn với khoá đã tạo ra nó (như useAsync): khoá đổi = đang tải, không cần setState trong effect
   const [res, setRes] = useState<{ key: string; data?: DictSearchResult; error?: string; page: number }>({ key: "", page: 0 });
   const abortRef = useRef<AbortController | null>(null);
 
@@ -180,14 +277,12 @@ export const WordsTab: React.FC<{
   const searchError = searchKey ? (current?.error ?? null) : null;
   const searching = !!searchKey && !current;
 
-  // gõ xong 300 ms mới đẩy lên URL (tránh mỗi phím một mục lịch sử trình duyệt)
   useEffect(() => {
     if (input.trim() === query.trim()) return;
     const t = setTimeout(() => onQuery(input.trim()), 300);
     return () => clearTimeout(t);
   }, [input, query, onQuery]);
 
-  // "/" ở bất kỳ đâu trên trang (trừ khi đang gõ / có hộp thoại) → về ô tìm
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || typingOrModal(e.target)) return;
@@ -199,7 +294,6 @@ export const WordsTab: React.FC<{
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Ô vẽ: Esc hoặc bấm ra ngoài khung tìm → đóng
   useEffect(() => {
     if (!drawOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -254,7 +348,7 @@ export const WordsTab: React.FC<{
     try {
       localStorage.setItem(ROMAJI_KEY, v ? "1" : "0");
     } catch {
-      /* chế độ riêng tư: chỉ nhớ trong phiên */
+      /* chế độ riêng tư */
     }
   };
 
@@ -290,6 +384,11 @@ export const WordsTab: React.FC<{
   const note = items.length > 0 ? deinflectNote(result) : null;
   const head = entry ? headOf(entry) : null;
 
+  const handleShowcaseSelect = (term: string) => {
+    setInput(term);
+    onQuery(term);
+  };
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(300px,380px)_1fr]">
       <div className={`flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start ${entryKey ? "hidden lg:flex" : "flex"}`}>
@@ -305,8 +404,6 @@ export const WordsTab: React.FC<{
             <label htmlFor="dict-q" className="sr-only">Từ cần tra</label>
             <div className="relative">
               <span aria-hidden="true" className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
-              {/* type="text" chứ không "search": Windows báo ô search cho bộ gõ là ô tìm kiếm → Microsoft IME tắt gợi ý kanji.
-                  Mọi ô tìm trong app làm vậy (31/10). */}
               <input
                 ref={inputRef}
                 id="dict-q"
@@ -327,7 +424,7 @@ export const WordsTab: React.FC<{
                     type="button"
                     onClick={clearInput}
                     aria-label="Xoá ô tìm"
-                    className="w-9 h-9 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="w-9 h-9 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
                   >
                     <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
                   </button>
@@ -339,7 +436,7 @@ export const WordsTab: React.FC<{
                   aria-controls="dict-draw"
                   aria-label={drawOpen ? "Đóng ô vẽ chữ Hán" : "Vẽ chữ Hán để tra"}
                   title="Vẽ chữ Hán"
-                  className={`w-9 h-9 inline-flex items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  className={`w-9 h-9 inline-flex items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer ${
                     drawOpen ? "bg-primary text-on-primary" : "text-primary hover:bg-primary/10"
                   }`}
                 >
@@ -358,7 +455,7 @@ export const WordsTab: React.FC<{
               </label>
               {prep.converted && (
                 <span>
-                  Đang tra: <span lang="ja" className="font-semibold text-on-surface">{prep.q}</span>
+                  Đang tra: <span lang="ja" className="font-japanese font-semibold text-on-surface">{prep.q}</span>
                 </span>
               )}
             </div>
@@ -388,7 +485,7 @@ export const WordsTab: React.FC<{
             <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-primary">translate</span>
             <span>
               Có vẻ bạn nhập cả câu.{" "}
-              <button type="button" onClick={() => onTranslate(query)} className="text-primary font-semibold hover:underline">
+              <button type="button" onClick={() => onTranslate(query)} className="text-primary font-semibold hover:underline cursor-pointer">
                 Dịch cả câu và phân tích từng cụm
               </button>
             </span>
@@ -429,11 +526,11 @@ export const WordsTab: React.FC<{
             <button
               type="button"
               onClick={() => onOpen(null)}
-              className="inline-flex items-center gap-1 min-h-10 pr-2 text-label-md font-semibold text-primary"
+              className="inline-flex items-center gap-1 min-h-10 pr-2 text-label-md font-semibold text-primary cursor-pointer"
             >
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">arrow_back</span> Kết quả
             </button>
-            {head && <span lang="ja" className="truncate text-body-sm text-on-surface-variant">{head.main}</span>}
+            {head && <span lang="ja" className="font-japanese truncate text-body-sm text-on-surface-variant">{head.main}</span>}
           </div>
         )}
         {entryLoading && !entry && (
@@ -450,12 +547,7 @@ export const WordsTab: React.FC<{
             <DictEntryView entry={entry} onOpen={(k) => onOpen(k)} onChange={setEntry} />
           </div>
         ) : (
-          !entryKey && (
-            <div className="hidden lg:flex h-full min-h-72 flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-outline-variant text-body-sm text-on-surface-variant p-6 text-center">
-              <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">menu_book</span>
-              Chọn một kết quả để xem nghĩa, cách đọc, câu ví dụ và bình luận.
-            </div>
-          )
+          !entryKey && <DictDiscoveryShowcase onTry={handleShowcaseSelect} />
         )}
       </div>
     </div>

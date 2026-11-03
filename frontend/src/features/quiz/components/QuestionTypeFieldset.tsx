@@ -104,12 +104,12 @@ export const QuestionTypeFieldset: React.FC<QuestionTypeFieldsetProps> = ({
                     return (
                         <li key={type}>
                             <label
-                                className={`flex items-start gap-3 p-space-sm rounded-lg border ${
+                                className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-all ${
                                     off
-                                        ? "border-surface-container-high opacity-60 cursor-not-allowed"
+                                        ? "border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed"
                                         : checked
-                                          ? "border-primary bg-primary/5 cursor-pointer"
-                                          : "border-surface-container-high cursor-pointer"
+                                          ? "border-2 border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20 shadow-xs cursor-pointer"
+                                          : "border-slate-200/90 bg-white hover:border-slate-300 hover:bg-slate-50 shadow-xs cursor-pointer"
                                 }`}
                             >
                                 <input
@@ -118,13 +118,13 @@ export const QuestionTypeFieldset: React.FC<QuestionTypeFieldsetProps> = ({
                                     disabled={off}
                                     aria-describedby={descId}
                                     onChange={(e) => onChange(toggleQuestionType(selected, type, e.target.checked))}
-                                    className="mt-1 w-4 h-4 shrink-0"
+                                    className="mt-1 w-4 h-4 shrink-0 accent-blue-600 rounded"
                                 />
                                 <span className="min-w-0 flex-1">
                                     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                        <span className="font-semibold">{QUESTION_TYPE_LABELS[type]}</span>
+                                        <span className="font-bold text-slate-900 text-xs">{QUESTION_TYPE_LABELS[type]}</span>
                                         {count !== null && (
-                                            <span className="px-2 py-0.5 rounded-full bg-surface-container text-label-sm text-on-surface-variant">
+                                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
                                                 {count} thẻ
                                             </span>
                                         )}

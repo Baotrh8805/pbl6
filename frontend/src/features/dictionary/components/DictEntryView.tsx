@@ -18,7 +18,7 @@ import { TokenizedSentence } from "./DictQuickLookup";
 
 const chip = "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold";
 const iconBtn =
-  "w-10 h-10 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+  "w-9 h-9 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary";
 const section = "flex flex-col gap-3 border-t border-surface-container-high pt-5 scroll-mt-24 text-body-sm";
 
 /** Bậc thang trọng âm H/L theo mora (kanjium, spec §6.5) + tên kiểu trọng âm tiếng Việt. */
@@ -29,7 +29,7 @@ const PitchView: React.FC<{ moras: string[]; hl: ("H" | "L")[]; kind: string }> 
         <span
           key={i}
           lang="ja"
-          className={`px-0.5 text-body-sm ${s.high ? "border-t-2 border-tertiary" : "border-b-2 border-outline-variant mt-2"} ${s.drop ? "border-r-2 border-r-tertiary" : ""}`}
+          className={`font-japanese px-0.5 text-body-sm ${s.high ? "border-t-2 border-tertiary" : "border-b-2 border-outline-variant mt-2"} ${s.drop ? "border-r-2 border-r-tertiary" : ""}`}
         >
           {s.mora}
         </span>
@@ -47,9 +47,7 @@ const SectionTitle: React.FC<{ icon: string; count?: number; children: React.Rea
   </h3>
 );
 
-// Chi tiết một mục (D14, D17, D23, D25): tiêu đề + đọc + Hán-Việt + JLPT + trọng âm, nghĩa Việt (hoặc Anh, không nhãn), nghĩa Anh
-// theo từ loại, câu ví dụ kèm bản dịch (dịch thêm khi cần), câu từ tài liệu của mình, chữ Hán trong từ, bình luận, các nút hành động.
-// Giao diện 31/10: nút Nghe cạnh từ, nút chính "Thêm vào bộ thẻ", mục lục nhảy tới từng khối, loa cho từng câu ví dụ.
+// Chi tiết một mục: tiêu đề + đọc + Hán-Việt + JLPT + trọng âm, nghĩa Việt, nghĩa Anh theo từ loại, câu ví dụ, chữ Hán, bình luận, nút hành động.
 export const DictEntryView: React.FC<{
   entry: DictEntry;
   onOpen: (key: DictKey) => void;
@@ -133,17 +131,16 @@ export const DictEntryView: React.FC<{
       }
     });
 
-
   return (
     <article className="flex flex-col gap-5" aria-labelledby="dict-head">
       {entry.redirectFrom && <p className="text-xs text-on-surface-variant">Đã chuyển sang mục đầy đủ của từ điển.</p>}
 
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
-          <h2 id="dict-head" lang="ja" className={`font-bold text-on-surface break-all leading-none ${kanjiEntry ? "text-[64px]" : "text-[40px]"}`}>
+          <h2 id="dict-head" lang="ja" className={`font-japanese font-bold text-on-surface break-all leading-none ${kanjiEntry ? "text-[64px]" : "text-[40px]"}`}>
             {head.main}
           </h2>
-          {head.reading && <span lang="ja" className="text-headline-sm font-normal text-on-surface-variant pb-0.5">{head.reading}</span>}
+          {head.reading && <span lang="ja" className="font-japanese text-headline-sm font-normal text-on-surface-variant pb-0.5">{head.reading}</span>}
           {canSpeak && (
             <button type="button" onClick={() => speak(entry.reading || head.main)} aria-label="Nghe phát âm" title="Nghe phát âm" className={`${iconBtn} bg-primary/5 text-primary`}>
               <span aria-hidden="true" className="material-symbols-outlined text-[22px]">volume_up</span>
@@ -156,7 +153,7 @@ export const DictEntryView: React.FC<{
             {entry.strokeCount != null && entry.radical && " · "}
             {entry.radical && (
               <>
-                bộ <span lang="ja">{entry.radical.char}</span>
+                bộ <span lang="ja" className="font-japanese font-semibold">{entry.radical.char}</span>
                 {entry.radical.nameVi && ` ${entry.radical.nameVi}`}
               </>
             )}
@@ -170,7 +167,7 @@ export const DictEntryView: React.FC<{
                 : (entry.hanVietChars ?? []).map((c, i) => (
                     <React.Fragment key={c.char + i}>
                       {i > 0 && " "}
-                      <button type="button" onClick={() => onOpen(kanjiKey(c.char))} className="hover:underline uppercase" title={`Mở chữ ${c.char}`}>
+                      <button type="button" onClick={() => onOpen(kanjiKey(c.char))} className="hover:underline uppercase cursor-pointer" title={`Mở chữ ${c.char}`}>
                         {c.reading}
                       </button>
                     </React.Fragment>
@@ -187,7 +184,7 @@ export const DictEntryView: React.FC<{
           {!kanjiEntry && entry.strokeCount != null && <span className="text-xs text-on-surface-variant">{entry.strokeCount} nét</span>}
           {entry.pitch && <PitchView moras={entry.pitch.moras} hl={entry.pitch.hl} kind={entry.pitch.kind} />}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           {!kanjiEntry && (
             <Button type="button" size="sm" variant="primary" onClick={() => setAddWord(entryToWordNode(entry))} disabled={!meaning}>
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">add_card</span> Thêm vào bộ thẻ
@@ -197,6 +194,17 @@ export const DictEntryView: React.FC<{
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{entry.favorite?.saved ? "bookmark_added" : "bookmark_add"}</span>
             {entry.favorite?.saved ? "Đã lưu sổ tay" : "Lưu sổ tay"}
           </Button>
+
+          {/* Cầu nối ngữ cảnh: Mở thẳng trong Sơ đồ chữ Hán */}
+          <Link
+            to={`/graph?q=${encodeURIComponent(head.main)}`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-surface-container-high bg-surface-container-lowest hover:bg-surface-container text-primary font-label-md text-xs font-semibold transition-colors shadow-2xs"
+            title={`Khám phá sơ đồ cấu tạo và từ ghép của «${head.main}»`}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-primary">account_tree</span>
+            Sơ đồ Hán tự
+          </Link>
+
           <span className="flex items-center gap-0.5 ml-auto">
             <button type="button" onClick={() => void copy()} aria-label={copied ? "Đã chép" : "Chép từ"} title={copied ? "Đã chép" : "Chép từ"} className={iconBtn}>
               <span aria-hidden="true" className="material-symbols-outlined text-[20px]">{copied ? "check" : "content_copy"}</span>
@@ -225,7 +233,7 @@ export const DictEntryView: React.FC<{
               key={t.id}
               type="button"
               onClick={() => jump(t.id)}
-              className="px-2.5 py-1 rounded-full bg-surface-container-low text-xs text-on-surface-variant hover:bg-primary/10 hover:text-primary"
+              className="px-2.5 py-1 rounded-full bg-surface-container-low text-xs text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
             >
               {t.label}
             </button>
@@ -238,19 +246,19 @@ export const DictEntryView: React.FC<{
           {entry.on && entry.on.length > 0 && (
             <div className="rounded-xl bg-surface-container-low px-3 py-2.5">
               <h3 className="text-xs font-semibold text-on-surface-variant mb-1">Âm On</h3>
-              <p lang="ja" className="text-body-md">{entry.on.map((r) => r.reading).join("、")}</p>
+              <p lang="ja" className="font-japanese text-body-md">{entry.on.map((r) => r.reading).join("、")}</p>
             </div>
           )}
           {entry.kun && entry.kun.length > 0 && (
             <div className="rounded-xl bg-surface-container-low px-3 py-2.5">
               <h3 className="text-xs font-semibold text-on-surface-variant mb-1">Âm Kun</h3>
-              <p lang="ja" className="text-body-md">{entry.kun.map((r) => r.reading + (r.okurigana ? `（${r.okurigana}）` : "")).join("、")}</p>
+              <p lang="ja" className="font-japanese text-body-md">{entry.kun.map((r) => r.reading + (r.okurigana ? `（${r.okurigana}）` : "")).join("、")}</p>
             </div>
           )}
           {entry.radical && (
             <div className="rounded-xl bg-surface-container-low px-3 py-2.5">
               <h3 className="text-xs font-semibold text-on-surface-variant mb-1">Bộ thủ</h3>
-              <p><span lang="ja" className="text-body-md">{entry.radical.char}</span> {entry.radical.nameVi && `bộ ${entry.radical.nameVi}`} {entry.radical.meaningVi && `(${entry.radical.meaningVi})`}</p>
+              <p><span lang="ja" className="font-japanese text-body-md">{entry.radical.char}</span> {entry.radical.nameVi && `bộ ${entry.radical.nameVi}`} {entry.radical.meaningVi && `(${entry.radical.meaningVi})`}</p>
             </div>
           )}
           <p className="sm:col-span-2 text-xs">
@@ -289,7 +297,7 @@ export const DictEntryView: React.FC<{
             })}
           </ol>
           {senses.length > 4 && (
-            <button type="button" onClick={() => setShowAllEn((v) => !v)} className="self-start text-xs font-semibold text-primary hover:underline">
+            <button type="button" onClick={() => setShowAllEn((v) => !v)} className="self-start text-xs font-semibold text-primary hover:underline cursor-pointer">
               {showAllEn ? "Thu gọn" : `Xem thêm ${senses.length - 4} nghĩa`}
             </button>
           )}
@@ -334,7 +342,7 @@ export const DictEntryView: React.FC<{
           <ul className="flex flex-col gap-2">
             {userExamples.map((x) => (
               <li key={x.id} className="rounded-xl bg-surface-container-low px-3 py-2.5">
-                <p lang="ja" className="text-body-md">{x.jpn}</p>
+                <p lang="ja" className="font-japanese text-body-md">{x.jpn}</p>
                 {x.vi && <p className="mt-0.5 text-on-surface-variant">{x.vi}</p>}
                 {x.source && (
                   <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
@@ -357,9 +365,9 @@ export const DictEntryView: React.FC<{
                 key={c.char}
                 type="button"
                 onClick={() => onOpen(kanjiKey(c.char))}
-                className="group flex items-center gap-3 rounded-xl border border-surface-container-high px-3 py-2.5 text-left hover:border-primary hover:bg-primary/5 transition-colors"
+                className="group flex items-center gap-3 rounded-xl border border-surface-container-high px-3 py-2.5 text-left hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
               >
-                <span lang="ja" className="w-12 h-12 shrink-0 inline-flex items-center justify-center rounded-lg bg-surface-container-low text-[30px] leading-none">{c.char}</span>
+                <span lang="ja" className="font-japanese w-12 h-12 shrink-0 inline-flex items-center justify-center rounded-lg bg-surface-container-low text-[30px] leading-none font-bold text-primary">{c.char}</span>
                 <span className="flex flex-col min-w-0">
                   {c.hanViet && <span className="text-xs font-semibold uppercase tracking-wide text-tertiary">{c.hanViet}</span>}
                   <span className="text-body-sm text-on-surface-variant line-clamp-2">{c.meaningVi || c.meaningEn}</span>
@@ -373,12 +381,12 @@ export const DictEntryView: React.FC<{
 
       {exampleWords.length > 0 && (
         <section id="dict-sec-words" aria-label="Từ chứa chữ" className={section}>
-          <SectionTitle icon="dictionary" count={exampleWords.length}>Từ chứa chữ này</SectionTitle>
+          <SectionTitle icon="menu_book" count={exampleWords.length}>Từ chứa chữ này</SectionTitle>
           <ul className="grid sm:grid-cols-2 gap-1.5">
             {exampleWords.map((w) => (
               <li key={w.key}>
-                <button type="button" onClick={() => onOpen(w.key)} className="w-full text-left rounded-xl px-3 py-2 hover:bg-surface-container">
-                  <span lang="ja" className="font-semibold">{w.headKanji}</span> <span lang="ja" className="text-on-surface-variant">{w.reading}</span>
+                <button type="button" onClick={() => onOpen(w.key)} className="w-full text-left rounded-xl px-3 py-2 hover:bg-surface-container cursor-pointer">
+                  <span lang="ja" className="font-japanese font-semibold">{w.headKanji}</span> <span lang="ja" className="font-japanese text-on-surface-variant">{w.reading}</span>
                   <span className="block text-xs text-on-surface-variant truncate">{w.meaningVi || w.glossShort}</span>
                 </button>
               </li>
@@ -396,9 +404,9 @@ export const DictEntryView: React.FC<{
                 key={r.key}
                 type="button"
                 onClick={() => onOpen(r.key)}
-                className="px-2.5 py-1 rounded-full border border-surface-container-high text-body-md hover:border-primary hover:text-primary"
+                className="px-2.5 py-1 rounded-full border border-surface-container-high text-body-md hover:border-primary hover:text-primary cursor-pointer"
               >
-                <span lang="ja">{r.headKanji}</span>
+                <span lang="ja" className="font-japanese">{r.headKanji}</span>
               </button>
             ))}
           </div>

@@ -31,18 +31,14 @@ interface ChapterTimelineProps {
 }
 
 const STATE_TONE: Record<LearningPathChapterState, string> = {
-  locked: "bg-surface-container-high text-on-surface-variant",
-  current: "bg-primary text-on-primary",
-  open: "bg-primary-fixed text-on-primary-fixed",
-  review: "bg-[#FEF3C7] text-[#92400E]",
-  passed: "bg-secondary-container/60 text-on-secondary-container",
-  empty: "bg-surface-container text-on-surface-variant",
+  locked: "bg-slate-100 text-slate-600 border border-slate-200",
+  current: "bg-blue-600 text-white shadow-xs",
+  open: "bg-blue-50 text-blue-700 border border-blue-200",
+  review: "bg-amber-50 text-amber-800 border border-amber-200",
+  passed: "bg-emerald-50 text-emerald-800 border border-emerald-200",
+  empty: "bg-slate-100 text-slate-500 border border-slate-200",
 };
 
-// Chương có trạng thái (spec §4.1): học theo phiên chương (/session?session=chapter) thay vì học cả bộ không có ?path=
-// (LP-14); "Kiểm tra chương" mở quiz exam trên bộ của chương — đạt ngưỡng mới tính "Đã qua", nhưng không chặn học (D4).
-// Đã làm mà chưa đạt: dải "Chưa đạt N% — Làm lại" thay cho nút "Kiểm tra chương" (cùng luồng onStartQuiz, cùng ?path=), để
-// lời nhắc làm lại nằm ngay ở chương — chương sau vẫn học / kiểm tra bình thường.
 export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
   path,
   dayIndex,
@@ -55,19 +51,18 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
   quizError = null,
 }) => {
   const chapters = path.chapters ?? [];
-  if (chapters.length === 0) return <p className="text-on-surface-variant">Lộ trình chưa có chương nào.</p>;
+  if (chapters.length === 0) return <p className="text-slate-500 text-sm">Lộ trình chưa có chương nào.</p>;
 
   return (
-    <section aria-labelledby="timeline-heading" className="flex flex-col gap-space-sm">
-      <h2 id="timeline-heading" className="font-title-md text-title-md text-on-surface">
-        Các chương
+    <section aria-labelledby="timeline-heading" className="flex flex-col gap-3">
+      <h2 id="timeline-heading" className="text-lg font-bold text-slate-900">
+        Các chương ({chapters.length})
       </h2>
-      <ol className="flex flex-col gap-space-md relative before:absolute before:left-2.5 before:top-6 before:bottom-6 before:w-0.5 before:bg-surface-container-high">
+      <ol className="flex flex-col gap-4 relative before:absolute before:left-3 before:top-6 before:bottom-6 before:w-0.5 before:bg-slate-200">
         {chapters.map((ch, idx) => {
           const state = chapterStateOf(ch, dayIndex);
           const passed = state === "passed";
           const current = state === "current";
-          // Số liệu server (ACTIVE 2.0); response 1.0 thiếu -> tính từ bộ thẻ + lịch ôn của máy khách (bộ chưa tải -> null).
           const fb = ch.learned == null && ch.deckId ? completionFallback([ch], decks, reviews, now) : null;
           const fallback = fb && fb.total > 0 ? fb : null;
           const total = ch.cardCount;
@@ -88,50 +83,50 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
           const best = quizBestLabel(ch.quizBestPct);
           const canStudy = !!ch.deckId && total > 0;
           const canQuiz = canStudy && state !== "locked";
-          // B5.8: chương đã làm kiểm tra mà trượt vẫn hiện dải "Làm lại" kể cả khi lịch đã cân lại đẩy nó về "chưa tới ngày"
-          // (locked) — điểm trượt là của người học, không phụ thuộc ngày; chương rỗng / bộ đã xoá thì không có gì để làm lại.
           const retry = canStudy ? quizRetryLabel(ch, path.quizPassPct) : null;
 
           return (
             <li key={ch.id} className="relative pl-10" aria-current={current ? "step" : undefined}>
               <span
                 aria-hidden="true"
-                className={`absolute left-2.5 top-5 -translate-x-1/2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shadow-sm transition-colors ${
+                className={`absolute left-3 top-5 -translate-x-1/2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shadow-xs transition-colors ${
                   passed
-                    ? "bg-secondary text-on-primary ring-4 ring-secondary/20"
+                    ? "bg-emerald-600 text-white ring-4 ring-emerald-100"
                     : current
-                      ? "bg-primary text-on-primary ring-4 ring-primary/30"
-                      : "bg-surface-container-high text-outline"
+                      ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                      : "bg-slate-200 text-slate-600"
                 }`}
               >
                 {passed ? <span className="material-symbols-outlined text-[14px]">done</span> : idx + 1}
               </span>
 
               <div
-                className={`p-space-md rounded-xl bg-surface-container-lowest border flex flex-col gap-space-sm transition-shadow ${
-                  current ? "border-primary/40 shadow-md" : "border-surface-container-high"
+                className={`p-5 rounded-2xl bg-white border flex flex-col gap-3 transition-all ${
+                  current
+                    ? "border-2 border-blue-500 shadow-sm ring-4 ring-blue-50/60"
+                    : "border-slate-200/90 shadow-xs"
                 } ${state === "locked" ? "opacity-90" : ""}`}
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded-full text-label-sm font-semibold ${STATE_TONE[state]}`}>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATE_TONE[state]}`}>
                     {CHAPTER_STATE_LABELS[state]}
                   </span>
                   {range && (
-                    <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-label-sm font-semibold">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
                       {range}
                     </span>
                   )}
                   {learnedPct != null && (
-                    <span className="ml-auto text-label-md font-bold text-primary">{learnedPct}% đã học</span>
+                    <span className="ml-auto text-xs font-bold text-blue-600">{learnedPct}% đã học</span>
                   )}
                 </div>
-                <h3 className="font-title-md text-title-md text-on-surface break-words">{ch.title}</h3>
+                <h3 className="text-base font-bold text-slate-900 break-words">{ch.title}</h3>
 
                 {learnedPct != null && <ProgressBar pct={learnedPct} label={`Đã học ${ch.title}`} tone="primary" />}
 
                 {retry && !missing && (
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-2.5 rounded-lg bg-[#FEF3C7] border border-[#F59E0B]/40 text-[#92400E] text-body-sm">
-                    <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">replay</span>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0 text-amber-600">replay</span>
                     <span className="min-w-0 break-words font-semibold">{retry} —</span>
                     <Button
                       variant="outline"
@@ -140,30 +135,31 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
                       isLoading={quizBusy === ch.id}
                       disabled={quizBusy !== null}
                       aria-label={`Làm lại kiểm tra chương ${ch.title}`}
+                      className="cursor-pointer"
                     >
                       Làm lại
                     </Button>
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-surface-container-high/60">
-                  <span className="text-label-sm text-outline">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <span className="text-xs text-slate-500 font-medium">
                     {total} thẻ
                     {learned != null && ` · ${learned} đã học`}
                     {mastered != null && ` · ${mastered} đã thuộc`}
                     {best && ` · ${best}`}
                   </span>
                   {missing ? (
-                    <span className="text-label-sm text-on-surface-variant italic">{missing}</span>
+                    <span className="text-xs text-slate-400 italic">{missing}</span>
                   ) : (
                     <div className="flex flex-wrap items-center gap-2">
                       {state === "empty" && (
-                        <span className="text-label-sm text-on-surface-variant italic">Không còn thẻ nào trong lịch</span>
+                        <span className="text-xs text-slate-400 italic">Không còn thẻ nào trong lịch</span>
                       )}
                       {ch.deckId && (
                         <Link
                           to={`/decks/${encodeURIComponent(ch.deckId)}`}
-                          className="px-3 py-1.5 rounded-lg text-label-md text-on-surface-variant hover:bg-surface-container transition-colors"
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                         >
                           Xem bộ thẻ
                         </Link>
@@ -175,15 +171,16 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
                           onClick={() => onStartQuiz(ch.id)}
                           isLoading={quizBusy === ch.id}
                           disabled={quizBusy !== null}
+                          className="cursor-pointer"
                         >
-                          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">quiz</span>
+                          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">quiz</span>
                           Kiểm tra chương
                         </Button>
                       )}
                       {canStudy && (
                         <Link
                           to={sessionUrl(path.id, "chapter", ch.id)}
-                          className="px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold hover:bg-primary-container transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary shadow-sm"
+                          className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:scale-95"
                         >
                           Học chương
                         </Link>
@@ -192,7 +189,7 @@ export const ChapterTimeline: React.FC<ChapterTimelineProps> = ({
                   )}
                 </div>
                 {quizError?.chapterId === ch.id && (
-                  <p role="alert" className="flex items-start gap-1.5 p-2.5 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
+                  <p role="alert" className="flex items-start gap-1.5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
                     <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">error</span>
                     <span className="min-w-0 break-words">{quizError.message}</span>
                   </p>

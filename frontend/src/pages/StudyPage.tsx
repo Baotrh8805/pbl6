@@ -56,13 +56,13 @@ import { StudyDictButton } from "@/features/dictionary/components/StudyDictButto
 
 // Nhãn chế độ từng thẻ: Mới (chưa chấm lần nào) / Ôn (đến hạn) / Luyện (chỉ ghi log, không đổi lịch SRS).
 const MODE_CLASS: Record<SessionCardMode, string> = {
-    new: "bg-primary-fixed text-on-primary-fixed",
-    due: "bg-secondary-fixed/60 text-on-secondary-fixed-variant",
-    cram: "bg-tertiary-fixed text-on-tertiary-fixed-variant",
+    new: "bg-blue-50 text-blue-700 border border-blue-200/70",
+    due: "bg-emerald-50 text-emerald-700 border border-emerald-200/70",
+    cram: "bg-purple-50 text-purple-700 border border-purple-200/70",
 };
 
 const iconButton =
-    "p-2 rounded-full hover:bg-surface-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:hover:bg-transparent";
+    "p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:hover:bg-transparent transition-colors";
 
 interface StudyData {
     /** Thẻ dùng được trong phiên: cả bộ thẻ, hoặc thẻ server trả cho phiên lộ trình (nhiều bộ, đã đủ nội dung). */
@@ -370,7 +370,7 @@ export const StudyPage: React.FC = () => {
                     setRevealed(false);
                     break;
                 case "grade":
-                    if (current && revealed) void grade(action.grade);
+                    if (current) void grade(action.grade);
                     break;
                 case "none":
                     break;
@@ -405,23 +405,55 @@ export const StudyPage: React.FC = () => {
     // Rời trang (về lộ trình / bộ thẻ, đổi route): không để tiếng đọc dở tiếp tục ở trang sau.
     useEffect(() => () => stopAudio(), [stopAudio]);
 
-    if (loading || error || !data) {
+    if (loading) {
+        return (
+            <section
+                aria-busy="true"
+                aria-label="Đang tải phiên học flashcard"
+                className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center px-4 py-8"
+            >
+                <div className="max-w-xl w-full space-y-6">
+                    {/* Header bar Skeleton */}
+                    <div className="flex items-center justify-between gap-4 animate-pulse">
+                        <div className="h-8 w-24 rounded-xl bg-slate-200" />
+                        <div className="h-4 w-32 rounded bg-slate-200" />
+                        <div className="h-8 w-8 rounded-full bg-slate-200" />
+                    </div>
+
+                    {/* Progress Bar Skeleton */}
+                    <div className="w-full h-2 rounded-full bg-slate-200 animate-pulse" />
+
+                    {/* Flashcard Skeleton */}
+                    <div className="w-full h-80 rounded-3xl bg-white border border-slate-200/90 shadow-sm p-8 flex flex-col items-center justify-center gap-4 animate-pulse">
+                        <div className="h-5 w-14 rounded-full bg-slate-100" />
+                        <div className="h-16 w-40 rounded-2xl bg-slate-200" />
+                        <div className="h-4 w-24 rounded bg-slate-100" />
+                        <div className="mt-8 h-4 w-44 rounded bg-slate-100" />
+                    </div>
+
+                    {/* Action Bar Skeleton */}
+                    <div className="w-full h-12 rounded-2xl bg-slate-200 animate-pulse" />
+                </div>
+            </section>
+        );
+    }
+
+    if (error || !data) {
         return (
             <section
                 aria-live="polite"
-                className="min-h-screen bg-surface text-on-surface flex flex-col items-center justify-center gap-space-md px-gutter text-center"
+                className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-center gap-space-md px-gutter text-center"
             >
-                <p>{loading ? (sessionReq ? "Đang tải phiên học…" : "Đang tải bộ thẻ…") : error}</p>
-                {!loading &&
-                    (pathId ? (
-                        <Link to={`/roadmap/${encodeURIComponent(pathId)}`} className="text-primary hover:underline">
-                            ← Về lộ trình
-                        </Link>
-                    ) : (
-                        <Link to="/decks" className="text-primary hover:underline">
-                            ← Về danh sách bộ thẻ
-                        </Link>
-                    ))}
+                <p className="text-rose-700 font-semibold">{error || "Không tìm thấy dữ liệu bộ thẻ."}</p>
+                {pathId ? (
+                    <Link to={`/roadmap/${encodeURIComponent(pathId)}`} className="text-blue-600 hover:underline font-medium">
+                        ← Về lộ trình
+                    </Link>
+                ) : (
+                    <Link to="/decks" className="text-blue-600 hover:underline font-medium">
+                        ← Về danh sách bộ thẻ
+                    </Link>
+                )}
             </section>
         );
     }
@@ -466,15 +498,20 @@ export const StudyPage: React.FC = () => {
         const emptySession = session && sessionReq && size === 0;
         const summary = live ? summarize(live.stats) : null;
         return (
-            <section className="min-h-screen bg-surface text-on-surface flex flex-col items-center justify-center gap-space-md px-gutter py-space-lg text-center">
-                <h1 className="font-headline-sm text-headline-sm font-bold">
+            <section className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-center gap-space-md px-gutter py-space-lg text-center">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-xs mb-1">
+                    <span className="material-symbols-outlined text-[36px]" aria-hidden="true">
+                        {emptySession ? "event_busy" : "task_alt"}
+                    </span>
+                </div>
+                <h1 className="font-headline-sm text-headline-sm font-bold text-slate-900">
                     {emptySession
                         ? "Không có thẻ nào trong phiên này"
                         : activeRetry
                           ? "Luyện lại xong"
                           : sessionDoneHeading(sessionReq?.kind ?? null)}
                 </h1>
-                <p className="text-on-surface-variant">
+                <p className="text-slate-600 max-w-md">
                     {emptySession
                         ? sessionEmptyMessage(sessionReq.kind, session.state)
                         : activeRetry
@@ -500,7 +537,7 @@ export const StudyPage: React.FC = () => {
                     <button
                         type="button"
                         onClick={() => void undoLast()}
-                        className="inline-flex items-center gap-1 text-primary hover:underline text-label-md"
+                        className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline text-label-md font-medium"
                     >
                         <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                             undo
@@ -509,22 +546,22 @@ export const StudyPage: React.FC = () => {
                     </button>
                 )}
                 {messages}
-                <Link to={exitTo} className="px-4 py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-semibold">
+                <Link to={exitTo} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-label-md font-semibold shadow-xs hover:shadow transition-all">
                     {pathId ? "Về lộ trình" : "Về chi tiết bộ thẻ"}
                 </Link>
                 {/* Rà soát 27/10: bộ đã học xong vẫn ôn lại được ngay (cram không đổi lịch; học lại từ đầu ở trang bộ thẻ) */}
                 {!pathId && !range && deck && !cram && (
-                    <Link to={`/decks/${deck.id}/study?cram=1`} className="text-primary hover:underline text-label-md">
+                    <Link to={`/decks/${deck.id}/study?cram=1`} className="text-blue-600 hover:text-blue-800 hover:underline text-label-md font-medium">
                         Ôn lại cả bộ ngay (không đổi lịch ôn)
                     </Link>
                 )}
                 {pathId && deck && (
-                    <Link to={`/decks/${deck.id}`} className="text-primary hover:underline text-label-md">
+                    <Link to={`/decks/${deck.id}`} className="text-blue-600 hover:text-blue-800 hover:underline text-label-md font-medium">
                         Xem bộ thẻ
                     </Link>
                 )}
                 {emptySession && (
-                    <Link to="/" className="text-primary hover:underline text-label-md">
+                    <Link to="/" className="text-blue-600 hover:text-blue-800 hover:underline text-label-md font-medium">
                         Về Tổng quan
                     </Link>
                 )}
@@ -545,17 +582,17 @@ export const StudyPage: React.FC = () => {
 
     return (
         // Toàn màn hình, không header/sidebar: tập trung khi học.
-        <section className="min-h-screen bg-surface text-on-surface px-gutter py-space-lg overflow-x-hidden">
+        <section className="min-h-screen bg-slate-50 text-slate-900 px-gutter py-space-lg overflow-x-hidden">
             <div className="max-w-2xl mx-auto flex flex-col gap-space-lg">
                 <header className="flex flex-col gap-2 text-label-md text-on-surface-variant">
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                        <Link to={exitTo} className="text-primary hover:underline">
+                        <Link to={exitTo} className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors">
                             {pathId ? "← Về lộ trình" : "← Thoát"}
                         </Link>
                         <div className="flex items-center gap-1">
                             {/* E5: đổi Đọc / Nghe giữa phiên; chỉ khi trình duyệt đọc được văn bản. "Đọc" đứng trước: chế độ mặc định, dùng nhiều nhất */}
                             {canSpeak && (
-                                <div role="group" aria-label="Chế độ học" className="inline-flex rounded-lg bg-surface-container p-0.5 mr-1">
+                                <div role="group" aria-label="Chế độ học" className="inline-flex rounded-lg bg-slate-200/70 p-0.5 border border-slate-200/50 mr-1">
                                     {(["read", "audio"] as const).map((m) => {
                                         const active = m === "audio" ? audioOnly : !audioOnly;
                                         return (
@@ -565,7 +602,7 @@ export const StudyPage: React.FC = () => {
                                                 aria-pressed={active}
                                                 onClick={() => setAudioMode(m === "audio")}
                                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                                                    active ? "bg-surface-container-lowest text-primary shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+                                                    active ? "bg-white text-blue-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
                                                 }`}
                                             >
                                                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -593,7 +630,7 @@ export const StudyPage: React.FC = () => {
                     </div>
                     <StudyProgress done={(live?.size ?? 0) - (queue?.length ?? 0)} size={live?.size ?? 0} counts={counts} />
                     {(session || activeRetry || live?.resumed) && (
-                        <p className="flex flex-wrap gap-x-2 text-label-sm text-outline">
+                        <p className="flex flex-wrap gap-x-2 text-label-sm text-slate-500">
                             {/* Phiên lộ trình: "Ôn 5 · Nợ 3 · Mới 10 (· Luyện n)" của cả phiên */}
                             {session && sessionReq && (
                                 <span>
@@ -606,7 +643,7 @@ export const StudyPage: React.FC = () => {
                             {live?.resumed && !activeRetry && (
                                 <span>
                                     Đang tiếp tục phiên dở ·{" "}
-                                    <button type="button" onClick={restart} className="text-primary hover:underline">
+                                    <button type="button" onClick={restart} className="text-blue-600 hover:underline font-medium">
                                         Bắt đầu lại
                                     </button>
                                 </span>
@@ -625,7 +662,7 @@ export const StudyPage: React.FC = () => {
                         setRevealed((r) => !r);
                     }}
                     style={dx ? { transform: `translateX(${dx}px) rotate(${Math.max(-8, Math.min(8, dx / 20))}deg)` } : undefined}
-                    className={`relative p-space-xl rounded-2xl bg-surface-container-lowest border border-surface-container-high text-center touch-pan-y ${
+                    className={`relative p-6 md:p-8 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md transition-shadow text-center touch-pan-y min-h-[380px] md:min-h-[440px] flex flex-col justify-between ${
                         audioGate ? "" : "cursor-pointer"
                     } ${dx ? "" : "transition-transform duration-200 motion-reduce:transition-none"}`}
                 >
@@ -633,120 +670,139 @@ export const StudyPage: React.FC = () => {
                         <span
                             aria-hidden="true"
                             style={{ opacity: swipeStrength }}
-                            className={`absolute top-3 ${dx < 0 ? "right-3 bg-error" : "left-3 bg-primary"} px-3 py-1 rounded-full text-on-primary font-label-md font-semibold`}
+                            className={`absolute top-4 ${dx < 0 ? "right-4 bg-rose-600" : "left-4 bg-blue-600"} px-3.5 py-1.5 rounded-full text-white font-label-md font-bold shadow-md z-10`}
                         >
                             {swipeLabel}
                         </span>
                     )}
-                    <div className="flex flex-wrap items-center justify-center gap-2 mb-2 text-label-sm">
-                        <span className={`px-2 py-0.5 rounded-full font-semibold ${MODE_CLASS[mode]}`}>{SESSION_MODE_LABELS[mode]}</span>
-                        {sessionCard?.chapterTitle && (
-                            <span className="text-on-surface-variant truncate max-w-full">{sessionCard.chapterTitle}</span>
-                        )}
-                    </div>
 
-                    {audioGate ? (
-                        // Cổng cử chỉ: trình duyệt chặn phát âm tự động cho tới khi người dùng bấm gì đó trên trang.
-                        <div className="flex flex-col items-center gap-2 py-2">
-                            <button
-                                type="button"
-                                autoFocus
-                                onClick={() => setListening(true)}
-                                className="inline-flex items-center gap-2 px-5 py-3 min-h-11 rounded-lg bg-primary text-on-primary font-label-md font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                            >
-                                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
-                                    headphones
-                                </span>
-                                Bắt đầu nghe
-                            </button>
-                            <p className="text-label-sm text-on-surface-variant max-w-sm">
-                                Chế độ chỉ nghe: chữ được ẩn, từ tự đọc khi hiện thẻ. Bấm để trình duyệt cho phép phát âm.
-                            </p>
-                        </div>
-                    ) : shouldHideTerm(audioOnly, revealed) ? (
-                        <div className="flex flex-col items-center gap-1 text-on-surface-variant min-h-16 justify-center">
-                            <span aria-hidden="true" className="material-symbols-outlined text-[48px]">
-                                headphones
+                    {/* Header của thẻ: Bên trái là Badge chế độ & Chương; Bên phải là Toolbar công cụ phụ */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="flex flex-wrap items-center gap-1.5 text-label-sm">
+                            <span className={`px-2.5 py-0.5 rounded-full font-semibold ${MODE_CLASS[mode]}`}>
+                                {SESSION_MODE_LABELS[mode]}
                             </span>
-                            <span className="sr-only">Chữ đang ẩn, từ đang được đọc</span>
-                            <p className="text-label-md">
-                                Nhấn <kbd className="px-1 rounded bg-surface-container-high text-on-surface">R</kbd> để nghe lại /{" "}
-                                <kbd className="px-1 rounded bg-surface-container-high text-on-surface">Space</kbd> để lật
-                            </p>
-                        </div>
-                    ) : (
-                        <div lang="ja" className="text-display-sm font-bold">
-                            {revealed ? (
-                                <Ruby term={current.term} reading={current.reading ?? undefined} segments={current.readingSegments} />
-                            ) : (
-                                current.term
+                            {sessionCard?.chapterTitle && (
+                                <span className="text-slate-500 truncate max-w-[180px] md:max-w-xs text-xs" title={sessionCard.chapterTitle}>
+                                    {sessionCard.chapterTitle}
+                                </span>
                             )}
                         </div>
-                    )}
 
-                    {/* Nút trên thẻ không lật thẻ khi bấm */}
-                    <div className="mt-2 flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                        {canSpeak && (
-                            <button
-                                type="button"
-                                // Chế độ chỉ nghe: nút loa = nghe lại cả chuỗi (từ, cách đọc, nghĩa nếu đã lật) — thay phím R trên điện thoại
-                                onClick={() =>
-                                    audioOnly && listening
-                                        ? speakItems(cardSpeechItems(current.term, current.reading, revealed ? current.meaning : null))
-                                        : speak(current.term)
-                                }
-                                aria-label={audioOnly ? "Nghe lại" : `Phát âm ${current.term}`}
-                                title={audioOnly ? "Nghe lại (R)" : "Nghe phát âm"}
-                                className={iconButton}
-                            >
-                                <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
-                                    volume_up
-                                </span>
-                            </button>
-                        )}
-                        <StudyDictButton term={current.term} className={iconButton} />
-                        <button
-                            type="button"
-                            onClick={() => setPractice("speak")}
-                            aria-label={`Luyện phát âm ${current.term}`}
-                            title="Luyện phát âm"
-                            className={iconButton}
+                        {/* Toolbar công cụ phụ (Loa, Từ điển, Mic, Viết): Đặt gọn gàng ở góc trên, click không lật thẻ */}
+                        <div
+                            className="inline-flex items-center gap-0.5 p-1 rounded-full bg-slate-50 border border-slate-200/80 shadow-xs"
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
-                                mic
-                            </span>
-                        </button>
-                        {kanji && (
+                            {canSpeak && (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        audioOnly && listening
+                                            ? speakItems(cardSpeechItems(current.term, current.reading, revealed ? current.meaning : null))
+                                            : speak(current.term)
+                                    }
+                                    aria-label={audioOnly ? "Nghe lại" : `Phát âm ${current.term}`}
+                                    title={audioOnly ? "Nghe lại (R)" : "Nghe phát âm"}
+                                    className={iconButton}
+                                >
+                                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                        volume_up
+                                    </span>
+                                </button>
+                            )}
+                            <StudyDictButton term={current.term} className={iconButton} />
                             <button
                                 type="button"
-                                onClick={() => setPractice("write")}
-                                aria-label={`Viết chữ ${kanji}`}
-                                title="Viết"
+                                onClick={() => setPractice("speak")}
+                                aria-label={`Luyện phát âm ${current.term}`}
+                                title="Luyện phát âm"
                                 className={iconButton}
                             >
-                                <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
-                                    draw
+                                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                    mic
                                 </span>
                             </button>
+                            {kanji && (
+                                <button
+                                    type="button"
+                                    onClick={() => setPractice("write")}
+                                    aria-label={`Viết chữ ${kanji}`}
+                                    title="Viết"
+                                    className={iconButton}
+                                >
+                                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                        draw
+                                    </span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Trung tâm thẻ: Thuật ngữ / Chữ Kanji */}
+                    <div className="my-auto py-4">
+                        {audioGate ? (
+                            <div className="flex flex-col items-center gap-3 py-4">
+                                <button
+                                    type="button"
+                                    autoFocus
+                                    onClick={() => setListening(true)}
+                                    className="inline-flex items-center gap-2 px-6 py-3 min-h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-label-md font-semibold shadow-sm hover:shadow transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                >
+                                    <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                                        headphones
+                                    </span>
+                                    Bắt đầu nghe
+                                </button>
+                                <p className="text-label-sm text-slate-500 max-w-sm">
+                                    Chế độ chỉ nghe: chữ được ẩn, từ tự đọc khi hiện thẻ. Bấm để trình duyệt cho phép phát âm.
+                                </p>
+                            </div>
+                        ) : shouldHideTerm(audioOnly, revealed) ? (
+                            <div className="flex flex-col items-center gap-2 text-slate-500 min-h-24 justify-center">
+                                <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 mb-1">
+                                    <span aria-hidden="true" className="material-symbols-outlined text-[32px]">
+                                        headphones
+                                    </span>
+                                </div>
+                                <span className="sr-only">Chữ đang ẩn, từ đang được đọc</span>
+                                <p className="text-label-md text-slate-600">
+                                    Nhấn <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">R</kbd> để nghe lại /{" "}
+                                    <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">Space</kbd> để lật
+                                </p>
+                            </div>
+                        ) : (
+                            <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug">
+                                {revealed ? (
+                                    <Ruby term={current.term} reading={current.reading ?? undefined} segments={current.readingSegments} />
+                                ) : (
+                                    current.term
+                                )}
+                            </div>
                         )}
                     </div>
 
-                    <div aria-live="polite" className="mt-space-md min-h-16">
+                    {/* Vùng đáy thẻ: Khi chưa lật thì hiện CTA 'Hiện đáp án'; khi lật thì hiện Nghĩa & Giải thích */}
+                    <div aria-live="polite" className="mt-4 pt-4 border-t border-slate-100 min-h-20 flex flex-col items-center justify-center">
                         {revealed ? (
-                            <p className="animate-reveal motion-reduce:animate-none">
-                                <CardContent text={current.meaning} headClassName="text-title-md font-semibold" restClassName="text-body-md font-normal text-on-surface-variant mt-1" />
-                            </p>
+                            <div className="w-full text-center animate-reveal motion-reduce:animate-none">
+                                <CardContent
+                                    text={current.meaning}
+                                    headClassName="text-title-md md:text-xl font-bold text-slate-900"
+                                    restClassName="text-body-md font-normal text-slate-600 mt-1.5 leading-relaxed"
+                                />
+                            </div>
                         ) : (
                             <button
                                 type="button"
-                                // Không để click lan lên khung thẻ (khung thẻ đảo mặt -> vừa lật đã úp lại)
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     reveal();
                                 }}
-                                className="px-4 py-2.5 rounded-lg bg-surface-container-high font-label-md font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-label-md font-semibold border border-slate-200/80 shadow-xs hover:shadow transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 inline-flex items-center gap-2"
                             >
-                                Hiện đáp án <kbd className="text-label-sm text-outline">Space</kbd>
+                                <span>Hiện đáp án</span>
+                                <kbd className="text-xs px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono shadow-2xs border border-slate-200">Space</kbd>
                             </button>
                         )}
                     </div>
@@ -755,24 +811,25 @@ export const StudyPage: React.FC = () => {
                 {messages}
 
                 {revealed && (
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-4 gap-2.5">
                         {GRADES.map((g) => (
                             <button
                                 key={g.grade}
                                 type="button"
                                 disabled={saving}
                                 onClick={() => void grade(g.grade)}
-                                className={`py-3 rounded-lg font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${g.className}`}
+                                className={`py-3.5 px-2 rounded-xl font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 transition-all shadow-xs hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0 flex flex-col items-center justify-center gap-1 min-h-[56px] ${g.buttonClassName}`}
                             >
-                                {g.label} <kbd className="text-label-sm opacity-70">{g.key}</kbd>
+                                <span className="text-base font-bold leading-tight">{g.label}</span>
+                                <kbd className={`text-[11px] px-1.5 py-0.2 rounded font-mono font-medium ${g.kbdClassName}`}>{g.key}</kbd>
                             </button>
                         ))}
                     </div>
                 )}
 
                 {/* Gợi ý phím tắt: chỉ máy có chuột (điện thoại xem trong bảng khi bấm nút bàn phím) */}
-                <p className="hidden [@media(hover:hover)]:block text-center text-label-sm text-outline">
-                    Nhấn <kbd className="px-1 rounded bg-surface-container-high text-on-surface">?</kbd> để xem phím tắt
+                <p className="hidden [@media(hover:hover)]:block text-center text-label-sm text-slate-500">
+                    Nhấn <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-xs">?</kbd> để xem phím tắt
                 </p>
             </div>
 
