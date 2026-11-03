@@ -12,6 +12,14 @@ const TAB_LABELS: Record<ProfileTab, { label: string; icon: string }> = {
     reports: { label: "Báo cáo của tôi", icon: "flag" },
 };
 
+const LEVEL_BADGES: Record<string, string> = {
+  N5: "bg-blue-100 text-blue-900 border-blue-300",
+  N4: "bg-emerald-100 text-emerald-900 border-emerald-300",
+  N3: "bg-amber-100 text-amber-900 border-amber-300",
+  N2: "bg-rose-100 text-rose-900 border-rose-300",
+  N1: "bg-purple-100 text-purple-900 border-purple-300",
+};
+
 interface ProfileHeroProps {
     displayName: string;
     email: string;
@@ -27,7 +35,7 @@ const Badge: React.FC<{ icon: string; className: string; children: React.ReactNo
     className,
     children,
 }) => (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-label-md font-semibold ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${className}`}>
         <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
             {icon}
         </span>
@@ -60,36 +68,38 @@ export const ProfileHero: React.FC<ProfileHeroProps> = ({
         tabRefs.current[next]?.focus();
     };
 
+    const levelClass = LEVEL_BADGES[currentLevel] ?? "bg-blue-100 text-blue-900 border-blue-300";
+
     return (
-        <header className="rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-sm overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-space-md p-space-lg">
+        <header className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-5 p-6">
                 <div
                     aria-hidden="true"
-                    className="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-full bg-primary-container text-on-primary ring-4 ring-surface-container flex items-center justify-center font-headline-sm text-headline-sm font-bold select-none"
+                    className="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-full bg-blue-600 text-white ring-4 ring-blue-100 shadow-md flex items-center justify-center font-extrabold text-2xl select-none"
                 >
                     {getInitials(displayName)}
                 </div>
 
                 <div className="min-w-0 flex flex-col gap-1.5">
-                    <h1 className="font-headline-md text-headline-md font-bold text-primary break-words">{displayName}</h1>
-                    <p className="flex items-center gap-1.5 text-body-sm text-on-surface-variant min-w-0">
+                    <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 break-words tracking-tight">{displayName}</h1>
+                    <p className="flex items-center gap-1.5 text-xs text-slate-500 font-medium min-w-0">
                         <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                             mail
                         </span>
                         <span className="truncate">{email}</span>
                     </p>
                     <div className="flex flex-wrap gap-2 mt-1">
-                        <Badge icon="school" className="bg-primary/10 text-primary">
+                        <Badge icon="school" className={levelClass}>
                             JLPT {currentLevel} · {getLevelDescription(currentLevel)}
                         </Badge>
                         {statsLoading ? (
-                            <span className="h-7 w-28 rounded-full bg-surface-container animate-pulse" aria-hidden="true" />
+                            <span className="h-7 w-28 rounded-full bg-slate-100 animate-pulse" aria-hidden="true" />
                         ) : (
                             <>
-                                <Badge icon="local_fire_department" className="bg-tertiary-fixed text-on-tertiary-fixed-variant">
+                                <Badge icon="local_fire_department" className="bg-amber-100 text-amber-900 border-amber-300">
                                     {metrics.currentStreak} ngày liên tiếp
                                 </Badge>
-                                <Badge icon="menu_book" className="bg-secondary-container text-on-secondary-container">
+                                <Badge icon="menu_book" className="bg-emerald-100 text-emerald-900 border-emerald-300">
                                     {metrics.wordsLearned.toLocaleString("vi-VN")} từ đã học
                                 </Badge>
                             </>
@@ -102,7 +112,7 @@ export const ProfileHero: React.FC<ProfileHeroProps> = ({
                 role="tablist"
                 aria-label="Mục trang cá nhân"
                 onKeyDown={handleKeyDown}
-                className="flex gap-1 px-space-sm pb-space-sm overflow-x-auto"
+                className="flex gap-1.5 px-6 pb-4 overflow-x-auto border-t border-slate-100 pt-3 scrollbar-none"
             >
                 {PROFILE_TABS.map((t) => {
                     const selected = t === activeTab;
@@ -119,16 +129,16 @@ export const ProfileHero: React.FC<ProfileHeroProps> = ({
                             aria-controls={selected ? panelId(t) : undefined}
                             tabIndex={selected ? 0 : -1}
                             onClick={() => onTabChange(t)}
-                            className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-label-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                            className={`shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                                 selected
-                                    ? "bg-surface-container text-primary font-semibold shadow-sm"
-                                    : "text-on-surface-variant hover:bg-surface-container-low"
+                                    ? "bg-blue-600 text-white shadow-xs"
+                                    : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/60"
                             }`}
                         >
-                            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                                 {TAB_LABELS[t].icon}
                             </span>
-                            {TAB_LABELS[t].label}
+                            <span>{TAB_LABELS[t].label}</span>
                         </button>
                     );
                 })}
@@ -136,3 +146,5 @@ export const ProfileHero: React.FC<ProfileHeroProps> = ({
         </header>
     );
 };
+
+export default ProfileHero;

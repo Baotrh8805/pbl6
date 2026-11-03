@@ -24,7 +24,7 @@ import { useViewBox } from "@/features/graph/useViewBox";
 /**
  * Canvas SVG sơ đồ chữ Hán (spec 2026-10-30 §3.5): tâm xanh dương, thành phần cam (bộ thủ viền đỏ), chữ cùng họ chỉ âm vàng,
  * từ ghép viên tím, chữ khác trong từ trắng viền xám; cạnh có mũi tên và nhãn: chỉ âm (xanh lá), cùng phần chỉ âm (xanh lá
- * nét đứt), bộ (đỏ), thành phần / có chữ (xám), ghép thành từ (tím). Tương tác (đợt 2): cuộn chuột / nút + − ⤢ / phím + − 0 để
+ * nét đứt), bộ (đỏ), thành phần / có chữ (xám), ghép thành từ (tím). Tương tác: cuộn chuột / nút + − ⤢ / phím + − 0 để
  * zoom, kéo nền để pan, kéo node để sắp lại, huy hiệu + hoặc đúp chuột để mở thêm liên kết của node, Shift+Enter đổi tâm.
  * Bố cục lấy từ đồ thị gốc (`base`), node mở thêm (`extra`) và node đã kéo nhận toạ độ qua `positionsOverride`.
  */
@@ -74,7 +74,7 @@ const roleText = (n: KanjiDiagramNode): string => {
 
 const nodeBase = "cursor-pointer focus:outline-none [&:hover_.halo]:opacity-60 [&:focus-visible_.halo]:opacity-100";
 const toolBtn =
-  "w-8 h-8 inline-flex items-center justify-center rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+  "w-8 h-8 inline-flex items-center justify-center rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 shadow-2xs transition-colors";
 
 export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
   base,
@@ -216,12 +216,12 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
             { swatch: <Line color={EDGE_COLOR.phon} dashed />, text: "chỉ âm đoán (?)" },
             { swatch: <Line color={EDGE_COLOR.part} />, text: "thành phần khác" },
           ]
-      : [
-          { swatch: <Dot fill={NODE_FILL.center} />, text: "chữ đang xét" },
-          { swatch: <Dot fill={NODE_FILL.word} />, text: "từ ghép" },
-          { swatch: <Dot fill={NODE_FILL.kanji} stroke="#94a3b8" />, text: "chữ khác trong từ" },
-          { swatch: <Line color={EDGE_COLOR.compound} />, text: "ghép thành từ" },
-        ];
+        : [
+            { swatch: <Dot fill={NODE_FILL.center} />, text: "chữ đang xét" },
+            { swatch: <Dot fill={NODE_FILL.word} />, text: "từ ghép" },
+            { swatch: <Dot fill={NODE_FILL.kanji} stroke="#94a3b8" />, text: "chữ khác trong từ" },
+            { swatch: <Line color={EDGE_COLOR.compound} />, text: "ghép thành từ" },
+          ];
   const expandableLeft = merged.nodes.some(canExpand);
 
   return (
@@ -343,7 +343,7 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
                       {n.label}
                     </text>
                     {n.hanViet && (
-                      <text y={r + 13} textAnchor="middle" fontSize={10} fontWeight={700} fill="#45464e" className="pointer-events-none">
+                      <text y={r + 14} textAnchor="middle" fontSize={10} fontWeight={700} fill="#1e293b" className="pointer-events-none">
                         {n.hanViet}
                       </text>
                     )}
@@ -377,30 +377,51 @@ export const KanjiDiagramCanvas: React.FC<KanjiDiagramCanvasProps> = ({
           })}
         </svg>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label-sm text-on-surface-variant px-1">
-        <span className="font-semibold text-on-surface">{diagramStats(merged.nodes)} trên sơ đồ</span>
-        <span className="text-outline">· bấm chữ để xem chi tiết · bấm dấu + (hoặc đúp chuột) để mở thêm liên kết · kéo để sắp lại</span>
-        {onExpandAll && (
-          <button type="button" onClick={onExpandAll} disabled={!canExpandAll || !expandableLeft} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">unfold_more</span>
-            Mở thêm 1 tầng
-          </button>
-        )}
-        {onCollapse && (
-          <button type="button" onClick={onCollapse} disabled={!canCollapse && isFit} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-outline-variant text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">unfold_less</span>
-            Thu gọn
-          </button>
-        )}
+
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-label-sm text-on-surface-variant px-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-semibold text-on-surface">{diagramStats(merged.nodes)} trên sơ đồ</span>
+          <span className="text-outline hidden sm:inline">· bấm chữ xem chi tiết · bấm dấu + để mở liên kết</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {onExpandAll && (
+            <button
+              type="button"
+              onClick={onExpandAll}
+              disabled={!canExpandAll || !expandableLeft}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-xs"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">unfold_more</span>
+              Mở thêm 1 tầng
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              disabled={!canCollapse && isFit}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-xs"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">unfold_less</span>
+              Thu gọn
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label-sm text-on-surface-variant px-1">
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label-sm text-on-surface-variant px-1 border-t border-surface-container-high/40 pt-1.5">
+        <span className="text-outline text-xs font-medium">Chú thích:</span>
         {legend.map((l) => (
-          <span key={l.text} className="inline-flex items-center gap-1">
+          <span key={l.text} className="inline-flex items-center gap-1 text-xs">
             {l.swatch}
             {l.text}
           </span>
         ))}
       </div>
+
+      <p className="text-[11px] text-outline sm:hidden px-1">
+        💡 Gợi ý: Dùng 2 ngón tay trên màn hình để phóng to/thu nhỏ, hoặc dùng thanh công cụ góc trên phải.
+      </p>
     </div>
   );
 };

@@ -11,8 +11,8 @@ export interface FolderFilterBarProps {
 
 const pillClass = (active: boolean) =>
   active
-    ? "bg-primary text-on-primary shadow-2xs"
-    : "bg-surface-container text-on-surface-variant hover:text-on-surface";
+    ? "bg-blue-600 text-white font-bold shadow-xs"
+    : "bg-slate-100 text-slate-600 hover:text-slate-900 font-medium";
 
 // Thanh tìm kiếm + lọc trình độ (giá trị lưu trên URL, trang cha quản lý).
 export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
@@ -26,14 +26,14 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
   const levelLabelId = useId();
 
   return (
-    <div className="bg-surface-container-lowest rounded-xl p-3 shadow-xs border border-surface-container-high/60 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+    <div className="bg-white rounded-2xl p-3 shadow-xs border border-slate-200/90 flex flex-col md:flex-row items-stretch md:items-center gap-3">
       <div className="relative flex-1">
         <label htmlFor={searchId} className="sr-only">
           Tìm kiếm
         </label>
         <span
           aria-hidden="true"
-          className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]"
+          className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]"
         >
           search
         </span>
@@ -44,7 +44,7 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full pl-10 pr-4 py-2 bg-surface-container-low rounded-lg text-sm text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-outline-variant"
+          className="w-full pl-10 pr-4 py-2 bg-slate-50 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-slate-200"
         />
       </div>
 
@@ -55,7 +55,7 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
       >
         <span
           id={levelLabelId}
-          className="font-label-sm text-xs text-outline px-1 shrink-0 font-semibold"
+          className="text-xs text-slate-500 px-1 shrink-0 font-semibold"
         >
           Trình độ:
         </span>
@@ -63,7 +63,7 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
           type="button"
           aria-pressed={!level}
           onClick={() => onLevelChange("")}
-          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all shrink-0 cursor-pointer ${pillClass(!level)}`}
+          className={`px-3 py-1 rounded-full text-xs transition-all shrink-0 cursor-pointer ${pillClass(!level)}`}
         >
           Tất cả
         </button>
@@ -73,7 +73,7 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
             type="button"
             aria-pressed={level === lvl}
             onClick={() => onLevelChange(level === lvl ? "" : lvl)}
-            className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${pillClass(level === lvl)}`}
+            className={`px-2.5 py-1 rounded-full text-xs transition-all shrink-0 cursor-pointer ${pillClass(level === lvl)}`}
           >
             {lvl}
           </button>
@@ -82,3 +82,5 @@ export const FolderFilterBar: React.FC<FolderFilterBarProps> = ({
     </div>
   );
 };
+
+export default FolderFilterBar;

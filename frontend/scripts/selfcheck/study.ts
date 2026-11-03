@@ -56,7 +56,8 @@ export function runStudyChecks(assert: Assert) {
   const three = studyKeyAction(key("3"), shown);
   assert(three?.kind === "grade" && three.grade === "good", "Đã lật: 3 = Tốt");
   assert(studyKeyAction(key(" "), { ...hidden, audioGate: true })?.kind === "openAudio", "Space ở cổng Nghe = mở cổng");
-  assert(studyKeyAction(key("1"), hidden) === null, "Chưa lật: phím số không chấm");
+  const oneHidden = studyKeyAction(key("1"), hidden);
+  assert(oneHidden?.kind === "grade" && oneHidden.grade === "again", "Chưa lật: phím số 1-4 vẫn chấm được");
   const four = studyKeyAction(key("4"), shown);
   assert(four?.kind === "grade" && four.grade === "easy", "Đã lật: 4 = Dễ");
   assert(studyKeyAction(key("z"), hidden)?.kind === "undo", "Z = hoàn tác");

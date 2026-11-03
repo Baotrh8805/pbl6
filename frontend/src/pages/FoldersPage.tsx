@@ -20,6 +20,7 @@ import { FoldersRootHeader } from "@/features/folders/components/FoldersRootHead
 import { FolderDetailHeader } from "@/features/folders/components/FolderDetailHeader";
 import { FolderFilterBar } from "@/features/folders/components/FolderFilterBar";
 import { FolderGrid, FoldersEmptyState } from "@/features/folders/components/FolderGrid";
+import { FolderCardSkeleton } from "@/features/folders/components/FolderCard";
 import { FolderDeckList } from "@/features/folders/components/FolderDeckList";
 import {
   computeFolderMetrics,
@@ -80,6 +81,8 @@ export const FoldersPage: React.FC = () => {
     () => (currentFolder ? currentFolder.children || [] : tree),
     [currentFolder, tree]
   );
+
+  const [tab, setTab] = useState<"all" | "mine" | "shared">("all");
 
   // Ghi tham số lọc lên URL
   const setParam = (name: string, value: string) => {
@@ -166,7 +169,7 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
   const error = foldersError || foreign.error || decksError;
 
   return (
-    <div className="flex flex-col w-full gap-space-lg pb-space-xl">
+    <div className="flex flex-col w-full gap-6 pb-12">
       {!currentFolder ? (
         <FoldersRootHeader
           foldersCount={tree.length}
@@ -200,10 +203,60 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
         onLevelChange={(lvl) => setParam("level", lvl)}
       />
 
+      {/* Tabs phân biệt Thư mục của tôi / Được chia sẻ khi ở màn hình gốc */}
+      {!currentFolder && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 pb-2">
+          <button
+            type="button"
+            onClick={() => setTab("all")}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              tab === "all"
+                ? "bg-slate-900 text-white shadow-xs font-bold"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+            }`}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+              folder_special
+            </span>
+            <span>Tất cả ({tree.length + (sharedFolders?.length ?? 0)})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTab("mine")}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              tab === "mine"
+                ? "bg-blue-600 text-white shadow-xs font-bold"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+            }`}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+              folder
+            </span>
+            <span>Thư mục của tôi ({tree.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTab("shared")}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              tab === "shared"
+                ? "bg-emerald-600 text-white shadow-xs font-bold"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+            }`}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+              folder_shared
+            </span>
+            <span>Được chia sẻ với tôi ({sharedFolders?.length ?? 0})</span>
+          </button>
+        </div>
+      )}
+
       {error && (
         <div
           role="alert"
-          className="p-3.5 rounded-xl bg-error/10 border border-error/20 text-error text-xs font-medium flex items-center gap-2"
+          className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center gap-2"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
             error
@@ -212,7 +265,16 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
         </div>
       )}
 
-      {filteredSubfolders.length > 0 &&
+      {foldersLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" aria-label="Đang tải danh sách thư mục">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <FolderCardSkeleton key={i} />
+          ))}
+        </div>
+      )}
+
+      {(currentFolder || tab === "all" || tab === "mine") &&
+        filteredSubfolders.length > 0 &&
         (readOnly ? (
           <FolderGrid folders={filteredSubfolders} metrics={folderMetrics} isNested onOpen={(f) => openFolder(f.id)} />
         ) : (
@@ -248,9 +310,9 @@ Thư mục con và các bộ thẻ bên trong sẽ được chuyển ra ngoài c
       )}
 
       {/* Thư mục người khác chia sẻ cho mình: chỉ xem & học */}
-      {!folderId && sharedFolders && sharedFolders.length > 0 && (
+      {!folderId && (tab === "all" || tab === "shared") && sharedFolders && sharedFolders.length > 0 && (
         <FolderGrid
-          title="Được chia sẻ với tôi"
+          title={tab === "shared" ? undefined : "Được chia sẻ với tôi"}
           folders={sharedFolders.filter((f) => matchesFilter(f, qParam, levelParam))}
           metrics={{}}
           isNested={false}

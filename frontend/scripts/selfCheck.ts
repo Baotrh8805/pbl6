@@ -369,6 +369,12 @@ async function runSelfCheck() {
   assertStrictEqual(progress.mastered, 1, "1 thẻ thành thạo (interval >= 21)");
   assertStrictEqual(progress.due, 1, "1 thẻ đến hạn");
   assertStrictEqual(progress.pct, 50, "50% thành thạo");
+  assertStrictEqual(progress.newCards, 0, "0 thẻ mới");
+  const mockCardsWithNew = [...mockCards, { id: "c3", term: "土", reading: "つち", meaning: "đất" }];
+  const progressWithNew = calcDeckProgress(mockCardsWithNew, mockReviews, now);
+  assertStrictEqual(progressWithNew.total, 3, "Tổng 3 thẻ");
+  assertStrictEqual(progressWithNew.due, 1, "Thẻ chưa review c3 không bị tính nhầm là đến hạn");
+  assertStrictEqual(progressWithNew.newCards, 1, "1 thẻ mới chưa học");
 
   // 10. Đích di chuyển thư mục: không được chứa chính nó lẫn con cháu (backend chặn ở checkMove,
   //     đây là lớp chặn ở UI để select không hiện lựa chọn chắc chắn lỗi).
@@ -1013,7 +1019,7 @@ async function runSelfCheck() {
   assertStrictEqual(`${canReEnrichPath(jobOf("FAILED", false, "quota"))},${canReEnrichPath(jobOf("FAILED", false, "error"))},${canReEnrichPath(jobOf("FAILED", false, "no_api_key"))},${canReEnrichPath(jobOf("FAILED", true, "quota"))}`, "true,true,false,false", "Job lộ trình FAILED (dịch lại bị ngắt) vẫn cho Dịch lại nghĩa; vẫn đòi lý do quota/lỗi và chưa dịch được");
   assertStrictEqual(sessionCountsLabel({ new: 3, due: 2, catchup: 0, total: 10 }, 5), "Ôn 2 · Mới 3 · Luyện 5", "Phiên chương: thêm Luyện = thẻ đã học chưa đến hạn để cộng đủ số thẻ");
   assertStrictEqual(sessionCountsLabel({ new: 10, due: 5, catchup: 3, total: 18 }, 0), "Ôn 5 · Nợ 3 · Mới 10", "Không có thẻ luyện -> nhãn như cũ");
-  assertStrictEqual(`${sessionDoneHeading(null)}|${sessionDoneHeading("today")}|${sessionDoneHeading("chapter")}|${sessionDoneHeading("catchup")}|${sessionDoneHeading("due")}`, "Xong phiên hôm nay 🎉|Xong phiên hôm nay 🎉|Xong phiên học chương 🎉|Xong phiên học bù 🎉|Xong phiên ôn thẻ đến hạn 🎉", "Tiêu đề kết thúc theo loại phiên; học bộ thẻ giữ câu cũ");
+  assertStrictEqual(`${sessionDoneHeading(null)}|${sessionDoneHeading("today")}|${sessionDoneHeading("chapter")}|${sessionDoneHeading("catchup")}|${sessionDoneHeading("due")}`, "Xong phiên hôm nay!|Xong phiên hôm nay!|Xong phiên học chương!|Xong phiên học bù!|Xong phiên ôn thẻ đến hạn!", "Tiêu đề kết thúc theo loại phiên; học bộ thẻ giữ câu cũ");
   assertStrictEqual(`${MAX_REACTION_MS},${clampReactionMs(MAX_REACTION_MS + 1)}`, "600000,600000", "Trần phản xạ một nguồn (lib/srs) = CHECK review_logs; kẹp đúng tại trần");
 
   // 25. E5 — chế độ chỉ nghe (audio-only)
@@ -1267,6 +1273,12 @@ async function runSelfCheck() {
     "/profile?tab=reports",
     "Thông báo kết quả báo cáo mở tab Báo cáo của tôi (bộ thẻ có thể đã bị gỡ)"
   );
+
+  // Cockpit Tổng quan 2.0: ước tính thời gian học và ưu tiên thẻ yếu
+  const estMins = (due: number, roadmap: number) => Math.min(45, Math.max(3, Math.ceil((due + roadmap) * 0.5)));
+  assertStrictEqual(estMins(0, 0), 3, "0 thẻ thì ước tính tối thiểu 3 phút");
+  assertStrictEqual(estMins(20, 10), 15, "30 thẻ = 15 phút học");
+  assertStrictEqual(estMins(120, 40), 45, "Nhiều thẻ kẹp trần tối đa 45 phút");
 
   console.log(" All self-check assertions passed successfully!");
 }

@@ -48,7 +48,7 @@ const ItemRow: React.FC<{
   return (
     <li
       className={`rounded-xl border transition-colors ${
-        item.selected ? "bg-surface-container-lowest border-surface-container-high" : "bg-surface-container-low/60 border-transparent opacity-70"
+        item.selected ? "bg-white border-slate-200/90 shadow-2xs" : "bg-slate-50 border-slate-200/60 opacity-60"
       }`}
     >
       <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 p-3 items-start">
@@ -187,7 +187,7 @@ export const ExtractionItemsPanel: React.FC<ExtractionItemsPanelProps> = ({ item
   ];
 
   return (
-    <section className="flex flex-col gap-3 p-space-md rounded-2xl bg-surface-container-lowest border border-surface-container-high">
+    <section className="flex flex-col gap-4 p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <h2 className="font-title-md text-title-md font-bold text-on-surface">Kết quả bóc tách</h2>

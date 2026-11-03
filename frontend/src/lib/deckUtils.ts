@@ -40,6 +40,7 @@ export const MASTERED_INTERVAL_DAYS = 21;
 export interface DeckProgress {
     total: number;
     due: number;
+    newCards: number;
     mastered: number;
     pct: number;
 }
@@ -50,10 +51,11 @@ export const calcDeckProgress = (
     now: Date = new Date()
 ): DeckProgress => {
     const total = cards.length;
-    const due = cards.filter((c) => isDue(reviews[c.id], now)).length;
+    const due = cards.filter((c) => !!reviews[c.id] && isDue(reviews[c.id], now)).length;
+    const newCards = cards.filter((c) => !reviews[c.id]).length;
     const mastered = cards.filter((c) => (reviews[c.id]?.intervalDays ?? 0) >= MASTERED_INTERVAL_DAYS).length;
     const pct = total ? Math.round((mastered / total) * 100) : 0;
-    return { total, due, mastered, pct };
+    return { total, due, newCards, mastered, pct };
 };
 
 /** Nhãn nguồn bộ thẻ theo quyền của người đang xem. */

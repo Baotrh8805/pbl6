@@ -3,10 +3,10 @@ import type { LearningPathStatus } from "@/types/api.types";
 import { pathStatusLabel } from "../roadmapUtils";
 
 const TONE: Record<LearningPathStatus, string> = {
-  PROCESSING: "bg-primary-fixed text-on-primary-fixed",
-  DRAFT: "bg-surface-container-high text-on-surface-variant",
-  ACTIVE: "bg-secondary-container/50 text-on-secondary-container",
-  FAILED: "bg-error-container text-on-error-container",
+  PROCESSING: "bg-blue-50 text-blue-700 border border-blue-200",
+  DRAFT: "bg-slate-100 text-slate-700 border border-slate-200",
+  ACTIVE: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  FAILED: "bg-rose-50 text-rose-700 border border-rose-200",
 };
 
 /**
@@ -17,8 +17,8 @@ export const PathStatusChip: React.FC<{ status: LearningPathStatus; completed?: 
   const done = status === "ACTIVE" && completed;
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-semibold ${
-        done ? "bg-secondary-container/50 text-on-secondary-container" : TONE[status]
+      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+        done ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : TONE[status]
       }`}
     >
       {status === "PROCESSING" && <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
@@ -36,7 +36,7 @@ export const PathStatusChip: React.FC<{ status: LearningPathStatus; completed?: 
 export const RemedialChip: React.FC = () => (
   <span
     title="Lộ trình bổ khuyết dựng từ các thẻ bạn hay quên, nhớ chậm hoặc làm sai"
-    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-sm font-semibold bg-tertiary-fixed text-on-tertiary-fixed-variant"
+    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200"
   >
     <span aria-hidden="true" className="material-symbols-outlined text-[13px]">healing</span>
     Bổ khuyết

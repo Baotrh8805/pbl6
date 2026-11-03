@@ -87,7 +87,7 @@ Tổng kết từng đợt nằm trong [docs/Progress/](Progress/) (mới nhất
 ---
 
 ### D. Quy tắc Frontend (React + TypeScript - `frontend`)
-- **Công nghệ:** React 19, TypeScript, Vite, Tailwind CSS 3 theo hệ màu Stitch.
+- **Công nghệ:** React 19, TypeScript, Vite, Tailwind CSS 3 theo hệ màu Stitch. Quy tắc màu chi tiết tại [COLOR_GUIDELINES.md](COLOR_GUIDELINES.md).
 - **Hệ màu chuẩn dự án (Lấy từ Stitch Design System "NihonGen AI"):**
   - **Primary (Aizome Indigo):** `#1B2A4A` (Màu xanh chàm chủ đạo).
   - **Secondary (Matcha Jade):** `#059669` (Màu xanh ngọc cho trạng thái nhớ thẻ/thành công).

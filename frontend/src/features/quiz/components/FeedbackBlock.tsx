@@ -16,14 +16,14 @@ export const FeedbackBlock: React.FC<{ q: TypedQuizQuestion; feedback: TypedQuiz
     const jaClass = lang ? "font-japanese" : "";
     return (
         <div
-            className={`rounded-lg p-space-sm border ${
+            className={`rounded-2xl p-4 border shadow-xs ${
                 feedback.correct
-                    ? "bg-secondary-container/40 border-secondary"
-                    : "bg-error-container/30 border-error/40"
+                    ? "bg-emerald-50/70 border-emerald-200 text-emerald-950"
+                    : "bg-rose-50/70 border-rose-200 text-rose-950"
             }`}
         >
-            <p className={`font-label-md font-semibold ${feedback.correct ? "text-secondary" : "text-error"}`}>
-                <span aria-hidden="true" className="material-symbols-outlined align-middle text-[18px] mr-1">
+            <p className={`text-xs font-bold flex items-center gap-1 ${feedback.correct ? "text-emerald-700" : "text-rose-700"}`}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                     {feedback.correct ? "check_circle" : "cancel"}
                 </span>
                 {feedback.correct ? "Chính xác" : chosen ? "Chưa đúng" : "Chưa trả lời"}

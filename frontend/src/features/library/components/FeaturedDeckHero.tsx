@@ -12,32 +12,32 @@ interface FeaturedDeckHeroProps {
   onSave: (deck: LibraryDeck) => void;
 }
 
-// Banner "Bộ thẻ nổi bật tuần này" + thẻ mẫu minh họa.
+// Banner "Bộ thẻ nổi bật tuần này" + thẻ mẫu minh họa tinh gọn.
 export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sampleCard, onPreview, onSave }) => (
-  <div className="relative w-full rounded-2xl bg-gradient-to-r from-primary via-primary-container to-[#1b2a4a] text-on-primary overflow-hidden shadow-xl">
-    {/* Hiệu ứng nền */}
-    <div aria-hidden="true" className="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-tertiary-container/30 blur-3xl pointer-events-none"></div>
-    <div aria-hidden="true" className="absolute right-48 bottom-0 w-64 h-64 rounded-full bg-secondary/15 blur-2xl pointer-events-none"></div>
+  <div className="relative w-full rounded-2xl bg-gradient-to-br from-primary via-[#0f2347] to-[#1b2a4a] text-on-primary overflow-hidden shadow-lg border border-primary-container/40">
+    {/* Hiệu ứng nền dịu */}
+    <div aria-hidden="true" className="absolute -right-12 -top-12 w-64 h-64 rounded-full bg-secondary/15 blur-3xl pointer-events-none" />
+    <div aria-hidden="true" className="absolute right-40 bottom-0 w-48 h-48 rounded-full bg-tertiary-container/20 blur-2xl pointer-events-none" />
 
-    <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-space-lg p-space-lg md:p-space-xl items-center">
-      <div className="lg:col-span-8 space-y-4">
+    <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-space-md lg:gap-space-lg p-5 sm:p-6 lg:p-7 items-center">
+      <div className="lg:col-span-8 space-y-3.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="px-2.5 py-1 rounded-full bg-tertiary text-on-tertiary font-label-sm text-xs font-semibold flex items-center gap-1.5 shadow-xs">
+          <span className="px-2.5 py-0.5 rounded-full bg-tertiary-container text-on-tertiary font-label-sm text-[11px] font-semibold flex items-center gap-1 shadow-xs">
             <span
               aria-hidden="true"
-              className="material-symbols-outlined text-[15px] text-on-tertiary-container"
+              className="material-symbols-outlined text-[14px] text-amber-300"
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
               stars
             </span>
-            BỘ THẺ NỔI BẬT TUẦN NÀY
+            BỘ THẺ NỔI BẬT TUẦN
           </span>
-          <span className="px-2 py-0.5 rounded-full bg-surface-container-highest/20 backdrop-blur-md text-inverse-primary font-label-sm text-xs font-bold">
+          <span className="px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-md text-white font-label-sm text-[11px] font-bold">
             JLPT {deck.level}
           </span>
           {deck.official && (
-            <span className="flex items-center gap-1 text-secondary-fixed text-xs font-semibold">
-              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">verified</span>
+            <span className="inline-flex items-center gap-1 text-secondary-fixed text-xs font-semibold">
+              <span aria-hidden="true" className="material-symbols-outlined text-[15px]">verified</span>
               Giáo Trình Chuẩn
             </span>
           )}
@@ -46,103 +46,104 @@ export const FeaturedDeckHero: React.FC<FeaturedDeckHeroProps> = ({ deck, sample
         <h2 className="font-headline-md text-headline-md font-bold text-on-primary max-w-2xl leading-snug">
           {deck.title}
         </h2>
-        <p className="font-body-md text-body-md text-inverse-primary/90 max-w-2xl line-clamp-2">
-          {deck.description}
+        <p className="font-body-sm text-body-sm text-white/80 max-w-2xl line-clamp-2">
+          {deck.description || "Bộ flashcard tinh tuyển dành cho người học tiếng Nhật với câu ví dụ thực tế và giải thích chi tiết."}
         </p>
 
-        <div className="flex flex-wrap items-center gap-y-2 gap-x-6 pt-1 text-inverse-primary font-body-sm text-body-sm">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-y-1.5 gap-x-5 pt-0.5 text-white/90 font-body-sm text-xs">
+          <div className="flex items-center gap-1.5">
             <span
               aria-hidden="true"
-              className="w-7 h-7 rounded-full bg-surface-container-highest/20 ring-1 ring-surface-container-highest/30 text-on-primary text-[11px] font-bold flex items-center justify-center"
+              className="w-6 h-6 rounded-full bg-white/15 ring-1 ring-white/20 text-white text-[10px] font-bold flex items-center justify-center"
             >
               {initials(deck.authorName)}
             </span>
-            <span className="text-on-primary font-semibold">{deck.authorName}</span>
+            <span className="text-white font-medium">{deck.authorName}</span>
           </div>
-          <div className="flex items-center gap-1 text-on-primary">
+          <div className="flex items-center gap-1 text-white">
             <span
               aria-hidden="true"
-              className="material-symbols-outlined text-[17px] text-amber-300"
+              className="material-symbols-outlined text-[15px] text-amber-300"
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
               star
             </span>
-            {/* Cùng nhãn với thẻ Thư viện (NEW-02): "4 · 1 đánh giá" / "Chưa có đánh giá" — trước đây banner in
-                "Chưa có (0 đánh giá)" trong khi thẻ của chính bộ đó ở lưới bên dưới ghi khác. */}
-            <span className="font-bold">{ratingSummary(deck.rating, deck.ratingsCount)}</span>
+            <span className="font-semibold">{ratingSummary(deck.rating, deck.ratingsCount)}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span aria-hidden="true" className="material-symbols-outlined text-[17px]">cloud_download</span>
-            <span className="font-bold text-on-primary">{formatCompactCount(deck.downloadsCount)}</span> lượt tải
+            <span aria-hidden="true" className="material-symbols-outlined text-[15px]">cloud_download</span>
+            <span><strong className="text-white">{formatCompactCount(deck.downloadsCount)}</strong> lượt tải</span>
           </div>
           <div className="flex items-center gap-1">
-            <span aria-hidden="true" className="material-symbols-outlined text-[17px]">style</span>
-            <span className="text-on-primary font-bold">{deck.cardsCount}</span> thẻ
+            <span aria-hidden="true" className="material-symbols-outlined text-[15px]">style</span>
+            <span><strong className="text-white">{deck.cardsCount}</strong> thẻ</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 pt-2">
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
           {(() => {
             const action = saveActionOf(deck);
             const cls =
-              "flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-tertiary-container text-on-tertiary-container font-label-md text-label-md font-bold shadow-lg hover:brightness-110 transition-all cursor-pointer";
+              "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-secondary text-on-secondary font-label-md text-xs font-bold shadow-md hover:brightness-110 transition-all cursor-pointer";
             return action.kind === "open" ? (
               <Link to={action.href} className={cls}>
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_added</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">bookmark_added</span>
                 <span>{action.label}</span>
               </Link>
             ) : (
               <button type="button" onClick={() => onSave(deck)} className={cls}>
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_add</span>
-                <span>Lưu Về Thư Viện Cá Nhân</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">bookmark_add</span>
+                <span>Lưu Về Tài Khoản</span>
               </button>
             );
           })()}
           <button
             type="button"
             onClick={() => onPreview(deck)}
-            className="flex items-center gap-2 px-space-md py-2.5 rounded-xl bg-surface-container-lowest/15 hover:bg-surface-container-lowest/25 backdrop-blur-md text-on-primary font-label-md text-label-md transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md text-white font-label-md text-xs font-semibold transition-all cursor-pointer border border-white/10"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">visibility</span>
-            <span>Xem Thử Thẻ Từ Vựng</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">visibility</span>
+            <span>Xem Thử Nội Dung</span>
           </button>
         </div>
       </div>
 
-      {/* Thẻ mẫu: bấm để xem thử (button nên chỉ dùng span bên trong) */}
+      {/* Thẻ mẫu: bấm để xem thử */}
       {sampleCard && (
         <div className="lg:col-span-4 flex justify-center lg:justify-end">
           <button
             type="button"
             onClick={() => onPreview(deck)}
             aria-label={`Xem thử thẻ mẫu của bộ ${deck.title}`}
-            className="relative block w-full max-w-sm text-left rounded-xl p-space-md bg-surface-container-lowest text-on-surface shadow-2xl space-y-3 transform lg:rotate-1 hover:rotate-0 transition-all cursor-pointer border border-surface-container-high/60"
+            className="relative block w-full max-w-xs text-left rounded-xl p-4 bg-surface-container-lowest text-on-surface shadow-xl space-y-2.5 transform lg:rotate-1 hover:rotate-0 transition-transform duration-200 cursor-pointer border border-surface-container-high/60 group"
           >
-            <span className="flex items-center justify-between pb-2 border-b border-surface-container">
-              <span className="px-2 py-0.5 rounded bg-surface-container font-label-sm text-[10px] uppercase font-bold text-on-surface-variant">
+            <div className="flex items-center justify-between pb-1.5 border-b border-surface-container">
+              <span className="px-1.5 py-0.5 rounded bg-surface-container font-label-sm text-[10px] uppercase font-bold text-on-surface-variant">
                 Thẻ Mẫu #01
               </span>
-              <span className="text-secondary font-label-sm text-xs font-bold">{deck.level} Bắt Buộc Nhớ</span>
-            </span>
-            <span className="block text-center py-2">
-              <span className="block font-body text-xs text-on-surface-variant">{sampleCard.term}</span>
-              <span className="block font-headline-md text-headline-md text-primary font-bold">
+              <span className="text-secondary font-label-sm text-[11px] font-bold">JLPT {deck.level}</span>
+            </div>
+            <div className="block text-center py-1">
+              <span lang="ja" className="block font-japanese text-sm text-on-surface-variant font-medium">
+                {sampleCard.term}
+              </span>
+              <span lang="ja" className="block font-japanese font-headline-sm text-headline-sm text-primary font-bold mt-0.5">
                 {sampleCard.reading}
               </span>
-              <span className="block font-body-sm text-body-sm text-on-surface-variant mt-1">
+              <div className="block font-body-sm text-body-sm text-on-surface-variant mt-1">
                 <CardContent
                   text={sampleCard.meaning}
-                  headClassName="font-medium"
-                  restClassName="text-xs mt-1 line-clamp-3"
+                  headClassName="font-medium text-xs text-on-surface"
+                  restClassName="text-[11px] mt-0.5 line-clamp-2 text-on-surface-variant"
                 />
+              </div>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-on-surface-variant font-label-sm pt-1 border-t border-surface-container-high/40">
+              <span className="group-hover:text-primary transition-colors inline-flex items-center gap-1 font-medium">
+                Xem toàn bộ {deck.cardsCount} thẻ
+                <span aria-hidden="true" className="material-symbols-outlined text-[13px]">arrow_forward</span>
               </span>
-            </span>
-            <span className="flex items-center justify-between text-[11px] text-on-surface-variant font-label-sm pt-1">
-              {/* trước đây "Tokyo Accent" / "SRS Interval: 3 Ngày" cố định, không có dữ liệu thật phía sau (rà soát 30/10 A1) */}
-              <span>Thẻ mẫu trong bộ</span>
-              <span className="text-secondary font-semibold">{deck.cardsCount} thẻ</span>
-            </span>
+            </div>
           </button>
         </div>
       )}

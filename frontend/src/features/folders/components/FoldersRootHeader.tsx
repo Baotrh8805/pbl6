@@ -1,6 +1,5 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/Button";
 
 export interface FoldersRootHeaderProps {
   foldersCount: number;
@@ -9,69 +8,68 @@ export interface FoldersRootHeaderProps {
   onCreateFolder: () => void;
 }
 
-// Ô KPI tóm tắt ở trang gốc.
+// Ô KPI tóm tắt ở trang gốc
 const StatBox: React.FC<{ icon: string; iconClass: string; value: number; label: string }> = ({
   icon,
   iconClass,
   value,
   label,
 }) => (
-  <div className="bg-surface-container-lowest rounded-xl p-4 shadow-xs border border-surface-container-high/60 flex items-center gap-4">
+  <div className="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/90 flex items-center gap-4 hover:shadow-md transition-shadow">
     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${iconClass}`}>
-      <span aria-hidden="true" className="material-symbols-outlined text-[26px]">
+      <span aria-hidden="true" className="material-symbols-outlined text-[24px]">
         {icon}
       </span>
     </div>
     <div>
-      <div className="text-2xl font-bold text-primary tracking-tight font-headline">{value}</div>
-      <div className="text-xs text-on-surface-variant font-medium">{label}</div>
+      <div className="text-2xl font-extrabold text-slate-900 tracking-tight font-headline">{value}</div>
+      <div className="text-xs text-slate-500 font-medium mt-0.5">{label}</div>
     </div>
   </div>
 );
 
-// Header trang gốc "Thư mục": tiêu đề, nút tạo thư mục và 3 ô thống kê.
+// Header trang gốc "Thư mục": tiêu đề, nút tạo thư mục và 3 ô thống kê
 export const FoldersRootHeader: React.FC<FoldersRootHeaderProps> = ({
   foldersCount,
   decksCount,
   cardsCount,
   onCreateFolder,
 }) => (
-  <div className="space-y-space-md">
-    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+  <div className="space-y-4">
+    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-slate-200/80">
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary font-label-sm text-[11px] font-semibold uppercase tracking-wider flex items-center gap-1">
-            <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+          <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+            <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
             Không Gian Thư Mục
           </span>
-          <span className="text-xs text-on-surface-variant font-medium">
+          <span className="text-xs text-slate-500 font-medium">
             Tổ chức tài liệu học tập
           </span>
         </div>
-        <h1 className="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">
+        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
           Thư Mục & Không Gian Học Tập
         </h1>
-        <p className="font-body-sm text-sm text-on-surface-variant max-w-2xl mt-0.5">
+        <p className="text-sm text-slate-600 max-w-2xl mt-1 leading-relaxed">
           Tổ chức bộ thẻ theo giáo trình (Shinkanzen, Soumatome, Mimikara), phân loại theo kỳ
-          thi và chia sẻ tài nguyên nhóm kỹ sư BrSE.
+          thi và chia sẻ tài nguyên nhóm học tập.
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-        <Button
-          variant="primary"
-          size="md"
+        <button
+          type="button"
           onClick={onCreateFolder}
-          className="cursor-pointer shadow-sm"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
             create_new_folder
           </span>
-          <span>+ Tạo Thư Mục Mới</span>
-        </Button>
+          <span>Tạo Thư Mục Mới</span>
+        </button>
         <Link
           to="/library"
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary font-label-md text-label-md transition-colors shadow-2xs border border-surface-container-high"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors shadow-2xs"
         >
           <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
             auto_stories
@@ -82,25 +80,27 @@ export const FoldersRootHeader: React.FC<FoldersRootHeaderProps> = ({
     </div>
 
     {/* 3 ô KPI */}
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-md">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <StatBox
         icon="folder"
-        iconClass="bg-primary/10 text-primary"
+        iconClass="bg-blue-50 text-blue-600"
         value={foldersCount}
         label="Thư mục đang quản lý"
       />
       <StatBox
         icon="style"
-        iconClass="bg-secondary-container/40 text-secondary"
+        iconClass="bg-emerald-50 text-emerald-600"
         value={decksCount}
         label="Bộ thẻ đã phân loại"
       />
       <StatBox
         icon="history_edu"
-        iconClass="bg-surface-container text-on-surface"
+        iconClass="bg-purple-50 text-purple-600"
         value={cardsCount}
         label="Flashcard được phân chia"
       />
     </div>
   </div>
 );
+
+export default FoldersRootHeader;

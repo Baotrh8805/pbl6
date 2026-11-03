@@ -77,7 +77,7 @@ export const studyKeyAction = (e: KeyInput, s: KeyState): StudyKeyAction | null 
         return { kind: s.revealed ? "hide" : "reveal" };
     }
     const grade = DIGIT_GRADES[e.key];
-    if (grade && s.revealed && !e.repeat) return { kind: "grade", grade };
+    if (grade && !e.repeat) return { kind: "grade", grade };
     return null;
 };
 
