@@ -167,14 +167,21 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
       </div>
 
       {loading ? (
-        <div
-          role="status"
-          className="py-8 text-center text-sm text-on-surface-variant flex items-center justify-center gap-2"
-        >
-          <span aria-hidden="true" className="material-symbols-outlined animate-spin text-primary">
-            progress_activity
-          </span>
-          Đang tải danh sách bộ thẻ...
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" aria-label="Đang tải danh sách bộ thẻ">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-xs space-y-3 animate-pulse" aria-hidden="true">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-10 rounded-full bg-slate-200" />
+                <div className="h-4 w-12 rounded-full bg-slate-100" />
+              </div>
+              <div className="h-5 w-3/4 rounded bg-slate-200" />
+              <div className="h-3 w-1/2 rounded bg-slate-100" />
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <div className="h-3 w-16 rounded bg-slate-100" />
+                <div className="h-6 w-16 rounded-lg bg-slate-200" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : decks.length === 0 ? (
         <div className="p-8 text-center rounded-2xl bg-surface-container-lowest border border-dashed border-surface-container-high flex flex-col items-center gap-3">

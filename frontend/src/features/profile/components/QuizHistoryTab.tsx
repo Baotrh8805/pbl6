@@ -6,10 +6,10 @@ import type { QuizResult } from "@/types/api.types";
 import { scoreTone, type ScoreTone } from "../lib/profileUtils";
 
 const TONE_CLASS: Record<ScoreTone, string> = {
-    good: "bg-secondary-container text-on-secondary-container",
-    fair: "bg-[#FEF3C7] text-[#B45309]",
-    poor: "bg-tertiary-fixed text-on-tertiary-fixed-variant",
-    none: "bg-surface-container text-on-surface-variant",
+    good: "bg-emerald-100 text-emerald-900 border border-emerald-300",
+    fair: "bg-amber-100 text-amber-900 border border-amber-300",
+    poor: "bg-rose-100 text-rose-900 border border-rose-300",
+    none: "bg-slate-100 text-slate-700 border border-slate-200",
 };
 
 const formatTime = (iso: string) => {
@@ -21,7 +21,7 @@ const ScoreBadge: React.FC<{ r: QuizResult }> = ({ r }) => {
     const pct = r.total > 0 ? Math.round((r.score / r.total) * 100) : null;
     return (
         <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-label-md font-semibold whitespace-nowrap ${TONE_CLASS[scoreTone(r.score, r.total)]}`}
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${TONE_CLASS[scoreTone(r.score, r.total)]}`}
         >
             {r.score}/{r.total}
             {pct !== null && ` · ${pct}%`}
@@ -31,16 +31,16 @@ const ScoreBadge: React.FC<{ r: QuizResult }> = ({ r }) => {
 };
 
 const StatCard: React.FC<{ icon: string; label: string; value: string }> = ({ icon, label, value }) => (
-    <div className="rounded-xl bg-surface-container-lowest border border-surface-container-high p-space-md flex items-center gap-space-md">
+    <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs p-5 flex items-center gap-4 hover:shadow-md transition-shadow">
         <span
             aria-hidden="true"
-            className="material-symbols-outlined text-primary bg-primary/10 rounded-lg p-2 text-[22px] shrink-0"
+            className="material-symbols-outlined text-blue-600 bg-blue-50 rounded-xl p-2.5 text-[22px] shrink-0"
         >
             {icon}
         </span>
         <div className="min-w-0">
-            <p className="text-body-sm text-on-surface-variant">{label}</p>
-            <p className="font-headline-md text-headline-md text-on-surface">{value}</p>
+            <p className="text-xs text-slate-500 font-medium">{label}</p>
+            <p className="text-2xl font-extrabold text-slate-900 tracking-tight">{value}</p>
         </div>
     </div>
 );
@@ -57,22 +57,22 @@ export const QuizHistoryTab: React.FC = () => {
 
     if (statsLoading && rows.length === 0) {
         return (
-            <div aria-busy="true" aria-live="polite" className="flex flex-col gap-space-md">
+            <div aria-busy="true" aria-live="polite" className="flex flex-col gap-4">
                 <span className="sr-only">Đang tải lịch sử kiểm tra...</span>
-                <div className="grid gap-space-md sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-3">
                     {[0, 1, 2].map((i) => (
-                        <div key={i} className="h-20 rounded-xl bg-surface-container animate-pulse" />
+                        <div key={i} className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
                     ))}
                 </div>
-                <div className="h-48 rounded-xl bg-surface-container animate-pulse" />
+                <div className="h-48 rounded-2xl bg-slate-100 animate-pulse" />
             </div>
         );
     }
 
     if (statsError) {
         return (
-            <div role="alert" className="rounded-xl border border-error/20 bg-error-container/30 p-space-lg flex flex-col items-start gap-space-sm">
-                <p className="text-body-md text-error">{statsError}</p>
+            <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 flex flex-col items-start gap-3">
+                <p className="text-sm text-rose-800 font-medium">{statsError}</p>
                 <Button type="button" variant="outline" size="sm" onClick={reloadStats}>
                     Thử lại
                 </Button>
@@ -82,17 +82,19 @@ export const QuizHistoryTab: React.FC = () => {
 
     if (rows.length === 0) {
         return (
-            <div className="rounded-xl border border-dashed border-surface-container-high p-space-xl flex flex-col items-center text-center gap-space-sm">
-                <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">
-                    quiz
-                </span>
-                <p className="font-headline-sm text-headline-sm text-on-surface">Chưa có bài kiểm tra nào</p>
-                <p className="text-body-sm text-on-surface-variant">Làm một bài Quiz để theo dõi tiến bộ của bạn tại đây.</p>
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 flex flex-col items-center text-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[28px]">
+                        quiz
+                    </span>
+                </div>
+                <p className="font-bold text-slate-900 text-base">Chưa có bài kiểm tra nào</p>
+                <p className="text-xs text-slate-500">Làm một bài Quiz để theo dõi tiến độ và độ chính xác của bạn tại đây.</p>
                 <Link
                     to="/quiz"
-                    className="mt-1 px-4 py-2.5 rounded-lg bg-primary text-on-primary text-sm font-semibold hover:bg-primary-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    className="mt-1 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
                 >
-                    Làm bài kiểm tra
+                    Làm bài kiểm tra ngay
                 </Link>
             </div>
         );
@@ -100,18 +102,19 @@ export const QuizHistoryTab: React.FC = () => {
 
     const deckCell = (r: QuizResult) => {
         const title = r.deckTitle ?? deckTitles.get(r.deckId);
-        return title ?? <span className="italic text-outline">Bộ thẻ không còn tồn tại</span>;
+        return title ?? <span className="italic text-slate-400">Bộ thẻ không còn tồn tại</span>;
     };
 
     return (
-        <div className="flex flex-col gap-space-lg">
-            <div className="grid gap-space-md sm:grid-cols-3">
+        <div className="flex flex-col gap-5">
+            <div className="grid gap-3 sm:grid-cols-3">
                 <StatCard icon="assignment" label="Số bài đã làm" value={String(metrics.quizCount)} />
                 <StatCard
                     icon="percent"
-                    label="Độ chính xác bài thi (10 bài gần nhất)"
+                    label="Độ chính xác (10 bài gần nhất)"
                     value={metrics.quizAccuracy === null ? "—" : `${metrics.quizAccuracy.toLocaleString("vi-VN")}%`}
-                />
+                >
+                </StatCard>
                 <StatCard
                     icon="trending_up"
                     label="Bài gần nhất"
@@ -119,25 +122,25 @@ export const QuizHistoryTab: React.FC = () => {
                 />
             </div>
 
-            <div className="rounded-xl bg-surface-container-lowest border border-surface-container-high overflow-hidden">
+            <div className="rounded-2xl bg-white border border-slate-200/90 shadow-xs overflow-hidden">
                 {/* Desktop: bảng */}
-                <table className="hidden md:table w-full text-body-sm">
+                <table className="hidden md:table w-full text-xs">
                     <caption className="sr-only">10 bài kiểm tra gần nhất</caption>
-                    <thead className="bg-surface-container-low text-label-md text-on-surface-variant text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold text-left">
                         <tr>
-                            <th scope="col" className="px-space-md py-2.5">Bộ thẻ</th>
-                            <th scope="col" className="px-space-md py-2.5">Điểm</th>
-                            <th scope="col" className="px-space-md py-2.5">Thời gian</th>
+                            <th scope="col" className="px-5 py-3">Bộ thẻ</th>
+                            <th scope="col" className="px-5 py-3">Điểm</th>
+                            <th scope="col" className="px-5 py-3">Thời gian</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                         {rows.map((r, i) => (
-                            <tr key={`${r.deckId}-${r.createdAt}-${i}`} className="border-t border-surface-container-high">
-                                <td className="px-space-md py-3 text-on-surface">{deckCell(r)}</td>
-                                <td className="px-space-md py-3">
+                            <tr key={`${r.deckId}-${r.createdAt}-${i}`} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-5 py-3.5 font-bold text-slate-900">{deckCell(r)}</td>
+                                <td className="px-5 py-3.5">
                                     <ScoreBadge r={r} />
                                 </td>
-                                <td className="px-space-md py-3 text-on-surface-variant whitespace-nowrap">
+                                <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">
                                     {formatTime(r.createdAt)}
                                 </td>
                             </tr>
@@ -145,13 +148,13 @@ export const QuizHistoryTab: React.FC = () => {
                     </tbody>
                 </table>
 
-                {/* Mobile: danh sách thẻ, tránh cuộn ngang */}
-                <ul className="md:hidden divide-y divide-surface-container-high" aria-label="10 bài kiểm tra gần nhất">
+                {/* Mobile: danh sách thẻ */}
+                <ul className="md:hidden divide-y divide-slate-100" aria-label="10 bài kiểm tra gần nhất">
                     {rows.map((r, i) => (
-                        <li key={`${r.deckId}-${r.createdAt}-${i}`} className="p-space-md flex items-start justify-between gap-space-sm">
+                        <li key={`${r.deckId}-${r.createdAt}-${i}`} className="p-4 flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                                <p className="text-body-md text-on-surface break-words">{deckCell(r)}</p>
-                                <p className="text-body-sm text-on-surface-variant">{formatTime(r.createdAt)}</p>
+                                <p className="font-bold text-slate-900 text-sm break-words">{deckCell(r)}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{formatTime(r.createdAt)}</p>
                             </div>
                             <ScoreBadge r={r} />
                         </li>
@@ -161,3 +164,5 @@ export const QuizHistoryTab: React.FC = () => {
         </div>
     );
 };
+
+export default QuizHistoryTab;

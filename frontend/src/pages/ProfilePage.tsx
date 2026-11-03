@@ -22,7 +22,7 @@ export const ProfilePage: React.FC = () => {
         setSearchParams(tab === "info" ? {} : { tab }, { replace: true });
 
     return (
-        <section className="flex flex-col gap-space-lg pb-space-xl max-w-5xl">
+        <section className="flex flex-col gap-6 pb-12 max-w-5xl">
             <ProfileHero
                 displayName={displayName}
                 email={userProfile?.email ?? userEmail ?? ""}

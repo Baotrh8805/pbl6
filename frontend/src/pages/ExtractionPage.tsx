@@ -105,7 +105,6 @@ export const ExtractionPage: React.FC = () => {
   }, [id, itemsKey]);
 
   // Cập nhật lạc quan rồi PATCH; server trả toàn bộ items nên lấy luôn làm nguồn sự thật.
-  // Lỗi -> hiện thông báo và tải lại để không lệch với server.
   const handlePatch = useCallback(
     async (patches: ExtractionItemPatch[]) => {
       setItems((prev) => {
@@ -160,7 +159,6 @@ export const ExtractionPage: React.FC = () => {
     }
   };
 
-  // Gemini hết quota / lỗi khi dịch: chỉ chạy lại bước ENRICH cho item thiếu nghĩa VI (không phân tích lại).
   const handleReEnrich = async () => {
     setBusy(true);
     try {
@@ -173,8 +171,6 @@ export const ExtractionPage: React.FC = () => {
     }
   };
 
-  // F2: đối chiếu lại với nguồn tri thức chuẩn. Server làm đồng bộ và trả job có stats.conflicts mới -> tải lại items
-  // (conflicts nằm trên từng item). Nếu server chuyển job sang chạy nền thì poll như "Chạy lại". Lỗi để nút tự hiện.
   const handleRecheck = async () => {
     setRecheckNote(null);
     const next = await recheckExtractionConflicts(id);
@@ -182,13 +178,11 @@ export const ExtractionPage: React.FC = () => {
       restartWith(next);
       return;
     }
-    // Response không kèm văn bản (chỉ GET ?includeText=true có): giữ văn bản đang hiện cho khung "Văn bản đã bóc".
     setJob((prev) => ({ ...next, extractedText: next.extractedText ?? prev?.extractedText }));
     setItems(await fetchExtractionItems(id));
     setRecheckNote(recheckResultText(next.stats));
   };
 
-  // i+1 "Dùng làm câu ví dụ": thay item server trả vào danh sách; response hỏng thì tải lại cả danh sách.
   const handleApplied = (updated: ExtractionItem | null) => {
     if (updated) {
       setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
@@ -197,7 +191,7 @@ export const ExtractionPage: React.FC = () => {
     fetchExtractionItems(id)
       .then(setItems)
       .catch(() => {
-        // giữ danh sách hiện tại; câu ví dụ đã lưu trên server, lần tải sau sẽ thấy
+        // giữ danh sách hiện tại
       });
   };
 
@@ -251,19 +245,75 @@ export const ExtractionPage: React.FC = () => {
         ),
       });
     }
-    if (decks[0]) navigate(`/decks/${encodeURIComponent(decks[0].id)}`);
+    navigate(`/decks/${encodeURIComponent(decks[0].id)}`);
   };
 
   if (loadError && !job)
     return (
-      <div className="py-space-lg flex flex-col items-start gap-space-sm">
-        <p className="text-error">{loadError}</p>
-        <Link to="/extractions" className="text-primary hover:underline">
-          ← Danh sách bóc tách
+      <div className="py-8 flex flex-col items-start gap-3">
+        <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm w-full">
+          {loadError}
+        </div>
+        <Link to="/extractions" className="text-blue-600 hover:underline font-semibold text-sm inline-flex items-center gap-1">
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
+          Danh sách bóc tách
         </Link>
       </div>
     );
-  if (!job) return <p className="text-on-surface-variant py-space-lg">Đang tải...</p>;
+
+  if (!job) {
+    return (
+      <div className="flex flex-col gap-6 pb-12" aria-busy="true" aria-label="Đang tải kết quả bóc tách">
+        {/* Back Link Skeleton */}
+        <div className="h-4 w-28 rounded bg-slate-200 animate-pulse" />
+
+        {/* Header & Stepper Card Skeleton */}
+        <header className="flex flex-col gap-5 p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-4 animate-pulse">
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+            <div className="space-y-2 flex-1">
+              <div className="flex items-center gap-2">
+                <div className="h-5 w-20 rounded-full bg-slate-200" />
+                <div className="h-5 w-16 rounded-full bg-slate-100" />
+              </div>
+              <div className="h-8 w-2/5 rounded-lg bg-slate-200" />
+              <div className="h-4 w-1/3 rounded bg-slate-100" />
+            </div>
+            <div className="h-9 w-28 rounded-xl bg-slate-200 shrink-0" />
+          </div>
+
+          {/* Stepper Skeleton (4 steps) */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2 overflow-x-auto">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-2 flex-1 min-w-[120px]">
+                <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0" />
+                <div className="space-y-1 flex-1">
+                  <div className="h-3.5 w-16 rounded bg-slate-200" />
+                  <div className="h-2.5 w-12 rounded bg-slate-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </header>
+
+        {/* Filter Toolbar Skeleton */}
+        <div className="h-12 w-full rounded-2xl bg-white border border-slate-200/90 animate-pulse" />
+
+        {/* Item Rows Skeleton */}
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="p-4 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-4 animate-pulse">
+              <div className="space-y-2 flex-1">
+                <div className="h-5 w-24 rounded bg-slate-200" />
+                <div className="h-4 w-40 rounded bg-slate-100" />
+              </div>
+              <div className="h-8 w-20 rounded-lg bg-slate-100" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const canReEnrich =
     job.status === "DONE" &&
     job.options.meaningLang === "vi" &&
@@ -271,37 +321,35 @@ export const ExtractionPage: React.FC = () => {
     (job.stats.enrichReason === "quota" || job.stats.enrichReason === "error");
 
   const active = isActiveStatus(job.status);
-
-  // B6: phân bố cấp + cấp tổng thể chỉ khi DONE – chạy lại vẫn giữ stats cũ tới khi xong nên không hiện số cũ lúc đang chạy.
   const levelDist = job.status === "DONE" ? levelDistribution(job.stats) : null;
   const chapterCaps = job.stats?.capPerChapter;
   const cappedChapters = job.status === "DONE" && Array.isArray(chapterCaps) ? chapterCaps.length : 0;
-  // F2: null = job chưa được đối chiếu (job cũ / backend chưa có bước kiểm mâu thuẫn).
   const conflictCount = statsConflictCount(job.stats);
   const conflictFields = conflictsByFieldSummary(job.stats);
 
   return (
-    <section className="flex flex-col gap-space-lg pb-space-xl">
+    <section className="flex flex-col gap-6 pb-12">
+      {/* Breadcrumb Navigation */}
       <nav aria-label="Đường dẫn">
-        <Link to="/extractions" className="text-label-md text-primary hover:underline inline-flex items-center gap-1">
+        <Link to="/extractions" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 transition-colors">
           <span aria-hidden="true" className="material-symbols-outlined text-[16px]">arrow_back</span>
-          Bóc tách AI
+          <span>Bóc tách AI</span>
         </Link>
       </nav>
 
-      <header className="flex flex-col gap-space-md p-space-md bg-surface-container-lowest border border-surface-container-high rounded-2xl shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+      {/* Header & Stepper Card */}
+      <header className="flex flex-col gap-5 p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <ExtractionStatusBadge status={job.status} />
-              <span className="px-2 py-0.5 rounded-full bg-surface-container text-outline text-label-sm font-medium">
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200/60">
                 {SOURCE_TYPE_LABELS[job.sourceType]}
               </span>
-              {/* Chỉ job mới (có byLevelAll) mới có cấp tổng thể; null = ai-service chưa đủ dữ liệu. */}
               {levelDist?.source === "all" && (
                 <span
                   title={OVERALL_RULE_HINT}
-                  className={`px-2 py-0.5 rounded-full text-label-sm font-semibold cursor-help ${
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-bold border cursor-help ${
                     levelDist.overallLevel ? LEVEL_TONE[levelDist.overallLevel] : UNKNOWN_LEVEL_TONE
                   }`}
                 >
@@ -309,12 +357,12 @@ export const ExtractionPage: React.FC = () => {
                 </span>
               )}
             </div>
-            <h1 className="mt-2 font-headline-sm text-headline-sm font-bold text-on-surface truncate">
+            <h1 className="mt-2 text-2xl font-extrabold text-slate-900 tracking-tight truncate">
               {job.sourceName || "Văn bản dán"}
             </h1>
-            <p className="mt-1 text-label-sm text-outline">
-              Tạo lúc {formatDateTime(job.createdAt)} · trình độ {job.options.userLevel}
-              {job.finishedAt && ` · xong lúc ${formatDateTime(job.finishedAt)}`}
+            <p className="mt-1 text-xs text-slate-500 font-medium">
+              Tạo lúc {formatDateTime(job.createdAt)} · trình độ mục tiêu JLPT {job.options.userLevel}
+              {job.finishedAt && ` · hoàn tất lúc ${formatDateTime(job.finishedAt)}`}
             </p>
           </div>
 
@@ -322,27 +370,34 @@ export const ExtractionPage: React.FC = () => {
             {job.deckIds.length > 0 && (
               <Link
                 to={`/decks/${encodeURIComponent(job.deckIds[0])}`}
-                className="px-3 py-2 rounded-lg bg-surface-container-high text-on-surface font-label-md text-label-md hover:opacity-90"
+                className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-colors"
               >
                 Bộ thẻ đã tạo{job.deckIds.length > 1 ? ` (${job.deckIds.length})` : ""}
               </Link>
             )}
             {!active && (
-              <Button variant="ghost" size="md" onClick={handleDelete} className="text-error hover:bg-error/10 hover:text-error">
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">delete</span>
-                Xoá
-              </Button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">delete</span>
+                <span>Xoá</span>
+              </button>
             )}
           </div>
         </div>
 
-        <StageStepper status={job.status} stage={job.stage} />
+        {/* 4-Step Stepper */}
+        <div className="pt-2 border-t border-slate-100">
+          <StageStepper status={job.status} stage={job.stage} />
+        </div>
 
         {(levelDist || cappedChapters >= 2) && (
-          <div className="flex flex-col gap-1.5 pt-space-sm border-t border-surface-container-high">
+          <div className="flex flex-col gap-2 pt-3 border-t border-slate-100">
             <LevelDistributionBar stats={job.stats} />
             {cappedChapters >= 2 && (
-              <p className="text-label-sm text-outline inline-flex items-center gap-1">
+              <p className="text-xs text-slate-500 inline-flex items-center gap-1">
                 <span aria-hidden="true" className="material-symbols-outlined text-[14px]">menu_book</span>
                 Giới hạn từ vựng chia theo chương: {cappedChapters} chương
               </p>
@@ -351,63 +406,64 @@ export const ExtractionPage: React.FC = () => {
         )}
 
         {job.status === "DONE" && (
-          <div className="flex flex-wrap items-center gap-2 pt-space-sm border-t border-surface-container-high">
+          <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-slate-100 text-xs">
             {conflictCount == null ? (
-              <span className="inline-flex items-center gap-1 text-label-sm text-on-surface-variant">
+              <span className="inline-flex items-center gap-1 text-slate-500 font-medium">
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">fact_check</span>
                 Chưa đối chiếu với nguồn tri thức chuẩn
               </span>
             ) : conflictCount > 0 ? (
               <>
                 <span
-                  title="Tài liệu ghi khác nguồn tri thức chuẩn (cách đọc, nghĩa, cấp...). Xem từng mục có badge cảnh báo."
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-800 text-label-sm font-semibold"
+                  title="Tài liệu ghi khác nguồn tri thức chuẩn. Xem từng mục có badge cảnh báo."
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-900 font-bold"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px]">warning</span>
                   {conflictCount} cảnh báo mâu thuẫn
                 </span>
-                {conflictFields && <span className="text-label-sm text-outline">{conflictFields}</span>}
+                {conflictFields && <span className="text-slate-400">{conflictFields}</span>}
               </>
             ) : (
-              <span className="inline-flex items-center gap-1 text-label-sm text-secondary font-semibold">
+              <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">verified</span>
-                Không có mâu thuẫn với nguồn chuẩn
+                Khớp chuẩn với nguồn tri thức
               </span>
             )}
             <RecheckConflictsButton onRecheck={handleRecheck} disabled={busy} />
-            <span aria-live="polite" className="text-label-sm text-on-surface-variant">
+            <span aria-live="polite" className="text-slate-500 font-medium">
               {recheckNote}
             </span>
           </div>
         )}
 
         {loadError && (
-          <p role="alert" className="text-label-sm text-error">
-            Mất kết nối khi theo dõi tiến trình: {loadError}{" "}
-            <button type="button" className="underline font-semibold" onClick={() => setPollRound((n) => n + 1)}>
+          <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+            <span>Mất kết nối khi theo dõi tiến trình: {loadError}</span>
+            <button type="button" className="underline font-bold" onClick={() => setPollRound((n) => n + 1)}>
               Thử lại
             </button>
-          </p>
+          </div>
         )}
       </header>
 
       {actionError && (
-        <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
+        <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">
           {actionError}
-        </p>
+        </div>
       )}
 
       {active && (
-        <p className="p-space-md rounded-2xl bg-surface-container-low text-body-sm text-on-surface-variant" aria-live="polite">
-          Hệ thống đang xử lý tài liệu. Bạn có thể rời trang và quay lại sau từ mục Bóc tách AI.
-        </p>
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 text-sm flex items-center gap-3" aria-live="polite">
+          <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0"></span>
+          <span>Hệ thống AI đang xử lý tài liệu. Bạn có thể rời trang và quay lại sau từ danh sách Bóc tách AI.</span>
+        </div>
       )}
 
       {job.status === "FAILED" && (
-        <div className="p-space-md rounded-2xl bg-error/5 border border-error/20 flex flex-col gap-3">
-          <p className="text-body-md text-error font-semibold">Xử lý thất bại</p>
-          <p className="text-body-sm text-on-surface">{job.errorMessage || "Không rõ nguyên nhân."}</p>
-          <div className="flex gap-2">
+        <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col gap-3">
+          <p className="text-base text-rose-900 font-bold">Xử lý thất bại</p>
+          <p className="text-sm text-rose-700">{job.errorMessage || "Không rõ nguyên nhân."}</p>
+          <div className="flex gap-2 pt-1">
             {job.extractedText && (
               <Button variant="primary" size="sm" onClick={handleRerun} isLoading={busy}>
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">replay</span>
@@ -422,32 +478,37 @@ export const ExtractionPage: React.FC = () => {
       )}
 
       {job.status === "DONE" && (job.stats?.layout === "list" || canReEnrich) && (
-        <div className="flex flex-wrap items-center gap-2 text-body-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           {job.stats?.layout === "list" && (
-            <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary font-semibold">
+            <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-semibold">
               Nhận dạng: danh sách từ vựng — mỗi dòng một cụm, nghĩa lấy từ tài liệu
             </span>
           )}
           {canReEnrich && (
-            <>
-              <span className="text-on-surface-variant">
-                Chưa dịch được nghĩa tiếng Việt (AI hết hạn mức hoặc lỗi), thẻ tạm dùng nghĩa tiếng Anh.
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500">
+                Chưa dịch được nghĩa tiếng Việt (hết quota hoặc lỗi mạng), thẻ tạm dùng nghĩa tiếng Anh.
               </span>
-              <Button variant="outline" size="sm" onClick={handleReEnrich} isLoading={busy}>
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">translate</span>
+              <button
+                type="button"
+                onClick={handleReEnrich}
+                disabled={busy}
+                className="px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg font-semibold text-blue-600 shadow-2xs cursor-pointer"
+              >
                 Dịch lại nghĩa
-              </Button>
-            </>
+              </button>
+            </div>
           )}
         </div>
       )}
 
+      {/* Tabs Switcher: Kết quả bóc tách & Câu ví dụ i+1 */}
       {job.status === "DONE" && (
         <div
           role="tablist"
           aria-label="Xem kết quả"
           onKeyDown={onViewKeyDown}
-          className="flex gap-1 p-1 rounded-xl bg-surface-container-low self-start max-w-full overflow-x-auto"
+          className="flex gap-1.5 p-1 rounded-xl bg-slate-100 self-start max-w-full overflow-x-auto border border-slate-200/80"
         >
           {VIEWS.map((v) => {
             const selected = v.key === view;
@@ -464,16 +525,16 @@ export const ExtractionPage: React.FC = () => {
                 aria-controls={selected ? viewPanelId(v.key) : undefined}
                 tabIndex={selected ? 0 : -1}
                 onClick={() => selectView(v.key)}
-                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 min-h-10 rounded-lg text-label-md transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                className={`shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   selected
-                    ? "bg-surface-container-lowest text-primary font-semibold shadow-sm"
-                    : "text-on-surface-variant hover:bg-surface-container"
+                    ? "bg-white text-blue-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   {v.icon}
                 </span>
-                {v.label}
+                <span>{v.label}</span>
               </button>
             );
           })}
@@ -491,14 +552,13 @@ export const ExtractionPage: React.FC = () => {
           role="tabpanel"
           id={viewPanelId("items")}
           aria-labelledby={viewTabId("items")}
-          className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-space-md items-start"
+          className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-5 items-start"
         >
-          {/* key theo finishedAt: chạy lại xong thì textarea nhận văn bản mới */}
           <ExtractedTextPanel key={job.finishedAt ?? "text"} job={job} onReanalyze={handleReanalyze} />
           {itemsError ? (
-            <p role="alert" className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-body-sm">
+            <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">
               Không tải được kết quả: {itemsError}
-            </p>
+            </div>
           ) : (
             <ExtractionItemsPanel
               items={items}

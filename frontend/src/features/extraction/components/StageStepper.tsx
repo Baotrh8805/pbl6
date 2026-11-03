@@ -2,7 +2,7 @@ import React from "react";
 import type { ExtractionStage, ExtractionStatus } from "@/types/api.types";
 import { STAGE_STEPS, stageIndex } from "../extractionUtils";
 
-// Thanh tiến trình theo job.stage: bước đã qua = tick, bước hiện tại = nhấp nháy, FAILED = đỏ ở bước đang dở.
+// Thanh tiến trình theo job.stage: bước đã qua = tick xanh, bước hiện tại = ring xanh nhấp nháy, FAILED = đỏ.
 export const StageStepper: React.FC<{ status: ExtractionStatus; stage: ExtractionStage }> = ({ status, stage }) => {
   const current = status === "DONE" ? STAGE_STEPS.length - 1 : stageIndex(stage);
   const failed = status === "FAILED";
@@ -13,28 +13,28 @@ export const StageStepper: React.FC<{ status: ExtractionStatus; stage: Extractio
         const done = status === "DONE" || i < current;
         const active = !done && i === current;
         const tone = failed && active
-          ? "bg-error text-white"
+          ? "bg-rose-600 text-white shadow-xs"
           : done
-            ? "bg-secondary text-white"
+            ? "bg-emerald-500 text-white shadow-xs"
             : active
-              ? "bg-primary text-white animate-pulse"
-              : "bg-surface-container-high text-outline";
+              ? "bg-blue-600 text-white shadow-xs ring-4 ring-blue-100 animate-pulse"
+              : "bg-slate-100 text-slate-400 border border-slate-200/80";
         return (
           <li key={step.stage} className="flex items-center" aria-current={active ? "step" : undefined}>
             <div className="flex items-center gap-2">
-              <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${tone}`}>
+              <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${tone}`}>
                 <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                   {done ? "check" : step.icon}
                 </span>
               </span>
-              <span className={`text-label-md ${done || active ? "text-on-surface font-semibold" : "text-outline"}`}>
+              <span className={`text-xs ${done || active ? "text-slate-900 font-bold" : "text-slate-400 font-medium"}`}>
                 {step.label}
               </span>
             </div>
             {i < STAGE_STEPS.length - 1 && (
               <span
                 aria-hidden="true"
-                className={`hidden sm:block w-8 lg:w-14 h-0.5 mx-2 ${i < current || status === "DONE" ? "bg-secondary" : "bg-surface-container-high"}`}
+                className={`hidden sm:block w-8 lg:w-14 h-0.5 mx-2.5 rounded-full ${i < current || status === "DONE" ? "bg-emerald-500" : "bg-slate-200"}`}
               />
             )}
           </li>
@@ -43,3 +43,5 @@ export const StageStepper: React.FC<{ status: ExtractionStatus; stage: Extractio
     </ol>
   );
 };
+
+export default StageStepper;

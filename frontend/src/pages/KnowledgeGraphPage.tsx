@@ -230,10 +230,13 @@ export const KnowledgeGraphPage: React.FC = () => {
   return (
     <section className="flex flex-col gap-space-md pb-space-xl">
       <header>
-        <h1 className="font-headline-sm text-headline-sm font-bold text-on-surface flex items-center gap-2">
+        <h1 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
           <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-primary">account_tree</span>
-          Sơ đồ chữ Hán
+          Sơ đồ chữ Hán & Đồ thị tri thức
         </h1>
+        <p className="text-body-sm text-on-surface-variant mt-1">
+          Trực quan hóa cấu tạo chữ Hán, họ chữ cùng chỉ âm và mạng lưới từ ghép liên đới.
+        </p>
       </header>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -280,7 +283,7 @@ export const KnowledgeGraphPage: React.FC = () => {
             lang="ja"
             list="kd-suggest"
             autoComplete="off"
-            className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-outline-variant bg-surface text-on-surface text-body-md font-japanese focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className="flex-1 min-w-0 px-3.5 py-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-body-md font-japanese focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-xs"
           />
           <datalist id="kd-suggest">
             {suggestions.map((s) => (
@@ -292,20 +295,46 @@ export const KnowledgeGraphPage: React.FC = () => {
           </Button>
         </form>
       </div>
+
       <div className="flex flex-wrap items-center gap-1.5 text-label-sm -mt-1">
-        <span className="text-outline">Thử:</span>
+        <span className="text-outline text-xs">Thử nhanh:</span>
         {QUICK.map((it) => (
           <button
             key={it}
             type="button"
             onClick={() => draw(it)}
             lang="ja"
-            className={`font-japanese px-2 py-0.5 rounded-md bg-surface-container hover:bg-surface-container-high text-on-surface cursor-pointer ${q === it ? "ring-1 ring-primary" : ""}`}
+            className={`font-japanese px-2 py-0.5 rounded-md bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold cursor-pointer transition-colors ${q === it ? "ring-1 ring-primary bg-primary/10 text-primary" : ""}`}
           >
             {it}
           </button>
         ))}
       </div>
+
+      {/* Dãy vết khám phá (Exploration Breadcrumbs) */}
+      {history.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1.5 px-3 rounded-xl bg-surface-container-low text-xs border border-surface-container-high/40 scrollbar-none">
+          <span className="text-outline font-semibold uppercase tracking-wider text-[10px] shrink-0">Lộ trình khám phá:</span>
+          {history.map((item, idx) => (
+            <React.Fragment key={`${item}-${idx}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setHistory((prev) => prev.slice(0, idx));
+                  draw(item);
+                }}
+                className="font-japanese font-semibold text-primary hover:underline hover:bg-surface-container px-2 py-0.5 rounded transition-colors cursor-pointer shrink-0"
+              >
+                {item}
+              </button>
+              <span className="text-outline shrink-0">›</span>
+            </React.Fragment>
+          ))}
+          <span className="font-japanese font-bold text-primary bg-primary/10 px-2 py-0.5 rounded shrink-0">
+            {q}
+          </span>
+        </div>
+      )}
 
       <p aria-live="polite" className="sr-only">
         {data && centerLabel ? `Sơ đồ của ${centerLabel}: ${diagramStats(data.nodes)}` : ""}
@@ -333,7 +362,7 @@ export const KnowledgeGraphPage: React.FC = () => {
         {q && res.loading && !res.error && <p className="text-body-sm text-on-surface-variant">Đang dựng sơ đồ «{q}»…</p>}
         {q && data && (
           <div className="grid gap-space-md lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
-            <div className="min-w-0 rounded-2xl bg-surface-container-lowest border border-surface-container-high p-3 flex flex-col gap-2">
+            <div className="min-w-0 rounded-2xl bg-surface-container-lowest border border-surface-container-high p-3 flex flex-col gap-2 shadow-xs">
               <DiagramCharBar
                 word={data.word?.term ?? null}
                 chars={data.chars}

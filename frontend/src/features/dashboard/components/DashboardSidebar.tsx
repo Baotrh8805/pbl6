@@ -260,11 +260,9 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         {/* Chân Sidebar: Mini Streak Widget & Profile link */}
         <div className="shrink-0 pt-3 border-t border-surface-container-high/50 space-y-2 bg-surface-container-lowest">
           {/* Mini Streak Widget */}
-          <div className="bg-gradient-to-r from-orange-50/80 to-amber-50/80 border border-orange-200/70 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-xs">
+          <div className="lg:hidden bg-gradient-to-r from-orange-50/80 to-amber-50/80 border border-orange-200/70 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-xs">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xl select-none shrink-0" aria-hidden="true">
-                🔥
-              </span>
+              <span className="material-symbols-outlined text-[22px] text-amber-600 select-none shrink-0" style={{ fontVariationSettings: "'FILL' 1" }} aria-hidden="true">local_fire_department</span>
               <div className="min-w-0">
                 <div className="text-[12px] font-bold text-orange-950 truncate leading-tight">
                   Chuỗi {metrics?.currentStreak ?? 0} ngày

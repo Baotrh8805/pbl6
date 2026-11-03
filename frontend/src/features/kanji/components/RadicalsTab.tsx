@@ -26,16 +26,21 @@ interface RadicalsTabProps {
   userLevel: string;
 }
 
+const COMMON_RADICAL_NOS = new Set([
+  1, 4, 9, 18, 19, 24, 30, 31, 32, 36, 37, 38, 39, 40, 46, 50, 53, 60, 61, 64,
+  70, 72, 74, 75, 85, 86, 93, 94, 96, 102, 104, 108, 109, 112, 113, 115, 116,
+  118, 119, 120, 130, 140, 142, 145, 147, 149, 154, 157, 159, 162, 163, 167,
+  168, 169, 170, 173, 181, 184, 187, 195, 196,
+]);
+
 const chipClass = (active: boolean) =>
   `px-2.5 py-1 min-h-8 rounded-full text-label-sm font-semibold border transition-colors cursor-pointer ${
     active
-      ? "bg-primary-container text-on-primary border-primary-container"
+      ? "bg-primary text-on-primary border-primary shadow-xs"
       : "bg-surface-container-lowest text-on-surface-variant border-surface-container-high hover:bg-surface-container"
   }`;
 
-// Tab "Bộ thủ" (C4): bảng 214 bộ Khang Hi (lọc theo số nét / tên), chọn một bộ -> chữ JLPT thuộc bộ (lọc cấp) -> bấm chữ để
-// tra, hoặc chọn tối đa 30 chữ để xem "Thẻ bộ thủ" và tạo bộ thẻ. Bộ đang chọn nằm trên URL (?tab=radicals&r=) để link
-// "Bộ thủ" ở thẻ chữ Hán mở đúng bộ.
+// Tab "Bộ thủ": bảng 214 bộ Khang Hi (lọc theo nhóm thường gặp / số nét / tên), chọn một bộ -> chữ JLPT thuộc bộ.
 export const RadicalsTab: React.FC<RadicalsTabProps> = ({
   radicals,
   loading,
@@ -46,16 +51,21 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
   userLevel,
 }) => {
   const searchId = useId();
+  const [scope, setScope] = useState<"common" | "all">("common");
   const [strokes, setStrokes] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const detailHeadingRef = useRef<HTMLHeadingElement>(null);
   const strokeOptions = useMemo(() => radicalStrokeOptions(radicals), [radicals]);
-  const shown = radicals.filter((r) => (strokes === null || r.strokes === strokes) && radicalMatches(r, query));
+  const shown = radicals.filter(
+    (r) =>
+      (scope === "all" || COMMON_RADICAL_NOS.has(r.no)) &&
+      (strokes === null || r.strokes === strokes) &&
+      radicalMatches(r, query)
+  );
   const selected = selectedNo !== null ? (radicals.find((r) => r.no === selectedNo) ?? null) : null;
 
   const pick = (no: number) => {
     onSelect(no);
-    // Bảng dài: đưa focus (và khung nhìn trên mobile) tới phần chi tiết vừa đổi để người dùng thấy kết quả.
     requestAnimationFrame(() => detailHeadingRef.current?.focus());
   };
 
@@ -80,7 +90,6 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
     );
   }
   if (radicals.length === 0) {
-    // Bảng rỗng không bị cache (kanjiService) -> "Thử lại" gọi lại server khi ai-service đã nạp xong dữ liệu.
     return (
       <div className="p-space-md rounded-2xl bg-surface-container-lowest border border-dashed border-surface-container-high flex flex-col items-start gap-2">
         <p className="text-body-sm text-on-surface-variant">Máy chủ chưa có dữ liệu bộ thủ.</p>
@@ -93,8 +102,7 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] gap-space-md items-start">
-      {/* Chi tiết bộ đang chọn: trên mobile đứng trước bảng (order-first) để thấy ngay sau khi chọn; desktop là cột phải
-          dính đầu màn hình, tự cuộn bên trong khi dài hơn khung nhìn (thẻ bộ thủ). */}
+      {/* Chi tiết bộ đang chọn: trên mobile đứng trước bảng để thấy ngay sau khi chọn */}
       <div className="order-first lg:order-none lg:col-start-2 lg:row-start-1 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto min-w-0">
         {selected ? (
           <RadicalDetail
@@ -115,6 +123,32 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
       </div>
 
       <div className="flex flex-col gap-space-sm min-w-0 lg:col-start-1 lg:row-start-1">
+        {/* Phân nhóm: Thường gặp (Top 58) vs Tất cả 214 bộ */}
+        <div className="flex flex-wrap items-center gap-2 pb-1">
+          <button
+            type="button"
+            onClick={() => setScope("common")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+              scope === "common"
+                ? "bg-primary text-on-primary shadow-xs"
+                : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+            }`}
+          >
+            🔥 Thường gặp nhất (58 bộ trọng tâm)
+          </button>
+          <button
+            type="button"
+            onClick={() => setScope("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+              scope === "all"
+                ? "bg-primary text-on-primary shadow-xs"
+                : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+            }`}
+          >
+            Tất cả (214 bộ Khang Hi)
+          </button>
+        </div>
+
         <div className="flex flex-col gap-2">
           <label htmlFor={searchId} className="sr-only">
             Tìm bộ thủ
@@ -147,7 +181,7 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
             ))}
           </div>
           <p className="text-label-sm text-outline" aria-live="polite">
-            {shown.length} / {radicals.length} bộ thủ
+            Hiển thị {shown.length} bộ thủ
           </p>
         </div>
 
@@ -166,12 +200,12 @@ export const RadicalsTab: React.FC<RadicalsTabProps> = ({
                     aria-label={`Bộ ${r.no}: ${r.unified}, ${r.hanViet}, ${r.meaningVi}, ${r.strokes} nét`}
                     className={`w-full h-full flex flex-col items-center gap-0.5 p-2 rounded-xl border text-center transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                       active
-                        ? "bg-primary/5 border-primary"
+                        ? "bg-primary/5 border-primary shadow-xs"
                         : "bg-surface-container-lowest border-surface-container-high hover:border-outline-variant"
                     }`}
                   >
                     <span className="self-start text-[10px] font-semibold text-outline tabular-nums">#{r.no}</span>
-                    <span lang="ja" className="font-japanese text-3xl text-on-surface leading-tight">
+                    <span lang="ja" className="font-japanese text-3xl text-on-surface leading-tight font-bold">
                       {r.unified}
                     </span>
                     <span className="text-label-sm font-bold text-tertiary tracking-wide break-words">{r.hanViet}</span>
@@ -200,9 +234,7 @@ const RadicalDetail: React.FC<RadicalDetailProps> = ({ radical, headingRef, onCl
   const [levels, setLevels] = useState<string[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
-  // Kèm nguồn mẹo từng chữ: server đợt 2 trả mẹo đã duyệt ("approved") mà RadicalCardsResponse không giữ được.
   const [cards, setCards] = useState<RadicalCardsWithSources | null>(null);
-  // Mỗi lần tải thẻ mới, bảng thẻ mount lại (bỏ danh sách "Đã tạo" của lô trước).
   const [cardsVersion, setCardsVersion] = useState(0);
   const [cardsLoading, setCardsLoading] = useState(false);
   const [cardsError, setCardsError] = useState<string | null>(null);
@@ -244,7 +276,7 @@ const RadicalDetail: React.FC<RadicalDetailProps> = ({ radical, headingRef, onCl
       className="p-space-md rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs flex flex-col gap-space-sm min-w-0"
     >
       <div className="flex items-start gap-3">
-        <span lang="ja" aria-hidden="true" className="font-japanese text-5xl leading-none text-on-surface shrink-0">
+        <span lang="ja" aria-hidden="true" className="font-japanese text-5xl leading-none text-on-surface shrink-0 font-bold">
           {radical.unified}
         </span>
         <div className="min-w-0 flex-1">
@@ -322,7 +354,7 @@ const RadicalDetail: React.FC<RadicalDetailProps> = ({ radical, headingRef, onCl
                       checked ? "bg-primary/5 border-primary" : "bg-surface-container-low border-surface-container-high hover:border-outline-variant"
                     }`}
                   >
-                    <span lang="ja" className="font-japanese text-2xl text-on-surface leading-tight">
+                    <span lang="ja" className="font-japanese text-2xl text-on-surface leading-tight font-bold">
                       {it.kanji}
                     </span>
                     <LevelChip level={it.level} />

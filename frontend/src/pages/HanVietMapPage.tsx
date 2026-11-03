@@ -14,21 +14,18 @@ import { HanVietWordList } from "@/features/hanviet/components/HanVietWordList";
 import { AddWordToDeckModal } from "@/features/hanviet/components/AddWordToDeckModal";
 
 const SUGGEST_DEBOUNCE_MS = 250;
-/** Âm ví dụ cho màn trống (âm phổ biến, chắc chắn có trong từ điển). */
-const EXAMPLES = ["NHẬT", "HỌC", "SINH", "QUỐC", "NHÂN"];
 
 const chipClass = (active: boolean) =>
   `px-2.5 py-1 min-h-8 rounded-full text-label-sm font-semibold border transition-colors cursor-pointer ${
     active
-      ? "bg-primary-container text-on-primary border-primary-container"
+      ? "bg-primary-container text-on-primary border-primary-container shadow-xs"
       : "bg-surface-container-lowest text-on-surface-variant border-surface-container-high hover:bg-surface-container"
   }`;
 
 const isLevel = (v: string | null): v is (typeof JLPT_LEVELS)[number] =>
   v !== null && (JLPT_LEVELS as readonly string[]).includes(v);
 
-// F1 – Bản đồ Hán–Việt: gõ một âm (NHẬT) -> các chữ Hán mang âm đó -> từ ghép của từng chữ, vẽ toả tròn + liệt kê theo
-// cấp. Âm / cấp nằm trên URL (?reading=&level=) để link "Xem mạng lưới" và nút Back hoạt động.
+// Bản đồ Hán–Việt: gõ một âm (NHẬT) -> các chữ Hán mang âm đó -> từ ghép tỏa tròn và danh sách theo cấp.
 export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [params, setParams] = useSearchParams();
   const reading = normalizeHanVietQuery(params.get("reading") ?? "");
@@ -37,16 +34,12 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
 
   const [input, setInput] = useState(reading);
   const [inputFocused, setInputFocused] = useState(false);
-  // Gợi ý theo mẫu combobox ARIA: focus luôn ở ô nhập, ↓/↑ trỏ gợi ý qua aria-activedescendant (Tab rời ô nhập là đóng
-  // danh sách nên gợi ý không thể là nút để Tab tới). `dismissed`: đóng bằng Esc / sau khi chọn / sau khi tra; gõ tiếp
-  // hoặc focus lại thì mở lại. `active`: gợi ý đang trỏ, -1 = chưa trỏ.
   const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(-1);
   const [reloadKey, setReloadKey] = useState(0);
   const searchId = useId();
   const listId = useId();
 
-  // Âm trên URL đổi từ ngoài (link badge, Back): đồng bộ lại ô nhập (so khoá trong render, không cần effect).
   const [lastReading, setLastReading] = useState(reading);
   if (reading !== lastReading) {
     setLastReading(reading);
@@ -72,7 +65,6 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
 
   const suggestItems = suggestions.data ?? [];
   const showSuggest = inputFocused && !dismissed && wantSuggest && suggestItems.length > 0;
-  // Gõ tiếp làm danh sách ngắn lại: chỉ số cũ vượt quá thì coi như chưa trỏ gợi ý nào.
   const activeIndex = showSuggest && active < suggestItems.length ? active : -1;
   const optionId = (i: number) => `${listId}-${i}`;
 
@@ -85,9 +77,8 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
     closeSuggest();
   };
 
-  // ↓/↑ trỏ gợi ý (vòng quanh), Enter chọn gợi ý đang trỏ (chưa trỏ thì nộp form như thường), Esc chỉ đóng danh sách.
   const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.nativeEvent.isComposing) return; // bộ gõ (IME) đang ghép chữ: phím là của bộ gõ
+    if (e.nativeEvent.isComposing) return;
     const n = suggestItems.length;
     if ((e.key === "ArrowDown" || e.key === "ArrowUp") && wantSuggest && n > 0) {
       e.preventDefault();
@@ -98,46 +89,44 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
       e.preventDefault();
       pick(suggestItems[activeIndex].reading);
     } else if (e.key === "Escape" && showSuggest) {
-      e.preventDefault(); // Esc chỉ đóng gợi ý, không làm gì khác với ô nhập
+      e.preventDefault();
       closeSuggest();
     }
   };
 
   return (
-    <section className="flex flex-col gap-space-lg pb-space-xl">
+    <section aria-labelledby={embedded ? undefined : "hanviet-page-title"} className="flex flex-col gap-space-md">
       {!embedded && (
-      <header>
-        <h1 className="font-headline-md text-headline-md font-bold text-on-surface flex items-center gap-2">
-          <span aria-hidden="true" className="material-symbols-outlined text-[28px] text-primary">
-            hub
-          </span>
-          Bản đồ Hán–Việt
-        </h1>
-        <p className="text-body-sm text-on-surface-variant mt-1 max-w-2xl">
-          Gõ một âm Hán-Việt (vd. <strong>NHẬT</strong>) để xem các chữ Hán mang âm đó và từ ghép của chúng theo cấp JLPT —
-          cách nhớ kanji nhanh cho người Việt.
-        </p>
-      </header>
+        <header>
+          <h1 id="hanviet-page-title" className="font-headline-md text-headline-md font-bold text-on-surface">
+            Bản đồ Hán–Việt
+          </h1>
+          <p className="text-body-sm text-on-surface-variant mt-1">
+            Tra một âm Hán–Việt để xem các chữ mang âm đó và các từ vựng phái sinh liên đới.
+          </p>
+        </header>
       )}
 
-      {/* Ô tìm + gợi ý */}
+      {/* Ô tìm kiếm dạng combobox ARIA */}
       <div className="relative">
         <form
           role="search"
           onSubmit={(e) => {
             e.preventDefault();
-            go(input);
-            closeSuggest();
+            if (input.trim()) {
+              go(input);
+              closeSuggest();
+            }
           }}
-          className="flex gap-2"
+          className="flex items-center gap-2"
         >
-          <div className="relative flex-1 min-w-0">
+          <div className="relative flex-1">
             <label htmlFor={searchId} className="sr-only">
-              Âm Hán-Việt
+              Âm Hán–Việt
             </label>
             <span
               aria-hidden="true"
-              className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[20px] text-outline pointer-events-none"
+              className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]"
             >
               search
             </span>
@@ -167,7 +156,7 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
               }}
               autoComplete="off"
               spellCheck={false}
-              placeholder="Nhập âm Hán-Việt, vd. NHẬT, HỌC, SINH…"
+              placeholder="Nhập âm Hán-Việt, vd. NHẬT, HỌC, SINH, THỜI…"
               className="w-full pl-10 pr-3 py-2.5 min-h-11 rounded-xl bg-surface-container-lowest border border-surface-container-high text-body-md text-on-surface placeholder:text-outline uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
@@ -177,7 +166,6 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
         </form>
 
         {showSuggest && (
-          // Chọn gợi ý bằng chuột: preventDefault ở mousedown để ô nhập chưa blur (blur sẽ đóng danh sách trước click).
           <ul
             id={listId}
             role="listbox"
@@ -211,7 +199,7 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
         )}
       </div>
 
-      {/* Lọc cấp (gửi lên server) */}
+      {/* Lọc cấp */}
       <div role="group" aria-label="Lọc từ ghép theo cấp" className="flex flex-wrap items-center gap-1.5">
         <span className="text-label-sm text-on-surface-variant mr-1">Cấp:</span>
         <button type="button" aria-pressed={level === ""} onClick={() => go(reading || input, "")} className={chipClass(level === "")}>
@@ -231,17 +219,38 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
       </div>
 
       {!reading ? (
-        <div className="p-space-lg rounded-2xl bg-surface-container-lowest border border-dashed border-surface-container-high flex flex-col items-center gap-3 text-center">
-          <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-outline">
-            hub
-          </span>
-          <p className="text-body-md text-on-surface-variant">Chưa có âm nào. Thử một âm phổ biến:</p>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {EXAMPLES.map((ex) => (
-              <button key={ex} type="button" onClick={() => go(ex)} className={chipClass(false)}>
-                {ex}
-              </button>
-            ))}
+        <div className="p-6 sm:p-10 rounded-3xl bg-surface-container-lowest border border-dashed border-surface-container-high flex flex-col items-center gap-4 text-center max-w-2xl mx-auto">
+          <div className="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center text-primary">
+            <span aria-hidden="true" className="material-symbols-outlined text-[36px]">hub</span>
+          </div>
+          <div className="space-y-1">
+            <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">Khám phá sức mạnh từ gốc Hán–Việt</h2>
+            <p className="text-body-sm text-on-surface-variant max-w-lg mx-auto">
+              Hơn 70% từ vựng tiếng Nhật có gốc Hán-Việt tương đồng. Nhập một âm Hán-Việt để xem ngay sơ đồ mạng lưới chữ Hán và các từ vựng phái sinh từ âm đó!
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-2 pt-2">
+            <span className="text-xs font-semibold text-outline uppercase tracking-wider">Thử ngay các âm phổ biến:</span>
+            <div className="flex flex-wrap justify-center gap-2">
+              {[
+                { r: "NHẬT", hint: "日 • Mặt trời / Ngày" },
+                { r: "HỌC", hint: "学 • Học hành" },
+                { r: "SINH", hint: "生 • Cuộc sống" },
+                { r: "THỜI", hint: "時 • Thời gian" },
+                { r: "QUỐC", hint: "国 • Quốc gia" },
+                { r: "NHÂN", hint: "人 • Con người" },
+              ].map((ex) => (
+                <button
+                  key={ex.r}
+                  type="button"
+                  onClick={() => go(ex.r)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-surface-container-low text-on-surface hover:bg-surface-container hover:border-primary/40 text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  <span className="text-primary font-bold">{ex.r}</span>
+                  <span className="text-[11px] text-on-surface-variant">({ex.hint})</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       ) : graph.error ? (
@@ -256,7 +265,6 @@ export const HanVietMapPage: React.FC<{ embedded?: boolean }> = ({ embedded = fa
           Đang dựng mạng lưới cho âm «{reading}»…
         </p>
       ) : (
-        // key theo âm + cấp: đổi tra cứu là trạng thái chọn / lọc / modal về mặc định
         <GraphResult key={`${reading}|${level}`} graph={graph.data} reading={reading} />
       )}
     </section>
@@ -273,7 +281,6 @@ const GraphResult: React.FC<{ graph: HanVietGraph; reading: string }> = ({ graph
   const kanji = useMemo(() => kanjiOfGraph(graph), [graph]);
   const words = wordNodesOf(graph);
   const focused = focusKanjiId ? (kanji.find((k) => k.node.id === focusKanjiId) ?? null) : null;
-  // Danh sách dưới đồ thị theo chữ đang lọc (nếu có): lọc nút từ rồi gom lại theo cấp.
   const listed: HanVietGraph = focused
     ? { ...graph, nodes: graph.nodes.filter((n) => n.type !== "word" || focused.words.some((w) => w.id === n.id)) }
     : graph;
@@ -283,7 +290,6 @@ const GraphResult: React.FC<{ graph: HanVietGraph; reading: string }> = ({ graph
     setFocusKanjiId((cur) => (id === null || cur === id ? null : id));
     if (id) setSelectedId(id);
   };
-  // Viên "+N từ": luôn lọc theo chữ đó (không đảo lọc như bấm chữ) rồi cuộn tới danh sách đủ từ.
   const listHeadingRef = useRef<HTMLHeadingElement>(null);
   const showAllWords = (kanjiId: string) => {
     setFocusKanjiId(kanjiId);
@@ -310,8 +316,7 @@ const GraphResult: React.FC<{ graph: HanVietGraph; reading: string }> = ({ graph
     <>
       <div className="grid gap-space-md lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
         <div className="min-w-0 flex flex-col gap-2">
-          {/* Đồ thị giữ bề rộng tối thiểu để nhãn đọc được; màn hẹp (< 640 px) cuộn ngang thay vì bóp nhỏ */}
-          <div className="overflow-x-auto rounded-2xl bg-surface-container-lowest border border-surface-container-high p-2">
+          <div className="overflow-x-auto rounded-2xl bg-surface-container-lowest border border-surface-container-high p-2 shadow-xs">
             <HanVietGraphSvg
               graph={graph}
               focusKanjiId={focusKanjiId}
