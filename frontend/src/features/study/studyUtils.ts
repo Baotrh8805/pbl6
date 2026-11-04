@@ -61,23 +61,38 @@ export type StudyKeyAction =
 
 const DIGIT_GRADES: Record<string, Grade> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
 
+const CODE_GRADES: Record<string, Grade> = {
+    Digit1: "again",
+    Numpad1: "again",
+    Digit2: "hard",
+    Numpad2: "hard",
+    Digit3: "good",
+    Numpad3: "good",
+    Digit4: "easy",
+    Numpad4: "easy",
+};
+
 /**
  * Phím tắt trang học (bảng §3.2). Space / Enter chỉ lật qua lại hai mặt; chấm điểm chỉ bằng phím số 1–4.
  * null = để trình duyệt xử lý như thường.
  */
 export const studyKeyAction = (e: KeyInput, s: KeyState): StudyKeyAction | null => {
-    const z = e.key === "z" || e.key === "Z";
+    const z = e.key === "z" || e.key === "Z" || e.code === "KeyZ";
     if (z && !e.altKey && !e.shiftKey) return { kind: "undo" }; // Z, Ctrl+Z, Cmd+Z
     if (e.ctrlKey || e.metaKey || e.altKey) return null; // Ctrl+R, Ctrl+C... của trình duyệt
-    if (e.key === "?") return { kind: "help" };
-    if (e.key === "r" || e.key === "R") return { kind: "replay" };
-    if (e.code === "Space" || e.key === "Enter") {
+    if (e.key === "?" || e.key === "/" || e.code === "Slash") return { kind: "help" };
+    if (e.key === "r" || e.key === "R" || e.code === "KeyR") return { kind: "replay" };
+    if (e.code === "Space" || e.key === " " || e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
         if (e.repeat) return { kind: "none" };
         if (s.audioGate) return { kind: "openAudio" };
         return { kind: s.revealed ? "hide" : "reveal" };
     }
-    const grade = DIGIT_GRADES[e.key];
-    if (grade && !e.repeat) return { kind: "grade", grade };
+    const grade = DIGIT_GRADES[e.key] || CODE_GRADES[e.code];
+    if (grade && !e.repeat) {
+        // Chưa lật thẻ thì không cho chọn 1, 2, 3, 4 để chấm điểm
+        if (!s.revealed) return null;
+        return { kind: "grade", grade };
+    }
     return null;
 };
 

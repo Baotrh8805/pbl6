@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { isAxiosError } from "axios";
 import { Modal } from "@/components/ui/Modal";
 import { fetchDeck } from "@/services/deckService";
-import { fetchReviews, submitReview, undoReview } from "@/services/studyService";
+import { fetchReviews } from "@/services/studyService";
+import { useReviewQueue } from "@/features/study/reviewQueue";
 import { fetchSession } from "@/services/learningPathService";
 import { Ruby } from "@/lib/ja";
 import { canSpeak, speak, speakSequence, stopSpeaking, type SpeechItem } from "@/lib/speech";
@@ -11,9 +11,8 @@ import { AUDIO_MODE_LABELS, cardSpeechItems, meaningSpeechItems, parseAudioMode,
 import { useAuth } from "@/context/useAuth";
 import { loadLearningSettings } from "@/features/dashboard/lib/dashboardUtils";
 import { useAsync } from "@/lib/useAsync";
-import { isDue, type Grade, type Review } from "@/lib/srs";
+import { isDue, estimateNextInterval, type Grade, type Review } from "@/lib/srs";
 import { extractKanji, hasCjkIdeograph } from "@/lib/textUtils";
-import { extractErrorMessage } from "@/services/apiClient";
 import type { Card, Deck, SessionCardMode, SessionResponse } from "@/types/api.types";
 import { CardContent } from "@/features/decks/components/CardContent";
 import { PronunciationPanel } from "@/features/practice/components/PronunciationPanel";
@@ -50,7 +49,7 @@ import {
 import { useSwipe } from "@/features/study/useSwipe";
 import { StudyProgress } from "@/features/study/components/StudyProgress";
 import { StudySummary } from "@/features/study/components/StudySummary";
-import { reviewOutcomeText } from "@/lib/moderation";
+import { reviewOutcomeText, recallPct } from "@/lib/moderation";
 import { ShortcutHelpModal } from "@/features/study/components/ShortcutHelpModal";
 import { StudyDictButton } from "@/features/dictionary/components/StudyDictButton";
 
@@ -59,6 +58,14 @@ const MODE_CLASS: Record<SessionCardMode, string> = {
     new: "bg-blue-50 text-blue-700 border border-blue-200/70",
     due: "bg-emerald-50 text-emerald-700 border border-emerald-200/70",
     cram: "bg-purple-50 text-purple-700 border border-purple-200/70",
+};
+
+type StudyFrontSide = "term" | "meaning" | "reading";
+
+const FRONT_SIDE_LABELS: Record<StudyFrontSide, string> = {
+    term: "Kanji",
+    meaning: "Định nghĩa",
+    reading: "Cách đọc",
 };
 
 const iconButton =
@@ -142,15 +149,109 @@ export const StudyPage: React.FC = () => {
     const [openedAt] = useState(() => Date.now());
     const [queueState, setQueueState] = useState<QueueState | null>(null);
     const [revealed, setRevealed] = useState(false);
-    const [saveError, setSaveError] = useState("");
     const [notice, setNotice] = useState("");
+    const { enqueue, pendingCount, lastError, clearError, lastOutcome } = useReviewQueue();
+    const saveError = lastError;
+    const [lastGrade, setLastGrade] = useState<Grade | null>(null);
     // HLR (V38): "Ôn lại sau N ngày · trước khi ôn bạn được dự đoán nhớ x %" sau mỗi lượt chấm thật (không cram)
-    const [hlrNote, setHlrNote] = useState("");
-    const [saving, setSaving] = useState(false);
+    const hlrNote = useMemo(() => {
+        if (!lastOutcome) return "";
+        if (lastGrade === "again") {
+            const parts = ["Thẻ vừa rồi sẽ lặp lại sau 3 thẻ trong phiên này"];
+            if (lastOutcome.recallBefore != null) parts.push(`trước khi ôn bạn được dự đoán nhớ ${recallPct(lastOutcome.recallBefore)}`);
+            parts.push(`lịch ôn tiếp theo: sau ${lastOutcome.intervalDays} ngày`);
+            return parts.join(" · ");
+        }
+        return reviewOutcomeText(lastOutcome) ?? "";
+    }, [lastOutcome, lastGrade]);
     const [practice, setPractice] = useState<Practice>(null);
     const [helpOpen, setHelpOpen] = useState(false);
     // Đo thời gian phản xạ: mốc lúc thẻ hiện ra (đặt trong effect bên dưới, lại mỗi thẻ, kể cả thẻ "Lại" quay vòng về).
     const shownAt = useRef(0);
+
+    // Chế độ mặt trước thẻ: Kanji (mặc định) / Định nghĩa / Cách đọc
+    const [frontSide, setFrontSide] = useState<StudyFrontSide>(() => {
+        const queryFront = params.get("front");
+        if (queryFront === "meaning" || queryFront === "reading" || queryFront === "term") {
+            return queryFront;
+        }
+        try {
+            const saved = localStorage.getItem("nihongen_study_front_side");
+            if (saved === "meaning" || saved === "reading" || saved === "term") {
+                return saved;
+            }
+        } catch {
+            // Không đọc được storage
+        }
+        return "term";
+    });
+
+    const handleFrontSideChange = (side: StudyFrontSide) => {
+        setFrontSide(side);
+        try {
+            localStorage.setItem("nihongen_study_front_side", side);
+        } catch {
+            // bỏ qua
+        }
+    };
+
+    // Tùy chọn giọng đọc: có đọc Furigana khi chưa lật thẻ không? (mặc định: bật)
+    const [speakReading, setSpeakReading] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem("nihongen_study_speak_reading");
+            if (saved !== null) return saved === "true";
+        } catch {}
+        return true;
+    });
+
+    // Tùy chọn giọng đọc: có đọc định nghĩa & ví dụ sau khi lật thẻ không? (mặc định: bật)
+    const [speakMeaning, setSpeakMeaning] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem("nihongen_study_speak_meaning");
+            if (saved !== null) return saved === "true";
+        } catch {}
+        return true;
+    });
+
+    // Menu tùy chọn ba chấm (...)
+    const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
+    const optionsMenuRef = useRef<HTMLDivElement>(null);
+    const optionsButtonRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!optionsMenuOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (optionsMenuRef.current && e.target instanceof Node && !optionsMenuRef.current.contains(e.target)) {
+                setOptionsMenuOpen(false);
+            }
+        };
+        const onEsc = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                setOptionsMenuOpen(false);
+                optionsButtonRef.current?.focus();
+            }
+        };
+        document.addEventListener("mousedown", onDown);
+        document.addEventListener("keydown", onEsc);
+        return () => {
+            document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("keydown", onEsc);
+        };
+    }, [optionsMenuOpen]);
+
+    const handleToggleSpeakReading = (val: boolean) => {
+        setSpeakReading(val);
+        try {
+            localStorage.setItem("nihongen_study_speak_reading", String(val));
+        } catch {}
+    };
+
+    const handleToggleSpeakMeaning = (val: boolean) => {
+        setSpeakMeaning(val);
+        try {
+            localStorage.setItem("nihongen_study_speak_meaning", String(val));
+        } catch {}
+    };
 
     // E5 – chế độ chỉ nghe: ?mode=audio|read ghi đè cài đặt người dùng; trình duyệt không đọc được thì luôn là chế độ đọc.
     const { userEmail } = useAuth();
@@ -247,74 +348,78 @@ export const StudyPage: React.FC = () => {
 
     const reveal = () => setRevealed(true);
 
-    const grade = async (g: Grade) => {
-        if (!current || saving || !live) return;
+    const grade = (g: Grade) => {
+        if (!current || !live) return;
         // Đo trước khi làm gì khác: từ lúc hiện thẻ tới cú bấm chấm (chỉ là tín hiệu phụ, không đổi SRS).
         const elapsed = performance.now() - shownAt.current;
         const reactionMs = clampReactionMs(elapsed);
         const gradedAt = Date.now();
-        setSaving(true);
-        try {
-            // Chế độ chấm từng thẻ: ?cram=1 / Luyện lại ép cram; phiên lộ trình theo server (mode=cram = đã ôn nhưng chưa đến hạn);
-            // học dải 1.0: thẻ đã ôn chưa đến hạn chỉ ghi log, không đẩy lịch SRS (mở lại dải hôm nay không thổi phồng "đã thuộc").
-            const cramThis =
-                cram ||
-                forceCram ||
-                sessionCard?.mode === "cram" ||
-                (range !== null && rangeCram(data?.reviews[current.id], new Date()));
-            // Lưu từng thẻ: thoát giữa chừng không mất tiến độ. pathId để review_logs gắn lượt ôn với lộ trình.
-            const outcome = await submitReview(current.id, g, { cram: cramThis, reactionMs, pathId: pathId ?? undefined });
-            setSaveError("");
-            setNotice("");
-            setHlrNote(cramThis ? "" : (reviewOutcomeText(outcome) ?? ""));
-            setRevealed(false);
-            const entry: UndoEntry = { cardId: current.id, term: current.term, ids: live.ids, stats: live.stats };
-            setQueueState((s) =>
-                s === null || s.key !== live.key
-                    ? s
-                    : {
-                          ...s,
-                          // "Lại": gặp lại sau 3 thẻ (§3.3) thay vì cuối hàng đợi
-                          ids: g === "again" ? requeueAgain(s.ids) : s.ids.slice(1),
-                          stats: recordGrade(s.stats, current.id, g, gradedAt - elapsed, gradedAt),
-                          undo: pushUndo(s.undo, entry),
-                      }
-            );
-            setTurn((t) => t + 1);
-            shownAt.current = performance.now(); // hàng đợi 1 thẻ bấm "Lại": thẻ không đổi id nên effect trên không chạy
-        } catch (e) {
-            // Lỗi mạng -> bấm lại; lỗi từ server (mất quyền, thẻ bị xoá...) -> hiện đúng lý do
-            setSaveError(`Chưa lưu được kết quả: ${extractErrorMessage(e)}`);
-        } finally {
-            setSaving(false);
-        }
+
+        // Chế độ chấm từng thẻ: ?cram=1 / Luyện lại ép cram; phiên lộ trình theo server (mode=cram = đã ôn nhưng chưa đến hạn);
+        // học dải 1.0: thẻ đã ôn chưa đến hạn chỉ ghi log, không đẩy lịch SRS (mở lại dải hôm nay không thổi phồng "đã thuộc").
+        const cramThis =
+            cram ||
+            forceCram ||
+            sessionCard?.mode === "cram" ||
+            (range !== null && rangeCram(data?.reviews[current.id], new Date()));
+
+        // 1. Phản hồi giao diện ngay lập tức (0ms - Optimistic UI)
+        setNotice("");
+        clearError();
+        setRevealed(false);
+        setLastGrade(g);
+        const entry: UndoEntry = { cardId: current.id, term: current.term, ids: live.ids, stats: live.stats };
+        setQueueState((s) =>
+            s === null || s.key !== live.key
+                ? s
+                : {
+                      ...s,
+                      // "Lại": gặp lại sau 3 thẻ (§3.3) thay vì cuối hàng đợi
+                      ids: g === "again" ? requeueAgain(s.ids) : s.ids.slice(1),
+                      stats: recordGrade(s.stats, current.id, g, gradedAt - elapsed, gradedAt),
+                      undo: pushUndo(s.undo, entry),
+                  }
+        );
+        setTurn((t) => t + 1);
+        shownAt.current = performance.now(); // hàng đợi 1 thẻ bấm "Lại": thẻ không đổi id nên effect trên không chạy
+
+        // 2. Đưa vào hàng đợi ngầm tuần tự (Background Queue)
+        enqueue({
+            type: "review",
+            cardId: current.id,
+            grade: g,
+            cramThis,
+            reactionMs,
+            pathId: pathId ?? undefined,
+            term: current.term,
+        });
     };
 
-    // Hoàn tác lượt chấm cuối (§3.8): server khôi phục lịch cũ; client trả hàng đợi + kết quả về trước lượt đó, thẻ hiện mặt chưa lật.
-    const undoLast = async () => {
+    // Hoàn tác lượt chấm cuối (§3.8): hoàn tác tức thì trên UI (0ms) và đưa tác vụ vào hàng đợi ngầm
+    const undoLast = () => {
         const top = live?.undo[live.undo.length - 1];
-        if (!top || saving || !live) return;
+        if (!top || !live) return;
         const dropTop = (s: QueueState | null) =>
             s && s.key === live.key && s.undo[s.undo.length - 1] === top ? { ...s, undo: s.undo.slice(0, -1) } : s;
-        setSaving(true);
-        try {
-            await undoReview(top.cardId);
-            setQueueState((s) => {
-                const d = dropTop(s);
-                return d && d !== s ? { ...d, ids: top.ids, stats: top.stats } : s;
-            });
-            setRevealed(false);
-            setSaveError("");
-            setNotice(`Đã hoàn tác: ${top.term}`);
-            setTurn((t) => t + 1);
-            shownAt.current = performance.now();
-        } catch (e) {
-            // 409: lượt đó không còn hoàn tác được (quá 30 phút...) -> bỏ khỏi ngăn để lần bấm sau lùi tiếp được
-            if (isAxiosError(e) && e.response?.status === 409) setQueueState(dropTop);
-            setSaveError(`Chưa hoàn tác được: ${extractErrorMessage(e)}`);
-        } finally {
-            setSaving(false);
-        }
+
+        // 1. Trả lại trạng thái UI tức thì (0ms)
+        setQueueState((s) => {
+            const d = dropTop(s);
+            return d && d !== s ? { ...d, ids: top.ids, stats: top.stats } : s;
+        });
+        setRevealed(false);
+        clearError();
+        setLastGrade(null);
+        setNotice(`Đã hoàn tác: ${top.term}`);
+        setTurn((t) => t + 1);
+        shownAt.current = performance.now();
+
+        // 2. Gửi lệnh hoàn tác qua hàng đợi ngầm
+        enqueue({
+            type: "undo",
+            cardId: top.cardId,
+            term: top.term,
+        });
     };
 
     const restart = () => {
@@ -338,17 +443,23 @@ export const StudyPage: React.FC = () => {
         const onKey = (e: KeyboardEvent) => {
             // Modal luyện tập đang mở: Space / 1–4 là của nút, ô vẽ trong modal — không lật thẻ, không chấm.
             if (practice !== null) return;
-            // Bảng phím tắt đang mở: chỉ "?" (đóng lại); Esc do Modal xử lý.
-            if (helpOpen && e.key !== "?") return;
+            // Bảng phím tắt đang mở: chỉ "?" hoặc "/" (đóng lại); Esc do Modal xử lý.
+            if (helpOpen && e.key !== "?" && e.key !== "/" && e.code !== "Slash") return;
+            // Menu tùy chọn đang mở: tạm dừng phím tắt thẻ (Esc do menu xử lý)
+            if (optionsMenuOpen) return;
             const el = e.target as HTMLElement | null;
             if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
             const action = studyKeyAction(e, { revealed, audioGate: audioOnly && !listening });
             if (!action) return;
-            // Enter trên nút / link đang focus: để trình duyệt bấm đúng nút đó
-            if (e.key === "Enter" && el?.closest("button, a")) return;
-            // E5: R chỉ có nghĩa ở chế độ Nghe
-            if (action.kind === "replay" && !(audioOnly && listening && current)) return;
+            // Enter trên link điều hướng: để trình duyệt mở link đó
+            if (e.key === "Enter" && el?.closest("a")) return;
+            
+            // Ngăn chặn cuộn trang của phím Space và tránh double-trigger
             e.preventDefault();
+            if (el && el.tagName === "BUTTON") {
+                el.blur();
+            }
+
             switch (action.kind) {
                 case "undo":
                     void undoLast();
@@ -357,7 +468,15 @@ export const StudyPage: React.FC = () => {
                     setHelpOpen((o) => !o);
                     break;
                 case "replay":
-                    if (current) speakItems(cardSpeechItems(current.term, current.reading, revealed ? current.meaning : null));
+                    if (current) {
+                        speakItems(
+                            cardSpeechItems(current.term, current.reading, revealed && speakMeaning ? current.meaning : null, {
+                                speakReading,
+                                speakMeaning,
+                                includeExamples: true,
+                            })
+                        );
+                    }
                     break;
                 case "openAudio":
                     // Cổng "Bắt đầu nghe" đang hiện: Space mở cổng (như bấm nút) thay vì lật thẻ chưa nghe.
@@ -370,7 +489,7 @@ export const StudyPage: React.FC = () => {
                     setRevealed(false);
                     break;
                 case "grade":
-                    if (current) void grade(action.grade);
+                    if (current && revealed) void grade(action.grade);
                     break;
                 case "none":
                     break;
@@ -381,7 +500,7 @@ export const StudyPage: React.FC = () => {
     });
 
     // Vuốt (§3.6): chỉ khi đã lật; trái = Lại, phải = Tốt.
-    const swipe = useSwipe(revealed && !saving && practice === null, (g) => void grade(g));
+    const swipe = useSwipe(revealed && practice === null, (g) => void grade(g));
 
     // E5: thẻ mới hiện ra (hoặc quay vòng về) ở chế độ chỉ nghe -> đọc thuật ngữ + cách đọc; lật thẻ -> đọc thêm dòng đầu
     // của nghĩa bằng tiếng Việt (speakSequence tự bỏ qua khi máy không có giọng Việt). MỘT effect + nhớ lượt (thẻ + turn)
@@ -395,12 +514,24 @@ export const StudyPage: React.FC = () => {
         }
         const key = `${current.id}|${turn}`;
         if (termSpokenFor.current === key) {
-            if (revealed) speakItems(meaningSpeechItems(current.meaning));
+            if (revealed && speakMeaning) {
+                speakItems(meaningSpeechItems(current.meaning, true));
+            }
             return;
         }
         termSpokenFor.current = key;
-        speakItems(cardSpeechItems(current.term, current.reading, revealed ? current.meaning : null));
-    }, [audioOnly, listening, revealed, current, turn, speakItems]);
+        // Nếu mặt trước là nghĩa và chưa lật, không tự đọc tiếng Nhật để tránh lộ đáp án
+        if (frontSide === "meaning" && !revealed) {
+            return;
+        }
+        speakItems(
+            cardSpeechItems(current.term, current.reading, revealed && speakMeaning ? current.meaning : null, {
+                speakReading,
+                speakMeaning,
+                includeExamples: true,
+            })
+        );
+    }, [audioOnly, listening, revealed, current, turn, speakItems, frontSide, speakReading, speakMeaning]);
 
     // Rời trang (về lộ trình / bộ thẻ, đổi route): không để tiếng đọc dở tiếp tục ở trang sau.
     useEffect(() => () => stopAudio(), [stopAudio]);
@@ -461,7 +592,7 @@ export const StudyPage: React.FC = () => {
     const deck = data.deck;
     const session = data.session;
     const exitTo = pathId ? `/roadmap/${encodeURIComponent(pathId)}` : `/decks/${deck?.id ?? deckId}`;
-    const canUndo = (live?.undo.length ?? 0) > 0 && !saving;
+    const canUndo = (live?.undo.length ?? 0) > 0;
     const undoButton = (
         <button
             type="button"
@@ -547,7 +678,7 @@ export const StudyPage: React.FC = () => {
                 )}
                 {messages}
                 <Link to={exitTo} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-label-md font-semibold shadow-xs hover:shadow transition-all">
-                    {pathId ? "Về lộ trình" : "Về chi tiết bộ thẻ"}
+                    Quay lại
                 </Link>
                 {/* Rà soát 27/10: bộ đã học xong vẫn ôn lại được ngay (cram không đổi lịch; học lại từ đầu ở trang bộ thẻ) */}
                 {!pathId && !range && deck && !cram && (
@@ -585,47 +716,165 @@ export const StudyPage: React.FC = () => {
         <section className="min-h-screen bg-slate-50 text-slate-900 px-gutter py-space-lg overflow-x-hidden">
             <div className="max-w-2xl mx-auto flex flex-col gap-space-lg">
                 <header className="flex flex-col gap-2 text-label-md text-on-surface-variant">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                        <Link to={exitTo} className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors">
-                            {pathId ? "← Về lộ trình" : "← Thoát"}
-                        </Link>
-                        <div className="flex items-center gap-1">
-                            {/* E5: đổi Đọc / Nghe giữa phiên; chỉ khi trình duyệt đọc được văn bản. "Đọc" đứng trước: chế độ mặc định, dùng nhiều nhất */}
-                            {canSpeak && (
-                                <div role="group" aria-label="Chế độ học" className="inline-flex rounded-lg bg-slate-200/70 p-0.5 border border-slate-200/50 mr-1">
-                                    {(["read", "audio"] as const).map((m) => {
-                                        const active = m === "audio" ? audioOnly : !audioOnly;
-                                        return (
-                                            <button
-                                                key={m}
-                                                type="button"
-                                                aria-pressed={active}
-                                                onClick={() => setAudioMode(m === "audio")}
-                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                                                    active ? "bg-white text-blue-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                                                }`}
-                                            >
-                                                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-                                                    {m === "audio" ? "headphones" : "visibility"}
-                                                </span>
-                                                {AUDIO_MODE_LABELS[m]}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                            {undoButton}
-                            <button
-                                type="button"
-                                onClick={() => setHelpOpen(true)}
-                                aria-label="Phím tắt"
-                                title="Phím tắt (?)"
-                                className={iconButton}
-                            >
-                                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                                    keyboard
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                            <Link to={exitTo} className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors">
+                                {pathId ? "← Về lộ trình" : "← Thoát"}
+                            </Link>
+
+                            {/* Trạng thái lưu ngầm (Background Queue) */}
+                            {pendingCount > 0 ? (
+                                <span
+                                    className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200/80 shadow-2xs transition-all"
+                                    title="Đang lưu tiến độ lên máy chủ..."
+                                >
+                                    <span className="material-symbols-outlined text-[13px] animate-spin text-amber-600" aria-hidden="true">
+                                        sync
+                                    </span>
+                                    <span>Đang lưu{pendingCount > 1 ? ` (${pendingCount})` : ""}</span>
                                 </span>
-                            </button>
+                            ) : (
+                                <span
+                                    className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium px-2 py-0.5 rounded-full bg-emerald-50/80 border border-emerald-200/60 transition-all"
+                                    title="Đã lưu toàn bộ tiến độ lên máy chủ"
+                                >
+                                    <span className="material-symbols-outlined text-[13px] text-emerald-600" aria-hidden="true">
+                                        cloud_done
+                                    </span>
+                                    <span>Đã lưu</span>
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            {undoButton}
+
+                            {/* Menu tùy chọn ba chấm (...) */}
+                            <div className="relative" ref={optionsMenuRef}>
+                                <button
+                                    ref={optionsButtonRef}
+                                    type="button"
+                                    onClick={() => setOptionsMenuOpen((v) => !v)}
+                                    aria-expanded={optionsMenuOpen}
+                                    aria-haspopup="true"
+                                    aria-label="Tùy chọn học tập"
+                                    title="Tùy chọn học tập (...)"
+                                    className={`p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors cursor-pointer ${
+                                        optionsMenuOpen ? "bg-slate-200 text-slate-900" : ""
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                        more_horiz
+                                    </span>
+                                </button>
+
+                                {optionsMenuOpen && (
+                                    <div className="absolute right-0 top-full mt-1.5 w-72 max-w-[90vw] p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xl z-30 text-slate-800 space-y-3.5 animate-reveal">
+                                        {/* 1. Mặt trước hiển thị ban đầu */}
+                                        <div>
+                                            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                                Mặt trước thẻ:
+                                            </span>
+                                            <div role="group" className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
+                                                {(["term", "meaning", "reading"] as const).map((side) => {
+                                                    const active = frontSide === side;
+                                                    return (
+                                                        <button
+                                                            key={side}
+                                                            type="button"
+                                                            onClick={() => handleFrontSideChange(side)}
+                                                            className={`py-1.5 px-2 rounded-lg font-semibold text-center transition-all cursor-pointer ${
+                                                                active
+                                                                    ? "bg-white text-blue-700 shadow-xs"
+                                                                    : "text-slate-600 hover:text-slate-900"
+                                                            }`}
+                                                        >
+                                                            {FRONT_SIDE_LABELS[side]}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* 2. Chế độ học: Đọc / Nghe */}
+                                        {canSpeak && (
+                                            <div>
+                                                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                                    Chế độ học:
+                                                </span>
+                                                <div role="group" className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
+                                                    {(["read", "audio"] as const).map((m) => {
+                                                        const active = m === "audio" ? audioOnly : !audioOnly;
+                                                        return (
+                                                            <button
+                                                                key={m}
+                                                                type="button"
+                                                                onClick={() => setAudioMode(m === "audio")}
+                                                                className={`py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                                                    active
+                                                                        ? "bg-white text-blue-700 shadow-xs"
+                                                                        : "text-slate-600 hover:text-slate-900"
+                                                                }`}
+                                                            >
+                                                                <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+                                                                    {m === "audio" ? "headphones" : "visibility"}
+                                                                </span>
+                                                                {AUDIO_MODE_LABELS[m]}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 3. Tùy chọn giọng đọc */}
+                                        {canSpeak && (
+                                            <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                                                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                                    Cài đặt giọng đọc:
+                                                </span>
+                                                <label className="flex items-center justify-between gap-2 cursor-pointer text-xs select-none hover:text-slate-900">
+                                                    <span className="text-slate-700">Đọc Furigana trước khi lật</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={speakReading}
+                                                        onChange={(e) => handleToggleSpeakReading(e.target.checked)}
+                                                        className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                                    />
+                                                </label>
+                                                <label className="flex items-center justify-between gap-2 cursor-pointer text-xs select-none hover:text-slate-900">
+                                                    <span className="text-slate-700">Đọc nghĩa & ví dụ khi lật</span>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={speakMeaning}
+                                                        onChange={(e) => handleToggleSpeakMeaning(e.target.checked)}
+                                                        className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                                    />
+                                                </label>
+                                            </div>
+                                        )}
+
+                                        {/* 4. Xem phím tắt */}
+                                        <div className="pt-2 border-t border-slate-100">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setOptionsMenuOpen(false);
+                                                    setHelpOpen(true);
+                                                }}
+                                                className="w-full py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center justify-between cursor-pointer transition-colors"
+                                            >
+                                                <span className="flex items-center gap-1.5">
+                                                    <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+                                                        keyboard
+                                                    </span>
+                                                    <span>Phím tắt khi học</span>
+                                                </span>
+                                                <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[10px]">?</kbd>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                     <StudyProgress done={(live?.size ?? 0) - (queue?.length ?? 0)} size={live?.size ?? 0} counts={counts} />
@@ -687,6 +936,9 @@ export const StudyPage: React.FC = () => {
                                     {sessionCard.chapterTitle}
                                 </span>
                             )}
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200/70">
+                                {FRONT_SIDE_LABELS[frontSide]} ra trước
+                            </span>
                         </div>
 
                         {/* Toolbar công cụ phụ (Loa, Từ điển, Mic, Viết): Đặt gọn gàng ở góc trên, click không lật thẻ */}
@@ -699,7 +951,13 @@ export const StudyPage: React.FC = () => {
                                     type="button"
                                     onClick={() =>
                                         audioOnly && listening
-                                            ? speakItems(cardSpeechItems(current.term, current.reading, revealed ? current.meaning : null))
+                                            ? speakItems(
+                                                  cardSpeechItems(current.term, current.reading, revealed && speakMeaning ? current.meaning : null, {
+                                                      speakReading,
+                                                      speakMeaning,
+                                                      includeExamples: true,
+                                                  })
+                                              )
                                             : speak(current.term)
                                     }
                                     aria-label={audioOnly ? "Nghe lại" : `Phát âm ${current.term}`}
@@ -771,13 +1029,39 @@ export const StudyPage: React.FC = () => {
                                     <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">Space</kbd> để lật
                                 </p>
                             </div>
-                        ) : (
-                            <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug">
-                                {revealed ? (
-                                    <Ruby term={current.term} reading={current.reading ?? undefined} segments={current.readingSegments} />
-                                ) : (
-                                    current.term
+                        ) : revealed ? (
+                            <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese">
+                                <Ruby term={current.term} reading={current.reading ?? undefined} segments={current.readingSegments} />
+                            </div>
+                        ) : frontSide === "meaning" ? (
+                            <div className="flex flex-col items-center justify-center gap-2 py-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                                    Định nghĩa / Nghĩa tiếng Việt
+                                </span>
+                                <div className="text-2xl md:text-3xl font-bold text-slate-900 leading-relaxed max-w-lg mx-auto">
+                                    {current.meaning.split("\n")[0]}
+                                </div>
+                                {current.meaning.split("\n").length > 1 && (
+                                    <p className="text-xs text-slate-400 italic">
+                                        (Lật thẻ để xem Kanji, cách đọc và ví dụ đầy đủ)
+                                    </p>
                                 )}
+                            </div>
+                        ) : frontSide === "reading" ? (
+                            <div className="flex flex-col items-center justify-center gap-2 py-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                                    Cách đọc (Furigana / Hiragana)
+                                </span>
+                                <div lang="ja" className="text-3xl md:text-4xl font-bold font-japanese text-slate-800 leading-snug">
+                                    {current.reading || current.term}
+                                </div>
+                                <p className="text-xs text-slate-400 italic">
+                                    (Lật thẻ để xem chữ Kanji và định nghĩa)
+                                </p>
+                            </div>
+                        ) : (
+                            <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese">
+                                {current.term}
                             </div>
                         )}
                     </div>
@@ -812,18 +1096,25 @@ export const StudyPage: React.FC = () => {
 
                 {revealed && (
                     <div className="grid grid-cols-4 gap-2.5">
-                        {GRADES.map((g) => (
-                            <button
-                                key={g.grade}
-                                type="button"
-                                disabled={saving}
-                                onClick={() => void grade(g.grade)}
-                                className={`py-3.5 px-2 rounded-xl font-label-md font-semibold disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 transition-all shadow-xs hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0 flex flex-col items-center justify-center gap-1 min-h-[56px] ${g.buttonClassName}`}
-                            >
-                                <span className="text-base font-bold leading-tight">{g.label}</span>
-                                <kbd className={`text-[11px] px-1.5 py-0.2 rounded font-mono font-medium ${g.kbdClassName}`}>{g.key}</kbd>
-                            </button>
-                        ))}
+                        {GRADES.map((g) => {
+                            const interval = current ? estimateNextInterval(data?.reviews[current.id], g.grade) : null;
+                            return (
+                                <button
+                                    key={g.grade}
+                                    type="button"
+                                    onClick={() => void grade(g.grade)}
+                                    className={`py-2.5 px-1.5 rounded-xl font-label-md font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 transition-all shadow-xs hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0 flex flex-col items-center justify-center gap-1 min-h-[68px] ${g.buttonClassName}`}
+                                >
+                                    <span className="text-base font-bold leading-tight">{g.label}</span>
+                                    {interval && (
+                                        <span className="text-xs font-semibold opacity-90 leading-tight">
+                                            {interval.text}
+                                        </span>
+                                    )}
+                                    <kbd className={`text-[11px] px-1.5 py-0.2 rounded font-mono font-medium ${g.kbdClassName}`}>{g.key}</kbd>
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
 

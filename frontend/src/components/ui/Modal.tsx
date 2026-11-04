@@ -14,7 +14,7 @@ export interface ModalProps {
   icon?: string;
   subtitle?: React.ReactNode;
   /** Chiều rộng tối đa của hộp thoại. */
-  size?: "md" | "lg" | "xl" | "2xl" | "3xl";
+  size?: "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl";
   /** Vùng nút cuối modal (Hủy / Lưu...). */
   footer?: React.ReactNode;
   /** Bấm ra nền tối để đóng; tắt khi đang có thao tác dở (vd. đang lưu). */
@@ -30,6 +30,8 @@ const SIZES: Record<NonNullable<ModalProps["size"]>, string> = {
   xl: "max-w-xl",
   "2xl": "max-w-2xl",
   "3xl": "max-w-3xl",
+  "4xl": "max-w-4xl",
+  "5xl": "max-w-5xl",
 };
 
 export const Modal: React.FC<ModalProps> = ({

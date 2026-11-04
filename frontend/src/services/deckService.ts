@@ -84,3 +84,19 @@ export const shareDeck = async (deckId: string, email: string, permission: Share
 export const unshareDeck = async (deckId: string, userId: number): Promise<void> => {
     await apiClient.delete(`${deckUrl(deckId)}/shares/${userId}`);
 };
+
+export interface SuggestLevelResult {
+    suggestedLevel: string;
+    reason: string;
+    breakdown: Record<string, number>;
+    totalTerms: number;
+    matchedTerms: number;
+}
+
+/** Gợi ý cấp độ JLPT cho bộ thẻ dựa trên tiêu đề, từ vựng và cách đọc. */
+export const suggestDeckLevel = async (
+    title: string,
+    terms: string[],
+    readings?: string[]
+): Promise<SuggestLevelResult> =>
+    (await apiClient.post<SuggestLevelResult>("/decks/suggest-level", { title, terms, readings })).data;

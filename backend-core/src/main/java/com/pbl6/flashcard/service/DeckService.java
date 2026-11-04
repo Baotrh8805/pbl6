@@ -7,6 +7,7 @@ import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
 import com.pbl6.flashcard.dto.deck.DistractorsResponse;
 import com.pbl6.flashcard.dto.deck.QuizCapabilitiesResponse;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
+import com.pbl6.flashcard.dto.deck.SuggestLevelResponse;
 import com.pbl6.flashcard.model.Deck;
 import com.pbl6.flashcard.model.DeckShare;
 import com.pbl6.flashcard.model.Flashcard;
@@ -18,6 +19,7 @@ import com.pbl6.flashcard.repository.DeckShareRepository;
 import com.pbl6.flashcard.repository.FolderRepository;
 import com.pbl6.flashcard.repository.ReviewRepository;
 import com.pbl6.flashcard.repository.UserRepository;
+import com.pbl6.flashcard.service.dictionary.DictionaryStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -38,6 +40,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -56,19 +60,22 @@ public class DeckService {
     private final DeckShareRepository shareRepository;
     private final UserRepository userRepository;
     private final QuizAiClient quizAi;
+    private final DictionaryStore dictionaryStore;
     /** Sinh phương án nhiễu: tách đọc / ghi thành 2 transaction ngắn, không giữ kết nối DB + khoá deck khi chờ ai-service. */
     private final TransactionTemplate tx;
 
     public DeckService(DeckRepository deckRepository,
                        ReviewRepository reviewRepository,
                        FolderRepository folderRepository, DeckShareRepository shareRepository,
-                       UserRepository userRepository, QuizAiClient quizAi, PlatformTransactionManager txManager) {
+                       UserRepository userRepository, QuizAiClient quizAi,
+                       DictionaryStore dictionaryStore, PlatformTransactionManager txManager) {
         this.deckRepository = deckRepository;
         this.reviewRepository = reviewRepository;
         this.folderRepository = folderRepository;
         this.shareRepository = shareRepository;
         this.userRepository = userRepository;
         this.quizAi = quizAi;
+        this.dictionaryStore = dictionaryStore;
         this.tx = new TransactionTemplate(txManager);
     }
 
@@ -552,5 +559,104 @@ public class DeckService {
         if (c.hanViet() != null) card.setHanViet(c.hanViet().trim());
         // pos: null = giữ nguyên như metadata khác; chuỗi rỗng = xoá (người dùng sửa thẻ thành từ không còn là động từ)
         if (c.pos() != null) card.setPos(c.pos().isBlank() ? null : c.pos().trim());
+    }
+
+    private static final Pattern TITLE_LEVEL_PATTERN = Pattern.compile("(?i)(?:jlpt[\\s_\\-:]*)?\\b(n[1-5])\\b");
+
+    /** Nhận diện cấp độ JLPT từ tiêu đề bộ thẻ (VD: "Từ vựng N3" -> "N3"). */
+    public static String parseTitleLevel(String title) {
+        if (title == null || title.isBlank()) return null;
+        Matcher m = TITLE_LEVEL_PATTERN.matcher(title.trim());
+        if (m.find()) {
+            return m.group(1).toUpperCase();
+        }
+        return null;
+    }
+
+    /** Bỏ các chú thích loại từ như (V), (n), [adj], （動）... ở cuối hoặc đầu thuật ngữ để lấy từ tiếng Nhật cốt lõi. */
+    public static String cleanTerm(String raw) {
+        if (raw == null) return null;
+        String s = raw.replaceAll("(?i)\\s*[\\(\\[（【][a-zA-Z0-9ぁ-ゖァ-ヺ一-龯\\s_\\-./]+[\\)\\]）】]", "").strip();
+        return s.isEmpty() ? raw.strip() : s;
+    }
+
+    public SuggestLevelResponse suggestLevel(String title, List<String> terms) {
+        return suggestLevel(title, terms, List.of());
+    }
+
+    /**
+     * Gợi ý cấp độ JLPT cho bộ thẻ dựa trên phân tích từ vựng (tra cứu từ điển) và tiêu đề.
+     */
+    public SuggestLevelResponse suggestLevel(String title, List<String> terms, List<String> readings) {
+        String titleLevel = parseTitleLevel(title);
+
+        List<String> rawTerms = (terms == null ? List.<String>of() : terms);
+        List<String> cleanTerms = new ArrayList<>();
+        for (String t : rawTerms) {
+            if (t != null && !t.isBlank()) {
+                String c = cleanTerm(t);
+                if (!c.isBlank()) cleanTerms.add(c);
+            }
+        }
+
+        List<String> cleanReadings = (readings == null ? List.<String>of() : readings).stream()
+                .filter(r -> r != null && !r.isBlank())
+                .map(String::strip)
+                .toList();
+
+        Map<String, String> termLevels = dictionaryStore.findLevelsByTermsAndReadings(cleanTerms, cleanReadings);
+        Map<String, Integer> breakdown = new LinkedHashMap<>();
+        for (String lvl : List.of("N5", "N4", "N3", "N2", "N1")) {
+            breakdown.put(lvl, 0);
+        }
+
+        for (String lvl : termLevels.values()) {
+            if (breakdown.containsKey(lvl)) {
+                breakdown.put(lvl, breakdown.get(lvl) + 1);
+            }
+        }
+
+        int matchedCount = termLevels.size();
+        int totalCount = Math.max(cleanTerms.size(), cleanReadings.size());
+
+        // Tìm cấp độ có số từ vựng nhiều nhất
+        String dominantLevel = null;
+        int maxCount = 0;
+        for (Map.Entry<String, Integer> entry : breakdown.entrySet()) {
+            if (entry.getValue() > maxCount) {
+                maxCount = entry.getValue();
+                dominantLevel = entry.getKey();
+            }
+        }
+
+        String suggestedLevel;
+        String reason;
+
+        if (matchedCount >= 2 && dominantLevel != null) {
+            if (titleLevel != null && titleLevel.equalsIgnoreCase(dominantLevel)) {
+                suggestedLevel = dominantLevel;
+                reason = "Phát hiện " + maxCount + "/" + matchedCount + " từ vựng thuộc " + dominantLevel + " (khớp với tiêu đề).";
+            } else if (titleLevel != null && breakdown.getOrDefault(titleLevel, 0) > 0 && breakdown.get(titleLevel) >= maxCount * 0.8) {
+                suggestedLevel = titleLevel;
+                reason = "Khớp tiêu đề " + titleLevel + " (có " + breakdown.get(titleLevel) + " từ vựng phù hợp).";
+            } else if (titleLevel != null) {
+                suggestedLevel = dominantLevel;
+                reason = "Phát hiện " + maxCount + "/" + matchedCount + " từ vựng thuộc " + dominantLevel + " (dù tiêu đề có " + titleLevel + ").";
+            } else {
+                suggestedLevel = dominantLevel;
+                reason = "Phát hiện " + maxCount + "/" + matchedCount + " từ vựng thuộc cấp độ " + dominantLevel + ".";
+            }
+        } else if (titleLevel != null) {
+            suggestedLevel = titleLevel;
+            reason = "Nhận diện cấp độ " + titleLevel + " từ tiêu đề bộ thẻ.";
+        } else if (matchedCount == 1 && dominantLevel != null) {
+            suggestedLevel = dominantLevel;
+            reason = "Gợi ý " + dominantLevel + " dựa trên từ vựng tìm thấy trong từ điển.";
+        } else {
+            suggestedLevel = "N5";
+            reason = "Chưa đủ dữ liệu từ vựng trong từ điển để xác định cấp độ (mặc định N5).";
+        }
+
+        return new SuggestLevelResponse(suggestedLevel, reason, breakdown, totalCount, matchedCount);
     }
 }

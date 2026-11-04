@@ -74,11 +74,19 @@ export const StudySummary: React.FC<StudySummaryProps> = ({ summary, cardsById, 
                         {hardest.map((h) => {
                             const card = cardsById.get(h.cardId);
                             if (!card) return null;
+                            const showReading = Boolean(card.reading && card.reading.trim() && card.reading.trim() !== card.term.trim());
                             return (
                                 <li key={h.cardId} className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-slate-50/80 transition-colors">
-                                    <span lang="ja" className="font-semibold text-slate-900 shrink-0 text-base">
-                                        {card.term}
-                                    </span>
+                                    <div className="flex items-baseline gap-1.5 shrink-0 max-w-[48%]">
+                                        <span lang="ja" className="font-semibold text-slate-900 text-base truncate">
+                                            {card.term}
+                                        </span>
+                                        {showReading && (
+                                            <span lang="ja" className="text-xs text-slate-500 font-normal shrink-0">
+                                                ({card.reading})
+                                            </span>
+                                        )}
+                                    </div>
                                     <span className="text-slate-600 text-label-md truncate flex-1">
                                         {splitContent(card.meaning).head}
                                     </span>

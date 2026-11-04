@@ -9,6 +9,8 @@ import com.pbl6.flashcard.dto.deck.DistractorsResponse;
 import com.pbl6.flashcard.dto.deck.QuizCapabilitiesResponse;
 import com.pbl6.flashcard.dto.deck.ShareMemberResponse;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
+import com.pbl6.flashcard.dto.deck.SuggestLevelRequest;
+import com.pbl6.flashcard.dto.deck.SuggestLevelResponse;
 import com.pbl6.flashcard.security.AiRateLimiter;
 import com.pbl6.flashcard.security.CustomUserDetails;
 import com.pbl6.flashcard.service.DeckService;
@@ -208,5 +210,13 @@ public class DeckController {
                                                    @PathVariable String deckId) {
         aiLimiter.checkDeckAi(uid(me)); // gọi ai-service cho cả bộ thẻ (tới 3 phút), đốt quota dùng chung
         return deckService.generateDistractors(uid(me), deckId);
+    }
+
+    /**
+     * Gợi ý cấp độ JLPT cho bộ thẻ dựa trên tiêu đề và danh sách từ vựng.
+     */
+    @PostMapping("/suggest-level")
+    public SuggestLevelResponse suggestLevel(@RequestBody SuggestLevelRequest body) {
+        return deckService.suggestLevel(body.title(), body.terms(), body.readings());
     }
 }

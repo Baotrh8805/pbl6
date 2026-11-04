@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -87,6 +88,68 @@ public class DictionaryStore {
             if (perTerm.getOrDefault(m.term(), 0) == 1) out.putIfAbsent(termKey(m.term(), ""), m);
         }
         return out;
+    }
+
+    /**
+     * Tra cứu cấp độ JLPT (N5..N1) của một danh sách từ vựng từ bảng dict_meanings.
+     * Trả về {term -> level (chữ hoa)}.
+     */
+    /**
+     * Tra cứu cấp độ JLPT (N5..N1) của danh sách từ vựng và cách đọc từ bảng dict_meanings.
+     * Trả về {term_hoặc_reading -> level (chữ hoa)}.
+     */
+    public Map<String, String> findLevelsByTermsAndReadings(Collection<String> terms, Collection<String> readings) {
+        Map<String, String> out = new HashMap<>();
+        List<String> cleanTerms = (terms == null ? List.<String>of() : terms).stream()
+                .filter(Objects::nonNull)
+                .map(String::strip)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .limit(200)
+                .toList();
+        List<String> cleanReadings = (readings == null ? List.<String>of() : readings).stream()
+                .filter(Objects::nonNull)
+                .map(String::strip)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .limit(200)
+                .toList();
+
+        if (cleanTerms.isEmpty() && cleanReadings.isEmpty()) return out;
+
+        if (!cleanTerms.isEmpty()) {
+            String inTerms = String.join(",", cleanTerms.stream().map(t -> "?").toList());
+            jdbc.query("SELECT term, level FROM dict_meanings WHERE term IN (" + inTerms + ") AND level IS NOT NULL AND level <> '' "
+                    + "ORDER BY CASE level WHEN 'N1' THEN 1 WHEN 'N2' THEN 2 WHEN 'N3' THEN 3 WHEN 'N4' THEN 4 WHEN 'N5' THEN 5 ELSE 6 END",
+                    (rs) -> {
+                        String term = rs.getString("term");
+                        String level = rs.getString("level");
+                        if (term != null && level != null && !out.containsKey(term)) {
+                            out.put(term, level.trim().toUpperCase());
+                        }
+                    },
+                    cleanTerms.toArray());
+        }
+
+        if (!cleanReadings.isEmpty()) {
+            String inReadings = String.join(",", cleanReadings.stream().map(r -> "?").toList());
+            jdbc.query("SELECT reading, level FROM dict_meanings WHERE reading IN (" + inReadings + ") AND level IS NOT NULL AND level <> '' "
+                    + "ORDER BY CASE level WHEN 'N1' THEN 1 WHEN 'N2' THEN 2 WHEN 'N3' THEN 3 WHEN 'N4' THEN 4 WHEN 'N5' THEN 5 ELSE 6 END",
+                    (rs) -> {
+                        String reading = rs.getString("reading");
+                        String level = rs.getString("level");
+                        if (reading != null && level != null && !out.containsKey(reading)) {
+                            out.put(reading, level.trim().toUpperCase());
+                        }
+                    },
+                    cleanReadings.toArray());
+        }
+
+        return out;
+    }
+
+    public Map<String, String> findLevelsByTerms(Collection<String> terms) {
+        return findLevelsByTermsAndReadings(terms, List.of());
     }
 
     /** Ghi nghĩa máy dịch nếu chưa có dòng (không đè bản admin / seed đã có). Trả true khi đã chèn. */

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { fetchDeck, createDeck, updateDeck, addCardsBatch } from "@/services/deckService";
+import { fetchDeck, createDeck, updateDeck, addCardsBatch, suggestDeckLevel, type SuggestLevelResult } from "@/services/deckService";
 import { fetchFolders } from "@/services/folderService";
 import type { CardDto, Deck, DeckVisibility } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
@@ -12,7 +12,6 @@ import {
   createEmptyCard,
   createEmptyCards,
   toEditorCard,
-  swapCardColumns,
   toValidCardDtos,
   type EditorCard,
 } from "@/features/decks/editor/editorCards";
@@ -126,6 +125,9 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
 
   const [title, setTitle] = useState(deck?.title ?? "");
   const [level, setLevel] = useState(deck?.level || "N5");
+  const [userTouchedLevel, setUserTouchedLevel] = useState(Boolean(deck?.level));
+  const [levelSuggestion, setLevelSuggestion] = useState<SuggestLevelResult | null>(null);
+  const [isAnalyzingLevel, setIsAnalyzingLevel] = useState(false);
   const [description, setDescription] = useState(deck?.description || "");
   const [folderId, setFolderId] = useState(deck ? deck.folderId || "" : initialFolderId);
   // Quyền truy cập (27/10): chỉ chủ bộ thẻ đổi; người được chia sẻ quyền sửa không thấy khối này
@@ -139,6 +141,73 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   // LP-15: bộ của một chương lộ trình -> nhắc thêm / xoá thẻ đổi lịch của lộ trình (theo thư mục đã lưu, không theo ô đang chọn).
   const pathLink = useDeckLearningPath(deck);
+
+  // Phân tích cấp độ dựa trên tiêu đề, từ vựng và cách đọc
+  const runLevelAnalysis = useCallback(
+    async (currentTitle: string, currentCards: EditorCard[], autoApply: boolean) => {
+      // Làm sạch thuật ngữ: loại bỏ các ghi chú loại từ như (V), [n], (adj)...
+      const cleanTerm = (raw: string) =>
+        raw.replace(/\s*[[（(【][a-zA-Z0-9ぁ-ゖァ-ヺ一-龯\s_\-./]+[\]）)】]/g, "").trim();
+
+      const terms = currentCards.map((c) => cleanTerm(c.term || "")).filter(Boolean);
+      const readings = currentCards.map((c) => (c.reading || "").trim()).filter(Boolean);
+      if (!currentTitle.trim() && terms.length < 2 && readings.length < 2) return;
+
+      setIsAnalyzingLevel(true);
+      try {
+        const res = await suggestDeckLevel(currentTitle, terms, readings);
+        setLevelSuggestion(res);
+        if (autoApply && !userTouchedLevel && (res.matchedTerms > 0 || currentTitle.trim())) {
+          setLevel(res.suggestedLevel);
+        }
+      } catch (err) {
+        console.warn("Failed to suggest deck level", err);
+      } finally {
+        setIsAnalyzingLevel(false);
+      }
+    },
+    [userTouchedLevel]
+  );
+
+  // Khi tiêu đề thay đổi: regex nhận diện cấp độ ngay lập tức (0ms)
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle);
+    if (!userTouchedLevel) {
+      const match = newTitle.match(/(?:jlpt[\s_\-:]*)?\b(n[1-5])\b/i);
+      if (match) {
+        const matchedLevel = match[1].toUpperCase();
+        setLevel(matchedLevel);
+        setLevelSuggestion((prev) => ({
+          suggestedLevel: matchedLevel,
+          reason: `Nhận diện cấp độ ${matchedLevel} từ tiêu đề bộ thẻ.`,
+          breakdown: prev?.breakdown ?? {},
+          totalTerms: prev?.totalTerms ?? 0,
+          matchedTerms: prev?.matchedTerms ?? 0,
+        }));
+      }
+    }
+  };
+
+  const handleLevelChange = (newLevel: string) => {
+    setLevel(newLevel);
+    setUserTouchedLevel(true);
+  };
+
+  const handleApplySuggestion = (sugLevel: string) => {
+    setLevel(sugLevel);
+  };
+
+  // Debounce 1.5s khi gõ từ vựng nếu có từ 3 thẻ trở lên
+  useEffect(() => {
+    const terms = cards.map((c) => c.term.trim()).filter(Boolean);
+    if (terms.length < 3) return;
+
+    const timer = setTimeout(() => {
+      void runLevelAnalysis(title, cards, !userTouchedLevel);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [cards, title, userTouchedLevel, runLevelAnalysis]);
 
   // Thao tác trên hàng thẻ
   const handleCardChange = (index: number, field: "term" | "reading" | "meaning", value: string) => {
@@ -170,15 +239,6 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
     setCards((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSwapTermsAndMeanings = async () => {
-    const ok = await dialog.confirm({
-      title: "Đảo cột Thuật ngữ và Nội dung?",
-      message: "Cột trái (Thuật ngữ + Cách đọc) và cột phải (Nội dung) của tất cả thẻ sẽ đổi chỗ cho nhau: dòng đầu của nội dung thành Thuật ngữ, còn Thuật ngữ và Cách đọc cũ được đưa vào đầu Nội dung.",
-      confirmLabel: "Đảo vị trí",
-    });
-    if (!ok) return;
-    setCards((prev) => prev.map(swapCardColumns));
-  };
 
   const handleClearAllCards = async () => {
     const ok = await dialog.confirm({
@@ -196,7 +256,9 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
     setCards((prev) => {
       // Bỏ các hàng trống trước khi nối thẻ nhập vào
       const nonEmpty = prev.filter((c) => c.term.trim() || c.meaning.trim());
-      return [...nonEmpty, ...importedCards.map(toEditorCard)];
+      const updated = [...nonEmpty, ...importedCards.map(toEditorCard)];
+      void runLevelAnalysis(title, updated, !userTouchedLevel);
+      return updated;
     });
   };
 
@@ -330,17 +392,21 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       {/* Thông tin chung */}
       <DeckInfoFields
         title={title}
-        onTitleChange={setTitle}
+        onTitleChange={handleTitleChange}
         description={description}
         onDescriptionChange={setDescription}
         level={level}
-        onLevelChange={setLevel}
+        onLevelChange={handleLevelChange}
         folderId={folderId}
         {...(ownsAccess && !isAddCardsMode
           ? { visibility, onVisibilityChange: setVisibility, openShareAfter, onOpenShareAfterChange: setOpenShareAfter }
           : {})}
         onFolderIdChange={setFolderId}
         folders={folders}
+        suggestion={levelSuggestion}
+        onApplySuggestion={handleApplySuggestion}
+        isAnalyzing={isAnalyzingLevel}
+        onManualAnalyze={() => void runLevelAnalysis(title, cards, false)}
       />
 
       {/* Thanh công cụ */}
@@ -355,18 +421,6 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
           >
             <span aria-hidden="true" className="material-symbols-outlined text-[18px]">table_rows</span>
             + Nhập
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleSwapTermsAndMeanings}
-            className="cursor-pointer"
-            title="Đảo cột Thuật ngữ và Nội dung"
-          >
-            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">swap_horiz</span>
-            Đảo vị trí
           </Button>
 
           <Button

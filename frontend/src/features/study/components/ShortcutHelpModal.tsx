@@ -5,10 +5,10 @@ const kbd = "px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface fon
 
 const ROWS: { keys: string[]; action: string }[] = [
     { keys: ["Space", "Enter"], action: "Lật thẻ / lật về mặt trước" },
-    { keys: ["1", "2", "3", "4"], action: "Chấm Lại / Khó / Tốt / Dễ (chấm ngay hoặc sau khi lật)" },
+    { keys: ["1", "2", "3", "4"], action: "Chấm Lại / Khó / Tốt / Dễ (chỉ khi đã lật thẻ)" },
     { keys: ["Z", "Ctrl+Z"], action: "Hoàn tác lượt chấm vừa rồi" },
-    { keys: ["R"], action: "Nghe lại (chế độ Nghe)" },
-    { keys: ["?"], action: "Mở / đóng bảng này" },
+    { keys: ["R"], action: "Nghe phát âm từ vựng / nghe lại" },
+    { keys: ["?", "/"], action: "Mở / đóng bảng này" },
 ];
 
 /** Bảng phím tắt trang học (spec 25/10 §3.2). Trên điện thoại: chạm thẻ để lật, vuốt trái = Lại, phải = Tốt. */
