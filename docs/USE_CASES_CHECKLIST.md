@@ -7,7 +7,7 @@
 > trình duyệt với ai-service thật nhiều đợt (20/10, 26–27/10) và smoke e2e `npm run e2e` phủ auth / CRUD / bóc tách / lộ trình 2.0 / admin. Phạm vi theo [Plan/specs/2026-10-19-quyet-dinh-da-chot.md](Plan/specs/2026-10-19-quyet-dinh-da-chot.md):
 > thanh toán (UC-40), Google OAuth và ASR / Praat phía server nằm **ngoài phạm vi** (GraphRAG / Neo4j — UC-34, UC-35 — làm đúng đề cương từ 27/10 theo D30) — vẫn ghi
 > là chưa làm / làm một phần ở dưới cho trung thực, không tính là xong. Tiến trình gần nhất:
-> [Progress/2026-10-19-tien-trinh.md](Progress/2026-10-19-tien-trinh.md).
+> [Progress/2026-11-05-tien-trinh.md](Progress/2026-11-05-tien-trinh.md) (các mốc trước: [Progress/2026-10-19-tien-trinh.md](Progress/2026-10-19-tien-trinh.md)).
 
 | Sprint | Số UC | Xong | Một phần | Còn lại |
 | :--- | :---: | :---: | :---: | :---: |

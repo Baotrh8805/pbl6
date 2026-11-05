@@ -6,7 +6,8 @@ import { fetchReviews } from "@/services/studyService";
 import { useReviewQueue } from "@/features/study/reviewQueue";
 import { fetchSession } from "@/services/learningPathService";
 import { Ruby } from "@/lib/ja";
-import { canSpeak, speak, speakSequence, stopSpeaking, type SpeechItem } from "@/lib/speech";
+import { type FuriganaStyle, splitTermPos } from "@/lib/jaUtils";
+import { canSpeak, speakSequence, stopSpeaking, type SpeechItem } from "@/lib/speech";
 import { AUDIO_MODE_LABELS, cardSpeechItems, meaningSpeechItems, parseAudioMode, shouldHideTerm } from "@/lib/audioOnly";
 import { useAuth } from "@/context/useAuth";
 import { loadLearningSettings } from "@/features/dashboard/lib/dashboardUtils";
@@ -14,7 +15,6 @@ import { useAsync } from "@/lib/useAsync";
 import { isDue, estimateNextInterval, type Grade, type Review } from "@/lib/srs";
 import { extractKanji, hasCjkIdeograph } from "@/lib/textUtils";
 import type { Card, Deck, SessionCardMode, SessionResponse } from "@/types/api.types";
-import { CardContent } from "@/features/decks/components/CardContent";
 import { PronunciationPanel } from "@/features/practice/components/PronunciationPanel";
 import { KanjiWritePanel } from "@/features/practice/components/KanjiWritePanel";
 import {
@@ -64,9 +64,25 @@ type StudyFrontSide = "term" | "meaning" | "reading";
 
 const FRONT_SIDE_LABELS: Record<StudyFrontSide, string> = {
     term: "Kanji",
+    reading: "Cách đọc (Hira)",
     meaning: "Định nghĩa",
-    reading: "Cách đọc",
 };
+
+export type StudyFlipMode = "expand" | "flip";
+
+const FLIP_MODE_LABELS: Record<StudyFlipMode, string> = {
+    expand: "Hiện cả hai mặt",
+    flip: "Lật thẻ (Quizlet)",
+};
+
+function shuffleIds(array: readonly string[]): string[] {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
 
 const iconButton =
     "p-2 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:hover:bg-transparent transition-colors";
@@ -195,6 +211,46 @@ export const StudyPage: React.FC = () => {
         }
     };
 
+    // Chế độ hiển thị khi lật: "expand" (mở rộng hiện cả 2 mặt) hoặc "flip" (lật mặt thẻ kiểu Quizlet)
+    const [flipMode, setFlipMode] = useState<StudyFlipMode>(() => {
+        try {
+            const saved = localStorage.getItem("nihongen_study_flip_mode");
+            if (saved === "expand" || saved === "flip") return saved;
+        } catch {
+            // Không đọc được storage
+        }
+        return "expand";
+    });
+
+    const handleFlipModeChange = (mode: StudyFlipMode) => {
+        setFlipMode(mode);
+        try {
+            localStorage.setItem("nihongen_study_flip_mode", mode);
+        } catch {
+            // bỏ qua
+        }
+    };
+
+    // Kiểu hiển thị cách đọc khi lật thẻ: "ruby" (trên đầu chữ) hoặc "stacked" (2 tầng như Mazii)
+    const [furiganaStyle, setFuriganaStyle] = useState<FuriganaStyle>(() => {
+        try {
+            const saved = localStorage.getItem("nihongen_study_furigana_style");
+            if (saved === "stacked" || saved === "ruby") return saved;
+        } catch {
+            // Không đọc được storage
+        }
+        return "ruby";
+    });
+
+    const handleFuriganaStyleChange = (style: FuriganaStyle) => {
+        setFuriganaStyle(style);
+        try {
+            localStorage.setItem("nihongen_study_furigana_style", style);
+        } catch {
+            // bỏ qua
+        }
+    };
+
     // Tùy chọn giọng đọc: có đọc Furigana khi chưa lật thẻ không? (mặc định: bật)
     const [speakReading, setSpeakReading] = useState<boolean>(() => {
         try {
@@ -212,6 +268,20 @@ export const StudyPage: React.FC = () => {
         } catch {}
         return true;
     });
+
+    // Trạng thái xáo thẻ: tick là trộn, bỏ tick là về ban đầu; nhấn S hoặc bấm nút đều đồng bộ
+    const [isShuffled, setIsShuffled] = useState<boolean>(() => {
+        try {
+            const saved = localStorage.getItem("nihongen_study_shuffled") ?? localStorage.getItem("nihongen_study_auto_shuffle");
+            return saved === "true";
+        } catch {
+            return false;
+        }
+    });
+    const isShuffledRef = useRef(isShuffled);
+    useEffect(() => {
+        isShuffledRef.current = isShuffled;
+    }, [isShuffled]);
 
     // Menu tùy chọn ba chấm (...)
     const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
@@ -277,17 +347,26 @@ export const StudyPage: React.FC = () => {
     }, []);
     const setAudioMode = (on: boolean) => {
         setAudioPref(on);
-        if (on) setListening(true);
-        else stopAudio();
+        if (on) {
+            setListening(true);
+            if (frontSide !== "term") {
+                handleFrontSideChange("term");
+            }
+        } else {
+            stopAudio();
+        }
     };
 
     const freshQueue = (d: StudyData): QueueState => {
         const now = new Date();
-        const ids = d.session
+        let ids = d.session
             ? d.session.cards.map((c) => c.cardId)
             : range
               ? sliceRange(d.cards, range).map((c) => c.id)
               : d.cards.filter((c) => cram || isDue(d.reviews[c.id], now)).map((c) => c.id);
+        if (isShuffled && ids.length > 1) {
+            ids = shuffleIds(ids);
+        }
         return { key: queueKey, ids, size: ids.length, stats: emptyStats(), undo: [], resumed: false, persist: true };
     };
 
@@ -315,6 +394,11 @@ export const StudyPage: React.FC = () => {
     // để nhãn "Ôn · Nợ · Mới · Luyện" cộng lại đúng bằng số thẻ của phiên.
     const cramCount = data?.session ? data.session.cards.filter((c) => c.mode === "cram").length : 0;
     const cardsById = useMemo(() => new Map((data?.cards ?? []).map((c) => [c.id, c])), [data]);
+    const cardOrderMap = useMemo(() => {
+        const map = new Map<string, number>();
+        (data?.cards ?? []).forEach((c, idx) => map.set(c.id, idx));
+        return map;
+    }, [data?.cards]);
 
     // Nhãn chế độ thẻ: ?cram=1 / Luyện lại ép Luyện; phiên lộ trình theo server; còn lại suy từ lịch SRS của máy khách.
     const modeOf = (id: string): SessionCardMode => {
@@ -422,6 +506,57 @@ export const StudyPage: React.FC = () => {
         });
     };
 
+    // Bật / tắt xáo trộn thứ tự thẻ: tick là trộn, bỏ tick là về lại thứ tự ban đầu; nhấn S hoặc bấm nút đều đồng bộ
+    const handleToggleShuffle = (nextState?: boolean) => {
+        const willShuffle = typeof nextState === "boolean" ? nextState : !isShuffledRef.current;
+        setIsShuffled(willShuffle);
+        try {
+            localStorage.setItem("nihongen_study_shuffled", String(willShuffle));
+            localStorage.setItem("nihongen_study_auto_shuffle", String(willShuffle));
+        } catch {}
+
+        if (!queue || queue.length <= 1) {
+            setNotice("");
+            return;
+        }
+
+        let newIds: string[];
+        if (willShuffle) {
+            newIds = shuffleIds(queue);
+            // Đảm bảo thẻ đầu tiên khác thẻ hiện tại (nếu có thể) để người học thấy rõ sự thay đổi ngay lập tức
+            if (newIds.length > 1 && newIds[0] === queue[0]) {
+                [newIds[0], newIds[1]] = [newIds[1], newIds[0]];
+            }
+        } else {
+            // Khôi phục về đúng thứ tự ban đầu của bộ thẻ
+            newIds = [...queue].sort((a, b) => {
+                const orderA = cardOrderMap.get(a) ?? 999999;
+                const orderB = cardOrderMap.get(b) ?? 999999;
+                return orderA - orderB;
+            });
+        }
+
+        setNotice("");
+        setQueueState((s) => (s ? { ...s, ids: newIds } : s));
+        setRevealed(false);
+        setTurn((t) => t + 1);
+        shownAt.current = performance.now();
+    };
+
+    // Khi đang ở chế độ xáo thẻ, người dùng có thể bấm đổi sang một cách xáo ngẫu nhiên khác
+    const handleReshuffle = () => {
+        if (!queue || queue.length <= 1) return;
+        const newIds = shuffleIds(queue);
+        if (newIds.length > 1 && newIds[0] === queue[0]) {
+            [newIds[0], newIds[1]] = [newIds[1], newIds[0]];
+        }
+        setNotice("");
+        setQueueState((s) => (s ? { ...s, ids: newIds } : s));
+        setRevealed(false);
+        setTurn((t) => t + 1);
+        shownAt.current = performance.now();
+    };
+
     const restart = () => {
         try {
             sessionStorage.removeItem(savedSessionKey(queueKey));
@@ -463,6 +598,9 @@ export const StudyPage: React.FC = () => {
             switch (action.kind) {
                 case "undo":
                     void undoLast();
+                    break;
+                case "shuffle":
+                    handleToggleShuffle();
                     break;
                 case "help":
                     setHelpOpen((o) => !o);
@@ -748,6 +886,24 @@ export const StudyPage: React.FC = () => {
                         <div className="flex items-center gap-1.5">
                             {undoButton}
 
+                            {/* Nút Bật/tắt Xáo thẻ (S) */}
+                            <button
+                                type="button"
+                                onClick={() => handleToggleShuffle()}
+                                disabled={(queue?.length ?? 0) <= 1}
+                                aria-label={isShuffled ? "Tắt xáo trộn (về thứ tự ban đầu) (S)" : "Xáo trộn thứ tự thẻ (S)"}
+                                title={isShuffled ? "Đang xáo thẻ · Nhấn S để về thứ tự ban đầu" : "Xáo thẻ (S)"}
+                                className={`p-2 rounded-full transition-colors cursor-pointer ${
+                                    isShuffled
+                                        ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                                } disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed`}
+                            >
+                                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                    shuffle
+                                </span>
+                            </button>
+
                             {/* Menu tùy chọn ba chấm (...) */}
                             <div className="relative" ref={optionsMenuRef}>
                                 <button
@@ -769,33 +925,7 @@ export const StudyPage: React.FC = () => {
 
                                 {optionsMenuOpen && (
                                     <div className="absolute right-0 top-full mt-1.5 w-72 max-w-[90vw] p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xl z-30 text-slate-800 space-y-3.5 animate-reveal">
-                                        {/* 1. Mặt trước hiển thị ban đầu */}
-                                        <div>
-                                            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                                                Mặt trước thẻ:
-                                            </span>
-                                            <div role="group" className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
-                                                {(["term", "meaning", "reading"] as const).map((side) => {
-                                                    const active = frontSide === side;
-                                                    return (
-                                                        <button
-                                                            key={side}
-                                                            type="button"
-                                                            onClick={() => handleFrontSideChange(side)}
-                                                            className={`py-1.5 px-2 rounded-lg font-semibold text-center transition-all cursor-pointer ${
-                                                                active
-                                                                    ? "bg-white text-blue-700 shadow-xs"
-                                                                    : "text-slate-600 hover:text-slate-900"
-                                                            }`}
-                                                        >
-                                                            {FRONT_SIDE_LABELS[side]}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* 2. Chế độ học: Đọc / Nghe */}
+                                        {/* TẦNG 1: Chế độ học (Đọc / Nghe) */}
                                         {canSpeak && (
                                             <div>
                                                 <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
@@ -819,6 +949,101 @@ export const StudyPage: React.FC = () => {
                                                                     {m === "audio" ? "headphones" : "visibility"}
                                                                 </span>
                                                                 {AUDIO_MODE_LABELS[m]}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* TẦNG 2: Mặt trước thẻ (Đọc: Kanji, Hira, Định nghĩa | Nghe: chỉ có Kanji) */}
+                                        <div>
+                                            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                                Mặt trước thẻ:
+                                            </span>
+                                            {audioOnly ? (
+                                                <div className="p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
+                                                    <div className="py-1.5 px-3 rounded-lg font-semibold text-center bg-white text-blue-700 shadow-xs flex items-center justify-center gap-1.5">
+                                                        <span>Kanji</span>
+                                                        <span className="text-[10px] text-slate-400 font-normal font-sans">(ẩn chữ, luyện nghe)</span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div role="group" className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
+                                                    {(["term", "reading", "meaning"] as const).map((side) => {
+                                                        const active = frontSide === side;
+                                                        return (
+                                                            <button
+                                                                key={side}
+                                                                type="button"
+                                                                onClick={() => handleFrontSideChange(side)}
+                                                                className={`py-1.5 px-1.5 rounded-lg font-semibold text-center transition-all cursor-pointer truncate ${
+                                                                    active
+                                                                        ? "bg-white text-blue-700 shadow-xs"
+                                                                        : "text-slate-600 hover:text-slate-900"
+                                                                }`}
+                                                                title={FRONT_SIDE_LABELS[side]}
+                                                            >
+                                                                {side === "reading" ? "Hiragana" : FRONT_SIDE_LABELS[side]}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* TẦNG 3: Cách hiển thị khi lật thẻ - CHỈ ÁP DỤNG VÀ HIỂN THỊ Ở CHẾ ĐỘ ĐỌC */}
+                                        {!audioOnly && (
+                                            <div className="animate-reveal">
+                                                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                                    Cách hiển thị khi lật:
+                                                </span>
+                                                <div role="group" className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
+                                                    {(["expand", "flip"] as const).map((m) => {
+                                                        const active = flipMode === m;
+                                                        return (
+                                                            <button
+                                                                key={m}
+                                                                type="button"
+                                                                onClick={() => handleFlipModeChange(m)}
+                                                                className={`py-1.5 px-2 rounded-lg font-semibold text-center transition-all cursor-pointer ${
+                                                                    active
+                                                                        ? "bg-white text-blue-700 shadow-xs"
+                                                                        : "text-slate-600 hover:text-slate-900"
+                                                                }`}
+                                                            >
+                                                                {FLIP_MODE_LABELS[m]}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* TẦNG 4: Kiểu hiển thị cách đọc - CHỈ HIỆN KHI CHỌN KANJI VÀ Ở CHẾ ĐỘ ĐỌC + HIỆN CẢ 2 MẶT */}
+                                        {!audioOnly && frontSide === "term" && flipMode === "expand" && (
+                                            <div className="animate-reveal">
+                                                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                                                    Kiểu hiển thị cách đọc:
+                                                </span>
+                                                <div role="group" className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/60 text-xs">
+                                                    {[
+                                                        { id: "ruby", label: "Trên đầu chữ" },
+                                                        { id: "stacked", label: "Cùng định nghĩa" },
+                                                    ].map((item) => {
+                                                        const active = furiganaStyle === item.id;
+                                                        return (
+                                                            <button
+                                                                key={item.id}
+                                                                type="button"
+                                                                onClick={() => handleFuriganaStyleChange(item.id as FuriganaStyle)}
+                                                                className={`py-1.5 px-2 rounded-lg font-semibold text-center transition-all cursor-pointer ${
+                                                                    active
+                                                                        ? "bg-white text-blue-700 shadow-xs"
+                                                                        : "text-slate-600 hover:text-slate-900"
+                                                                }`}
+                                                            >
+                                                                {item.label}
                                                             </button>
                                                         );
                                                     })}
@@ -852,6 +1077,55 @@ export const StudyPage: React.FC = () => {
                                                 </label>
                                             </div>
                                         )}
+
+                                        {/* Tùy chọn xáo thẻ */}
+                                        <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                                            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                                Thứ tự học thẻ:
+                                            </span>
+                                            <label className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 cursor-pointer transition-colors text-xs select-none">
+                                                <div className="flex items-center gap-2.5">
+                                                    <span
+                                                        className={`material-symbols-outlined text-[19px] ${
+                                                            isShuffled ? "text-blue-600" : "text-slate-400"
+                                                        }`}
+                                                        aria-hidden="true"
+                                                    >
+                                                        shuffle
+                                                    </span>
+                                                    <div>
+                                                        <span className="font-semibold text-slate-800 block">
+                                                            Xáo trộn thứ tự thẻ
+                                                        </span>
+                                                        <span className="text-[11px] text-slate-500 block">
+                                                            {isShuffled
+                                                                ? "Bỏ tick để về thứ tự ban đầu (S)"
+                                                                : "Tick để xáo ngẫu nhiên (S)"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isShuffled}
+                                                    onChange={(e) => handleToggleShuffle(e.target.checked)}
+                                                    className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                                />
+                                            </label>
+
+                                            {isShuffled && (queue?.length ?? 0) > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleReshuffle}
+                                                    className="w-full py-1.5 px-3 rounded-lg text-xs font-medium text-blue-700 bg-blue-50/70 hover:bg-blue-100/80 border border-blue-200/60 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                                    title="Đổi sang một thứ tự ngẫu nhiên khác cho các thẻ còn lại"
+                                                >
+                                                    <span className="material-symbols-outlined text-[15px]" aria-hidden="true">
+                                                        autorenew
+                                                    </span>
+                                                    <span>Đổi sang thứ tự xáo khác</span>
+                                                </button>
+                                            )}
+                                        </div>
 
                                         {/* 4. Xem phím tắt */}
                                         <div className="pt-2 border-t border-slate-100">
@@ -911,7 +1185,7 @@ export const StudyPage: React.FC = () => {
                         setRevealed((r) => !r);
                     }}
                     style={dx ? { transform: `translateX(${dx}px) rotate(${Math.max(-8, Math.min(8, dx / 20))}deg)` } : undefined}
-                    className={`relative p-6 md:p-8 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md transition-shadow text-center touch-pan-y min-h-[380px] md:min-h-[440px] flex flex-col justify-between ${
+                    className={`relative p-6 md:p-8 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md transition-shadow text-center touch-pan-y min-h-[400px] md:min-h-[440px] flex flex-col ${
                         audioGate ? "" : "cursor-pointer"
                     } ${dx ? "" : "transition-transform duration-200 motion-reduce:transition-none"}`}
                 >
@@ -926,7 +1200,7 @@ export const StudyPage: React.FC = () => {
                     )}
 
                     {/* Header của thẻ: Bên trái là Badge chế độ & Chương; Bên phải là Toolbar công cụ phụ */}
-                    <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
                         <div className="flex flex-wrap items-center gap-1.5 text-label-sm">
                             <span className={`px-2.5 py-0.5 rounded-full font-semibold ${MODE_CLASS[mode]}`}>
                                 {SESSION_MODE_LABELS[mode]}
@@ -937,7 +1211,11 @@ export const StudyPage: React.FC = () => {
                                 </span>
                             )}
                             <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200/70">
-                                {FRONT_SIDE_LABELS[frontSide]} ra trước
+                                {!audioOnly && flipMode === "flip"
+                                    ? revealed
+                                        ? "Mặt sau · Đáp án"
+                                        : `Mặt trước · ${FRONT_SIDE_LABELS[frontSide]}`
+                                    : `${FRONT_SIDE_LABELS[frontSide]} ra trước`}
                             </span>
                         </div>
 
@@ -949,17 +1227,15 @@ export const StudyPage: React.FC = () => {
                             {canSpeak && (
                                 <button
                                     type="button"
-                                    onClick={() =>
-                                        audioOnly && listening
-                                            ? speakItems(
-                                                  cardSpeechItems(current.term, current.reading, revealed && speakMeaning ? current.meaning : null, {
-                                                      speakReading,
-                                                      speakMeaning,
-                                                      includeExamples: true,
-                                                  })
-                                              )
-                                            : speak(current.term)
-                                    }
+                                    onClick={() => {
+                                        speakItems(
+                                            cardSpeechItems(current.term, current.reading, revealed && speakMeaning ? current.meaning : null, {
+                                                speakReading,
+                                                speakMeaning,
+                                                includeExamples: true,
+                                            })
+                                        );
+                                    }}
                                     aria-label={audioOnly ? "Nghe lại" : `Phát âm ${current.term}`}
                                     title={audioOnly ? "Nghe lại (R)" : "Nghe phát âm"}
                                     className={iconButton}
@@ -997,99 +1273,238 @@ export const StudyPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Trung tâm thẻ: Thuật ngữ / Chữ Kanji */}
-                    <div className="my-auto py-4">
-                        {audioGate ? (
-                            <div className="flex flex-col items-center gap-3 py-4">
-                                <button
-                                    type="button"
-                                    autoFocus
-                                    onClick={() => setListening(true)}
-                                    className="inline-flex items-center gap-2 px-6 py-3 min-h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-label-md font-semibold shadow-sm hover:shadow transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                                >
-                                    <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
-                                        headphones
-                                    </span>
-                                    Bắt đầu nghe
-                                </button>
-                                <p className="text-label-sm text-slate-500 max-w-sm">
-                                    Chế độ chỉ nghe: chữ được ẩn, từ tự đọc khi hiện thẻ. Bấm để trình duyệt cho phép phát âm.
-                                </p>
-                            </div>
-                        ) : shouldHideTerm(audioOnly, revealed) ? (
-                            <div className="flex flex-col items-center gap-2 text-slate-500 min-h-24 justify-center">
-                                <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 mb-1">
-                                    <span aria-hidden="true" className="material-symbols-outlined text-[32px]">
-                                        headphones
-                                    </span>
+                    {!audioOnly && flipMode === "flip" ? (
+                        /* CHẾ ĐỘ LẬT THẺ (QUIZLET): Chỉ áp dụng cho chế độ Đọc - Một mặt duy nhất tại một thời điểm, lật 3D */
+                        <div
+                            key={revealed ? "quizlet-back" : "quizlet-front"}
+                            className="flex-1 flex flex-col items-center justify-center py-6 px-4 w-full animate-cardFlip select-none min-h-[300px]"
+                        >
+                            {!revealed ? (
+                                /* MẶT TRƯỚC (QUIZLET) */
+                                <div className="flex flex-col items-center justify-center gap-3 w-full">
+                                    {frontSide === "reading" ? (
+                                        <div className="flex flex-col items-center gap-2">
+                                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                                                Cách đọc (Hiragana)
+                                            </span>
+                                            <div lang="ja" className="text-4xl md:text-5xl font-bold font-japanese text-slate-800 leading-snug">
+                                                {current.reading || current.term}
+                                            </div>
+                                        </div>
+                                    ) : frontSide === "meaning" ? (
+                                        <div className="flex flex-col items-center gap-2 max-w-lg">
+                                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                                                Định nghĩa
+                                            </span>
+                                            <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed whitespace-pre-line text-center">
+                                                {current.meaning}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div lang="ja" className="text-4xl md:text-6xl font-bold tracking-tight text-slate-900 leading-snug font-japanese inline-flex items-center justify-center flex-wrap gap-2">
+                                            <span>{splitTermPos(current.term).cleanTerm}</span>
+                                            {splitTermPos(current.term).tag && (
+                                                <span className="text-xs md:text-sm font-sans font-semibold text-slate-500 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full align-middle tracking-normal">
+                                                    {splitTermPos(current.term).tag}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="mt-8 text-xs text-slate-400 flex items-center justify-center gap-1.5 font-medium">
+                                        <span className="material-symbols-outlined text-[16px]">touch_app</span>
+                                        <span>Bấm vào thẻ hoặc nhấn <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] border border-slate-200">Space</kbd> để lật mặt sau</span>
+                                    </div>
                                 </div>
-                                <span className="sr-only">Chữ đang ẩn, từ đang được đọc</span>
-                                <p className="text-label-md text-slate-600">
-                                    Nhấn <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">R</kbd> để nghe lại /{" "}
-                                    <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">Space</kbd> để lật
-                                </p>
-                            </div>
-                        ) : revealed ? (
-                            <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese">
-                                <Ruby term={current.term} reading={current.reading ?? undefined} segments={current.readingSegments} />
-                            </div>
-                        ) : frontSide === "meaning" ? (
-                            <div className="flex flex-col items-center justify-center gap-2 py-2">
-                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                                    Định nghĩa / Nghĩa tiếng Việt
-                                </span>
-                                <div className="text-2xl md:text-3xl font-bold text-slate-900 leading-relaxed max-w-lg mx-auto">
-                                    {current.meaning.split("\n")[0]}
+                            ) : (
+                                /* MẶT SAU (QUIZLET) - HOÀN TOÀN KHÔNG HIỂN THỊ MẶT TRƯỚC */
+                                <div className="flex flex-col items-center justify-center gap-3 w-full">
+                                    {frontSide === "reading" ? (
+                                        <div className="flex flex-col items-center gap-2.5 w-full">
+                                            <div lang="ja" className="text-3xl md:text-4xl font-japanese font-bold text-slate-900 inline-flex items-center justify-center flex-wrap gap-2">
+                                                <span>{splitTermPos(current.term).cleanTerm}</span>
+                                                {splitTermPos(current.term).tag && (
+                                                    <span className="text-xs md:text-sm font-sans font-semibold text-slate-500 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full align-middle tracking-normal">
+                                                        {splitTermPos(current.term).tag}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed whitespace-pre-line max-w-lg mx-auto text-center">
+                                                {current.meaning}
+                                            </div>
+                                        </div>
+                                    ) : frontSide === "meaning" ? (
+                                        <div className="flex flex-col items-center gap-3">
+                                            <div lang="ja" className="text-3xl md:text-5xl font-japanese font-bold text-slate-900">
+                                                <Ruby
+                                                    term={current.term}
+                                                    reading={current.reading ?? undefined}
+                                                    segments={current.readingSegments}
+                                                    style="ruby"
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        /* Mặt trước là Kanji -> Mặt sau chỉ hiện Cách đọc + Định nghĩa (không hiện Kanji) */
+                                        <div className="flex flex-col items-center gap-2.5 w-full">
+                                            {current.reading && (
+                                                <div lang="ja" className="text-2xl md:text-3xl font-japanese font-bold text-blue-700 tracking-wide">
+                                                    {current.reading}
+                                                </div>
+                                            )}
+                                            <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed whitespace-pre-line max-w-lg mx-auto text-center">
+                                                {current.meaning}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="mt-6 text-xs text-slate-400 flex items-center justify-center gap-1.5 font-medium">
+                                        <span className="material-symbols-outlined text-[16px]">touch_app</span>
+                                        <span>Bấm vào thẻ hoặc nhấn <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] border border-slate-200">Space</kbd> để lật lại mặt trước</span>
+                                    </div>
                                 </div>
-                                {current.meaning.split("\n").length > 1 && (
-                                    <p className="text-xs text-slate-400 italic">
-                                        (Lật thẻ để xem Kanji, cách đọc và ví dụ đầy đủ)
-                                    </p>
+                            )}
+                        </div>
+                    ) : (
+                        /* CHẾ ĐỘ HIỆN CẢ HAI MẶT (EXPAND) */
+                        <>
+                            {/* Nửa trên thẻ: Thuật ngữ / Chữ Kanji - Cố định không gian, không dùng my-auto để vị trí đứng yên tuyệt đối khi lật thẻ */}
+                            <div className="flex-1 flex flex-col items-center justify-center py-4 min-h-[140px] md:min-h-[160px]">
+                                {audioGate ? (
+                                    <div className="flex flex-col items-center gap-3 py-4">
+                                        <button
+                                            type="button"
+                                            autoFocus
+                                            onClick={() => setListening(true)}
+                                            className="inline-flex items-center gap-2 px-6 py-3 min-h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-label-md font-semibold shadow-sm hover:shadow transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                        >
+                                            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                                                headphones
+                                            </span>
+                                            Bắt đầu nghe
+                                        </button>
+                                        <p className="text-label-sm text-slate-500 max-w-sm">
+                                            Chế độ chỉ nghe: chữ được ẩn, từ tự đọc khi hiện thẻ. Bấm để trình duyệt cho phép phát âm.
+                                        </p>
+                                    </div>
+                                ) : shouldHideTerm(audioOnly, revealed) ? (
+                                    <div className="flex flex-col items-center gap-2 text-slate-500 min-h-24 justify-center">
+                                        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 mb-1">
+                                            <span aria-hidden="true" className="material-symbols-outlined text-[32px]">
+                                                headphones
+                                            </span>
+                                        </div>
+                                        <span className="sr-only">Chữ đang ẩn, từ đang được đọc</span>
+                                        <p className="text-label-md text-slate-600">
+                                            Nhấn <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">R</kbd> để nghe lại /{" "}
+                                            <kbd className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 font-mono text-xs">Space</kbd> để lật
+                                        </p>
+                                    </div>
+                                ) : revealed ? (
+                                    frontSide === "reading" ? (
+                                        <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese inline-flex items-center justify-center flex-wrap gap-1.5">
+                                            <span>{splitTermPos(current.term).cleanTerm}</span>
+                                            {splitTermPos(current.term).tag && (
+                                                <span className="text-xs md:text-sm font-sans font-semibold text-slate-500 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full align-middle tracking-normal">
+                                                    {splitTermPos(current.term).tag}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ) : frontSide === "meaning" ? (
+                                        <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese">
+                                            <Ruby
+                                                term={current.term}
+                                                reading={current.reading ?? undefined}
+                                                segments={current.readingSegments}
+                                                style="ruby"
+                                            />
+                                        </div>
+                                    ) : furiganaStyle === "stacked" ? (
+                                        <Ruby
+                                            term={current.term}
+                                            reading={current.reading ?? undefined}
+                                            segments={current.readingSegments}
+                                            style="stacked"
+                                        />
+                                    ) : (
+                                        <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese">
+                                            <Ruby
+                                                term={current.term}
+                                                reading={current.reading ?? undefined}
+                                                segments={current.readingSegments}
+                                                style="ruby"
+                                            />
+                                        </div>
+                                    )
+                                ) : frontSide === "meaning" ? (
+                                    <div className="flex flex-col items-center justify-center gap-2 py-2 px-4">
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                                            Định nghĩa / Nghĩa tiếng Việt
+                                        </span>
+                                        <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed max-w-lg mx-auto whitespace-pre-line">
+                                            {current.meaning}
+                                        </div>
+                                    </div>
+                                ) : frontSide === "reading" ? (
+                                    <div className="flex flex-col items-center justify-center gap-2 py-2">
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                                            Cách đọc (Furigana / Hiragana)
+                                        </span>
+                                        <div lang="ja" className="text-3xl md:text-4xl font-bold font-japanese text-slate-800 leading-snug">
+                                            {current.reading || current.term}
+                                        </div>
+                                        <p className="text-xs text-slate-400 italic">
+                                            (Lật thẻ để xem chữ Kanji và định nghĩa)
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese inline-flex items-center justify-center flex-wrap gap-1.5">
+                                        <span>{splitTermPos(current.term).cleanTerm}</span>
+                                        {splitTermPos(current.term).tag && (
+                                            <span className="text-xs md:text-sm font-sans font-semibold text-slate-500 bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 rounded-full align-middle tracking-normal">
+                                                {splitTermPos(current.term).tag}
+                                            </span>
+                                        )}
+                                    </div>
                                 )}
                             </div>
-                        ) : frontSide === "reading" ? (
-                            <div className="flex flex-col items-center justify-center gap-2 py-2">
-                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                                    Cách đọc (Furigana / Hiragana)
-                                </span>
-                                <div lang="ja" className="text-3xl md:text-4xl font-bold font-japanese text-slate-800 leading-snug">
-                                    {current.reading || current.term}
-                                </div>
-                                <p className="text-xs text-slate-400 italic">
-                                    (Lật thẻ để xem chữ Kanji và định nghĩa)
-                                </p>
-                            </div>
-                        ) : (
-                            <div lang="ja" className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 leading-snug font-japanese">
-                                {current.term}
-                            </div>
-                        )}
-                    </div>
 
-                    {/* Vùng đáy thẻ: Khi chưa lật thì hiện CTA 'Hiện đáp án'; khi lật thì hiện Nghĩa & Giải thích */}
-                    <div aria-live="polite" className="mt-4 pt-4 border-t border-slate-100 min-h-20 flex flex-col items-center justify-center">
-                        {revealed ? (
-                            <div className="w-full text-center animate-reveal motion-reduce:animate-none">
-                                <CardContent
-                                    text={current.meaning}
-                                    headClassName="text-title-md md:text-xl font-bold text-slate-900"
-                                    restClassName="text-body-md font-normal text-slate-600 mt-1.5 leading-relaxed"
-                                />
+                            {/* Đường kẻ phân cách cố định giữa 2 nửa */}
+                            <div className="w-full border-t border-slate-100 shrink-0" />
+
+                            {/* Nửa dưới thẻ: Khi chưa lật thì hiện CTA 'Hiện đáp án'; khi lật thì hiện Nghĩa & Cách đọc - Vị trí cố định, animate-fadeIn êm ái */}
+                            <div aria-live="polite" className="flex-1 flex flex-col items-center justify-center py-4 min-h-[160px] md:min-h-[190px] w-full">
+                                {revealed ? (
+                                    <div className="w-full text-center animate-fadeIn motion-reduce:animate-none px-4">
+                                        {frontSide === "term" && furiganaStyle === "stacked" && current.reading ? (
+                                            <div className="space-y-2">
+                                                <div lang="ja" className="text-xl md:text-2xl font-japanese font-bold text-blue-700 tracking-wide select-none">
+                                                    {current.reading}
+                                                </div>
+                                                <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed whitespace-pre-line max-w-lg mx-auto">
+                                                    {current.meaning}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed whitespace-pre-line max-w-lg mx-auto">
+                                                {current.meaning}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            reveal();
+                                        }}
+                                        className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-label-md font-semibold border border-slate-200/80 shadow-xs hover:shadow transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 inline-flex items-center gap-2 cursor-pointer"
+                                    >
+                                        <span>Hiện đáp án</span>
+                                        <kbd className="text-xs px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono shadow-2xs border border-slate-200">Space</kbd>
+                                    </button>
+                                )}
                             </div>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    reveal();
-                                }}
-                                className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-label-md font-semibold border border-slate-200/80 shadow-xs hover:shadow transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 inline-flex items-center gap-2"
-                            >
-                                <span>Hiện đáp án</span>
-                                <kbd className="text-xs px-1.5 py-0.5 rounded bg-white text-slate-700 font-mono shadow-2xs border border-slate-200">Space</kbd>
-                            </button>
-                        )}
-                    </div>
+                        </>
+                    )}
                 </div>
 
                 {messages}

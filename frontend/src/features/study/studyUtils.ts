@@ -54,6 +54,7 @@ export type StudyKeyAction =
     | { kind: "hide" }
     | { kind: "grade"; grade: Grade }
     | { kind: "undo" }
+    | { kind: "shuffle" }
     | { kind: "help" }
     | { kind: "replay" }
     | { kind: "openAudio" }
@@ -82,6 +83,7 @@ export const studyKeyAction = (e: KeyInput, s: KeyState): StudyKeyAction | null 
     if (e.ctrlKey || e.metaKey || e.altKey) return null; // Ctrl+R, Ctrl+C... của trình duyệt
     if (e.key === "?" || e.key === "/" || e.code === "Slash") return { kind: "help" };
     if (e.key === "r" || e.key === "R" || e.code === "KeyR") return { kind: "replay" };
+    if (e.key === "s" || e.key === "S" || e.code === "KeyS") return { kind: "shuffle" };
     if (e.code === "Space" || e.key === " " || e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") {
         if (e.repeat) return { kind: "none" };
         if (s.audioGate) return { kind: "openAudio" };

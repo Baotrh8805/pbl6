@@ -4,8 +4,9 @@ export const canSpeak = typeof window !== "undefined" && "speechSynthesis" in wi
 
 const synth = (): SpeechSynthesis => window.speechSynthesis;
 
-// Giọng tiếng Nhật: lang "ja-JP" / "ja_JP" (Chrome, Edge, Safari) hoặc chỉ "ja" (một số Android).
-const isJaVoice = (v: SpeechSynthesisVoice): boolean => /^ja([-_]JP)?$/i.test(v.lang.trim());
+// Giọng tiếng Nhật: lang "ja-JP" / "ja_JP" (Chrome, Edge, Safari) hoặc chỉ "ja" (một số Android) hoặc tên chứa Japan.
+const isJaVoice = (v: SpeechSynthesisVoice): boolean =>
+    /^ja\b/i.test(v.lang.trim()) || /japan/i.test(v.name);
 
 // Điểm ưu tiên khi có nhiều giọng: giọng online của Google / Microsoft tự nhiên hơn hẳn giọng
 // hệ điều hành cũ; cùng hãng thì ưu tiên lang đầy đủ "ja-JP" rồi giọng mặc định của máy.
@@ -30,10 +31,16 @@ export const waitForVoices = (timeoutMs = 2000): Promise<SpeechSynthesisVoice[]>
             settled = true;
             clearTimeout(timer);
             synth().removeEventListener("voiceschanged", finish);
+            if ("onvoiceschanged" in synth()) {
+                synth().onvoiceschanged = null;
+            }
             resolve(synth().getVoices());
         };
         const timer = setTimeout(finish, timeoutMs);
         synth().addEventListener("voiceschanged", finish);
+        if ("onvoiceschanged" in synth()) {
+            synth().onvoiceschanged = finish;
+        }
     });
 };
 
@@ -90,6 +97,9 @@ let generation = 0;
 /** Huỷ mọi thứ đang đọc / xếp hàng và mở lượt mới; trả về thế hệ của lượt đó. */
 const cancelAll = (): number => {
     synth().cancel();
+    if (synth().paused) {
+        synth().resume();
+    }
     return ++generation;
 };
 
@@ -136,22 +146,45 @@ const speakOne = (text: string, lang: string, rate: number, voice: SpeechSynthes
         utterance.onerror = (e) => {
             // Bị huỷ bởi lượt đọc mới / stopSpeaking(): không phải lỗi với người dùng.
             if (e.error === "interrupted" || e.error === "canceled") finish();
-            else finish(new Error(SPEAK_ERROR));
+            else {
+                console.warn("[TTS] Lỗi phát âm:", e.error, text);
+                finish(new Error(SPEAK_ERROR));
+            }
         };
         current = utterance;
+
+        // Khắc phục bug Chrome bị kẹt ở trạng thái pause
+        if (synth().paused) {
+            synth().resume();
+        }
+
         synth().speak(utterance);
+
+        // Đảm bảo Chrome không pause vô cớ
+        setTimeout(() => {
+            if (synth().paused) {
+                synth().resume();
+            }
+        }, 50);
     });
 
 /**
  * Đọc một đoạn tiếng Nhật, huỷ đoạn đang đọc dở. Resolve khi đọc xong (hoặc bị huỷ bởi lượt
  * đọc mới), reject (thông báo tiếng Việt) khi trình duyệt không đọc được.
  */
-export const speakJa = (text: string, { rate = 1 }: SpeakJaOptions = {}): Promise<void> => {
+export const speakJa = async (text: string, { rate = 1 }: SpeakJaOptions = {}): Promise<void> => {
     if (!canSpeak) return Promise.reject(new Error("Trình duyệt này không hỗ trợ đọc văn bản."));
     const trimmed = text.trim();
-    if (!trimmed) return Promise.resolve();
+    if (!trimmed) return;
+    
+    // Đảm bảo danh sách giọng đã sẵn sàng trước khi chọn giọng tiếng Nhật
+    const voices = await waitForVoices();
+    const jaVoice = getJaVoice(voices);
+    
     cancelAll();
-    return speakOne(trimmed, "ja-JP", rate, getJaVoice());
+    // Chờ một tick ngắn (20ms) để Chrome / Safari xử lý xong cancel trước khi speak mới
+    await new Promise((r) => setTimeout(r, 20));
+    return speakOne(trimmed, "ja-JP", rate, jaVoice);
 };
 
 /** Một đoạn trong chuỗi đọc (E5): thuật ngữ / cách đọc tiếng Nhật, nghĩa tiếng Việt. */
@@ -212,7 +245,7 @@ export const speakSequence = async (items: SpeechItem[], signal?: AbortSignal): 
 /** Đọc nhanh không cần chờ (nút loa ở danh sách thẻ / trang học). */
 export const speak = (text: string): void => {
     if (!canSpeak) return;
-    void speakJa(text).catch(() => {
-        /* nút loa không có chỗ hiện lỗi; im lặng là đủ */
+    void speakJa(text).catch((err) => {
+        console.warn("[TTS speak failed]:", err);
     });
 };

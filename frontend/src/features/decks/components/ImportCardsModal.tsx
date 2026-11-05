@@ -69,7 +69,7 @@ const TERM_DEF_OPTIONS: { value: TermDefDelimiter; label: string }[] = [
 ];
 
 const READING_OPTIONS: { value: ReadingDelimiter; label: string }[] = [
-  { value: "same", label: "Cột riêng trong bảng (Excel, Sheets)" },
+  { value: "same", label: "Tự động (cột riêng hoặc ở đầu định nghĩa: おか - Nghĩa)" },
   { value: "paren", label: "Trong ngoặc 食べる（たべる）" },
   { value: "dash", label: "Sau dấu gạch ngang (-)" },
   { value: "pipe", label: "Sau dấu gạch đứng (|)" },

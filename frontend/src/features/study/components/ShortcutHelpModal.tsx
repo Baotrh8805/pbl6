@@ -7,6 +7,7 @@ const ROWS: { keys: string[]; action: string }[] = [
     { keys: ["Space", "Enter"], action: "Lật thẻ / lật về mặt trước" },
     { keys: ["1", "2", "3", "4"], action: "Chấm Lại / Khó / Tốt / Dễ (chỉ khi đã lật thẻ)" },
     { keys: ["Z", "Ctrl+Z"], action: "Hoàn tác lượt chấm vừa rồi" },
+    { keys: ["S"], action: "Bật / tắt xáo trộn thứ tự thẻ" },
     { keys: ["R"], action: "Nghe phát âm từ vựng / nghe lại" },
     { keys: ["?", "/"], action: "Mở / đóng bảng này" },
 ];

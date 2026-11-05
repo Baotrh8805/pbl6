@@ -189,8 +189,9 @@ export function cardSpeechItems(
     options?: CardSpeechOptions
 ): SpeechItem[] {
     const speakReading = options?.speakReading !== false;
-    const items: SpeechItem[] = [{ text: term.trim(), lang: "ja-JP" }];
-    if (speakReading && readingDiffers(term, reading)) {
+    const cleanTerm = term.replace(/\s*([[（(【][^\]）)】]+[\]）)】])\s*$/, "").trim();
+    const items: SpeechItem[] = [{ text: cleanTerm, lang: "ja-JP" }];
+    if (speakReading && readingDiffers(cleanTerm, reading)) {
         items.push({ text: (reading ?? "").trim(), lang: "ja-JP", rate: READING_RATE });
     }
     if (meaning !== null && options?.speakMeaning !== false) {

@@ -28,6 +28,41 @@ export function splitParenReading(cell: string): [string, string | null] {
 }
 
 /**
+ * Kiểm tra xem chuỗi có phải chỉ gồm ký tự Kana tiếng Nhật (Hiragana, Katakana, trường âm, dấu phân tách) hay không.
+ * Nếu chứa chữ Latin (a-z), chữ tiếng Việt có dấu, chữ Hán -> false.
+ */
+export function isPureKana(str: string): boolean {
+  const trimmed = str.trim();
+  if (!trimmed) return false;
+  // Hiragana: \u3040-\u309F, Katakana: \u30A0-\u30FF, \u31F0-\u31FF, Chōonpu: \u30FC, Nakaguro: \u30FB, dấu lặp: ゝゞ
+  return /^[\u3040-\u309F\u30A0-\u30FF\u31F0-\u31FF\u30FC\u30FB\u309D\u309E\u30FD\u30FE\s]+$/u.test(trimmed);
+}
+
+/**
+ * Tách cách đọc ở đầu nội dung nếu có dạng:
+ * "<Kana> - <Phần còn lại>" (ví dụ: "おか - KHÂU - Đồi, gò đất.")
+ * Trả về [reading, restContent]. Nếu không có dạng trên, trả về [null, content].
+ */
+export function extractLeadingKanaReading(content: string): [string | null, string] {
+  if (!content) return [null, ""];
+  const trimmed = content.trim();
+  const newlineIdx = trimmed.indexOf("\n");
+  const firstLine = newlineIdx >= 0 ? trimmed.slice(0, newlineIdx) : trimmed;
+  const rest = newlineIdx >= 0 ? trimmed.slice(newlineIdx) : "";
+
+  // Dòng đầu có dạng "<Kana> - <Nội dung>" (hỗ trợ dấu gạch ngang -, en-dash –, em-dash —)
+  const match = firstLine.match(/^([\u3040-\u309F\u30A0-\u30FF\u31F0-\u31FF\u30FC\u30FB\u309D\u309E\u30FD\u30FE\s]+?)\s*[-–—]\s*(.*)$/u);
+  if (match && isPureKana(match[1])) {
+    const reading = match[1].trim();
+    const cleanFirstLine = match[2].trim();
+    const finalContent = cleanFirstLine + rest;
+    return [reading || null, finalContent];
+  }
+
+  return [null, trimmed];
+}
+
+/**
  * Văn bản dán vào (Excel, Anki, Quizlet...) -> danh sách thẻ.
  * Mỗi thẻ: [thuật ngữ, nghĩa] | [thuật ngữ, cách đọc, nghĩa] | [thuật ngữ, cách đọc, nghĩa, ví dụ...] (từ cột 3 gộp thành nội dung nhiều dòng).
  * Dòng chỉ có 1 cột vẫn được giữ (nghĩa rỗng) để người dùng bổ sung trong trình soạn.
@@ -53,9 +88,16 @@ export function parseImportText(
     if (tokens.length === 0) continue;
 
     if (reading.kind === "same") {
-      if (tokens.length === 1) result.push({ term: tokens[0], reading: null, meaning: "" });
-      else if (tokens.length === 2) result.push({ term: tokens[0], reading: null, meaning: tokens[1] });
-      else result.push({ term: tokens[0], reading: tokens[1], meaning: tokens.slice(2).join("\n") });
+      if (tokens.length === 1) {
+        result.push({ term: tokens[0], reading: null, meaning: "" });
+      } else if (tokens.length === 2) {
+        // Trường hợp 2 cột: Thuật ngữ | Nội dung
+        // Tự động nhận diện nếu đầu nội dung có cách đọc Kana: "おか - KHÂU - Đồi, gò đất."
+        const [extractedReading, cleanMeaning] = extractLeadingKanaReading(tokens[1]);
+        result.push({ term: tokens[0], reading: extractedReading, meaning: cleanMeaning });
+      } else {
+        result.push({ term: tokens[0], reading: tokens[1], meaning: tokens.slice(2).join("\n") });
+      }
       continue;
     }
 
@@ -70,8 +112,38 @@ export function parseImportText(
         term = term.slice(0, i).trim();
       }
     }
-    // Cột từ thứ 2 trở đi (định nghĩa, ví dụ...) gộp vào nội dung, mỗi cột một dòng
-    result.push({ term, reading: readingValue, meaning: tokens.slice(1).join("\n") });
+
+    let meaning = tokens.slice(1).join("\n").trim();
+
+    // FALLBACK 1: Nếu meaning rỗng nhưng readingValue lại có nội dung
+    // Xảy ra khi từ không có dấu phân cách nghĩa (ví dụ từ không có Kanji, chỉ có "Thuật ngữ|Định nghĩa")
+    // Nếu readingValue không phải là Kana thuần túy (chứa chữ Latin/Việt) -> đây chính là định nghĩa!
+    if (!meaning && readingValue) {
+      if (!isPureKana(readingValue)) {
+        meaning = readingValue;
+        readingValue = null;
+      }
+    }
+
+    // FALLBACK 2: Nếu chưa có readingValue nhưng đầu meaning có dạng "<Kana> - <Nghĩa>"
+    if (!readingValue && meaning) {
+      const [extractedReading, cleanMeaning] = extractLeadingKanaReading(meaning);
+      if (extractedReading) {
+        readingValue = extractedReading;
+        meaning = cleanMeaning;
+      }
+    }
+
+    // FALLBACK 3: Nếu readingValue bị nuốt cả cụm dạng "おか - KHÂU - Đồi..."
+    if (readingValue && readingValue.includes("-")) {
+      const [extractedReading, cleanRest] = extractLeadingKanaReading(readingValue);
+      if (extractedReading) {
+        readingValue = extractedReading;
+        meaning = cleanRest + (meaning ? "\n" + meaning : "");
+      }
+    }
+
+    result.push({ term, reading: readingValue, meaning });
   }
   return result;
 }
