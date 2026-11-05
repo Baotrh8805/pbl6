@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Modal } from "@/components/ui/Modal";
 import { fetchDeck } from "@/services/deckService";
 import { fetchReviews } from "@/services/studyService";
+import { completeClassroomLesson } from "@/services/classroomService";
 import { useReviewQueue } from "@/features/study/reviewQueue";
 import { fetchSession } from "@/services/learningPathService";
 import { Ruby } from "@/lib/ja";
@@ -135,6 +136,9 @@ export const StudyPage: React.FC = () => {
     // ?path=<id> để quay về.
     const range = parseRange(params.get("range"));
     const pathId = params.get("path");
+    const classroomId = params.get("classroomId");
+    const lessonId = params.get("lessonId");
+    const returnTo = params.get("returnTo");
     // Lộ trình 2.0: /session?session=today|catchup|due|chapter&path=<id>[&chapter=<cid>] -> hàng đợi lấy từ
     // GET /{path}/session (thẻ của nhiều bộ, server đã xếp đến hạn -> nợ -> mới và gán mode từng thẻ).
     const sessionKind = parseSessionKind(params.get("session"));
@@ -674,6 +678,19 @@ export const StudyPage: React.FC = () => {
     // Rời trang (về lộ trình / bộ thẻ, đổi route): không để tiếng đọc dở tiếp tục ở trang sau.
     useEffect(() => () => stopAudio(), [stopAudio]);
 
+    // Tự động đánh dấu hoàn thành buổi học trong lớp khi học xong hết thẻ
+    const classroomCompletedRef = useRef(false);
+    useEffect(() => {
+        if (!current && live && live.size > 0 && classroomId && lessonId && !classroomCompletedRef.current) {
+            classroomCompletedRef.current = true;
+            void completeClassroomLesson(Number(classroomId), Number(lessonId))
+                .then(() => {
+                    setNotice("🎉 Chúc mừng bạn đã hoàn thành buổi học này trong lớp học!");
+                })
+                .catch((e) => console.warn("Lỗi lưu tiến độ buổi học:", e));
+        }
+    }, [current, live, classroomId, lessonId]);
+
     if (loading) {
         return (
             <section
@@ -714,7 +731,15 @@ export const StudyPage: React.FC = () => {
                 className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-center gap-space-md px-gutter text-center"
             >
                 <p className="text-rose-700 font-semibold">{error || "Không tìm thấy dữ liệu bộ thẻ."}</p>
-                {pathId ? (
+                {returnTo ? (
+                    <Link to={returnTo} className="text-blue-600 hover:underline font-medium">
+                        ← Quay lại
+                    </Link>
+                ) : classroomId ? (
+                    <Link to={`/classrooms/${classroomId}`} className="text-blue-600 hover:underline font-medium">
+                        ← Về lớp học
+                    </Link>
+                ) : pathId ? (
                     <Link to={`/roadmap/${encodeURIComponent(pathId)}`} className="text-blue-600 hover:underline font-medium">
                         ← Về lộ trình
                     </Link>
@@ -729,7 +754,11 @@ export const StudyPage: React.FC = () => {
 
     const deck = data.deck;
     const session = data.session;
-    const exitTo = pathId ? `/roadmap/${encodeURIComponent(pathId)}` : `/decks/${deck?.id ?? deckId}`;
+    const exitTo = returnTo || (classroomId
+        ? `/classrooms/${classroomId}`
+        : pathId
+            ? `/roadmap/${encodeURIComponent(pathId)}`
+            : `/decks/${deck?.id ?? deckId}`);
     const canUndo = (live?.undo.length ?? 0) > 0;
     const undoButton = (
         <button
@@ -816,7 +845,7 @@ export const StudyPage: React.FC = () => {
                 )}
                 {messages}
                 <Link to={exitTo} className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-label-md font-semibold shadow-xs hover:shadow transition-all">
-                    Quay lại
+                    {classroomId ? "Về lớp học" : "Quay lại"}
                 </Link>
                 {/* Rà soát 27/10: bộ đã học xong vẫn ôn lại được ngay (cram không đổi lịch; học lại từ đầu ở trang bộ thẻ) */}
                 {!pathId && !range && deck && !cram && (
@@ -857,7 +886,7 @@ export const StudyPage: React.FC = () => {
                     <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5">
                             <Link to={exitTo} className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors">
-                                {pathId ? "← Về lộ trình" : "← Thoát"}
+                                {classroomId ? "← Về lớp học" : pathId ? "← Về lộ trình" : "← Thoát"}
                             </Link>
 
                             {/* Trạng thái lưu ngầm (Background Queue) */}

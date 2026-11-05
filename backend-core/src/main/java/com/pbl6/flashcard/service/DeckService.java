@@ -14,12 +14,14 @@ import com.pbl6.flashcard.model.Flashcard;
 import com.pbl6.flashcard.model.Folder;
 import com.pbl6.flashcard.model.User;
 import com.pbl6.flashcard.dto.deck.ShareMemberResponse;
+import com.pbl6.flashcard.repository.ClassroomMemberRepository;
 import com.pbl6.flashcard.repository.DeckRepository;
 import com.pbl6.flashcard.repository.DeckShareRepository;
 import com.pbl6.flashcard.repository.FolderRepository;
 import com.pbl6.flashcard.repository.ReviewRepository;
 import com.pbl6.flashcard.repository.UserRepository;
 import com.pbl6.flashcard.service.dictionary.DictionaryStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -61,6 +63,7 @@ public class DeckService {
     private final UserRepository userRepository;
     private final QuizAiClient quizAi;
     private final DictionaryStore dictionaryStore;
+    private final ClassroomMemberRepository classroomMemberRepo;
     /** Sinh phương án nhiễu: tách đọc / ghi thành 2 transaction ngắn, không giữ kết nối DB + khoá deck khi chờ ai-service. */
     private final TransactionTemplate tx;
 
@@ -69,6 +72,16 @@ public class DeckService {
                        FolderRepository folderRepository, DeckShareRepository shareRepository,
                        UserRepository userRepository, QuizAiClient quizAi,
                        DictionaryStore dictionaryStore, PlatformTransactionManager txManager) {
+        this(deckRepository, reviewRepository, folderRepository, shareRepository, userRepository, quizAi, dictionaryStore, txManager, null);
+    }
+
+    @Autowired
+    public DeckService(DeckRepository deckRepository,
+                       ReviewRepository reviewRepository,
+                       FolderRepository folderRepository, DeckShareRepository shareRepository,
+                       UserRepository userRepository, QuizAiClient quizAi,
+                       DictionaryStore dictionaryStore, PlatformTransactionManager txManager,
+                       ClassroomMemberRepository classroomMemberRepo) {
         this.deckRepository = deckRepository;
         this.reviewRepository = reviewRepository;
         this.folderRepository = folderRepository;
@@ -77,6 +90,7 @@ public class DeckService {
         this.quizAi = quizAi;
         this.dictionaryStore = dictionaryStore;
         this.tx = new TransactionTemplate(txManager);
+        this.classroomMemberRepo = classroomMemberRepo;
     }
 
     // ---------- quyền ----------
@@ -113,9 +127,18 @@ public class DeckService {
         String permission = shareRepository.findByDeckIdAndUserId(deck.getId(), uid)
                 .map(DeckShare::getPermission).orElse(null);
         Optional<Access> direct = access(uid, deck, permission, false);
-        if (direct.isPresent() || deck.getFolder() == null) return direct;
-        // Chỉ hỏi chuỗi thư mục khi không có quyền nào khác (thêm 1 query)
-        return access(uid, deck, permission, folderRepository.isSharedWith(deck.getFolder().getId(), uid));
+        if (direct.isPresent()) return direct;
+
+        if (deck.getFolder() != null && folderRepository.isSharedWith(deck.getFolder().getId(), uid)) {
+            return Optional.of(Access.VIEWER);
+        }
+
+        // Quyền xem bộ thẻ nếu là học viên (APPROVED) hoặc giáo viên của lớp học chứa bộ thẻ này
+        if (classroomMemberRepo != null && classroomMemberRepo.isDeckAccessibleByClassroomMember(deck.getId(), uid)) {
+            return Optional.of(Access.VIEWER);
+        }
+
+        return Optional.empty();
     }
 
     public static Optional<Flashcard> findCardIn(Deck deck, String cardId) {

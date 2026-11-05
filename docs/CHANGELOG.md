@@ -1,5 +1,31 @@
 # Nhật ký thay đổi
 
+## 05/11/2026 (đêm): Phân hệ Lớp học (Classrooms), Bài kiểm tra độc lập (Classroom Quizzes) & Chỉnh sửa lớp học toàn diện
+Hoàn thiện toàn diện phân hệ Lớp học (Classroom) với hệ thống bài kiểm tra trắc nghiệm chuyên biệt, bảng xếp hạng và giao diện chỉnh sửa lớp học 2 bước cao cấp:
+- **Tách biệt hoàn toàn Bài kiểm tra Lớp học (`ClassroomQuiz`)**:
+  - Migration **V42** (`V42__classroom_quizzes.sql`): Thêm các bảng `classroom_quizzes`, `classroom_quiz_attempts`, `classroom_quiz_submissions`.
+  - Backend: Các model `ClassroomQuiz`, `ClassroomQuizAttempt`, `ClassroomQuizSubmission`, Repository, Service và Controller `/api/classrooms/{id}/quizzes`. Bốc ngẫu nhiên câu hỏi trắc nghiệm từ các bộ thẻ được gán theo buổi học hoặc toàn bộ lớp, sinh 4 phương án A/B/C/D có căn cứ từ vựng, tự động chấm điểm, lưu lịch sử bài thi và cập nhật điểm trung bình vào bảng xếp hạng lớp học.
+  - Frontend: Trang làm bài thi độc lập `ClassroomQuizPage.tsx` (`/classrooms/:classroomId/quizzes/:quizId`) với đồng hồ đếm ngược, lưới câu hỏi 1..N, phím tắt số 1, 2, 3, 4, nộp bài, xem điểm và giải thích chi tiết từng câu.
+  - Hiển thị bài kiểm tra tại từng buổi học: điểm cá nhân `🌟 Điểm của bạn: X/100`, nút xem danh sách học viên đã nộp bài dành cho giáo viên, nút xóa bài kiểm tra.
+  - Hiển thị khối **"Bài kiểm tra chung của lớp"** trên đầu Tab Lộ trình dành cho các bài thi định kỳ/tổng hợp không gắn vào buổi lẻ.
+- **Chức năng Chỉnh sửa lớp học toàn diện (`EditClassroomModal.tsx`)**:
+  - Giao diện 2 bước trực quan đồng bộ như lúc tạo lớp:
+    - **Bước 1 (Thông tin chung)**: Sửa tên lớp, mô tả, trình độ JLPT (N5 - N1), quyền riêng tư (`PUBLIC` / `PRIVATE`).
+    - **Ràng buộc Sĩ số tối đa (`maxStudents`)**: Chặn ở cả frontend (`min = classroom.memberCount`) và backend (`400 Bad Request`), không cho phép giảm sĩ số tối đa xuống thấp hơn số học viên đang có trong lớp.
+    - **Bước 2 (Lộ trình buổi học)**:
+      - Quản lý từng buổi học: Sửa tiêu đề buổi, sửa ngày học dự kiến từng buổi, thêm/bớt bộ thẻ gán kèm với bộ lọc danh mục/thư mục/JLPT và tìm kiếm nhanh.
+      - **Công cụ phân bổ thẻ thông minh (`SmartDeckAssignModal`)**: Chọn nhiều bộ thẻ, chia đều số thẻ cho toàn bộ các buổi học hiện có.
+      - **Công cụ dời lịch học hàng loạt**: Chọn ngày bắt đầu và các thứ trong tuần (T2, T3...), bấm "Áp dụng lại ngày học" để tự động gán lại ngày học tức thì (không popup làm phiền, phản hồi nút xanh trực quan).
+      - **Bảo toàn dữ liệu học viên**: Khi cập nhật lớp học, các buổi học cũ được giữ nguyên ID trong cơ sở dữ liệu để bảo tồn 100% tiến độ học tập và điểm thi của học sinh.
+      - **Xóa buổi học an toàn**: Gỡ bỏ nút xóa buổi học bên ngoài giao diện chính; đưa việc xóa buổi học vào trong modal quản lý kèm dialog UI React xác nhận cảnh báo nếu buổi học đó đã có học sinh hoàn thành.
+      - **Thêm buổi học mới**: Cho phép thêm các buổi học mới vào cuối lộ trình lớp học.
+- **Tối ưu UI/UX**:
+  - Bổ sung nút **`[ ✏️ Chỉnh sửa lớp học ]`** nổi bật ở Header và Banner lớp học dành cho Giáo viên.
+  - Xóa bỏ nút thùng rác xóa buổi học bên ngoài danh sách buổi học để tránh giáo viên bấm nhầm.
+  - Xóa bỏ hoàn toàn các popup `window.confirm` / `alert` mặc định của trình duyệt, thay bằng tương tác trực quan hoặc Modal UI chuẩn React.
+  - Sửa lỗi nút tạo bài kiểm tra bị thừa dấu `+`.
+  - Bỏ checkbox `Kèm Quiz` cũ ở modal tạo lớp để chuyển sang hệ thống Quiz chuyên biệt.
+
 ## 30/10/2026 (khuya): Thư viện cộng đồng — sửa thiếu sót sau rà soát "Cộng đồng & Khám phá"
 Rà soát ba trang Thư viện / Từ điển / Sơ đồ chữ Hán; người dùng chọn làm nhóm A (Thư viện). Không có migration. Đề xuất để sau:
 Từ điển (Sổ tay tạo bộ thẻ / xuất CSV, "Báo cáo của tôi", tìm theo nghĩa Việt / Anh), cộng đồng (trang tác giả, hữu ích / báo cáo từng

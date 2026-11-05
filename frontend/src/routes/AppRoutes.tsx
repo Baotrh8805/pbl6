@@ -20,6 +20,9 @@ import { FoldersPage } from "@/pages/FoldersPage";
 import { ExtractionPage } from "@/pages/ExtractionPage";
 import { ExtractionsPage } from "@/pages/ExtractionsPage";
 import { KnowledgeGraphPage } from "@/pages/KnowledgeGraphPage";
+import { ClassroomsPage } from "@/pages/ClassroomsPage";
+import { ClassroomDetailPage } from "@/pages/ClassroomDetailPage";
+import { ClassroomQuizPage } from "@/pages/ClassroomQuizPage";
 import { DictionaryPage } from "@/pages/DictionaryPage";
 import { DataSourcesPage } from "@/pages/DataSourcesPage";
 import { SharedDeckLinkPage } from "@/pages/SharedDeckLinkPage";
@@ -116,6 +119,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="/extractions/:id" element={<ExtractionPage />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
         <Route path="/roadmap/:id" element={<RoadmapDetailPage />} />
+        <Route path="/classrooms" element={<ClassroomsPage />} />
+        <Route path="/classrooms/:id" element={<ClassroomDetailPage />} />
         <Route path="/quiz" element={<QuizRoomPage />} />
         {/* Từ điển (spec 2026-10-26, D14): Từ vựng + Hán tự (/kanji cũ) + Hán-Việt (/han-viet cũ) + Sổ tay */}
         <Route path="/dictionary" element={<DictionaryPage />} />
@@ -172,6 +177,14 @@ export const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <DeckPrintPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/classrooms/:classroomId/quizzes/:quizId"
+        element={
+          <ProtectedRoute>
+            <ClassroomQuizPage />
           </ProtectedRoute>
         }
       />

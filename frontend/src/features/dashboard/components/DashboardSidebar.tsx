@@ -139,6 +139,11 @@ const SECTIONS: NavSectionConfig[] = [
         renderBadge: ({ isActive }) => <RoadmapTodayBadge isActive={isActive} />,
       },
       {
+        to: "/classrooms",
+        icon: "school",
+        label: "Lớp Học",
+      },
+      {
         to: "/quiz",
         icon: "quiz",
         label: "Phòng Thi Quiz",
