@@ -1191,7 +1191,7 @@ export const EditClassroomModal: React.FC<Props> = ({ isOpen, onClose, classroom
                     onClose={() => setDeleteConfirmLesson(null)}
                     title="Xác nhận xóa buổi học"
                     icon="warning"
-                    size="sm"
+                    size="md"
                 >
                     <div className="space-y-4 text-xs">
                         <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 leading-relaxed">

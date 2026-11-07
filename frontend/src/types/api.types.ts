@@ -74,6 +74,8 @@ export interface DeckDto {
     visibility?: DeckVisibility;
     category?: string;
     cards?: CardDto[];
+    /** true = xác nhận giữ thuật ngữ trùng (sau khi nhận lỗi 409 DUPLICATE_TERM) */
+    allowDuplicate?: boolean;
 }
 
 /** DeckShareRepository.Member */

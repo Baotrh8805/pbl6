@@ -35,8 +35,8 @@ export const addCard = async (deckId: string, dto: CardDto): Promise<Card> =>
     (await apiClient.post<Card>(`${deckUrl(deckId)}/cards`, dto)).data;
 
 // Không fallback thêm từng thẻ: request timeout nhưng server đã lưu thì sẽ tạo thẻ trùng.
-export const addCardsBatch = async (deckId: string, cards: CardDto[]): Promise<Card[]> =>
-    (await apiClient.post<Card[]>(`${deckUrl(deckId)}/cards/batch`, cards)).data;
+export const addCardsBatch = async (deckId: string, cards: CardDto[], allowDuplicate = false): Promise<Card[]> =>
+    (await apiClient.post<Card[]>(`${deckUrl(deckId)}/cards/batch`, cards, { params: { allowDuplicate } })).data;
 
 export const updateCard = async (deckId: string, cardId: string, dto: CardDto): Promise<Card> =>
     (await apiClient.put<Card>(`${deckUrl(deckId)}/cards/${encodeURIComponent(cardId)}`, dto)).data;

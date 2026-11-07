@@ -75,7 +75,7 @@ export const DeckCard: React.FC<DeckCardProps> = ({
   const levelClass = LEVEL_BADGES[deck.level] ?? "bg-slate-100 text-slate-800 border-slate-200";
 
   return (
-    <li className="relative flex flex-col justify-between p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-blue-400 hover:shadow-md transition-all shadow-xs group">
+    <li className={`relative flex flex-col justify-between p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 hover:border-blue-400 hover:shadow-md transition-all shadow-xs group ${open ? "z-30" : ""}`}>
       <div>
         {/* Header row: JLPT Level, Card count, Due indicator, Source badge, Actions */}
         <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -104,7 +104,7 @@ export const DeckCard: React.FC<DeckCardProps> = ({
               </span>
             )}
 
-            <div className="relative z-10" ref={menuRef}>
+            <div className={`relative ${open ? "z-40" : "z-10"}`} ref={menuRef}>
               <button
                 ref={buttonRef}
                 type="button"
@@ -123,7 +123,7 @@ export const DeckCard: React.FC<DeckCardProps> = ({
                 <div
                   id={menuId}
                   role="menu"
-                  className="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white shadow-lg border border-slate-200 py-1 z-30 animate-in fade-in zoom-in-95"
+                  className="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white shadow-xl border border-slate-200 py-1 z-50 animate-in fade-in zoom-in-95"
                 >
                   {hasCards && (
                     <>

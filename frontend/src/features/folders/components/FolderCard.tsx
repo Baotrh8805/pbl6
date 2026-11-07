@@ -89,7 +89,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
       aria-label={`Mở thư mục ${folder.title}`}
       onClick={() => onOpen(folder)}
       onKeyDown={handleKeyDown}
-      className="bg-white rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md border border-slate-200/90 hover:border-blue-400 transition-all flex flex-col justify-between gap-3 relative group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className={`bg-white rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md border border-slate-200/90 hover:border-blue-400 transition-all flex flex-col justify-between gap-3 relative group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${menuOpen ? "z-30" : ""}`}
     >
       <div>
         {/* Hàng chip + icon + menu */}
@@ -125,7 +125,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
             )}
 
             {!readOnly && (
-              <div className="relative" ref={menuRef}>
+              <div className={`relative ${menuOpen ? "z-40" : ""}`} ref={menuRef}>
                 <button
                   ref={menuButtonRef}
                   type="button"
@@ -144,7 +144,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
                   <div
                     id={menuId}
                     role="menu"
-                    className="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white shadow-lg border border-slate-200 py-1 z-30 animate-in fade-in zoom-in-95"
+                    className="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white shadow-xl border border-slate-200 py-1 z-50 animate-in fade-in zoom-in-95"
                   >
                     <button type="button" role="menuitem" onClick={() => runMenuAction(onAddDeck)} className={`${menuItemClass} text-slate-800 hover:bg-slate-50`}>
                       <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-blue-600">playlist_add</span>

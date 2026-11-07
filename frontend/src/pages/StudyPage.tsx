@@ -13,7 +13,7 @@ import { AUDIO_MODE_LABELS, cardSpeechItems, meaningSpeechItems, parseAudioMode,
 import { useAuth } from "@/context/useAuth";
 import { loadLearningSettings } from "@/features/dashboard/lib/dashboardUtils";
 import { useAsync } from "@/lib/useAsync";
-import { isDue, estimateNextInterval, type Grade, type Review } from "@/lib/srs";
+import { isDue, estimateNextInterval, clampEase, DEFAULT_EASE, type Grade, type Review } from "@/lib/srs";
 import { extractKanji, hasCjkIdeograph } from "@/lib/textUtils";
 import type { Card, Deck, SessionCardMode, SessionResponse } from "@/types/api.types";
 import { PronunciationPanel } from "@/features/practice/components/PronunciationPanel";
@@ -410,6 +410,31 @@ export const StudyPage: React.FC = () => {
         const sc = data?.session?.cards.find((c) => c.cardId === id);
         return sc?.mode ?? deckCardMode(data?.reviews[id], new Date());
     };
+
+    // Trạng thái review thực tế của thẻ: mô phỏng theo số lần bấm "Lại" trong phiên để cập nhật chính xác số ngày trên các nút 2, 3, 4
+    const effectiveReviewOf = useCallback(
+        (cardId: string): Review | undefined => {
+            const base = data?.reviews[cardId];
+            const againCount = live?.stats.again[cardId] ?? 0;
+            if (againCount === 0) return base;
+
+            let ease = base?.ease ?? DEFAULT_EASE;
+            let intervalDays = base?.intervalDays ?? 0;
+            for (let i = 0; i < againCount; i++) {
+                ease = clampEase(ease + 0.1 * (DEFAULT_EASE - ease) - 0.2);
+                intervalDays = Math.max(1, Math.round(intervalDays * 0.3));
+            }
+
+            return {
+                cardId,
+                reps: base?.reps ?? 0,
+                intervalDays,
+                ease,
+                dueAt: base?.dueAt ?? new Date().toISOString(),
+            };
+        },
+        [data?.reviews, live?.stats.again]
+    );
 
     useEffect(() => {
         shownAt.current = performance.now();
@@ -1207,10 +1232,10 @@ export const StudyPage: React.FC = () => {
                 <div
                     {...swipe.handlers}
                     // Chạm / bấm vào thẻ để lật qua lại hai mặt (§3.1); nút "Hiện đáp án" vẫn là điều khiển chính cho bàn phím /
-                    // trình đọc màn hình. Bỏ qua click ngay sau khi vuốt và khi đang bôi đen chữ trên thẻ.
+                    // trình đọc màn hình. Bỏ qua click ngay sau khi vuốt và khi đang bôi đen chữ trên thẻ (để copy/dịch bằng extension).
                     onClick={() => {
                         if (swipe.consumeDrag() || audioGate) return;
-                        if (revealed && window.getSelection()?.toString()) return;
+                        if (window.getSelection()?.toString().trim()) return;
                         setRevealed((r) => !r);
                     }}
                     style={dx ? { transform: `translateX(${dx}px) rotate(${Math.max(-8, Math.min(8, dx / 20))}deg)` } : undefined}
@@ -1306,7 +1331,7 @@ export const StudyPage: React.FC = () => {
                         /* CHẾ ĐỘ LẬT THẺ (QUIZLET): Chỉ áp dụng cho chế độ Đọc - Một mặt duy nhất tại một thời điểm, lật 3D */
                         <div
                             key={revealed ? "quizlet-back" : "quizlet-front"}
-                            className="flex-1 flex flex-col items-center justify-center py-6 px-4 w-full animate-cardFlip select-none min-h-[300px]"
+                            className="flex-1 flex flex-col items-center justify-center py-6 px-4 w-full animate-cardFlip min-h-[300px]"
                         >
                             {!revealed ? (
                                 /* MẶT TRƯỚC (QUIZLET) */
@@ -1505,7 +1530,7 @@ export const StudyPage: React.FC = () => {
                                     <div className="w-full text-center animate-fadeIn motion-reduce:animate-none px-4">
                                         {frontSide === "term" && furiganaStyle === "stacked" && current.reading ? (
                                             <div className="space-y-2">
-                                                <div lang="ja" className="text-xl md:text-2xl font-japanese font-bold text-blue-700 tracking-wide select-none">
+                                                <div lang="ja" className="text-xl md:text-2xl font-japanese font-bold text-blue-700 tracking-wide">
                                                     {current.reading}
                                                 </div>
                                                 <div className="text-body-md md:text-base font-normal text-slate-800 leading-relaxed whitespace-pre-line max-w-lg mx-auto">
@@ -1541,7 +1566,7 @@ export const StudyPage: React.FC = () => {
                 {revealed && (
                     <div className="grid grid-cols-4 gap-2.5">
                         {GRADES.map((g) => {
-                            const interval = current ? estimateNextInterval(data?.reviews[current.id], g.grade) : null;
+                            const interval = current ? estimateNextInterval(effectiveReviewOf(current.id), g.grade) : null;
                             return (
                                 <button
                                     key={g.grade}

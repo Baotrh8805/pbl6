@@ -138,6 +138,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [duplicateConflict, setDuplicateConflict] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   // LP-15: bộ của một chương lộ trình -> nhắc thêm / xoá thẻ đổi lịch của lộ trình (theo thư mục đã lưu, không theo ô đang chọn).
   const pathLink = useDeckLearningPath(deck);
@@ -262,8 +263,11 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
     });
   };
 
-  const handleSave = async (shouldStudyImmediately = false) => {
+  const handleSave = async (shouldStudyImmediately = false, allowDuplicate = false) => {
     setErrorMessage(null);
+    if (!allowDuplicate) {
+      setDuplicateConflict(false);
+    }
 
     if (!title.trim()) {
       setErrorMessage("Vui lòng nhập tiêu đề cho bộ thẻ.");
@@ -285,6 +289,7 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       description: description.trim() || undefined,
       folderId: folderId || null,
       ...(ownsAccess ? { visibility } : {}),
+      allowDuplicate,
     };
 
     setIsSaving(true);
@@ -293,16 +298,16 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       if (isAddCardsMode && deckId) {
         // Thêm thẻ trước (thao tác chính); thông tin chung chỉ ghi khi thật sự đổi và không gửi cards
         // để không đè thẻ cũ. Hai request tách rời -> giảm tối đa request thứ hai.
-        await addCardsBatch(deckId, validCards);
+        await addCardsBatch(deckId, validCards, allowDuplicate);
         if (deck && infoChanged(deck, info)) {
-          await updateDeck(deckId, info);
+          await updateDeck(deckId, { ...info, allowDuplicate });
         }
         savedDeckId = deckId;
       } else if (isEditing && deckId) {
-        const res = await updateDeck(deckId, { ...info, cards: validCards });
+        const res = await updateDeck(deckId, { ...info, cards: validCards, allowDuplicate });
         savedDeckId = res.id;
       } else {
-        const res = await createDeck({ ...info, cards: validCards });
+        const res = await createDeck({ ...info, cards: validCards, allowDuplicate });
         savedDeckId = res.id;
       }
 
@@ -313,8 +318,14 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       } else {
         navigate("/decks");
       }
-    } catch (err) {
-      setErrorMessage(extractErrorMessage(err));
+    } catch (err: any) {
+      const msg = extractErrorMessage(err);
+      setErrorMessage(msg);
+      const isDup =
+        err?.response?.data?.code === "DUPLICATE_TERM" ||
+        msg.includes("đã có trong bộ thẻ") ||
+        msg.includes("Vẫn thêm");
+      setDuplicateConflict(isDup);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
       setIsSaving(false);
@@ -381,9 +392,27 @@ const DeckEditorForm: React.FC<DeckEditorFormProps> = ({
       </div>
 
       {errorMessage && (
-        <div role="alert" className="p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm flex items-start gap-3">
-          <span aria-hidden="true" className="material-symbols-outlined text-[20px] shrink-0">error</span>
-          <div className="flex-1">{errorMessage}</div>
+        <div role="alert" className="p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <span aria-hidden="true" className="material-symbols-outlined text-[20px] shrink-0 text-error mt-0.5">error</span>
+            <div className="flex-1 leading-relaxed">{errorMessage}</div>
+          </div>
+          {duplicateConflict && (
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                isLoading={isSaving}
+                disabled={isSaving}
+                onClick={() => handleSave(false, true)}
+                className="bg-error hover:bg-error/90 text-white font-bold cursor-pointer shadow-sm text-xs py-1.5 px-3.5 inline-flex items-center gap-1.5"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">done_all</span>
+                <span>Vẫn thêm</span>
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
