@@ -5,31 +5,24 @@ import type { FolderNode, LibraryDeck } from "@/types/api.types";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { extractErrorMessage } from "@/services/apiClient";
+import { isAlreadySavedError } from "@/features/library/librarySave";
+import { flattenFolders } from "@/features/folders/components/folderTree";
+
+/**
+ * Dữ liệu tối thiểu để lưu bản sao: bộ thẻ Thư viện có đủ số liệu; bộ thẻ mở từ trang chi tiết
+ * (người xem theo liên kết chia sẻ) không có số lượt quiz nên để tuỳ chọn.
+ */
+export type SaveToFolderDeck = Pick<LibraryDeck, "id" | "title" | "level" | "description" | "cardsCount"> &
+  Partial<Pick<LibraryDeck, "quizCount">>;
 
 export interface SaveToFolderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  deck: LibraryDeck | null;
+  deck: SaveToFolderDeck | null;
   onSaved?: (folderId: string | null) => void;
+  /** Đã lưu bộ này rồi (409 DECK_ALREADY_SAVED, vd. lưu ở tab khác): trang cha tải lại và báo; không có thì hiện lỗi trong hộp. */
+  onAlreadySaved?: () => void;
 }
-
-interface FolderOption {
-  id: string;
-  title: string;
-  depth: number;
-}
-
-// Duỗi cây thư mục thành danh sách phẳng kèm độ sâu để thụt lề.
-const flattenFolders = (nodes: FolderNode[], depth = 0): FolderOption[] => {
-  const list: FolderOption[] = [];
-  for (const node of nodes) {
-    list.push({ id: node.id, title: node.title, depth });
-    if (node.children?.length) {
-      list.push(...flattenFolders(node.children, depth + 1));
-    }
-  }
-  return list;
-};
 
 // Ô chọn là radio thật (ẩn) bọc trong label -> bàn phím/đọc màn hình dùng được.
 const optionClass = (selected: boolean) =>
@@ -44,6 +37,7 @@ export const SaveToFolderModal: React.FC<SaveToFolderModalProps> = ({
   onClose,
   deck,
   onSaved,
+  onAlreadySaved,
 }) => {
   const formId = useId();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,6 +70,7 @@ export const SaveToFolderModal: React.FC<SaveToFolderModalProps> = ({
         formId={formId}
         deck={deck}
         onSaved={onSaved}
+        onAlreadySaved={onAlreadySaved}
         onClose={onClose}
         onSavingChange={setIsSubmitting}
       />
@@ -85,8 +80,9 @@ export const SaveToFolderModal: React.FC<SaveToFolderModalProps> = ({
 
 interface SaveToFolderFormProps {
   formId: string;
-  deck: LibraryDeck;
+  deck: SaveToFolderDeck;
   onSaved?: (folderId: string | null) => void;
+  onAlreadySaved?: () => void;
   onClose: () => void;
   onSavingChange: (saving: boolean) => void;
 }
@@ -96,6 +92,7 @@ const SaveToFolderForm: React.FC<SaveToFolderFormProps> = ({
   formId,
   deck,
   onSaved,
+  onAlreadySaved,
   onClose,
   onSavingChange,
 }) => {
@@ -160,7 +157,12 @@ const SaveToFolderForm: React.FC<SaveToFolderFormProps> = ({
       if (onSaved) onSaved(selectedFolderId || null);
       onClose();
     } catch (err) {
-      setError(extractErrorMessage(err));
+      if (isAlreadySavedError(err) && onAlreadySaved) {
+        onAlreadySaved();
+        onClose();
+      } else {
+        setError(extractErrorMessage(err));
+      }
     } finally {
       onSavingChange(false);
     }
@@ -183,9 +185,13 @@ const SaveToFolderForm: React.FC<SaveToFolderFormProps> = ({
         </div>
         <p className="line-clamp-2">{deck.description}</p>
         <div className="flex items-center gap-3 pt-1 text-outline">
-          <span>{deck.cardsCount} flashcards kèm audio & ví dụ</span>
-          <span aria-hidden="true">•</span>
-          <span>{deck.quizCount} lượt quiz</span>
+          <span>{deck.cardsCount} thẻ</span>
+          {deck.quizCount != null && (
+            <>
+              <span aria-hidden="true">•</span>
+              <span>{deck.quizCount} lượt quiz</span>
+            </>
+          )}
         </div>
       </div>
 

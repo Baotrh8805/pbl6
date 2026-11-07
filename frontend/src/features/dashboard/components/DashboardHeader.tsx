@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import { NotificationBell } from "./NotificationBell";
 import type { UserMetrics } from "../types/dashboard.types";
 import { getLevelDescription } from "../lib/dashboardUtils";
+import { getInitials } from "@/lib/textUtils";
 
 interface DashboardHeaderProps {
   displayName: string;
@@ -44,12 +46,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   }, [userMenuOpen]);
 
   // Avatar chữ cái đầu từ tên thật (không dùng ảnh stock)
-  const initials = displayName
-    .trim()
-    .split(/\s+/)
-    .slice(-2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
+  const initials = getInitials(displayName);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(4,21,52,0.05)] border-b border-surface-container-high/40">
@@ -68,7 +65,9 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           {/* Logo */}
           <div className="flex items-center gap-space-sm shrink-0 select-none">
             <img alt="NihonGen AI Logo" className="h-8 w-auto object-contain shrink-0" src="/favicon.svg" />
-            <span className="font-headline-sm text-headline-sm text-primary tracking-tight font-bold whitespace-nowrap">
+            {/* < 360 px (vd. 320): nút menu + logo + tên + chuông + avatar rộng ~351 px, avatar và menu tài khoản tràn khỏi
+                mép phải -> chỉ giữ logo (alt vẫn đọc tên app), như header quản trị. */}
+            <span className="hidden min-[360px]:inline font-headline-sm text-headline-sm text-primary tracking-tight font-bold whitespace-nowrap">
               NihonGen AI
             </span>
           </div>
@@ -76,6 +75,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
         {/* Right: Quick Badges + User Profile */}
         <div className="flex items-center gap-space-sm shrink-0">
+          <NotificationBell />
           {/* Streak: tính từ lịch sử ôn/thi, chỉ hiển thị */}
           <div
             className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm whitespace-nowrap"

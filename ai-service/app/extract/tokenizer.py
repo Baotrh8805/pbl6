@@ -1,0 +1,104 @@
+"""Bọc SudachiPy: tách từ, lemma (dictionary_form), reading hiragana, POS.
+
+Từ điển `core` nạp một lần (lazy singleton) vì tốn ~1 s và ~100 MB.
+Mode C = từ dài nhất (ứng viên từ vựng), mode A = đơn vị ngắn nhất
+(thành phần từ ghép, chuỗi token cho matcher ngữ pháp).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Literal
+
+from app.extract.jachars import kata_to_hira
+
+Mode = Literal["A", "B", "C"]
+
+
+@dataclass(frozen=True, slots=True)
+class Token:
+    surface: str
+    lemma: str            # dictionary_form()
+    reading: str          # hiragana
+    pos: tuple[str, ...]  # 6 tầng POS của Sudachi
+    normalized: str       # normalized_form()
+    begin: int
+    end: int
+    # is_oov(): True khi Sudachi ghép ký tự lạ thành một cụm không có trong SudachiDict (覆公, chuỗi OCR rác).
+    # Mặc định False để Token dựng tay trong test / matcher vẫn hợp lệ.
+    oov: bool = False
+
+    @property
+    def pos1(self) -> str:
+        return self.pos[0]
+
+    @property
+    def pos2(self) -> str:
+        return self.pos[1] if len(self.pos) > 1 else "*"
+
+    @property
+    def conj_type(self) -> str:
+        """活用型 (vd: 五段-カ行)."""
+        return self.pos[4] if len(self.pos) > 4 else "*"
+
+    @property
+    def conj_form(self) -> str:
+        """活用形 (vd: 連用形-一般, 未然形-一般)."""
+        return self.pos[5] if len(self.pos) > 5 else "*"
+
+
+_tokenizer = None
+_modes = None
+
+
+def _load():
+    global _tokenizer, _modes
+    if _tokenizer is None:
+        from sudachipy import dictionary, tokenizer as _t
+        _tokenizer = dictionary.Dictionary(dict="core").tokenizer()
+        _modes = {"A": _t.Tokenizer.SplitMode.A,
+                  "B": _t.Tokenizer.SplitMode.B,
+                  "C": _t.Tokenizer.SplitMode.C}
+    return _tokenizer, _modes
+
+
+def available() -> bool:
+    try:
+        _load()
+        return True
+    except Exception:
+        return False
+
+
+# SudachiDict đọc một số từ theo cách đọc trang trọng / ít gặp mà giáo trình và furigana thông thường không dùng:
+# 日本 (danh từ riêng) → ニッポン, trong khi 日本人 / 日本語 Sudachi đã đọc にほん. Đọc にっぽん làm furigana sai và
+# lệch cặp (từ, cách đọc) khi phân cấp JLPT → đổi sang cách đọc chuẩn, chỉ khi token đúng bằng từ đó.
+_PREFERRED_READINGS: dict[tuple[str, str], str] = {("日本", "にっぽん"): "にほん"}
+
+
+def _reading(surface: str, reading_form: str) -> str:
+    reading = kata_to_hira(reading_form)
+    return _PREFERRED_READINGS.get((surface, reading), reading)
+
+
+def tokenize(text: str, mode: Mode = "C") -> list[Token]:
+    tok, modes = _load()
+    return [
+        Token(
+            surface=m.surface(),
+            lemma=m.dictionary_form(),
+            reading=_reading(m.surface(), m.reading_form()),
+            pos=tuple(m.part_of_speech()),
+            normalized=m.normalized_form(),
+            begin=m.begin(),
+            end=m.end(),
+            oov=m.is_oov(),
+        )
+        for m in tok.tokenize(text, modes[mode])
+    ]
+
+
+@lru_cache(maxsize=4096)
+def reading_of(word: str) -> str:
+    """Cách đọc hiragana của một từ độc lập (ghép reading các token mode C)."""
+    return "".join(t.reading for t in tokenize(word, "C"))

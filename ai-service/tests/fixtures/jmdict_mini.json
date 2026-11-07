@@ -1,0 +1,945 @@
+{
+ "version": "3.6.2",
+ "languages": [
+  "eng"
+ ],
+ "commonOnly": false,
+ "dictDate": "2026-10-19",
+ "dictRevisions": [
+  "1.09",
+  "1.08",
+  "1.07",
+  "1.06",
+  "1.05",
+  "1.04"
+ ],
+ "tags": {
+  "hon": "honorific or respectful (sonkeigo) language",
+  "n": "noun (common) (futsuumeishi)",
+  "v1": "Ichidan verb",
+  "prt": "particle",
+  "vt": "transitive verb",
+  "v5r": "Godan verb with 'ru' ending"
+ },
+ "words": [
+  {
+   "id": "1206730",
+   "kanji": [
+    {
+     "common": true,
+     "text": "学校",
+     "tags": []
+    },
+    {
+     "common": false,
+     "text": "學校",
+     "tags": [
+      "sK"
+     ]
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "がっこう",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "n"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "school"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "222600"
+       },
+       "text": "学校",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "この学校はたくさんの生徒がいます。"
+        },
+        {
+         "lang": "eng",
+         "text": "This school has many students."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1270590",
+   "kanji": [
+    {
+     "common": true,
+     "text": "ご飯",
+     "tags": []
+    },
+    {
+     "common": true,
+     "text": "御飯",
+     "tags": []
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "ごはん",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "n"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "cooked rice"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "217034"
+       },
+       "text": "ご飯",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "ご飯とパンどちらがいいですか。"
+        },
+        {
+         "lang": "eng",
+         "text": "Which do you prefer, rice or bread?"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "n"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "meal"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "79311"
+       },
+       "text": "ご飯",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "友達にご飯をおごってもらった。"
+        },
+        {
+         "lang": "eng",
+         "text": "My friends treated me to a meal."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1358280",
+   "kanji": [
+    {
+     "common": true,
+     "text": "食べる",
+     "tags": []
+    },
+    {
+     "common": false,
+     "text": "喰べる",
+     "tags": [
+      "sK"
+     ]
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "たべる",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "v1",
+      "vt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to eat"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "193344"
+       },
+       "text": "食べる",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "もっと果物を食べるべきです。"
+        },
+        {
+         "lang": "eng",
+         "text": "You should eat more fruit."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "v1",
+      "vt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to live on (e.g. a salary)"
+      },
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to live off"
+      },
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to subsist on"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "81964"
+       },
+       "text": "食べて",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "僕は脚本家で食べていく決心をした。"
+        },
+        {
+         "lang": "eng",
+         "text": "I am determined to make a living as a playwright."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1464530",
+   "kanji": [
+    {
+     "common": true,
+     "text": "日本語",
+     "tags": []
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "にほんご",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    },
+    {
+     "common": false,
+     "text": "にっぽんご",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "n"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "Japanese (language)"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "154716"
+       },
+       "text": "日本語",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "私は日本語で苦労している。"
+        },
+        {
+         "lang": "eng",
+         "text": "I have difficulty in Japanese."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1582710",
+   "kanji": [
+    {
+     "common": true,
+     "text": "日本",
+     "tags": []
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "にほん",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    },
+    {
+     "common": true,
+     "text": "にっぽん",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "n"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "Japan"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "122419"
+       },
+       "text": "日本",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "日本は中国の東方にある。"
+        },
+        {
+         "lang": "eng",
+         "text": "Japan is to the east of China."
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "2029010",
+   "kanji": [],
+   "kana": [
+    {
+     "common": true,
+     "text": "を",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "prt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "indicates direct object of action"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "84491"
+       },
+       "text": "を",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "父は私の楽観を乱さないことにした。"
+        },
+        {
+         "lang": "eng",
+         "text": "My father chose not to disturb my optimism."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "prt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "indicates subject of causative expression"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "157595"
+       },
+       "text": "を",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "私は教室で自分の声を届かせることができなかった。"
+        },
+        {
+         "lang": "eng",
+         "text": "I couldn't make myself heard in the classroom."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "prt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "indicates an area traversed"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "165625"
+       },
+       "text": "を",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "私たちは小さなボートで川を下った。"
+        },
+        {
+         "lang": "eng",
+         "text": "We went down the river in a small boat."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "prt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "indicates time (period) over which action takes place"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "235039"
+       },
+       "text": "を",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "６時を過ぎると従業員は帰り始めた。"
+        },
+        {
+         "lang": "eng",
+         "text": "After 6 p.m. the employees began to disappear."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "prt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "indicates point of departure or separation of action"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "114195"
+       },
+       "text": "を",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "彼はお金を払わずにレストランを出ました。"
+        },
+        {
+         "lang": "eng",
+         "text": "He left the restaurant without paying."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "prt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [
+      [
+       "が",
+       1
+      ]
+     ],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "indicates object of desire, like, hate, etc."
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "233818"
+       },
+       "text": "を",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "あなたが話をしたがっていたのは誰ですか。"
+        },
+        {
+         "lang": "eng",
+         "text": "Who is it that you want to talk to?"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1000040",
+   "kanji": [
+    {
+     "common": false,
+     "text": "〃",
+     "tags": []
+    }
+   ],
+   "kana": [
+    {
+     "common": false,
+     "text": "おなじ",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    },
+    {
+     "common": false,
+     "text": "おなじく",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "n"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "ditto mark"
+      }
+     ],
+     "examples": []
+    }
+   ]
+  },
+  {
+   "id": "1346370",
+   "kanji": [
+    {
+     "common": true,
+     "text": "召し上がる",
+     "tags": []
+    },
+    {
+     "common": false,
+     "text": "召しあがる",
+     "tags": [
+      "sK"
+     ]
+    },
+    {
+     "common": false,
+     "text": "召上がる",
+     "tags": [
+      "sK"
+     ]
+    },
+    {
+     "common": false,
+     "text": "召し上る",
+     "tags": [
+      "sK"
+     ]
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "めしあがる",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "v5r",
+      "vt"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [
+      "hon"
+     ],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to eat"
+      },
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to drink"
+      }
+     ],
+     "examples": [
+      {
+       "source": {
+        "type": "tatoeba",
+        "value": "224548"
+       },
+       "text": "召し上がります",
+       "sentences": [
+        {
+         "lang": "jpn",
+         "text": "ここで召し上がりますか、それともお持ち帰りですか。"
+        },
+        {
+         "lang": "eng",
+         "text": "Is this to eat here, or to go?"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

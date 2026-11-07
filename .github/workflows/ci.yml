@@ -1,5 +1,5 @@
 # Chặn code hỏng trước khi vào nhánh chung: test backend (Postgres nhúng, không cần Supabase)
-# + type-check, lint, build và self-check của frontend.
+# + type-check, lint, build và self-check của frontend + pytest ai-service.
 name: CI
 
 on:
@@ -20,6 +20,13 @@ jobs:
           java-version: "17"
           cache: maven
       - run: mvn -B test
+      # B6: báo cáo độ phủ JaCoCo (target/site/jacoco/index.html) kèm theo lần chạy; không đặt ngưỡng
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: backend-core/target/site/jacoco
+          if-no-files-found: ignore
 
   frontend:
     runs-on: ubuntu-latest
@@ -38,3 +45,20 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run selfcheck
+
+  ai-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ai-service/requirements.txt
+      - run: python -m compileall -q ai-service/app
+      # Test bóc tách (SudachiPy, JLPT, furigana, ngữ pháp, router). jmdict.sqlite không commit -> test không phụ thuộc nó;
+      # Tesseract / Gemini không có trên CI -> các test tương ứng tự skip hoặc dùng mock.
+      - run: pip install -r requirements.txt
+        working-directory: ai-service
+      - run: python -m pytest -q
+        working-directory: ai-service

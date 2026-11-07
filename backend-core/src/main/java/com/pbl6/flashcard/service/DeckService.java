@@ -1,46 +1,53 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.config.CodedStatusException;
 import com.pbl6.flashcard.dto.deck.DeckRequest;
 import com.pbl6.flashcard.dto.deck.DeckResponse;
 import com.pbl6.flashcard.dto.deck.DeckResponse.CardResponse;
+import com.pbl6.flashcard.dto.deck.DistractorsResponse;
+import com.pbl6.flashcard.dto.deck.QuizCapabilitiesResponse;
 import com.pbl6.flashcard.dto.deck.ShareRequest;
+import com.pbl6.flashcard.dto.deck.SuggestLevelResponse;
 import com.pbl6.flashcard.model.Deck;
 import com.pbl6.flashcard.model.DeckShare;
 import com.pbl6.flashcard.model.Flashcard;
 import com.pbl6.flashcard.model.Folder;
-import com.pbl6.flashcard.model.QuizAttempt;
-import com.pbl6.flashcard.model.QuizResult;
-import com.pbl6.flashcard.model.Review;
 import com.pbl6.flashcard.model.User;
+import com.pbl6.flashcard.dto.deck.ShareMemberResponse;
+import com.pbl6.flashcard.repository.ClassroomMemberRepository;
 import com.pbl6.flashcard.repository.DeckRepository;
 import com.pbl6.flashcard.repository.DeckShareRepository;
-import com.pbl6.flashcard.repository.FlashcardRepository;
 import com.pbl6.flashcard.repository.FolderRepository;
-import com.pbl6.flashcard.repository.QuizAttemptRepository;
-import com.pbl6.flashcard.repository.QuizResultRepository;
 import com.pbl6.flashcard.repository.ReviewRepository;
 import com.pbl6.flashcard.repository.UserRepository;
+import com.pbl6.flashcard.service.dictionary.DictionaryStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.text.Normalizer;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Nghiệp vụ bộ thẻ / thẻ / ôn tập / quiz. Mỗi thao tác một transaction và trả DTO, nên controller không
+ * Nghiệp vụ bộ thẻ / thẻ / chia sẻ (ôn tập: {@link ReviewService}, quiz: {@link QuizAttemptService}). Mỗi thao tác một transaction và trả DTO, nên controller không
  * chạm lazy collection sau khi transaction đóng (spring.jpa.open-in-view=false).
  */
 @Service
@@ -50,27 +57,40 @@ public class DeckService {
     private static final String CARD_NOT_FOUND = "Không tìm thấy thẻ trong bộ thẻ này.";
 
     private final DeckRepository deckRepository;
-    private final FlashcardRepository flashcardRepository;
     private final ReviewRepository reviewRepository;
-    private final QuizResultRepository quizResultRepository;
     private final FolderRepository folderRepository;
     private final DeckShareRepository shareRepository;
     private final UserRepository userRepository;
-    private final QuizAttemptRepository attemptRepository;
-    private final Random random = new Random();
+    private final QuizAiClient quizAi;
+    private final DictionaryStore dictionaryStore;
+    private final ClassroomMemberRepository classroomMemberRepo;
+    /** Sinh phương án nhiễu: tách đọc / ghi thành 2 transaction ngắn, không giữ kết nối DB + khoá deck khi chờ ai-service. */
+    private final TransactionTemplate tx;
 
-    public DeckService(DeckRepository deckRepository, FlashcardRepository flashcardRepository,
-                       ReviewRepository reviewRepository, QuizResultRepository quizResultRepository,
+    public DeckService(DeckRepository deckRepository,
+                       ReviewRepository reviewRepository,
                        FolderRepository folderRepository, DeckShareRepository shareRepository,
-                       UserRepository userRepository, QuizAttemptRepository attemptRepository) {
+                       UserRepository userRepository, QuizAiClient quizAi,
+                       DictionaryStore dictionaryStore, PlatformTransactionManager txManager) {
+        this(deckRepository, reviewRepository, folderRepository, shareRepository, userRepository, quizAi, dictionaryStore, txManager, null);
+    }
+
+    @Autowired
+    public DeckService(DeckRepository deckRepository,
+                       ReviewRepository reviewRepository,
+                       FolderRepository folderRepository, DeckShareRepository shareRepository,
+                       UserRepository userRepository, QuizAiClient quizAi,
+                       DictionaryStore dictionaryStore, PlatformTransactionManager txManager,
+                       ClassroomMemberRepository classroomMemberRepo) {
         this.deckRepository = deckRepository;
-        this.flashcardRepository = flashcardRepository;
         this.reviewRepository = reviewRepository;
-        this.quizResultRepository = quizResultRepository;
         this.folderRepository = folderRepository;
         this.shareRepository = shareRepository;
         this.userRepository = userRepository;
-        this.attemptRepository = attemptRepository;
+        this.quizAi = quizAi;
+        this.dictionaryStore = dictionaryStore;
+        this.tx = new TransactionTemplate(txManager);
+        this.classroomMemberRepo = classroomMemberRepo;
     }
 
     // ---------- quyền ----------
@@ -97,14 +117,28 @@ public class DeckService {
         return Optional.empty();
     }
 
+    /** Người dùng có xem được bộ thẻ này không (chủ, được chia sẻ, public, hoặc nằm trong thư mục được chia sẻ). */
+    public boolean canView(Long uid, Deck deck) {
+        return access(uid, deck).isPresent();
+    }
+
     private Optional<Access> access(Long uid, Deck deck) {
         if (uid.equals(deck.getOwnerId())) return Optional.of(Access.OWNER);
         String permission = shareRepository.findByDeckIdAndUserId(deck.getId(), uid)
                 .map(DeckShare::getPermission).orElse(null);
         Optional<Access> direct = access(uid, deck, permission, false);
-        if (direct.isPresent() || deck.getFolder() == null) return direct;
-        // Chỉ hỏi chuỗi thư mục khi không có quyền nào khác (thêm 1 query)
-        return access(uid, deck, permission, folderRepository.isSharedWith(deck.getFolder().getId(), uid));
+        if (direct.isPresent()) return direct;
+
+        if (deck.getFolder() != null && folderRepository.isSharedWith(deck.getFolder().getId(), uid)) {
+            return Optional.of(Access.VIEWER);
+        }
+
+        // Quyền xem bộ thẻ nếu là học viên (APPROVED) hoặc giáo viên của lớp học chứa bộ thẻ này
+        if (classroomMemberRepo != null && classroomMemberRepo.isDeckAccessibleByClassroomMember(deck.getId(), uid)) {
+            return Optional.of(Access.VIEWER);
+        }
+
+        return Optional.empty();
     }
 
     public static Optional<Flashcard> findCardIn(Deck deck, String cardId) {
@@ -119,7 +153,7 @@ public class DeckService {
     }
 
     /** deckId đến từ URL. Không xem được = 404, không lộ sự tồn tại. */
-    private Deck readable(Long uid, String deckId) {
+    public Deck readable(Long uid, String deckId) {
         return deckRepository.findById(deckId).filter(d -> access(uid, d).isPresent())
                 .orElseThrow(DeckService::deckNotFound);
     }
@@ -129,7 +163,11 @@ public class DeckService {
      * Xem được nhưng thiếu quyền = 403; không xem được = 404.
      */
     private Deck lockedWith(Long uid, String deckId, Access required) {
-        Deck deck = deckRepository.findByIdForUpdate(deckId).orElseThrow(DeckService::deckNotFound);
+        return require(uid, deckRepository.findByIdForUpdate(deckId).orElseThrow(DeckService::deckNotFound), required);
+    }
+
+    /** Phần kiểm quyền của {@link #lockedWith}, dùng riêng khi chưa cần khoá dòng (đọc trước khi gọi ai-service). */
+    private Deck require(Long uid, Deck deck, Access required) {
         Access access = access(uid, deck).orElseThrow(DeckService::deckNotFound);
         if (access.compareTo(required) > 0) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, required == Access.OWNER
@@ -154,7 +192,8 @@ public class DeckService {
 
     /**
      * folderId null: "Bộ thẻ của tôi" (sở hữu + được chia sẻ qua email).
-     * folderId có: bộ thẻ trong thư mục đó, của mình hoặc được chia sẻ (qua thư mục) cho mình; khác = 404.
+     * folderId có: của mình -> bộ thẻ nằm thẳng trong thư mục đó; được chia sẻ (qua thư mục) cho mình -> bộ thẻ của
+     * cả cây con (người xem cần số liệu của thư mục con mà không phải gọi từng thư mục); khác = 404.
      */
     @Transactional(readOnly = true)
     public List<DeckResponse> list(Long uid, UUID folderId) {
@@ -166,14 +205,17 @@ public class DeckService {
             Folder folder = folderRepository.findById(folderId).orElseThrow(DeckService::folderNotFound);
             viaSharedFolder = !uid.equals(folder.getUser().getId());
             if (viaSharedFolder && !folderRepository.isSharedWith(folderId, uid)) throw folderNotFound();
-            decks = deckRepository.findInFolderWithCards(folderId);
+            decks = viaSharedFolder
+                    ? deckRepository.findInFoldersWithCards(FolderService.subtreeIds(
+                            folderRepository.findByUser_IdOrderByTitleAsc(folder.getUser().getId()), folderId))
+                    : deckRepository.findInFolderWithCards(folderId);
         }
         // Mọi quyền được chia sẻ của user trong 1 query, không hỏi lại cho từng deck
         Map<String, String> shared = shareRepository.findByUserId(uid).stream()
                 .collect(Collectors.toMap(DeckShare::getDeckId, DeckShare::getPermission));
         boolean inSharedFolder = viaSharedFolder;
         return decks.stream()
-                .map(d -> DeckResponse.of(d, access(uid, d, shared.get(d.getId()), inSharedFolder).orElseThrow().json()))
+                .map(d -> DeckResponse.of(d, access(uid, d, shared.get(d.getId()), inSharedFolder).orElseThrow().json(), inSharedFolder))
                 .toList();
     }
 
@@ -199,16 +241,25 @@ public class DeckService {
         if (req.visibility() != null) deck.setVisibility(req.visibility());
         deck.setCategory(req.category());
         int pos = 1;
-        for (DeckRequest.Card c : complete(req.cards())) {
+        List<DeckRequest.Card> cards = complete(req.cards());
+        rejectDuplicates(List.of(), cards, Boolean.TRUE.equals(req.allowDuplicate()));
+        for (DeckRequest.Card c : cards) {
             deck.getCards().add(newCard(deck, c, pos++));
         }
         return DeckResponse.of(deckRepository.save(deck), Access.OWNER.json());
     }
 
-    /** Lưu bộ thẻ xem được (Thư viện, được chia sẻ) thành bản riêng. Bản sao ghi nguồn -> lượt tải của bản gốc. */
+    /**
+     * Lưu bộ thẻ xem được (Thư viện, được chia sẻ) thành bản riêng. Bản sao ghi nguồn -> lượt tải của bản gốc. Đã có bản sao của
+     * bộ này → 409 DECK_ALREADY_SAVED (rà soát 30/10 A4: lưu trùng làm phồng lượt tải và rối "Bộ thẻ của tôi"; frontend tải lại
+     * Thư viện và mở bản đã lưu qua savedDeckId).
+     */
     @Transactional
     public DeckResponse cloneDeck(Long uid, String deckId, UUID folderId) {
         Deck source = readable(uid, deckId);
+        if (deckRepository.existsBySourceDeckIdAndOwnerId(source.getId(), uid)) {
+            throw new CodedStatusException(HttpStatus.CONFLICT, "DECK_ALREADY_SAVED", "Bạn đã lưu bộ thẻ này rồi.");
+        }
         Deck copy = new Deck();
         copy.setId(UUID.randomUUID().toString());
         copy.setTitle(source.getTitle());
@@ -223,8 +274,11 @@ public class DeckService {
                 .toList();
         int pos = 1;
         for (Flashcard f : ordered) {
-            copy.getCards().add(newCard(copy, new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning(),
-                    f.getExample()), pos++));
+            Flashcard card = newCard(copy, new DeckRequest.Card(null, f.getTerm(), f.getReading(), f.getMeaning(),
+                    f.getLevel(), f.getKind(), f.getReadingSegments(), f.getHanViet(), f.getPos()), pos++);
+            // Phương án nhiễu chỉ suy ra từ term / reading (giống hệt bản gốc): chép luôn, bản sao khỏi gọi lại ai-service
+            if (f.getDistractors() != null) card.setDistractors(new LinkedHashMap<>(f.getDistractors()));
+            copy.getCards().add(card);
         }
         return DeckResponse.of(deckRepository.save(copy), Access.OWNER.json());
     }
@@ -240,6 +294,9 @@ public class DeckService {
         if (owner) {
             deck.setFolder(ownedFolder(uid, req.folderId()));
             if (req.visibility() != null) deck.setVisibility(req.visibility());
+            // Chủ chuyển riêng tư = rời Thư viện: bỏ luôn cờ nổi bật, mở public lại không tự nổi bật. Quy tắc chỉ ở tầng
+            // code (xem AdminContentService.unpublish). Thao tác của chủ, không phải staff -> không ghi audit.
+            if (!deck.isPublic()) deck.setFeatured(false);
             if (req.category() != null) deck.setCategory(req.category());
         }
 
@@ -247,6 +304,9 @@ public class DeckService {
             // Khớp theo id thẻ (không theo vị trí): thẻ giữ id thì giữ lịch sử SRS của mọi người học;
             // xoá/chèn/đổi chỗ ở giữa không làm review "nhảy" sang thẻ khác.
             List<DeckRequest.Card> incoming = complete(req.cards());
+            // B5.1: chỉ thẻ MỚI bị soát trùng (thẻ giữ id là thẻ cũ, kể cả bộ cũ vốn đã có thuật ngữ trùng vẫn sửa được)
+            rejectDuplicates(incoming.stream().filter(c -> c.id() != null).map(DeckRequest.Card::term).toList(),
+                    incoming.stream().filter(c -> c.id() == null).toList(), Boolean.TRUE.equals(req.allowDuplicate()));
             List<Flashcard> existing = deck.getCards();
             Map<String, Flashcard> byId = existing.stream()
                     .collect(Collectors.toMap(Flashcard::getId, Function.identity()));
@@ -279,18 +339,22 @@ public class DeckService {
 
     @Transactional
     public void delete(Long uid, String deckId) {
-        Deck deck = lockedWith(uid, deckId, Access.OWNER);
+        deleteDeck(lockedWith(uid, deckId, Access.OWNER));
+    }
+
+    /** Phần xoá không kiểm tra quyền: chủ bộ thẻ (delete) và Admin Panel dùng chung. Gọi trong transaction. */
+    public void deleteDeck(Deck deck) {
         List<String> cardIds = deck.getCards().stream().map(Flashcard::getId).toList();
         if (!cardIds.isEmpty()) {
             reviewRepository.deleteByCardIdIn(cardIds);
         }
-        deckRepository.delete(deck); // quiz_results, deck_shares, deck_ratings: FK ON DELETE CASCADE
+        deckRepository.delete(deck); // quiz_results, deck_shares, deck_ratings, content_reports: FK ON DELETE CASCADE
     }
 
     // ---------- chia sẻ (chỉ chủ bộ thẻ) ----------
 
     @Transactional(readOnly = true)
-    public List<DeckShareRepository.Member> shares(Long uid, String deckId) {
+    public List<ShareMemberResponse> shares(Long uid, String deckId) {
         Deck deck = readable(uid, deckId);
         if (!uid.equals(deck.getOwnerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Chỉ chủ bộ thẻ được thực hiện thao tác này.");
@@ -300,7 +364,7 @@ public class DeckService {
 
     /** Chia sẻ mới, hoặc đổi quyền của người đã được chia sẻ. */
     @Transactional
-    public List<DeckShareRepository.Member> share(Long uid, String deckId, ShareRequest req) {
+    public List<ShareMemberResponse> share(Long uid, String deckId, ShareRequest req) {
         lockedWith(uid, deckId, Access.OWNER);
         User target = userRepository.findByEmail(User.normalizeEmail(req.email()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -325,7 +389,14 @@ public class DeckService {
 
     @Transactional
     public List<CardResponse> addCards(Long uid, String deckId, List<DeckRequest.Card> reqs) {
+        return addCards(uid, deckId, reqs, false);
+    }
+
+    /** B5.1: thêm thẻ; trùng thuật ngữ (NFKC + trim) với thẻ đang có hoặc trong lô → 409 DUPLICATE_TERM trừ khi allowDuplicate. */
+    @Transactional
+    public List<CardResponse> addCards(Long uid, String deckId, List<DeckRequest.Card> reqs, boolean allowDuplicate) {
         Deck deck = writable(uid, deckId);
+        rejectDuplicates(deck.getCards().stream().map(Flashcard::getTerm).toList(), complete(reqs), allowDuplicate);
         // max + 1 (không phải size + 1): sau khi xoá thẻ ở giữa, size + 1 có thể trùng position đang có
         int pos = deck.getCards().stream().map(Flashcard::getPosition)
                 .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(0);
@@ -335,15 +406,18 @@ public class DeckService {
             deck.getCards().add(card);
             created.add(card);
         }
+        deck.touch();
         deckRepository.save(deck);
         return created.stream().map(CardResponse::of).toList();
     }
 
     @Transactional
     public CardResponse updateCard(Long uid, String deckId, String cardId, DeckRequest.Card req) {
-        Flashcard card = findCardIn(writable(uid, deckId), cardId)
+        Deck deck = writable(uid, deckId);
+        Flashcard card = findCardIn(deck, cardId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, CARD_NOT_FOUND));
         apply(card, req);
+        deck.touch();
         return CardResponse.of(card);
     }
 
@@ -354,107 +428,94 @@ public class DeckService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, CARD_NOT_FOUND));
         reviewRepository.deleteByCardIdIn(List.of(cardId));
         deck.getCards().remove(card);
+        deck.touch();
     }
-
-    // ---------- ôn tập (SRS) ----------
-
-    @Transactional(readOnly = true)
-    public List<Review> reviews(Long uid) {
-        return reviewRepository.findByUserId(uid);
-    }
-
-    /** Client chỉ gửi cardId + grade; ngày ôn kế tiếp do server quyết định. */
-    @Transactional
-    public Review review(Long uid, String cardId, String grade) {
-        // Chỉ ôn được thẻ trong bộ thẻ mình xem được: không dò/ghi vào thẻ trong deck riêng của người khác
-        boolean visible = flashcardRepository.findById(cardId)
-                .map(card -> access(uid, card.getDeck()).isPresent()).orElse(false);
-        if (!visible) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy thẻ.");
-        }
-        Instant now = Instant.now();
-        // Tạo-nếu-chưa-có rồi khoá dòng: 2 lần chấm song song không vỡ unique (user_id, card_id)
-        Review fresh = SrsService.newReview(uid, cardId, now);
-        reviewRepository.insertIfAbsent(uid, cardId, fresh.getReps(), fresh.getIntervalDays(), fresh.getEase(),
-                fresh.getDueAt());
-        Review review = reviewRepository.findForUpdate(uid, cardId).orElseThrow();
-        return SrsService.schedule(review, grade, now);
-    }
-
-    // ---------- quiz ----------
-
-    /** Phát đề và ghi lượt làm (hạn giờ do server giữ). Bộ thẻ trống: không tạo lượt. */
-    @Transactional
-    public QuizService.Paper quiz(Long uid, String deckId, int size) {
-        Deck deck = readable(uid, deckId);
-        Instant now = Instant.now();
-        closeExpiredAttempts(uid, now);
-        List<QuizService.Question> questions = QuizService.buildQuiz(deck.getCards(), size, random);
-        if (questions.isEmpty()) return new QuizService.Paper(null, 0, questions);
-
-        int limit = questions.size() * QuizService.SECONDS_PER_QUESTION;
-        QuizAttempt attempt = new QuizAttempt(uid, deckId, questions.stream().map(QuizService.Question::cardId).toList(),
-                now, now.plusSeconds(limit + QuizService.GRACE_SECONDS));
-        attemptRepository.save(attempt);
-        return new QuizService.Paper(attempt.getId(), limit, questions);
-    }
-
-    /** Vài câu mẫu để xem trước bộ đề: không mở lượt làm, không tính điểm. */
-    @Transactional(readOnly = true)
-    public List<QuizService.Question> quizPreview(Long uid, String deckId, int size) {
-        return QuizService.buildQuiz(readable(uid, deckId).getCards(), size, random);
-    }
-
-    /** expired: nộp sau hạn giờ -> bài không được chấm, ghi 0 điểm. */
-    public record QuizOutcome(int score, int total, Map<String, String> wrong, boolean expired) {}
 
     /**
-     * Chấm điểm ở server trên đúng các câu đã phát cho lượt làm này; câu bỏ trống = sai.
-     * Mỗi lượt chỉ nộp một lần.
+     * Rà soát 27/10: "học lại từ đầu" một bộ đã học xong — xoá lịch ôn (reviews) của chính người gọi với mọi thẻ trong bộ; nhật ký
+     * ôn (review_logs) giữ nguyên cho thống kê. Ai xem được bộ đều đặt lại được tiến độ của mình. Trả số thẻ đã đặt lại.
      */
     @Transactional
-    public QuizOutcome submitQuiz(Long uid, String deckId, UUID attemptId, Map<String, String> answers) {
+    public int resetProgress(Long uid, String deckId) {
         Deck deck = readable(uid, deckId);
-        QuizAttempt attempt = attemptRepository.findForUpdate(attemptId)
-                .filter(a -> a.getUserId().equals(uid) && a.getDeckId().equals(deckId))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lượt làm bài."));
-        if (attempt.getSubmittedAt() != null) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Bài làm này đã được nộp.");
+        List<String> ids = deck.getCards().stream().map(Flashcard::getId).toList();
+        return ids.isEmpty() ? 0 : reviewRepository.deleteByUserIdAndCardIdIn(uid, ids);
+    }
+
+    // ---------- quiz đa loại (hợp đồng đợt 2 §1.2) ----------
+
+    /** Ai xem được bộ thẻ (học / làm quiz được) đều xem được số liệu này. Quy tắc đếm: {@link QuizCapabilities}. */
+    @Transactional(readOnly = true)
+    public QuizCapabilitiesResponse quizCapabilities(Long uid, String deckId) {
+        return QuizCapabilities.count(readable(uid, deckId).getCards());
+    }
+
+    /** Thẻ đã gửi ai-service: so lại term / reading lúc ghi để không gắn phương án nhiễu của từ cũ vào thẻ vừa bị sửa. */
+    private record DistractorSnapshot(String term, String reading) {}
+
+    /**
+     * Sinh phương án nhiễu (chữ giống hình C2, từ đồng âm C3) cho mọi thẻ từ vựng của bộ, ghi flashcards.distractors. Quyền
+     * EDITOR+ vì ghi dữ liệu thẻ. Ba bước, không bọc @Transactional: (1) transaction đọc kiểm quyền + chụp thẻ, (2) gọi
+     * ai-service ngoài transaction (bộ lớn có thể mất vài phút — không giữ kết nối DB / khoá dòng deck chừng ấy), (3)
+     * transaction ghi khoá deck, kiểm lại quyền (có thể vừa bị thu hồi) rồi chỉ ghi thẻ còn tồn tại và chưa đổi term /
+     * reading. Thẻ ngữ pháp không gửi: mẫu câu không có chữ giống hình / từ đồng âm. ai-service lỗi / tắt -> 503.
+     */
+    public DistractorsResponse generateDistractors(Long uid, String deckId) {
+        Map<String, DistractorSnapshot> sent = new LinkedHashMap<>();
+        List<QuizAiClient.DistractorInput> inputs = tx.execute(status -> {
+            Deck deck = require(uid, readable(uid, deckId), Access.EDITOR);
+            List<QuizAiClient.DistractorInput> list = new ArrayList<>();
+            for (Flashcard c : deck.getCards()) {
+                if (!Flashcard.KIND_VOCAB.equals(c.getKind()) || c.getTerm() == null || c.getTerm().isBlank()) continue;
+                sent.put(c.getId(), new DistractorSnapshot(c.getTerm(), c.getReading()));
+                list.add(new QuizAiClient.DistractorInput(c.getId(), c.getTerm(), c.getReading(),
+                        QuizService.headline(c.getMeaning()), c.getLevel()));
+            }
+            return list;
+        });
+        if (inputs == null || inputs.isEmpty()) return new DistractorsResponse(0, 0, 0);
+
+        Map<String, QuizAiClient.Distractors> byCard = new LinkedHashMap<>();
+        try {
+            for (QuizAiClient.Distractors d : quizAi.distractors(inputs)) {
+                if (sent.containsKey(d.ref())) byCard.putIfAbsent(d.ref(), d);
+            }
+        } catch (AiServiceClient.AiServiceException e) {
+            throw aiUnavailable(e);
         }
-        Instant now = Instant.now();
-        boolean expired = now.isAfter(attempt.getExpiresAt());
-        return close(attempt, deck, expired ? Map.of() : answers, now, expired);
+
+        return tx.execute(status -> {
+            Deck deck = lockedWith(uid, deckId, Access.EDITOR);
+            int updated = 0;
+            int withLookalike = 0;
+            int withHomophone = 0;
+            for (Flashcard c : deck.getCards()) {
+                QuizAiClient.Distractors d = byCard.get(c.getId());
+                DistractorSnapshot before = sent.get(c.getId());
+                if (d == null || before == null
+                        || !Objects.equals(before.term(), c.getTerm()) || !Objects.equals(before.reading(), c.getReading())) {
+                    continue;
+                }
+                c.setDistractors(d.toColumn());
+                updated++;
+                if (!d.kanjiLookalike().isEmpty()) withLookalike++;
+                if (!d.homophones().isEmpty()) withHomophone++;
+            }
+            return new DistractorsResponse(updated, withLookalike, withHomophone);
+        });
     }
 
-    /** Lượt quá hạn chưa nộp (đóng tab, bỏ dở) -> ghi 0 điểm, để không chọn được lượt có lợi. */
-    private void closeExpiredAttempts(Long uid, Instant now) {
-        for (QuizAttempt attempt : attemptRepository.findExpiredOpen(uid, now)) {
-            deckRepository.findById(attempt.getDeckId())
-                    .ifPresent(deck -> close(attempt, deck, Map.of(), now, true));
-        }
-    }
-
-    private QuizOutcome close(QuizAttempt attempt, Deck deck, Map<String, String> answers, Instant now, boolean expired) {
-        Map<String, String> meanings = deck.getCards().stream()
-                .collect(Collectors.toMap(Flashcard::getId, Flashcard::getMeaning));
-        QuizService.Graded graded = QuizService.grade(meanings, attempt.getCardIds(), answers);
-        attempt.setSubmittedAt(now);
-        quizResultRepository.save(new QuizResult(attempt.getUserId(), deck.getId(), graded.score(), graded.total()));
-        Map<String, String> wrong = graded.wrongCardIds().stream()
-                .collect(Collectors.toMap(Function.identity(), meanings::get));
-        return new QuizOutcome(graded.score(), graded.total(), wrong, expired);
-    }
-
-    @Transactional
-    public List<QuizResultRepository.View> recentResults(Long uid) {
-        closeExpiredAttempts(uid, Instant.now());
-        return quizResultRepository.findRecent(uid, org.springframework.data.domain.PageRequest.of(0, 10));
-    }
-
-    @Transactional
-    public long countResults(Long uid) {
-        closeExpiredAttempts(uid, Instant.now());
-        return quizResultRepository.countByUserId(uid);
+    /**
+     * Như các lời gọi ai-service khác (NlpService): ai-service tắt / lỗi -> 503. Người dùng không gửi tham số nào sang
+     * ai-service nên 4xx của ai-service là lỗi phía server, cũng 503 với thông điệp chung; 401 / 403 (sai X-Internal-Key) không
+     * bao giờ lộ ra vì frontend coi 401 là hết phiên. Còn lại giữ thông điệp tiếng Việt của AiServiceClient (không kết nối
+     * được, quá giờ...).
+     */
+    private static ResponseStatusException aiUnavailable(AiServiceClient.AiServiceException e) {
+        int status = e.status();
+        String message = status >= 400 && status < 500
+                ? "Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau." : e.getMessage();
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, message);
     }
 
     // ---------- tiện ích ----------
@@ -477,10 +538,148 @@ public class DeckService {
         return card;
     }
 
+    /** B5.1 (LC-04): thuật ngữ / cách đọc lưu và so trùng sau khi chuẩn hoá NFKC (ｶﾀｶﾅ → カタカナ, chữ số full-width → ASCII) + trim. */
+    static String normalizeTerm(String s) {
+        if (s == null) return null;
+        // Giữ dấu ngã toàn chiều rộng "～" (U+FF5E) của mẫu ngữ pháp (～ている): NFKC đổi nó thành "~" ASCII, mất dáng tiếng Nhật
+        String n = Normalizer.normalize(s.replace('～', ''), Normalizer.Form.NFKC).replace('', '～').strip();
+        return n.isEmpty() ? null : n;
+    }
+
+    /**
+     * Thuật ngữ trùng (sau chuẩn hoá) với thẻ đang có hoặc với thẻ khác trong cùng lô → 409 {@code DUPLICATE_TERM} kèm thuật ngữ, để
+     * giao diện hỏi "Vẫn thêm?" rồi gửi lại với allowDuplicate = true.
+     */
+    static void rejectDuplicates(Collection<String> existingTerms, List<DeckRequest.Card> incoming, boolean allowDuplicate) {
+        if (allowDuplicate) return;
+        Set<String> seen = new HashSet<>();
+        for (String t : existingTerms) {
+            String n = normalizeTerm(t);
+            if (n != null) seen.add(n);
+        }
+        for (DeckRequest.Card c : incoming) {
+            String n = normalizeTerm(c.term());
+            if (n != null && !seen.add(n)) {
+                throw new CodedStatusException(HttpStatus.CONFLICT, "DUPLICATE_TERM",
+                        "Thuật ngữ «" + n + "» đã có trong bộ thẻ. Chọn \"Vẫn thêm\" nếu bạn muốn giữ thẻ trùng.");
+            }
+        }
+    }
+
     private static void apply(Flashcard card, DeckRequest.Card c) {
-        card.setTerm(c.term().trim());
-        card.setReading(c.reading() != null ? c.reading().trim() : null);
+        String term = normalizeTerm(c.term());
+        String reading = normalizeTerm(c.reading());
+        // Phương án nhiễu sinh theo term / reading cũ: đổi một trong hai thì bỏ, để quiz không hỏi chữ giống hình / từ đồng âm
+        // của một từ khác (null = "chưa sinh", người dùng bấm sinh lại).
+        if (!Objects.equals(term, card.getTerm()) || !Objects.equals(reading, card.getReading())) card.setDistractors(null);
+        card.setTerm(term);
+        card.setReading(reading);
         card.setMeaning(c.meaning().trim());
-        card.setExample(c.example() != null ? c.example().trim() : null);
+        // Metadata AI: client không gửi (null) = giữ nguyên giá trị đang có, không xoá
+        if (c.level() != null) card.setLevel(c.level());
+        if (c.kind() != null) card.setKind(c.kind());
+        if (c.readingSegments() != null) card.setReadingSegments(c.readingSegments());
+        if (c.hanViet() != null) card.setHanViet(c.hanViet().trim());
+        // pos: null = giữ nguyên như metadata khác; chuỗi rỗng = xoá (người dùng sửa thẻ thành từ không còn là động từ)
+        if (c.pos() != null) card.setPos(c.pos().isBlank() ? null : c.pos().trim());
+    }
+
+    private static final Pattern TITLE_LEVEL_PATTERN = Pattern.compile("(?i)(?:jlpt[\\s_\\-:]*)?\\b(n[1-5])\\b");
+
+    /** Nhận diện cấp độ JLPT từ tiêu đề bộ thẻ (VD: "Từ vựng N3" -> "N3"). */
+    public static String parseTitleLevel(String title) {
+        if (title == null || title.isBlank()) return null;
+        Matcher m = TITLE_LEVEL_PATTERN.matcher(title.trim());
+        if (m.find()) {
+            return m.group(1).toUpperCase();
+        }
+        return null;
+    }
+
+    /** Bỏ các chú thích loại từ như (V), (n), [adj], （動）... ở cuối hoặc đầu thuật ngữ để lấy từ tiếng Nhật cốt lõi. */
+    public static String cleanTerm(String raw) {
+        if (raw == null) return null;
+        String s = raw.replaceAll("(?i)\\s*[\\(\\[（【][a-zA-Z0-9ぁ-ゖァ-ヺ一-龯\\s_\\-./]+[\\)\\]）】]", "").strip();
+        return s.isEmpty() ? raw.strip() : s;
+    }
+
+    public SuggestLevelResponse suggestLevel(String title, List<String> terms) {
+        return suggestLevel(title, terms, List.of());
+    }
+
+    /**
+     * Gợi ý cấp độ JLPT cho bộ thẻ dựa trên phân tích từ vựng (tra cứu từ điển) và tiêu đề.
+     */
+    public SuggestLevelResponse suggestLevel(String title, List<String> terms, List<String> readings) {
+        String titleLevel = parseTitleLevel(title);
+
+        List<String> rawTerms = (terms == null ? List.<String>of() : terms);
+        List<String> cleanTerms = new ArrayList<>();
+        for (String t : rawTerms) {
+            if (t != null && !t.isBlank()) {
+                String c = cleanTerm(t);
+                if (!c.isBlank()) cleanTerms.add(c);
+            }
+        }
+
+        List<String> cleanReadings = (readings == null ? List.<String>of() : readings).stream()
+                .filter(r -> r != null && !r.isBlank())
+                .map(String::strip)
+                .toList();
+
+        Map<String, String> termLevels = dictionaryStore.findLevelsByTermsAndReadings(cleanTerms, cleanReadings);
+        Map<String, Integer> breakdown = new LinkedHashMap<>();
+        for (String lvl : List.of("N5", "N4", "N3", "N2", "N1")) {
+            breakdown.put(lvl, 0);
+        }
+
+        for (String lvl : termLevels.values()) {
+            if (breakdown.containsKey(lvl)) {
+                breakdown.put(lvl, breakdown.get(lvl) + 1);
+            }
+        }
+
+        int matchedCount = termLevels.size();
+        int totalCount = Math.max(cleanTerms.size(), cleanReadings.size());
+
+        // Tìm cấp độ có số từ vựng nhiều nhất
+        String dominantLevel = null;
+        int maxCount = 0;
+        for (Map.Entry<String, Integer> entry : breakdown.entrySet()) {
+            if (entry.getValue() > maxCount) {
+                maxCount = entry.getValue();
+                dominantLevel = entry.getKey();
+            }
+        }
+
+        String suggestedLevel;
+        String reason;
+
+        if (matchedCount >= 2 && dominantLevel != null) {
+            if (titleLevel != null && titleLevel.equalsIgnoreCase(dominantLevel)) {
+                suggestedLevel = dominantLevel;
+                reason = "Phát hiện " + maxCount + "/" + matchedCount + " từ vựng thuộc " + dominantLevel + " (khớp với tiêu đề).";
+            } else if (titleLevel != null && breakdown.getOrDefault(titleLevel, 0) > 0 && breakdown.get(titleLevel) >= maxCount * 0.8) {
+                suggestedLevel = titleLevel;
+                reason = "Khớp tiêu đề " + titleLevel + " (có " + breakdown.get(titleLevel) + " từ vựng phù hợp).";
+            } else if (titleLevel != null) {
+                suggestedLevel = dominantLevel;
+                reason = "Phát hiện " + maxCount + "/" + matchedCount + " từ vựng thuộc " + dominantLevel + " (dù tiêu đề có " + titleLevel + ").";
+            } else {
+                suggestedLevel = dominantLevel;
+                reason = "Phát hiện " + maxCount + "/" + matchedCount + " từ vựng thuộc cấp độ " + dominantLevel + ".";
+            }
+        } else if (titleLevel != null) {
+            suggestedLevel = titleLevel;
+            reason = "Nhận diện cấp độ " + titleLevel + " từ tiêu đề bộ thẻ.";
+        } else if (matchedCount == 1 && dominantLevel != null) {
+            suggestedLevel = dominantLevel;
+            reason = "Gợi ý " + dominantLevel + " dựa trên từ vựng tìm thấy trong từ điển.";
+        } else {
+            suggestedLevel = "N5";
+            reason = "Chưa đủ dữ liệu từ vựng trong từ điển để xác định cấp độ (mặc định N5).";
+        }
+
+        return new SuggestLevelResponse(suggestedLevel, reason, breakdown, totalCount, matchedCount);
     }
 }

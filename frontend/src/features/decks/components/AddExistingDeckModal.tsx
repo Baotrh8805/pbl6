@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useId } from "react";
-import { fetchDecks, moveDeckToFolder, cloneDeck, createDeck } from "@/services/deckService";
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { fetchDecks, moveDeckToFolder, cloneDeck } from "@/services/deckService";
 import { fetchLibrary } from "@/services/libraryService";
 import type { Deck, LibraryDeck } from "@/types/api.types";
 import { useAsync } from "@/lib/useAsync";
@@ -37,9 +38,7 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
   onSuccess,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>("personal");
-  const [newTitle, setNewTitle] = useState("");
-  const [newLevel, setNewLevel] = useState("N5");
-  const [newDescription, setNewDescription] = useState("");
+  const navigate = useNavigate();
   const [personalDecks, setPersonalDecks] = useState<Deck[]>([]);
   const [loadingDecks, setLoadingDecks] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,7 +46,6 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
   const [selectedDeckIds, setSelectedDeckIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const newDeckFormId = useId();
 
   // Tải bộ thẻ của người dùng khi mở modal
   useEffect(() => {
@@ -145,26 +143,11 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
     }
   };
 
-  // Tạo bộ thẻ rỗng ngay trong thư mục đích; thêm thẻ sau ở trang soạn bộ thẻ.
-  const handleCreateNewDeck = async (e: React.SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!newTitle.trim() || isSubmitting) return;
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      await createDeck({
-        title: newTitle.trim(),
-        level: newLevel,
-        description: newDescription.trim() || undefined,
-        folderId: targetFolder.id,
-      });
-      onSuccess();
-      onClose();
-    } catch (err) {
-      setError(extractErrorMessage(err));
-    } finally {
-      setIsSubmitting(false);
-    }
+  // 27/10: tạo bộ thẻ mới trong thư mục = mở trình tạo bộ thẻ đầy đủ (thẻ, nhập dữ liệu, quyền truy cập) với thư mục đã chọn
+  // sẵn; trước đây hộp này tạo một bộ rỗng chỉ có tên / cấp / mô tả.
+  const openDeckEditor = () => {
+    onClose();
+    navigate(`/decks/new?folderId=${encodeURIComponent(targetFolder.id)}`);
   };
 
   return (
@@ -210,18 +193,11 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
           )}
 
           {activeTab === "new" && (
-            <Button
-              type="submit"
-              form={newDeckFormId}
-              variant="primary"
-              size="md"
-              disabled={!newTitle.trim() || isSubmitting}
-              isLoading={isSubmitting}
-            >
+            <Button type="button" variant="primary" size="md" onClick={openDeckEditor}>
               <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                 add_circle
               </span>
-              Tạo bộ thẻ trong thư mục
+              Mở trình tạo bộ thẻ
             </Button>
           )}
         </>
@@ -479,51 +455,18 @@ const AddExistingDeckDialog: React.FC<AddExistingDeckModalProps> = ({
             </div>
           </div>
         ) : (
-          /* TAB 3: TẠO BỘ THẺ MỚI NGAY TRONG THƯ MỤC */
-          <form id={newDeckFormId} onSubmit={handleCreateNewDeck} className="space-y-4">
-            <p className="text-xs text-on-surface-variant">
-              Bộ thẻ mới sẽ nằm sẵn trong <strong>{targetFolder.title}</strong>. Thêm thẻ ở trang soạn
-              bộ thẻ sau khi tạo.
+          /* TAB 3: TẠO MỚI — dẫn sang trình tạo bộ thẻ đầy đủ, thư mục đích đã chọn sẵn */
+          <div className="py-8 flex flex-col items-center text-center gap-3">
+            <span aria-hidden="true" className="material-symbols-outlined text-[40px] text-primary">post_add</span>
+            <p className="text-sm text-on-surface max-w-md">
+              Bộ thẻ mới sẽ được tạo bằng trình soạn đầy đủ (thêm thẻ, nhập từ Excel / Anki, đặt quyền truy cập) và tự nằm trong
+              thư mục <strong>{targetFolder.title}</strong> sau khi lưu.
             </p>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-semibold text-on-surface">
-                Tên bộ thẻ <span className="text-error">*</span>
-              </span>
-              <input
-                required
-                maxLength={150}
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="VD: Từ vựng Mimikara N3 - Chương 1"
-                className="w-full px-3.5 py-2.5 rounded-lg bg-surface-container-lowest border border-outline-variant text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-semibold text-on-surface">Trình độ</span>
-              <select
-                value={newLevel}
-                onChange={(e) => setNewLevel(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg bg-surface-container-lowest border border-outline-variant text-sm focus:outline-none focus:border-primary"
-              >
-                {JLPT_LEVELS.map((lvl) => (
-                  <option key={lvl} value={lvl}>
-                    JLPT {lvl}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-semibold text-on-surface">Mô tả ngắn</span>
-              <textarea
-                rows={2}
-                maxLength={500}
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="VD: 120 từ vựng chương 1, ôn theo lịch SRS..."
-                className="w-full px-3.5 py-2 rounded-lg bg-surface-container-lowest border border-outline-variant text-sm focus:outline-none focus:border-primary"
-              />
-            </label>
-          </form>
+            <Button type="button" variant="primary" size="md" onClick={openDeckEditor}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">add_circle</span>
+              Mở trình tạo bộ thẻ
+            </Button>
+          </div>
         )}
       </div>
     </Modal>

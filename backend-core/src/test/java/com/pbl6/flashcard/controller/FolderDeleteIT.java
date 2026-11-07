@@ -54,9 +54,10 @@ class FolderDeleteIT extends IntegrationTest {
                 .andExpect(status().isCreated()));
         String cardId = deck.get("cards").get(0).get("id").asText();
         call(post("/api/reviews"), token, Map.of("cardId", cardId, "grade", "good")).andExpect(status().isOk());
-        String quizUrl = "/api/quizzes/" + deck.get("id").asText();
-        String attemptId = read(call(get(quizUrl), token, null)).get("attemptId").asText();
-        call(post(quizUrl), token, Map.of("attemptId", attemptId, "answers", Map.of(cardId, "nước")))
+        String attemptId = read(call(post("/api/quiz-attempts"), token,
+                Map.of("deckId", deck.get("id").asText(), "size", 2, "mode", "exam")).andExpect(status().isOk()))
+                .get("attemptId").asText();
+        call(post("/api/quiz-attempts/" + attemptId + "/submit"), token, Map.of("answers", Map.of(cardId, "nước")))
                 .andExpect(status().isOk());
 
         call(delete("/api/decks/" + deck.get("id").asText()), token, null).andExpect(status().isNoContent());

@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
 import { useAuth } from "@/context/useAuth";
 import { extractErrorMessage } from "@/services/apiClient";
+import { isStaff, setupPending } from "@/lib/roles";
+import { loginErrorKind, postLoginPath, type LoginErrorKind } from "../authUtils";
 
 export const useLoginForm = () => {
   const navigate = useNavigate();
@@ -16,6 +18,10 @@ export const useLoginForm = () => {
   
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [apiError, setApiError] = useState<string | null>(null);
+  // Lỗi cần nút riêng (gửi lại email xác thực / gửi khiếu nại) + email của lần đăng nhập đó: người dùng có sửa ô email
+  // sau khi lỗi thì nút vẫn gửi cho đúng tài khoản máy chủ vừa báo.
+  const [errorKind, setErrorKind] = useState<LoginErrorKind>(null);
+  const [failedEmail, setFailedEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const validate = (): boolean => {
@@ -38,6 +44,7 @@ export const useLoginForm = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setApiError(null);
+    setErrorKind(null);
 
     if (!validate()) {
       return;
@@ -46,13 +53,19 @@ export const useLoginForm = () => {
     setIsLoading(true);
     try {
       const response = await authService.login({ email: email.trim(), password });
-      login(response.accessToken, email.trim(), rememberMe);
-      // ProtectedRoute lưu trang đang mở vào state.from -> đăng nhập xong quay lại đúng trang đó.
-      const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-      navigate(from && from !== "/login" ? from : "/", { replace: true });
+      login(response.accessToken, response.refreshToken, email.trim(), rememberMe);
+      // ProtectedRoute lưu trang đang mở vào state.from -> đăng nhập xong quay lại đúng trang đó; trang của phiên hết hạn
+      // chỉ mở lại cho đúng người đó (đăng nhập tài khoản khác thì về trang chủ, không 404 trang riêng của người trước).
+      const from = postLoginPath(location.state, email.trim());
+      // Staff không có trang học: vào thẳng Admin Panel (hoặc /setup nếu chưa đổi mật khẩu seed)
+      navigate(setupPending(response) ? "/setup" : isStaff(response.role) ? "/admin" : from ?? "/", {
+        replace: true,
+      });
     } catch (err: unknown) {
       const msg = extractErrorMessage(err);
       setApiError(msg);
+      setErrorKind(loginErrorKind(err));
+      setFailedEmail(email.trim());
     } finally {
       setIsLoading(false);
     }
@@ -67,6 +80,8 @@ export const useLoginForm = () => {
     setRememberMe,
     errors,
     apiError,
+    errorKind,
+    failedEmail,
     isLoading,
     handleSubmit,
   };

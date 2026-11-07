@@ -23,7 +23,7 @@ class DeckIntegrityIT extends IntegrationTest {
     void lengths_allowed_by_dto_are_stored_and_longer_ones_are_400() throws Exception {
         String token = newUser();
         call(post("/api/decks"), token, Map.of("title", "L", "level", "N5", "description", "d".repeat(1000),
-                "cards", List.of(Map.of("term", "t".repeat(200), "meaning", "m".repeat(500), "example", "e".repeat(1000)))))
+                "cards", List.of(Map.of("term", "t".repeat(200), "meaning", "m".repeat(2000)))))
                 .andExpect(status().isCreated());
 
         call(post("/api/decks"), token, Map.of("title", "L", "level", "N5",

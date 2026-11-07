@@ -4,8 +4,10 @@ import { useAuth } from "@/context/useAuth";
 import { useAsync } from "@/lib/useAsync";
 import { calcLearningStats, EMPTY_STATS } from "@/lib/learningStats";
 import { fetchDecks } from "@/services/deckService";
+import { fetchAnnouncement } from "@/services/adminService";
 import { DATA_CHANGED_EVENT } from "@/services/apiClient";
 import { fetchQuizResultCount, fetchQuizResults, fetchReviews } from "@/services/studyService";
+import { fetchReviewActivity } from "@/services/activityService";
 import type { LearningSettings, UserMetrics } from "@/features/dashboard/types/dashboard.types";
 import {
     getTargetWordsByLevel,
@@ -18,13 +20,16 @@ import { LearningSettingsModal } from "@/features/dashboard/components/modals/Le
 import type { ShellContext } from "./shellContext";
 
 const loadStatsSource = async () => {
-    const [decks, reviews, quizResults, quizCount] = await Promise.all([
+    const [decks, reviews, quizResults, quizCount, activity] = await Promise.all([
         fetchDecks(),
         fetchReviews(),
         fetchQuizResults(),
         fetchQuizResultCount(),
+        // A5: nhật ký học theo ngày (streak thật, thẻ đến hạn / thẻ mới). Không bắt buộc: backend chưa có endpoint
+        // (404/405) hay lỗi bất kỳ thì dashboard vẫn chạy với số suy luận từ lịch ôn như trước.
+        fetchReviewActivity().catch(() => null),
     ]);
-    return { decks, reviews, quizResults, quizCount };
+    return { decks, reviews, quizResults, quizCount, activity };
 };
 
 export const AppLayout: React.FC = () => {
@@ -46,6 +51,11 @@ export const AppLayout: React.FC = () => {
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [editMetricsOpen, setEditMetricsOpen] = useState(false);
     const [statsVersion, setStatsVersion] = useState(0);
+
+    // Thông báo toàn hệ thống (Admin Panel > Cấu hình): tải một lần, nút × chỉ ẩn trong phiên này.
+    const announcement = useAsync(fetchAnnouncement, []);
+    const [announcementHidden, setAnnouncementHidden] = useState(false);
+    const announcementText = announcement.data?.trim() ?? "";
 
     // Layout sống suốt các trang con; Study/Quiz nằm ngoài layout nên quay lại là remount -> số liệu mới.
     const fresh = useAsync(loadStatsSource, [statsVersion]);
@@ -76,7 +86,7 @@ export const AppLayout: React.FC = () => {
 
     const metrics: UserMetrics = useMemo(() => {
         const base = stats.data
-            ? calcLearningStats(stats.data.decks, stats.data.reviews, stats.data.quizResults)
+            ? calcLearningStats(stats.data.decks, stats.data.reviews, stats.data.quizResults, new Date(), stats.data.activity)
             : EMPTY_STATS;
         return {
             ...base,
@@ -130,6 +140,23 @@ export const AppLayout: React.FC = () => {
 
             <div className="md:pl-64">
                 <main className="w-full pt-16 bg-surface min-h-screen px-gutter py-margin">
+                    {announcementText && !announcementHidden && (
+                        <div
+                            role="status"
+                            className="mb-space-md flex items-start gap-2 rounded-xl border border-primary-fixed-dim bg-primary-fixed px-3 py-2 text-body-sm text-on-primary-fixed"
+                        >
+                            <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">info</span>
+                            <span className="flex-1 whitespace-pre-line">{announcementText}</span>
+                            <button
+                                type="button"
+                                onClick={() => setAnnouncementHidden(true)}
+                                className="p-0.5 rounded hover:bg-primary-fixed-dim cursor-pointer"
+                                aria-label="Ẩn thông báo"
+                            >
+                                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">close</span>
+                            </button>
+                        </div>
+                    )}
                     <Outlet context={context} />
                 </main>
             </div>

@@ -1,5 +1,6 @@
 import React from "react";
 import { JLPT_LEVELS } from "@/lib/deckUtils";
+import type { DeckVisibility } from "@/types/api.types";
 
 const labelClass = "block text-xs font-semibold uppercase tracking-wider text-outline mb-1.5";
 const selectClass =
@@ -15,9 +16,25 @@ interface DeckInfoFieldsProps {
   folderId: string;
   onFolderIdChange: (value: string) => void;
   folders: Array<{ id: string; title: string }>;
+  /** Quyền truy cập (rà soát 27/10): chỉ chủ bộ thẻ (tạo mới / sửa) mới có; bỏ trống = ẩn khối này. */
+  visibility?: DeckVisibility;
+  onVisibilityChange?: (value: DeckVisibility) => void;
+  /** Sau khi lưu mở ngay hộp Chia sẻ (mời theo email, link riêng có mật khẩu). */
+  openShareAfter?: boolean;
+  onOpenShareAfterChange?: (value: boolean) => void;
+  /** Gợi ý cấp độ JLPT từ backend (từ vựng + tiêu đề) */
+  suggestion?: { suggestedLevel: string; reason: string; matchedTerms: number } | null;
+  onApplySuggestion?: (level: string) => void;
+  isAnalyzing?: boolean;
+  onManualAnalyze?: () => void;
 }
 
-// Thông tin chung của bộ thẻ: tiêu đề, mô tả, cấp độ JLPT, thư mục.
+const ACCESS_OPTIONS: { value: DeckVisibility; icon: string; title: string; hint: string }[] = [
+  { value: "private", icon: "lock", title: "Riêng tư", hint: "Chỉ bạn và người được mời (theo email hoặc link riêng) xem được." },
+  { value: "public", icon: "public", title: "Công khai", hint: "Mọi người đã đăng nhập đều xem, học và lưu bản sao được; hiện ở Thư viện cộng đồng." },
+];
+
+// Thông tin chung của bộ thẻ: tiêu đề, mô tả, cấp độ JLPT, thư mục, quyền truy cập.
 export const DeckInfoFields: React.FC<DeckInfoFieldsProps> = ({
   title,
   onTitleChange,
@@ -28,6 +45,14 @@ export const DeckInfoFields: React.FC<DeckInfoFieldsProps> = ({
   folderId,
   onFolderIdChange,
   folders,
+  visibility,
+  onVisibilityChange,
+  openShareAfter = false,
+  onOpenShareAfterChange,
+  suggestion,
+  onApplySuggestion,
+  isAnalyzing = false,
+  onManualAnalyze,
 }) => (
   <div className="p-6 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
     <div>
@@ -62,9 +87,35 @@ export const DeckInfoFields: React.FC<DeckInfoFieldsProps> = ({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label htmlFor="deck-level-select" className={labelClass}>
-            Cấp độ JLPT
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label htmlFor="deck-level-select" className="text-xs font-semibold uppercase tracking-wider text-outline">
+              Cấp độ JLPT
+            </label>
+            {onManualAnalyze && (
+              <button
+                type="button"
+                onClick={onManualAnalyze}
+                disabled={isAnalyzing}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:text-primary/80 transition-colors cursor-pointer disabled:opacity-50"
+                title="Quét lại cấp độ từ từ vựng và tiêu đề"
+              >
+                <span aria-hidden="true" className={`material-symbols-outlined text-[13px] ${isAnalyzing ? "animate-spin" : ""}`}>
+                  {isAnalyzing ? "progress_activity" : "auto_awesome"}
+                </span>
+                <span>
+                  {isAnalyzing ? (
+                    "Đang quét..."
+                  ) : suggestion && suggestion.suggestedLevel !== level ? (
+                    <>
+                      Gợi ý: <strong className="font-black text-primary ml-0.5">{suggestion.suggestedLevel}</strong>
+                    </>
+                  ) : (
+                    "Gợi ý"
+                  )}
+                </span>
+              </button>
+            )}
+          </div>
           <select
             id="deck-level-select"
             value={level}
@@ -77,6 +128,35 @@ export const DeckInfoFields: React.FC<DeckInfoFieldsProps> = ({
               </option>
             ))}
           </select>
+          {suggestion && suggestion.suggestedLevel !== level && (
+            <div className="mt-1.5 flex items-center justify-between gap-1 p-1 px-2 rounded-lg bg-amber-50 border border-amber-300 text-xs animate-fadeIn overflow-hidden">
+              <div className="flex items-center gap-1 text-amber-900 font-medium whitespace-nowrap" title={suggestion.reason}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-amber-600 shrink-0">lightbulb</span>
+                <span className="whitespace-nowrap text-xs">
+                  Gợi ý:{" "}
+                  <strong className="font-black text-xs text-slate-950 ml-0.5">
+                    {suggestion.suggestedLevel}
+                  </strong>
+                </span>
+              </div>
+              {onApplySuggestion && (
+                <button
+                  type="button"
+                  onClick={() => onApplySuggestion(suggestion.suggestedLevel)}
+                  className="shrink-0 px-2 py-0.5 text-[10.5px] font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-md active:scale-95 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+                  title={`Áp dụng cấp độ ${suggestion.suggestedLevel}`}
+                >
+                  Áp dụng
+                </button>
+              )}
+            </div>
+          )}
+          {suggestion && suggestion.suggestedLevel === level && suggestion.matchedTerms > 0 && (
+            <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 truncate" title={suggestion.reason}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[13px] shrink-0">check_circle</span>
+              <span className="truncate">{suggestion.reason}</span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -99,5 +179,46 @@ export const DeckInfoFields: React.FC<DeckInfoFieldsProps> = ({
         </div>
       </div>
     </div>
+
+    {visibility !== undefined && onVisibilityChange && (
+      <fieldset className="space-y-2">
+        <legend className={labelClass}>Quyền truy cập</legend>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {ACCESS_OPTIONS.map((opt) => {
+            const selected = visibility === opt.value;
+            return (
+              <label
+                key={opt.value}
+                className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-colors ${
+                  selected ? "border-primary bg-primary/5" : "border-surface-container-high hover:border-outline"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="deck-visibility"
+                  value={opt.value}
+                  checked={selected}
+                  onChange={() => onVisibilityChange(opt.value)}
+                  className="mt-1 accent-primary"
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-on-surface">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-primary">{opt.icon}</span>
+                    {opt.title}
+                  </span>
+                  <span className="block text-xs text-on-surface-variant mt-0.5">{opt.hint}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {onOpenShareAfterChange && (
+          <label className="inline-flex items-center gap-2 text-xs text-on-surface-variant cursor-pointer">
+            <input type="checkbox" checked={openShareAfter} onChange={(e) => onOpenShareAfterChange(e.target.checked)} className="accent-primary" />
+            Sau khi lưu, mở hộp Chia sẻ để mời theo email hoặc tạo link riêng (có thể đặt mật khẩu)
+          </label>
+        )}
+      </fieldset>
+    )}
   </div>
 );

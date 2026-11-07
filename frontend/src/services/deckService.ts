@@ -23,6 +23,10 @@ export const createDeck = async (dto: DeckDto): Promise<Deck> =>
 export const updateDeck = async (deckId: string, dto: DeckDto): Promise<Deck> =>
     (await apiClient.put<Deck>(deckUrl(deckId), dto)).data;
 
+/** Đặt lại tiến độ học của mình với bộ này (xoá lịch ôn, giữ nhật ký) để học lại từ đầu (rà soát 27/10). */
+export const resetDeckProgress = async (deckId: string): Promise<number> =>
+    (await apiClient.delete<{ reset: number }>(`${deckUrl(deckId)}/progress`)).data.reset;
+
 export const deleteDeck = async (deckId: string): Promise<void> => {
     await apiClient.delete(deckUrl(deckId));
 };
@@ -31,8 +35,8 @@ export const addCard = async (deckId: string, dto: CardDto): Promise<Card> =>
     (await apiClient.post<Card>(`${deckUrl(deckId)}/cards`, dto)).data;
 
 // Không fallback thêm từng thẻ: request timeout nhưng server đã lưu thì sẽ tạo thẻ trùng.
-export const addCardsBatch = async (deckId: string, cards: CardDto[]): Promise<Card[]> =>
-    (await apiClient.post<Card[]>(`${deckUrl(deckId)}/cards/batch`, cards)).data;
+export const addCardsBatch = async (deckId: string, cards: CardDto[], allowDuplicate = false): Promise<Card[]> =>
+    (await apiClient.post<Card[]>(`${deckUrl(deckId)}/cards/batch`, cards, { params: { allowDuplicate } })).data;
 
 export const updateCard = async (deckId: string, cardId: string, dto: CardDto): Promise<Card> =>
     (await apiClient.put<Card>(`${deckUrl(deckId)}/cards/${encodeURIComponent(cardId)}`, dto)).data;
@@ -80,3 +84,19 @@ export const shareDeck = async (deckId: string, email: string, permission: Share
 export const unshareDeck = async (deckId: string, userId: number): Promise<void> => {
     await apiClient.delete(`${deckUrl(deckId)}/shares/${userId}`);
 };
+
+export interface SuggestLevelResult {
+    suggestedLevel: string;
+    reason: string;
+    breakdown: Record<string, number>;
+    totalTerms: number;
+    matchedTerms: number;
+}
+
+/** Gợi ý cấp độ JLPT cho bộ thẻ dựa trên tiêu đề, từ vựng và cách đọc. */
+export const suggestDeckLevel = async (
+    title: string,
+    terms: string[],
+    readings?: string[]
+): Promise<SuggestLevelResult> =>
+    (await apiClient.post<SuggestLevelResult>("/decks/suggest-level", { title, terms, readings })).data;

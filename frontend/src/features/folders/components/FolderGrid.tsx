@@ -38,16 +38,16 @@ export const FolderGrid: React.FC<FolderGridProps> = ({
         {title ?? (isNested ? "Thư mục con" : "Thư mục của bạn")} ({folders.length})
       </h2>
       {onAddFolder && (
-      <button
-        type="button"
-        onClick={onAddFolder}
-        className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
-      >
-        <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
-          add
-        </span>
-        Thêm thư mục
-      </button>
+        <button
+          type="button"
+          onClick={onAddFolder}
+          className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
+            add
+          </span>
+          Thêm thư mục
+        </button>
       )}
     </div>
 
@@ -84,14 +84,14 @@ export const FoldersEmptyState: React.FC<{ isFiltered: boolean; onCreate: () => 
         {isFiltered ? "Không tìm thấy thư mục phù hợp" : "Bạn chưa tạo thư mục nào"}
       </h3>
       <p className="text-xs text-on-surface-variant max-w-sm mt-1">
-        Tạo thư mục đầu tiên để phân nhóm các bộ thẻ luyện thi N5-N1 và tài liệu BrSE ngăn nắp.
+        Tạo thư mục đầu tiên để phân nhóm các bộ thẻ.
       </p>
     </div>
     <Button variant="primary" size="md" onClick={onCreate} className="cursor-pointer mt-2">
       <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
         add
       </span>
-      + Tạo Thư Mục Đầu Tiên
+      Tạo Thư Mục Đầu Tiên
     </Button>
   </div>
 );

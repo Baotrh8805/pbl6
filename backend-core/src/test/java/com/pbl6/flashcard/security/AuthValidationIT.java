@@ -13,7 +13,7 @@ class AuthValidationIT extends IntegrationTest {
 
     @Test
     void too_long_full_name_is_a_400_not_a_fake_duplicate_email() throws Exception {
-        call(post("/api/auth/register"), null, Map.of("email", newEmail(), "password", "secret123",
+        call(post("/api/auth/register"), null, Map.of("email", newEmail(), "password", "Secret123!",
                 "fullName", "x".repeat(300)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("fullName: Họ tên tối đa 100 ký tự"));
@@ -22,8 +22,10 @@ class AuthValidationIT extends IntegrationTest {
     @Test
     void duplicate_email_and_wrong_login_use_the_json_error_shape() throws Exception {
         String email = newEmail();
-        Map<String, String> body = Map.of("email", email, "password", "secret123", "fullName", "D");
+        Map<String, String> body = Map.of("email", email, "password", "Secret123!", "fullName", "D");
         call(post("/api/auth/register"), null, body).andExpect(status().isOk());
+        // 27/10: email chưa xác thực được đăng ký lại (AccountHardeningIT); đã xác thực thì vẫn "Email đã được sử dụng"
+        markEmailVerified(email);
         call(post("/api/auth/register"), null, body).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Email đã được sử dụng!"));
         call(post("/api/auth/login"), null, Map.of("email", email, "password", "wrong-pass"))
@@ -39,11 +41,11 @@ class AuthValidationIT extends IntegrationTest {
         call(put("/api/auth/profile"), token, Map.of("fullName", "  Tên mới  ")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.fullName").value("Tên mới"));
 
-        call(put("/api/auth/password"), token, Map.of("currentPassword", "secret123", "newPassword", "123"))
+        call(put("/api/auth/password"), token, Map.of("currentPassword", "Secret123!", "newPassword", "123"))
                 .andExpect(status().isBadRequest());
-        call(put("/api/auth/password"), token, Map.of("currentPassword", "secret123", "newPassword", "z".repeat(73)))
+        call(put("/api/auth/password"), token, Map.of("currentPassword", "Secret123!", "newPassword", "z".repeat(73)))
                 .andExpect(status().isBadRequest());
-        call(put("/api/auth/password"), token, Map.of("currentPassword", "WRONG", "newPassword", "secret456"))
+        call(put("/api/auth/password"), token, Map.of("currentPassword", "WRONG", "newPassword", "Secret456!"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Mật khẩu hiện tại không đúng!"));
 

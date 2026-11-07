@@ -1,0 +1,215 @@
+no,char,unified,strokes,name_vi,meaning_vi,han_viet
+1,⼀,一,1,nhất,một,NHẤT
+2,⼁,丨,1,cổn,nét sổ thẳng,CỔN
+3,⼂,丶,1,chủ,"điểm, chấm",CHỦ
+4,⼃,丿,1,phiệt,nét phẩy xiên,PHIỆT
+5,⼄,乙,1,ất,can Ất; nét cong,ẤT
+6,⼅,亅,1,quyết,nét móc,QUYẾT
+7,⼆,二,2,nhị,hai,NHỊ
+8,⼇,亠,2,đầu,"nắp đậy, phần đầu",ĐẦU
+9,⼈,人,2,nhân,người,NHÂN
+10,⼉,儿,2,nhân đi,người đang đi (hai chân),NHÂN
+11,⼊,入,2,nhập,vào,NHẬP
+12,⼋,八,2,bát,tám,BÁT
+13,⼌,冂,2,quynh,vùng đất xa ngoài biên,QUYNH
+14,⼍,冖,2,mịch,"khăn trùm, che phủ",MỊCH
+15,⼎,冫,2,băng,"nước đá, băng giá",BĂNG
+16,⼏,几,2,kỷ,"ghế dựa, cái bàn nhỏ",KỶ
+17,⼐,凵,2,khảm,"hố sâu, há miệng",KHẢM
+18,⼑,刀,2,đao,con dao,ĐAO
+19,⼒,力,2,lực,sức mạnh,LỰC
+20,⼓,勹,2,bao,"bọc lại, ôm lấy",BAO
+21,⼔,匕,2,chủy,"cái thìa, cái muỗng",CHỦY
+22,⼕,匚,2,phương,hộp đựng đồ,PHƯƠNG
+23,⼖,匸,2,hệ,che giấu,HỆ
+24,⼗,十,2,thập,mười,THẬP
+25,⼘,卜,2,bốc,bói toán,BỐC
+26,⼙,卩,2,tiết,"con dấu, tín phù",TIẾT
+27,⼚,厂,2,hán,"sườn núi, vách đá",HÁN
+28,⼛,厶,2,khư,riêng tư,KHƯ
+29,⼜,又,2,hựu,lại nữa; bàn tay phải,HỰU
+30,⼝,口,3,khẩu,cái miệng,KHẨU
+31,⼞,囗,3,vi,vây quanh,VI
+32,⼟,土,3,thổ,đất,THỔ
+33,⼠,士,3,sĩ,"kẻ sĩ, học trò",SĨ
+34,⼡,夂,3,truy,"đi theo sau, đến sau",TRUY
+35,⼢,夊,3,tuy,đi chậm chạp,TUY
+36,⼣,夕,3,tịch,buổi chiều tối,TỊCH
+37,⼤,大,3,đại,to lớn,ĐẠI
+38,⼥,女,3,nữ,"phụ nữ, con gái",NỮ
+39,⼦,子,3,tử,con cái,TỬ
+40,⼧,宀,3,miên,mái nhà,MIÊN
+41,⼨,寸,3,thốn,tấc (đơn vị đo),THỐN
+42,⼩,小,3,tiểu,nhỏ bé,TIỂU
+43,⼪,尢,3,uông,"yếu chân, què",UÔNG
+44,⼫,尸,3,thi,xác chết; thân người nằm,THI
+45,⼬,屮,3,triệt,mầm cỏ non mọc lên,TRIỆT
+46,⼭,山,3,sơn,núi,SƠN
+47,⼮,巛,3,xuyên,sông ngòi,XUYÊN
+48,⼯,工,3,công,"công việc, người thợ",CÔNG
+49,⼰,己,3,kỷ,bản thân mình,KỶ
+50,⼱,巾,3,cân,cái khăn,CÂN
+51,⼲,干,3,can,thiên can; can thiệp; cái khiên,CAN
+52,⼳,幺,3,yêu,nhỏ bé,YÊU
+53,⼴,广,3,nghiễm,"mái hiên, nhà",NGHIỄM
+54,⼵,廴,3,dẫn,"bước dài, đi xa",DẪN
+55,⼶,廾,3,củng,chắp hai tay,CỦNG
+56,⼷,弋,3,dặc,bắn tên có dây buộc; cái cọc,DẶC
+57,⼸,弓,3,cung,cái cung,CUNG
+58,⼹,彐,3,kệ,đầu con heo,KỆ
+59,⼺,彡,3,sam,"lông dài, nét vẽ trang trí",SAM
+60,⼻,彳,3,xích,"bước chân trái, đi chậm",XÍCH
+61,⼼,心,4,tâm,"trái tim, tấm lòng",TÂM
+62,⼽,戈,4,qua,"cây giáo, cây mác",QUA
+63,⼾,戸,4,hộ,cửa một cánh; hộ gia đình,HỘ
+64,⼿,手,4,thủ,bàn tay,THỦ
+65,⽀,支,4,chi,"cành nhánh, chống đỡ",CHI
+66,⽁,攴,4,phộc,"đánh khẽ, gõ",PHỘC
+67,⽂,文,4,văn,"chữ viết, văn chương",VĂN
+68,⽃,斗,4,đẩu,cái đấu đong lường,ĐẨU
+69,⽄,斤,4,cân,cái rìu; cân (đơn vị),CÂN
+70,⽅,方,4,phương,vuông; phương hướng,PHƯƠNG
+71,⽆,无,4,vô,không có,VÔ
+72,⽇,日,4,nhật,"mặt trời, ngày",NHẬT
+73,⽈,曰,4,viết,nói rằng,VIẾT
+74,⽉,月,4,nguyệt,"mặt trăng, tháng",NGUYỆT
+75,⽊,木,4,mộc,"cây, gỗ",MỘC
+76,⽋,欠,4,khiếm,thiếu; há miệng ngáp,KHIẾM
+77,⽌,止,4,chỉ,dừng lại,CHỈ
+78,⽍,歹,4,ngạt,"xương tàn, cái chết, xấu",NGẠT
+79,⽎,殳,4,thù,"binh khí cán dài, cây gậy",THÙ
+80,⽏,毋,4,vô,"chớ, đừng",VÔ
+81,⽐,比,4,tỉ,so sánh,TỈ
+82,⽑,毛,4,mao,lông,MAO
+83,⽒,氏,4,thị,"họ, dòng họ",THỊ
+84,⽓,气,4,khí,"hơi, khí",KHÍ
+85,⽔,水,4,thủy,nước,THỦY
+86,⽕,火,4,hỏa,lửa,HỎA
+87,⽖,爪,4,trảo,móng vuốt,TRẢO
+88,⽗,父,4,phụ,cha,PHỤ
+89,⽘,爻,4,hào,hào trong quẻ Kinh Dịch; giao nhau,HÀO
+90,⽙,爿,4,tường,"mảnh gỗ, cái giường",TƯỜNG
+91,⽚,片,4,phiến,"mảnh, tấm",PHIẾN
+92,⽛,牙,4,nha,răng nanh,NHA
+93,⽜,牛,4,ngưu,"trâu, bò",NGƯU
+94,⽝,犬,4,khuyển,con chó,KHUYỂN
+95,⽞,玄,5,huyền,"màu đen huyền, sâu kín",HUYỀN
+96,⽟,玉,5,ngọc,ngọc quý,NGỌC
+97,⽠,瓜,5,qua,quả dưa,QUA
+98,⽡,瓦,5,ngõa,ngói,NGÕA
+99,⽢,甘,5,cam,ngọt,CAM
+100,⽣,生,5,sinh,"sinh ra, sống",SINH
+101,⽤,用,5,dụng,dùng,DỤNG
+102,⽥,田,5,điền,ruộng,ĐIỀN
+103,⽦,疋,5,sất,tấm vải; cái chân,SẤT
+104,⽧,疒,5,nạch,bệnh tật,NẠCH
+105,⽨,癶,5,bát,giạng chân bước đi,BÁT
+106,⽩,白,5,bạch,màu trắng,BẠCH
+107,⽪,皮,5,bì,da,BÌ
+108,⽫,皿,5,mãnh,"bát đĩa, đồ đựng",MÃNH
+109,⽬,目,5,mục,con mắt,MỤC
+110,⽭,矛,5,mâu,cây giáo mâu,MÂU
+111,⽮,矢,5,thỉ,mũi tên,THỈ
+112,⽯,石,5,thạch,đá,THẠCH
+113,⽰,示,5,thị,"bày tỏ; thần linh, lễ cúng",THỊ
+114,⽱,禸,5,nhựu,vết chân thú,NHỰU
+115,⽲,禾,5,hòa,cây lúa,HÒA
+116,⽳,穴,5,huyệt,"hang, lỗ",HUYỆT
+117,⽴,立,5,lập,đứng,LẬP
+118,⽵,竹,6,trúc,"cây tre, cây trúc",TRÚC
+119,⽶,米,6,mễ,gạo,MỄ
+120,⽷,糸,6,mịch,sợi tơ nhỏ,MỊCH
+121,⽸,缶,6,phẫu,"đồ sành, cái vò",PHẪU
+122,⽹,网,6,võng,cái lưới,VÕNG
+123,⽺,羊,6,dương,"dê, cừu",DƯƠNG
+124,⽻,羽,6,vũ,"lông vũ, cánh chim",VŨ
+125,⽼,老,6,lão,già,LÃO
+126,⽽,而,6,nhi,"mà, và (từ nối); râu",NHI
+127,⽾,耒,6,lỗi,cái cày,LỖI
+128,⽿,耳,6,nhĩ,cái tai,NHĨ
+129,⾀,聿,6,duật,cây bút,DUẬT
+130,⾁,肉,6,nhục,thịt,NHỤC
+131,⾂,臣,6,thần,bề tôi,THẦN
+132,⾃,自,6,tự,tự mình; cái mũi,TỰ
+133,⾄,至,6,chí,đến,CHÍ
+134,⾅,臼,6,cữu,cái cối,CỮU
+135,⾆,舌,6,thiệt,cái lưỡi,THIỆT
+136,⾇,舛,6,suyễn,"trái ngược, sai lệch",SUYỄN
+137,⾈,舟,6,chu,con thuyền,CHU
+138,⾉,艮,6,cấn,"quẻ Cấn; dừng, bền chắc",CẤN
+139,⾊,色,6,sắc,màu sắc,SẮC
+140,⾋,艸,6,thảo,cỏ,THẢO
+141,⾌,虍,6,hô,"vằn hổ, da hổ",HÔ
+142,⾍,虫,6,trùng,"sâu bọ, côn trùng",TRÙNG
+143,⾎,血,6,huyết,máu,HUYẾT
+144,⾏,行,6,hành,đi; con đường,HÀNH
+145,⾐,衣,6,y,áo,Y
+146,⾑,襾,6,á,"che đậy, trùm lên",Á
+147,⾒,見,7,kiến,nhìn thấy,KIẾN
+148,⾓,角,7,giác,cái sừng; góc,GIÁC
+149,⾔,言,7,ngôn,lời nói,NGÔN
+150,⾕,谷,7,cốc,"khe núi, thung lũng",CỐC
+151,⾖,豆,7,đậu,hạt đậu; bát cao chân,ĐẬU
+152,⾗,豕,7,thỉ,con lợn,THỈ
+153,⾘,豸,7,trĩ,thú lưng dài; sâu không chân,TRĨ
+154,⾙,貝,7,bối,"vỏ sò; của cải, tiền",BỐI
+155,⾚,赤,7,xích,màu đỏ,XÍCH
+156,⾛,走,7,tẩu,chạy,TẨU
+157,⾜,足,7,túc,bàn chân,TÚC
+158,⾝,身,7,thân,thân mình,THÂN
+159,⾞,車,7,xa,cái xe,XA
+160,⾟,辛,7,tân,cay; vất vả,TÂN
+161,⾠,辰,7,thần,"chi Thìn; buổi sớm, thời giờ",THẦN
+162,⾡,辵,7,sước,"đi, bước đi",SƯỚC
+163,⾢,邑,7,ấp,"đất phong, làng xóm",ẤP
+164,⾣,酉,7,dậu,"chi Dậu; rượu, vò rượu",DẬU
+165,⾤,釆,7,biện,phân biệt,BIỆN
+166,⾥,里,7,lý,dặm; làng quê,LÝ
+167,⾦,金,8,kim,"vàng, kim loại",KIM
+168,⾧,長,8,trường,dài,TRƯỜNG
+169,⾨,門,8,môn,"cửa hai cánh, cổng",MÔN
+170,⾩,阜,8,phụ,"gò đất, đồi",PHỤ
+171,⾪,隶,8,đãi,"kịp, bắt được",ĐÃI
+172,⾫,隹,8,chuy,chim đuôi ngắn,CHUY
+173,⾬,雨,8,vũ,mưa,VŨ
+174,⾭,青,8,thanh,màu xanh,THANH
+175,⾮,非,8,phi,"không phải, sai",PHI
+176,⾯,面,9,diện,khuôn mặt,DIỆN
+177,⾰,革,9,cách,da thuộc; đổi mới,CÁCH
+178,⾱,韋,9,vi,da thuộc mềm; trái ngược,VI
+179,⾲,韭,9,cửu,rau hẹ,CỬU
+180,⾳,音,9,âm,âm thanh,ÂM
+181,⾴,頁,9,hiệt,cái đầu; trang giấy,HIỆT
+182,⾵,風,9,phong,gió,PHONG
+183,⾶,飛,9,phi,bay,PHI
+184,⾷,食,9,thực,ăn,THỰC
+185,⾸,首,9,thủ,cái đầu,THỦ
+186,⾹,香,9,hương,mùi thơm,HƯƠNG
+187,⾺,馬,10,mã,con ngựa,MÃ
+188,⾻,骨,10,cốt,xương,CỐT
+189,⾼,高,10,cao,cao,CAO
+190,⾽,髟,10,tiêu,tóc dài,TIÊU
+191,⾾,鬥,10,đấu,đánh nhau,ĐẤU
+192,⾿,鬯,10,sưởng,rượu nếp dùng cúng tế,SƯỞNG
+193,⿀,鬲,10,cách,cái nồi ba chân,CÁCH
+194,⿁,鬼,10,quỷ,ma quỷ,QUỶ
+195,⿂,魚,11,ngư,con cá,NGƯ
+196,⿃,鳥,11,điểu,con chim,ĐIỂU
+197,⿄,鹵,11,lỗ,"đất mặn, muối",LỖ
+198,⿅,鹿,11,lộc,"con hươu, nai",LỘC
+199,⿆,麦,11,mạch,lúa mì,MẠCH
+200,⿇,麻,11,ma,"cây gai, cây đay",MA
+201,⿈,黄,12,hoàng,màu vàng,HOÀNG
+202,⿉,黍,12,thử,"lúa nếp, hạt kê",THỬ
+203,⿊,黒,12,hắc,màu đen,HẮC
+204,⿋,黹,12,chỉ,"may vá, thêu thùa",CHỈ
+205,⿌,黽,13,mãnh,con ếch; cố gắng,MÃNH
+206,⿍,鼎,13,đỉnh,cái vạc ba chân,ĐỈNH
+207,⿎,鼓,13,cổ,cái trống,CỔ
+208,⿏,鼠,13,thử,con chuột,THỬ
+209,⿐,鼻,14,tị,cái mũi,TỊ
+210,⿑,齊,14,tề,"đều nhau, ngang bằng",TỀ
+211,⿒,齒,15,xỉ,răng,XỈ
+212,⿓,龍,16,long,con rồng,LONG
+213,⿔,龜,16,quy,con rùa,QUY
+214,⿕,龠,17,dược,ống sáo,DƯỢC

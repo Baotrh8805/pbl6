@@ -1,20 +1,16 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List, Optional
-import pykakasi
 
-router = APIRouter(prefix="/nlp", tags=["NLP & Hán-Việt"])
+from app.core.security import require_internal_key
+from app.extract.han_viet import han_viet
+from app.extract.jachars import has_japanese, is_kana_only
+from app.extract.jlpt import classify
+from app.extract.romaji import to_romaji
+from app.extract.tokenizer import tokenize
 
-# Bảng từ điển âm Hán - Việt mẫu (có thể mở rộng từ SQLite hoặc CSV Unihan)
-HAN_VIET_DICT = {
-    "日": "NHẬT", "本": "BẢN", "語": "NGỮ", "学": "HỌC", "生": "SINH",
-    "先": "TIÊN", "人": "NHÂN", "何": "HÀ", "時": "THỜI", "間": "GIAN",
-    "行": "HÀNH", "来": "LAI", "見": "KIẾN", "食": "THỰC", "飲": "ẨM",
-    "大": "ĐẠI", "小": "TIỂU", "高": "CAO", "安": "AN", "新": "TÂN",
-    "古": "CỔ", "長": "TRƯỜNG", "白": "BẠCH", "黒": "HẮC", "赤": "XÍCH"
-}
+router = APIRouter(prefix="/nlp", tags=["NLP & Hán-Việt"], dependencies=[Depends(require_internal_key)])
 
-kks = pykakasi.kakasi()
 
 class AnalyzeTextRequest(BaseModel):
     text: str
@@ -24,7 +20,7 @@ class WordAnalysis(BaseModel):
     furigana: str
     romaji: str
     han_viet: Optional[str] = None
-    jlpt_hint: Optional[str] = "N5"
+    jlpt_hint: Optional[str] = None
 
 class AnalyzeTextResponse(BaseModel):
     original_text: str
@@ -33,23 +29,19 @@ class AnalyzeTextResponse(BaseModel):
 @router.post("/analyze", response_model=AnalyzeTextResponse)
 def analyze_japanese_text(request: AnalyzeTextRequest):
     """
-    Tách từ, sinh Furigana và tự động tra cứu âm Hán - Việt cho từng chữ Kanji.
+    Tách từ (SudachiPy mode C), sinh Furigana, romaji, âm Hán-Việt (Unihan) và cấp JLPT.
     """
-    results = kks.convert(request.text)
     words = []
-    
-    for item in results:
-        orig = item['orig']
-        # Tra cứu âm Hán Việt cho các ký tự Kanji trong từ
-        han_viet_list = [HAN_VIET_DICT.get(char, "") for char in orig if char in HAN_VIET_DICT]
-        han_viet_str = " - ".join(filter(None, han_viet_list)) if han_viet_list else None
-        
+    for tok in tokenize(request.text, "C"):
+        reading = tok.reading if has_japanese(tok.surface) else tok.surface
+        level = None
+        if has_japanese(tok.lemma) and tok.pos1 not in ("助詞", "助動詞", "補助記号", "記号"):
+            level, _, _ = classify(tok.lemma, None, is_kana_only(tok.lemma))
         words.append(WordAnalysis(
-            original=orig,
-            furigana=item['hira'],
-            romaji=item['hepburn'],
-            han_viet=han_viet_str,
-            jlpt_hint="N5"
+            original=tok.surface,
+            furigana=reading,
+            romaji=to_romaji(reading) if has_japanese(reading) else reading,
+            han_viet=han_viet(tok.surface),
+            jlpt_hint=level,
         ))
-        
     return AnalyzeTextResponse(original_text=request.text, words=words)

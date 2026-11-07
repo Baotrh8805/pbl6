@@ -83,12 +83,10 @@ const CardForm: React.FC<CardFormProps> = ({ formId, initialCard, onSave, onClos
   const [term, setTerm] = useState(initialCard?.term ?? "");
   const [reading, setReading] = useState(initialCard?.reading || "");
   const [meaning, setMeaning] = useState(initialCard?.meaning ?? "");
-  const [example, setExample] = useState(initialCard?.example || "");
   const [error, setError] = useState<string | null>(null);
   const termId = useId();
   const readingId = useId();
   const meaningId = useId();
-  const exampleId = useId();
 
   const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -97,11 +95,16 @@ const CardForm: React.FC<CardFormProps> = ({ formId, initialCard, onSave, onClos
     onSavingChange(true);
     setError(null);
     try {
+      // Giữ metadata bóc tách AI của thẻ đang sửa; đổi thuật ngữ thì furigana từng đoạn không còn khớp.
+      const termChanged = initialCard != null && term.trim() !== initialCard.term;
       await onSave({
         term: term.trim(),
         reading: reading.trim() || null,
         meaning: meaning.trim(),
-        example: example.trim() || null,
+        level: initialCard?.level ?? null,
+        kind: initialCard?.kind,
+        readingSegments: termChanged ? null : (initialCard?.readingSegments ?? null),
+        hanViet: initialCard?.hanViet ?? null,
       });
       onClose();
     } catch (err) {
@@ -132,26 +135,18 @@ const CardForm: React.FC<CardFormProps> = ({ formId, initialCard, onSave, onClos
         onChange={(e) => setReading(e.target.value)}
       />
 
-      <Input
-        id={meaningId}
-        label="Nghĩa tiếng Việt"
-        required
-        placeholder="VD: kinh tế, học tập, ăn..."
-        value={meaning}
-        onChange={(e) => setMeaning(e.target.value)}
-      />
-
       <div className="flex flex-col gap-1.5 text-left">
-        <label htmlFor={exampleId} className={fieldLabelClass}>
-          Câu ví dụ (không bắt buộc)
+        <label htmlFor={meaningId} className={fieldLabelClass}>
+          Nội dung (định nghĩa, ví dụ, ghi chú) <span className="text-error">*</span>
         </label>
         <textarea
-          id={exampleId}
-          rows={2}
-          placeholder="VD: 日本の経済について勉強します。"
-          value={example}
-          onChange={(e) => setExample(e.target.value)}
-          className={textareaClass}
+          id={meaningId}
+          rows={6}
+          required
+          placeholder={"Dòng đầu là định nghĩa chính. VD: kinh tế\nCó thể thêm các dòng sau: ví dụ, ghi chú... VD: 日本の経済について勉強します。"}
+          value={meaning}
+          onChange={(e) => setMeaning(e.target.value)}
+          className={`${textareaClass} whitespace-pre-wrap`}
         />
       </div>
     </form>

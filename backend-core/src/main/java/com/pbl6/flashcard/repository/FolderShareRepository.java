@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.repository;
 
+import com.pbl6.flashcard.dto.folder.FolderMemberResponse;
 import com.pbl6.flashcard.model.FolderShare;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -17,9 +18,7 @@ public interface FolderShareRepository extends JpaRepository<FolderShare, Long> 
 
     Optional<FolderShare> findByFolderIdAndUserId(UUID folderId, Long userId);
 
-    record Member(Long userId, String email, String fullName) {}
-
-    @Query("SELECT new com.pbl6.flashcard.repository.FolderShareRepository$Member(s.userId, u.email, u.fullName) "
+    @Query("SELECT new com.pbl6.flashcard.dto.folder.FolderMemberResponse(s.userId, u.email, u.fullName) "
             + "FROM FolderShare s, User u WHERE u.id = s.userId AND s.folderId = :folderId ORDER BY u.email")
-    List<Member> findMembers(@Param("folderId") UUID folderId);
+    List<FolderMemberResponse> findMembers(@Param("folderId") UUID folderId);
 }

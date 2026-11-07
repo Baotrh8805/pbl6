@@ -1,10 +1,14 @@
 package com.pbl6.flashcard.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.pbl6.flashcard.model.User;
+import com.pbl6.flashcard.service.RefreshTokenService;
 import com.pbl6.flashcard.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,21 +18,41 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class PasswordAndErrorsIT extends IntegrationTest {
 
+    @Autowired
+    RefreshTokenService refreshTokens;
+
     @Test
     void changing_password_revokes_old_tokens_and_returns_a_working_new_one() throws Exception {
         String old = newUser();
         Thread.sleep(1100); // iat của JWT tính theo giây: tách token cũ sang giây trước
         JsonNode res = read(call(put("/api/auth/password"), old,
-                Map.of("currentPassword", "secret123", "newPassword", "secret456")).andExpect(status().isOk()));
+                Map.of("currentPassword", "Secret123!", "newPassword", "Secret456!")).andExpect(status().isOk()));
         String fresh = res.get("accessToken").asText();
 
         call(get("/api/auth/me"), old, null).andExpect(status().isUnauthorized());
         call(get("/api/auth/me"), fresh, null).andExpect(status().isOk());
     }
 
+    /**
+     * Như AuthService.changePassword: đặt mốc trên user trong bộ nhớ, lưu, rồi cấp token ngay từ chính user đó.
+     * Postgres chỉ giữ micro giây và làm tròn (…345999600Z thành …346000Z), nên nếu không làm tròn trước khi cấp
+     * thì pcv của token (…345 ms) lệch mốc đọc lại ở request sau (…346 ms) và token mới bị coi là đã thu hồi.
+     */
+    @Test
+    void token_issued_right_after_a_password_change_survives_microsecond_rounding_in_the_database() throws Exception {
+        String email = newEmail();
+        newUser(email);
+        User user = userRepository.findByEmail(email).orElseThrow();
+        user.setPasswordChangedAt(Instant.parse("2026-10-20T08:00:12.345999600Z"));
+        userRepository.save(user);
+        String token = refreshTokens.issueTokens(user).getAccessToken();
+
+        call(get("/api/auth/me"), token, null).andExpect(status().isOk());
+    }
+
     @Test
     void missing_current_password_is_a_clear_400() throws Exception {
-        call(put("/api/auth/password"), newUser(), Map.of("newPassword", "secret456"))
+        call(put("/api/auth/password"), newUser(), Map.of("newPassword", "Secret456!"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("currentPassword: Mật khẩu hiện tại không được để trống"));
     }

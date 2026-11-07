@@ -15,14 +15,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  # Redis Cache cho Java Backend & AI service
-  redis:
-    image: redis:7-alpine
-    container_name: pbl6_redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-
   # Neo4j Graph Database cho GraphRAG
   neo4j:
     image: neo4j:5-community

@@ -8,7 +8,10 @@ INSERT INTO decks (id, title, level, description, owner_id, visibility, category
   ('n4-society', 'Từ vựng N4 – xã hội & kinh tế', 'N4', 'Nhóm từ Hán tự hay gặp trong bài đọc trình độ N4.', (SELECT id FROM users WHERE lower(email) = 'dongocle2404@gmail.com'), 'public', 'goi', true, false)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO flashcards (id, deck_id, term, reading, meaning, example, position) VALUES
+INSERT INTO flashcards (id, deck_id, term, reading, meaning, position)
+SELECT id, deck_id, term, reading,
+       CASE WHEN example IS NULL OR example = '' THEN meaning ELSE meaning || chr(10) || chr(10) || example END, position
+FROM (VALUES
   ('n5-1',  'n5-core', '水',   'みず',     'nước',               '水を飲みます。',      1),
   ('n5-2',  'n5-core', '火',   'ひ',       'lửa',                '火が強いです。',      2),
   ('n5-3',  'n5-core', '山',   'やま',     'núi',                '山に登ります。',      3),
@@ -35,6 +38,7 @@ INSERT INTO flashcards (id, deck_id, term, reading, meaning, example, position) 
   ('n4-4', 'n4-society', '産業', 'さんぎょう', 'công nghiệp',NULL, 4),
   ('n4-5', 'n4-society', '輸出', 'ゆしゅつ',   'xuất khẩu',  NULL, 5),
   ('n4-6', 'n4-society', '準備', 'じゅんび',   'chuẩn bị',   NULL, 6)
+) AS v(id, deck_id, term, reading, meaning, example, position)
 ON CONFLICT (id) DO NOTHING;
 
 -- Chuyển từ frontend/src/data/libraryDecks.ts (đã xoá). Id thẻ = <id bộ thẻ>-<vị trí>.
@@ -49,7 +53,10 @@ INSERT INTO decks (id, title, level, description, owner_id, visibility, category
   ('lib-minna-n5-core', 'Minna no Nihongo 50 Bài N5 - Nền Tảng Cho Người Mới Bắt Đầu', 'N5', 'Trọn vẹn hệ thống từ vựng vỡ lòng có ví dụ song ngữ Việt-Nhật, âm thanh minh họa và bảng chữ cái Kana.', (SELECT id FROM users WHERE lower(email) = 'dongocle2404@gmail.com'), 'public', 'kaiwa', true, false)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO flashcards (id, deck_id, term, reading, meaning, example, position) VALUES
+INSERT INTO flashcards (id, deck_id, term, reading, meaning, position)
+SELECT id, deck_id, term, reading,
+       CASE WHEN example IS NULL OR example = '' THEN meaning ELSE meaning || chr(10) || chr(10) || example END, position
+FROM (VALUES
   ('lib-n2-grammar-100-1', 'lib-n2-grammar-100', '～を契機に', 'をけいきに', 'Nhân cơ hội, lấy làm bước ngoặt', '東京オリンピックを契機に、街の再開発が一気に進んだ。', 1),
   ('lib-n2-grammar-100-2', 'lib-n2-grammar-100', '～を皮切りに', 'をかわきりに', 'Khởi đầu bằng, mở màn với', '東京公演を皮切りに、全国ツアーがスタートした。', 2),
   ('lib-n2-grammar-100-3', 'lib-n2-grammar-100', '～にあたって', 'にあたって', 'Nhân dịp, trước thềm (sự kiện quan trọng)', '新学期を迎えるにあたって、目標を立てた。', 3),
@@ -95,4 +102,5 @@ INSERT INTO flashcards (id, deck_id, term, reading, meaning, example, position) 
   ('lib-minna-n5-core-3', 'lib-minna-n5-core', 'どこ', 'どこ', 'Ở đâu (từ để hỏi nơi chốn)', 'お手洗いはどこですか。', 3),
   ('lib-minna-n5-core-4', 'lib-minna-n5-core', 'いくら', 'いくら', 'Bao nhiêu tiền', 'このリンゴはいくらですか。', 4),
   ('lib-minna-n5-core-5', 'lib-minna-n5-core', 'いっしょに', 'いっしょに', 'Cùng nhau', 'いっしょに昼ご飯を食べませんか。', 5)
+) AS v(id, deck_id, term, reading, meaning, example, position)
 ON CONFLICT (id) DO NOTHING;
