@@ -463,7 +463,7 @@ async function runSelfCheck() {
   };
   const stats = calcLearningStats([statsDeck], { c1: good, c2: again }, [qr(3, 4)], todayDate);
   assertStrictEqual(stats.wordsLearned, 2, "2 thẻ đã chấm");
-  assertStrictEqual(stats.srsDueCount, 1, "c3 chưa học nên đến hạn; c1, c2 chưa tới hạn");
+  assertStrictEqual(stats.srsDueCount, 2, "c3 chưa học + c2 hẹn lại 10p (trong ngày hôm nay) -> 2 thẻ đến hạn");
   assertStrictEqual(stats.reviewedToday, 1, "Chỉ c2 chấm hôm nay");
   assertStrictEqual(stats.currentStreak, 2, "Ôn hôm qua + hôm nay -> streak 2");
   assertStrictEqual(stats.quizAccuracy, 75, "3/4 = 75%");

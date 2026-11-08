@@ -156,6 +156,7 @@ def test_pytorch_layer_loads_in_background_when_deadline_is_short(monkeypatch):
 def test_backends_order_and_missing_models(monkeypatch, tmp_path):
     monkeypatch.setattr(offline_mt, "_failed", set())
     monkeypatch.setattr(offline_mt, "MT_DIR", tmp_path)
+    monkeypatch.setattr(offline_mt, "_importable", lambda *mods: True)
     assert offline_mt.backends() == [] and offline_mt.available() is False
     assert offline_mt.translate("学校です。", "ja-vi") is None
     ct2 = tmp_path / offline_mt.MODEL_NAME
