@@ -1198,7 +1198,7 @@ class LearningPathIT extends IntegrationTest {
         assertEquals(count, day2.get("today").get("newCount").asInt());
 
         // Sau khi kích hoạt: không sửa chương nữa, nhưng đổi số ngày tính lại dải trên số thẻ đã chốt
-        JsonNode five = read(call(patch(BASE + id), token, Map.of("totalDays", 5, "title", "Minna mới")).andExpect(status().isOk()));
+        JsonNode five = read(call(patch(BASE + id).param("date", "2026-11-02"), token, Map.of("totalDays", 5, "title", "Minna mới")).andExpect(status().isOk()));
         assertEquals("Minna mới", five.get("title").asText());
         assertEquals(5, five.get("chapters").get(1).get("dayTo").asInt());
 

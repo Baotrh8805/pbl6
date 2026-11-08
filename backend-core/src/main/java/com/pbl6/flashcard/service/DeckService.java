@@ -123,18 +123,23 @@ public class DeckService {
     }
 
     private Optional<Access> access(Long uid, Deck deck) {
-        if (uid.equals(deck.getOwnerId())) return Optional.of(Access.OWNER);
-        String permission = shareRepository.findByDeckIdAndUserId(deck.getId(), uid)
-                .map(DeckShare::getPermission).orElse(null);
+        if (deck == null) return Optional.empty();
+        if (uid != null && uid.equals(deck.getOwnerId())) return Optional.of(Access.OWNER);
+
+        String permission = null;
+        if (uid != null) {
+            permission = shareRepository.findByDeckIdAndUserId(deck.getId(), uid)
+                    .map(DeckShare::getPermission).orElse(null);
+        }
         Optional<Access> direct = access(uid, deck, permission, false);
         if (direct.isPresent()) return direct;
 
-        if (deck.getFolder() != null && folderRepository.isSharedWith(deck.getFolder().getId(), uid)) {
+        if (uid != null && deck.getFolder() != null && folderRepository.isSharedWith(deck.getFolder().getId(), uid)) {
             return Optional.of(Access.VIEWER);
         }
 
         // Quyền xem bộ thẻ nếu là học viên (APPROVED) hoặc giáo viên của lớp học chứa bộ thẻ này
-        if (classroomMemberRepo != null && classroomMemberRepo.isDeckAccessibleByClassroomMember(deck.getId(), uid)) {
+        if (uid != null && classroomMemberRepo != null && classroomMemberRepo.isDeckAccessibleByClassroomMember(deck.getId(), uid)) {
             return Optional.of(Access.VIEWER);
         }
 
