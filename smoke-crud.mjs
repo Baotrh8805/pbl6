@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5173/api";
-const pw = "secret123";
+const pw = "Secret123!";
 
 let token = null;
 async function api(method, path, body) {

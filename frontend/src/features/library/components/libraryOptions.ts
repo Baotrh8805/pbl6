@@ -1,14 +1,15 @@
 // Hằng số + helper dùng chung cho trang Thư viện bộ thẻ (tách khỏi .tsx để không vướng rule only-export-components).
 
+// short: tên gọn cho chip trên thẻ bộ thẻ (nhãn đầy đủ có emoji + tên tiếng Nhật, quá dài cho chip).
 export const CATEGORIES = [
-  { id: "all", label: "Tất Cả Môn" },
-  { id: "dokkai", label: "📖 Đọc hiểu Dokkai" },
-  { id: "goi", label: "🔤 Từ vựng Goi" },
-  { id: "kanji", label: "🈯 Kanji Hán tự" },
-  { id: "bunpou", label: "⛩️ Ngữ pháp Bunpou" },
-  { id: "kaiwa", label: "🗣️ Hội thoại Kaiwa" },
-  { id: "it", label: "💻 Tiếng Nhật CNTT (BrSE)" },
-  { id: "business", label: "💼 Thương Mại (BJT)" },
+  { id: "all", label: "Tất Cả Môn", short: "Tất cả" },
+  { id: "dokkai", label: "📖 Đọc hiểu Dokkai", short: "Đọc hiểu" },
+  { id: "goi", label: "🔤 Từ vựng Goi", short: "Từ vựng" },
+  { id: "kanji", label: "🈯 Kanji Hán tự", short: "Kanji" },
+  { id: "bunpou", label: "⛩️ Ngữ pháp Bunpou", short: "Ngữ pháp" },
+  { id: "kaiwa", label: "🗣️ Hội thoại Kaiwa", short: "Hội thoại" },
+  { id: "it", label: "💻 Tiếng Nhật CNTT (BrSE)", short: "Tiếng Nhật CNTT" },
+  { id: "business", label: "💼 Thương Mại (BJT)", short: "Thương Mại" },
 ];
 
 export { JLPT_LEVELS as LEVELS } from "../../../lib/deckUtils.ts";
@@ -17,6 +18,23 @@ export { JLPT_LEVELS as LEVELS } from "../../../lib/deckUtils.ts";
 export function categoryLabel(id: string | null | undefined): string | null {
   return CATEGORIES.find((c) => c.id === id && c.id !== "all")?.label ?? null;
 }
+
+/** Tên chủ đề gọn cho chip ("kaiwa" -> "Hội thoại"); null/lạ -> null. */
+export function categoryShortLabel(id: string | null | undefined): string | null {
+  return CATEGORIES.find((c) => c.id === id && c.id !== "all")?.short ?? null;
+}
+
+/** Ctrl+K / ⌘K (không kèm Alt/Shift) -> focus ô tìm kiếm Thư viện. */
+export const isSearchShortcut = (e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}): boolean => e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+
+/** Nhãn phím tắt theo nền tảng: máy Apple "⌘K", còn lại "Ctrl K". */
+export const searchShortcutLabel = (apple: boolean): string => (apple ? "⌘K" : "Ctrl K");
 
 export type LibraryTab = "all" | "popular" | "official" | "community";
 
@@ -40,12 +58,16 @@ export function formatCompactCount(value: number): string {
   return String(value);
 }
 
-/** Chữ cái đầu làm avatar tác giả (không lưu ảnh đại diện). */
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] ?? "?").slice(0, 2);
-  return letters.toUpperCase();
+/**
+ * NEW-02: nhãn đánh giá cạnh ngôi sao ở thẻ Thư viện — "4 · 1 đánh giá". Trước đây thẻ in "★ 4 (0)" với số trong ngoặc là
+ * lượt tải, đọc như số lượt đánh giá; nay số lượt đánh giá ghi rõ chữ, lượt tải tách thành mục riêng như banner nổi bật.
+ */
+export function ratingSummary(rating: number | null | undefined, ratingsCount: number): string {
+  if (rating == null || ratingsCount <= 0) return "Chưa có đánh giá";
+  return `${rating} · ${formatCompactCount(ratingsCount)} đánh giá`;
 }
+
+export { getInitials as initials } from "../../../lib/textUtils.ts";
 
 export function getLevelBadgeClass(lvl: string): string {
   switch (lvl) {

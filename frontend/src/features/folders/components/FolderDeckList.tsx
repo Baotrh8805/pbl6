@@ -54,7 +54,8 @@ const FolderDeckItem: React.FC<{
         </p>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-surface-container-high/60 flex items-center justify-between">
+      {/* flex-wrap: số thẻ + Học / Quiz + 3 nút của chủ cần ~236 px; thẻ hẹp hơn thì cụm nút xuống dòng thay vì tràn thẻ */}
+      <div className="mt-4 pt-3 border-t border-surface-container-high/60 flex flex-wrap items-center justify-between gap-y-2">
         <div className="flex items-center gap-2">
           <span className="text-xs text-outline font-medium">{deck.cards.length} thẻ</span>
           {deck.cards.length > 0 && (
@@ -166,14 +167,21 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
       </div>
 
       {loading ? (
-        <div
-          role="status"
-          className="py-8 text-center text-sm text-on-surface-variant flex items-center justify-center gap-2"
-        >
-          <span aria-hidden="true" className="material-symbols-outlined animate-spin text-primary">
-            progress_activity
-          </span>
-          Đang tải danh sách bộ thẻ...
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" aria-label="Đang tải danh sách bộ thẻ">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-xs space-y-3 animate-pulse" aria-hidden="true">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-10 rounded-full bg-slate-200" />
+                <div className="h-4 w-12 rounded-full bg-slate-100" />
+              </div>
+              <div className="h-5 w-3/4 rounded bg-slate-200" />
+              <div className="h-3 w-1/2 rounded bg-slate-100" />
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <div className="h-3 w-16 rounded bg-slate-100" />
+                <div className="h-6 w-16 rounded-lg bg-slate-200" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : decks.length === 0 ? (
         <div className="p-8 text-center rounded-2xl bg-surface-container-lowest border border-dashed border-surface-container-high flex flex-col items-center gap-3">
@@ -229,7 +237,8 @@ export const FolderDeckList: React.FC<FolderDeckListProps> = ({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-md">
+        // 3 cột chỉ từ xl: ở 1024 px khung nội dung (đã trừ sidebar) chia 3 chỉ còn ~224 px/thẻ, hàng nút tràn ra, trang cuộn ngang
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md">
           {decks.map((deck) => (
             <FolderDeckItem
               key={deck.id}

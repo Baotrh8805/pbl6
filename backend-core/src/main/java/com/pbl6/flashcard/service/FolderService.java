@@ -1,5 +1,6 @@
 package com.pbl6.flashcard.service;
 
+import com.pbl6.flashcard.dto.folder.FolderMemberResponse;
 import com.pbl6.flashcard.dto.folder.FolderRequest;
 import com.pbl6.flashcard.dto.folder.FolderResponse;
 import com.pbl6.flashcard.model.Folder;
@@ -158,14 +159,14 @@ public class FolderService {
     // ---------- chia sẻ (chỉ chủ thư mục) ----------
 
     @Transactional(readOnly = true)
-    public List<FolderShareRepository.Member> members(UUID id, User user) {
+    public List<FolderMemberResponse> members(UUID id, User user) {
         requireOwner(folderRepository.findById(id).orElseThrow(FolderService::notFound), user);
         return shareRepository.findMembers(id);
     }
 
     /** Cho người dùng (theo email) quyền xem thư mục; đã có thì giữ nguyên. Trả danh sách sau khi đổi. */
     @Transactional
-    public List<FolderShareRepository.Member> share(UUID id, String email, User user) {
+    public List<FolderMemberResponse> share(UUID id, String email, User user) {
         requireOwner(folderRepository.findById(id).orElseThrow(FolderService::notFound), user);
         User target = userRepository.findByEmail(User.normalizeEmail(email))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -307,6 +308,23 @@ public class FolderService {
             }
         }
         return height;
+    }
+
+    /** id của {@code rootId} và mọi thư mục con cháu của nó trong danh sách thư mục của một chủ. */
+    public static Set<UUID> subtreeIds(List<Folder> ownerFolders, UUID rootId) {
+        Map<UUID, List<UUID>> childrenOf = new HashMap<>();
+        for (Folder f : ownerFolders) {
+            if (f.getParent() != null) {
+                childrenOf.computeIfAbsent(f.getParent().getId(), k -> new ArrayList<>()).add(f.getId());
+            }
+        }
+        Set<UUID> result = new java.util.LinkedHashSet<>();
+        java.util.ArrayDeque<UUID> queue = new java.util.ArrayDeque<>(List.of(rootId));
+        while (!queue.isEmpty()) {
+            UUID id = queue.poll();
+            if (result.add(id)) queue.addAll(childrenOf.getOrDefault(id, List.of())); // add()=false: chống vòng lặp
+        }
+        return result;
     }
 
     /** Nối children theo parentId, trả về các node gốc. Giữ nguyên thứ tự đầu vào. */

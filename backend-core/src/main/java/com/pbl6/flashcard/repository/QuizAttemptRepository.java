@@ -16,10 +16,44 @@ import java.util.UUID;
 @Repository
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> {
 
+    /** Số lượt quiz mỗi ngày theo múi giờ hiển thị (dashboard admin). */
+    @Query(value = "SELECT CAST(created_at AT TIME ZONE :zone AS date) AS day, count(*) AS n FROM quiz_attempts "
+            + "WHERE created_at >= :since GROUP BY day", nativeQuery = true)
+    java.util.List<DayCount> countByDay(@Param("since") Instant since, @Param("zone") String zone);
+
     /** Khoá lượt làm khi nộp: 2 lần nộp song song không ghi 2 kết quả. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM QuizAttempt a WHERE a.id = :id")
     Optional<QuizAttempt> findForUpdate(@Param("id") UUID id);
+
+    /**
+     * Khoá tư vấn theo giao dịch: các yêu cầu "Bắt đầu" song song của cùng user + bộ thẻ xếp hàng, yêu cầu sau thấy
+     * lượt do yêu cầu trước vừa tạo và trả lại nó (thay vì đụng unique index rồi báo lỗi).
+     */
+    @Query(value = "SELECT CAST(pg_advisory_xact_lock(:key) AS text)", nativeQuery = true)
+    String lockCreate(@Param("key") long key);
+
+    /** Lượt đang mở (chưa nộp, chưa quá hạn) của user với bộ thẻ này; tối đa một nhờ unique index V9. */
+    @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.deckId = :deckId AND a.submittedAt IS NULL "
+            + "AND a.expiresAt >= :now")
+    Optional<QuizAttempt> findOpen(@Param("uid") Long uid, @Param("deckId") String deckId, @Param("now") Instant now);
+
+    /**
+     * Như {@link #findOpen} nhưng khoá dòng (FOR UPDATE) ngay lúc đọc: bài kiểm tra chương có thể phải đóng lượt đang mở
+     * (QuizAttemptService.chapterExam), và phải đọc đáp án mới nhất dưới khoá — đọc trước rồi mới khoá thì một lần trả lời song
+     * song vừa lưu bị bản cũ trong bộ nhớ ghi đè lúc đóng.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM QuizAttempt a WHERE a.userId = :uid AND a.deckId = :deckId AND a.submittedAt IS NULL "
+            + "AND a.expiresAt >= :now")
+    Optional<QuizAttempt> findOpenForUpdate(@Param("uid") Long uid, @Param("deckId") String deckId,
+                                            @Param("now") Instant now);
+
+    /**
+     * Lượt đã nộp (hoặc bị đóng vì quá hạn) sau :since của user — InsightService đếm câu sai theo thẻ từ answers / questions
+     * (QuizAttemptService.wrongAnswerCounts) để nhận ra "sai quiz" (spec §3.7).
+     */
+    List<QuizAttempt> findByUserIdAndSubmittedAtAfter(Long userId, Instant since);
 
     /** Lượt quá hạn chưa nộp của user (khoá để không chốt điểm 2 lần). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

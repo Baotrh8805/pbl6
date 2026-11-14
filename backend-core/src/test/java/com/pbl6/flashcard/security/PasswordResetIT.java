@@ -6,8 +6,11 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,7 +46,7 @@ class PasswordResetIT extends IntegrationTest {
                 .andExpect(status().isOk());
         call(get("/api/auth/me"), oldToken, null).andExpect(status().isUnauthorized());
         call(post("/api/auth/login"), null, Map.of("email", email, "password", "moi-123456")).andExpect(status().isOk());
-        call(post("/api/auth/login"), null, Map.of("email", email, "password", "secret123")).andExpect(status().isUnauthorized());
+        call(post("/api/auth/login"), null, Map.of("email", email, "password", "Secret123!")).andExpect(status().isUnauthorized());
 
         // Dùng lại link -> không hợp lệ
         call(post("/api/auth/reset-password"), null, Map.of("token", resetToken, "newPassword", "khac-123456"))
@@ -59,7 +62,7 @@ class PasswordResetIT extends IntegrationTest {
     @Test
     void invalid_input_and_bad_tokens_are_rejected() throws Exception {
         call(post("/api/auth/forgot-password"), null, Map.of("email", "not-an-email")).andExpect(status().isBadRequest());
-        call(post("/api/auth/reset-password"), null, Map.of("token", "khong-ton-tai", "newPassword", "abcdef"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", "khong-ton-tai", "newPassword", "Abcdef-1"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn."));
 
@@ -68,6 +71,22 @@ class PasswordResetIT extends IntegrationTest {
         call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
         call(post("/api/auth/reset-password"), null, Map.of("token", tokenFromLastMail(), "newPassword", "123"))
                 .andExpect(status().isBadRequest());
+    }
+
+    /** Mail gửi sau khi token đã commit, ngoài transaction: SMTP chậm không giữ kết nối DB của endpoint công khai. */
+    @Test
+    void mail_is_sent_outside_any_transaction() throws Exception {
+        String email = newEmail();
+        newUser(email);
+        List<Boolean> inTransaction = new CopyOnWriteArrayList<>();
+        doAnswer(inv -> {
+            inTransaction.add(TransactionSynchronizationManager.isActualTransactionActive());
+            return null;
+        }).when(mailSender).send(any(SimpleMailMessage.class));
+        call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
+        assertEquals(List.of(false), inTransaction);
+        call(post("/api/auth/reset-password"), null, Map.of("token", tokenFromLastMail(), "newPassword", "Abcdef-1"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -79,9 +98,9 @@ class PasswordResetIT extends IntegrationTest {
         call(post("/api/auth/forgot-password"), null, Map.of("email", email)).andExpect(status().isOk());
         String second = tokenFromLastMail();
         assertNotEquals(first, second);
-        call(post("/api/auth/reset-password"), null, Map.of("token", first, "newPassword", "abcdef1"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", first, "newPassword", "Abcdef-1"))
                 .andExpect(status().isBadRequest());
-        call(post("/api/auth/reset-password"), null, Map.of("token", second, "newPassword", "abcdef1"))
+        call(post("/api/auth/reset-password"), null, Map.of("token", second, "newPassword", "Abcdef-1"))
                 .andExpect(status().isOk());
     }
 }

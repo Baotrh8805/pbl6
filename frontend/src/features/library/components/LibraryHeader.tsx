@@ -2,7 +2,8 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 // Tiêu đề trang Thư viện + 2 lối tắt (đóng góp bộ thẻ / bộ thẻ của tôi).
-export const LibraryHeader: React.FC = () => (
+// deckCount: tổng bộ thẻ công khai thật (allCount của server); chưa tải -> không hiện con số.
+export const LibraryHeader: React.FC<{ deckCount?: number | null }> = ({ deckCount }) => (
   <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-md">
     <div className="max-w-3xl space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
@@ -10,9 +11,11 @@ export const LibraryHeader: React.FC = () => (
           <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
           Kho Tri Thức Mở NihonGen
         </span>
-        <span className="text-on-surface-variant font-label-sm text-xs">
-          4,820+ Bộ Thẻ Đã Kiểm Định
-        </span>
+        {deckCount != null && (
+          <span className="text-on-surface-variant font-label-sm text-xs">
+            {deckCount.toLocaleString("vi-VN")} bộ thẻ công khai
+          </span>
+        )}
       </div>
       <h1 className="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">
         Thư Viện Bộ Thẻ Cộng Đồng & Tinh Tuyển

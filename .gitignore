@@ -9,8 +9,11 @@
 *.pem
 secrets/
 credentials.json
+# Bản sao lưu DB (scripts/backup.ps1 / backup.sh)
+backups/
 backend-core/src/main/resources/application-local.properties
 ai-service/.env
+ai-service/app/extract/data/dict_overrides.json
 
 # ==============================================================================
 # Java & Maven (backend-core)
@@ -76,3 +79,39 @@ desktop.ini
 # ==============================================================================
 pgdata/
 neo4jdata/
+
+# ==============================================================================
+# ai-service: dữ liệu từ điển dựng bằng scripts/build_dicts.py (không commit)
+# ==============================================================================
+ai-service/app/extract/data/jmdict.sqlite
+ai-service/app/extract/data/kanji_strokes.json
+ai-service/app/extract/data/pitch_accent.csv
+ai-service/scripts/.download_cache/
+# thử nghiệm dịch offline (đã hoàn tác): model NLLB 600 MB + bộ nhớ dịch còn lại trên máy dev, không commit
+ai-service/app/extract/data/models/
+ai-service/app/extract/data/translations.sqlite
+
+# SDD scratch (executing-plans ledger)
+.superpowers/
+.agents/
+
+# Tài liệu nội bộ (spec, plan, hướng dẫn vận hành): không đưa lên Git
+docs/
+
+# model tự huấn luyện (spec 2026-10-27 đêm): file lớn lấy bằng ai-service/scripts/fetch_models.py; chỉ giữ MANIFEST + README
+ai-service/models/*
+!ai-service/models/MANIFEST.json
+!ai-service/models/README.md
+
+# ==============================================================================
+# Performance Testing Temporary / Export Files (Kiểm thử hiệu năng)
+# ==============================================================================
+*.doc
+*.docx
+~$*
+Excel_Copy_Bao.html
+Test_Cases_Hieu_Nang_Bao.tsv
+k6-dom-test.png
+scripts/perf-test.mjs
+scripts/perf-k6.js
+*k6*.js

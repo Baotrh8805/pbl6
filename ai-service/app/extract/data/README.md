@@ -1,0 +1,143 @@
+# Dữ liệu từ điển cho `app/extract`
+
+Tạo lại toàn bộ bằng:
+
+```powershell
+cd ai-service
+venv\Scripts\python.exe -I scripts\build_dicts.py            # tất cả
+venv\Scripts\python.exe -I scripts\build_dicts.py --only jmdict
+venv\Scripts\python.exe -I scripts\build_dicts.py --only kanjivg    # jlpt | unihan | unihan_rs | unihan_def | jmdict | kanjivg | kanji_parts | kradfile | pitch
+```
+
+Script tải về thư mục cache `scripts/.download_cache/` (đã gitignore), chỉ parse bằng
+`json` / `zipfile` / `csv` / `re` của stdlib, không giải nén ra đĩa. File đã có trong cache (cùng tên) không tải lại.
+`kanjivg` và `pitch` lọc theo từ vựng JLPT nên cần `jlpt/n*.csv` (đã commit; mất thì chạy `--only jlpt` trước).
+Máy mới clone chỉ cần dựng 3 file không commit: `--only jmdict`, `--only kanjivg`, `--only pitch`
+(hoặc chạy không tham số, dựng lại cả file đã commit — kiểm `git diff` trước khi commit vì nguồn Unihan / JLPT có thể đã đổi).
+
+| File | Commit? | Nguồn | Giấy phép |
+|---|---|---|---|
+| `jlpt/n5.csv … n1.csv` | Có (~500 KB) | [elzup/jlpt-word-list](https://github.com/elzup/jlpt-word-list) `src/n*.csv`, gốc từ danh sách của Jonathan Waller (tanos.co.uk). Giữ nguyên văn (dựng lại bằng `--only jlpt` sẽ ghi đè) — ~30 dòng gộp nhiều biến thể trong một ô (`高校; 高等学校` / `こうこう; こうとうがっこう`, `行く` / `いく; ゆく`, `回る、回す`) được `classifier._split_variants` tách lúc nạp, xem mục cuối tệp này | CC BY 4.0 theo tanos.co.uk (repo elzup ghi "dữ liệu theo giấy phép của tanos") |
+| `jlpt_meaning_overrides.csv` | Có (< 1 KB) | `expression,reading,meaning` — nghĩa EN sửa tay cho vài mục JLPT mà cột `meaning` ghi sai nghĩa thông dụng; thắng nghĩa CSV lúc nạp. Nằm ngoài `jlpt/` vì thư mục đó do `build_dicts.py` ghi đè. Nguồn và tiêu chí ở mục cuối tệp này. Không có script tải về, sửa trực tiếp | Nội dung tự biên soạn |
+| `unihan_vietnamese.csv` | Có (~120 KB) | Unicode [Unihan](https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip) trường `kVietnamese` (giữ âm đầu nếu có nhiều) | [Unicode License](https://www.unicode.org/license.txt) |
+| `unihan_japanese.csv` | Có (~480 KB) | Unihan trường `kJapanese` (on katakana + kun hiragana), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
+| `unihan_rs.csv` | Có (~280 KB) | Unihan `Unihan_IRGSources.txt`: `kRSUnicode` (bộ thủ Khang Hi `.` nét ngoài bộ; lấy giá trị đầu, bỏ dấu `'` của bộ dạng giản thể) và `kTotalStrokes` (giá trị đầu), chỉ khối CJK U+4E00–U+9FFF | Unicode License |
+| `radicals_214.csv` | Có (~10 KB) | 214 bộ thủ Khang Hi: khối Unicode [Kangxi Radicals](https://www.unicode.org/charts/PDF/U2F00.pdf) U+2F00–U+2FD5 theo thứ tự (`no` = vị trí + 1), `unified` = NFKC (chữ CJK thống nhất) **trừ 5 bộ ghi dạng JIS** mà người học gặp trong chữ JLPT (Unihan `kRSUnicode` xếp chính dạng JIS là bộ đó, nét ngoài bộ = 0): 63 戶 → 戸, 174 靑 → 青, 199 麥 → 麦, 201 黃 → 黄, 203 黑 → 黒 (dạng NFKC vẫn tra được qua `radical_of`); `strokes` = `kanjidata.radical_strokes` (Unihan `kTotalStrokes`) **trừ 114 禸 = 5** (Khang Hi và mọi bảng bộ thủ in đếm 5, Unihan ghi 4); `han_viet` = `han_viet.han_viet` (Unihan `kVietnamese` + overrides) **sửa tay** ở 26 bộ Unihan ghi âm Nôm / âm chữ giản thể (角 GÓC → GIÁC, 貝 BUỔI → BỐI, 厂 XƯỞNG → HÁN, 广 QUẢNG → NGHIỄM, 示 KÌ → THỊ…), `name_vi` / `meaning_vi` biên soạn tay theo tên bộ thủ quen dùng trong sách Hán-Việt (bộ Nhân, bộ Thủy, bộ Sước…). Dạng viết trong chữ của bộ (氵 艹 辶 扌 忄 礻 衤 阝 灬 犭 飠…) không nằm trong CSV mà ở `radicals.RADICAL_VARIANTS` (chỉ dùng để bộ lọc mẹo nhớ chấp nhận chúng). Không có script tải về: file là nguồn gốc, sửa trực tiếp | Unicode License (mã / nét) + nội dung tự biên soạn |
+| `han_viet_overrides.csv` | Có (~10 KB) | `char,reading` — âm Hán-Việt rà tay cho **mọi chữ Hán trong từ vựng JLPT N5–N1** mà Unihan `kVietnamese` thiếu (酒, 薬, 郵…), ghi âm Nôm thay / trước âm Hán-Việt (予 nhừ → DỰ, 猫 mèo → MIÊU, 角 góc → GIÁC, 冷 lạnh → LÃNH…) hoặc viết khác chính tả của bảng (KÌ → KỲ, QUI → QUY); `han_viet.py` ưu tiên bảng này hơn `unihan_vietnamese.csv`. Dòng `reading` rỗng = chữ quốc tự không có âm Hán-Việt (畑) → xoá giá trị Unihan. Chữ quốc tự khác (込, 匂, 峠…) không có dòng nào. Không có script tải về, sửa trực tiếp | Nội dung tự biên soạn |
+| `unihan_definitions.csv` | Có (~280 KB) | Unihan `kDefinition` (`char,definition`, giữ nguyên văn), chỉ chữ khối CJK U+4E00–U+9FFF có `kJapanese` và có mã JIS X 0208 / 0213 (`kJis0` / `kJIS0213`, ~8 600 chữ). Nghĩa **của chữ** cho thẻ chữ Hán / thẻ bộ thủ / mẹo nhớ (`kanji_meanings.py`); ghi chú Trung văn (bộ Khang Hi, nhị thập bát tú, họ, quẻ, tiếng Quảng Đông…) lọc lúc nạp. Dựng bằng `--only unihan_def` | Unicode License |
+| `kanji_meaning_overrides.csv` | Có (~10 KB) | `char,meaning` — nghĩa EN theo tiếng Nhật cho ~270 chữ JLPT mà `kDefinition` (viết cho tiếng Trung) gây hiểu nhầm (町 raised path between fields → town, 駅 relay station → station, 私 private → I, me; private, 予 I, me; to give → beforehand…); thắng `unihan_definitions.csv`. Không có script tải về, sửa trực tiếp | Nội dung tự biên soạn |
+| `heteronyms.yaml` | Có (~14 KB) | Từ đồng tự dị âm biên soạn tay (mục cuối tệp này). Không có script tải về | Nội dung tự biên soạn |
+| `jmdict.sqlite` | **Không** (~197 MB, gitignore; `--dict-scope compact` nhỏ hơn) | [scriptin/jmdict-simplified](https://github.com/scriptin/jmdict-simplified) bản `jmdict-examples-eng` (JMdict đầy đủ + câu ví dụ Tatoeba qua JMdict_e_examp; thiếu asset này thì `jmdict-eng`, không ví dụ), dựng từ JMdict của EDRDG. Bảng `entries` (chỉ mục common, như trước) + bảng từ điển `words`, `word_forms`, `word_gloss_fts`, `examples`, `tags`, `meta` (xem `build_dicts.write_jmdict`) | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) — phải ghi nhận nguồn khi phân phối |
+| `example_vi.csv` | Có (~1,9 MB) | `tatoeba_id,vi` — bản dịch tiếng Việt cho **26 316 câu ví dụ Tatoeba** có trong `jmdict.sqlite` (mỗi câu một lần dù làm ví dụ cho nhiều mục), do Claude (`claude-fable-5-1`) dịch từ câu Nhật (câu Anh chỉ để đối chiếu) ngày 26/10/2026, mỗi lô qua script kiểm tra (đủ câu, không sót chữ Nhật, ≤ 400 ký tự). Nạp bởi `example_vi.py`: mục từ trả `viSeed` cho từng câu, tab Câu tìm được theo bản dịch; backend ưu tiên bản admin / Gemini đã lưu. Câu admin đã sửa (ghi đè `example_jpn`) thì bỏ bản dịch sẵn. Chưa có người rà tay. Không có script tải về: dịch lại thì sửa trực tiếp hoặc qua Admin Panel | Câu gốc: Tatoeba CC BY 2.0 FR; bản dịch là tác phẩm phái sinh, giữ cùng ghi nguồn |
+| `kanji_strokes.json` | **Không** (~9 MB, gitignore) | [KanjiVG](https://kanjivg.tagaini.net/) — [GitHub KanjiVG/kanjivg](https://github.com/KanjiVG/kanjivg), release `kanjivg-YYYYMMDD-all.zip` (API lỗi thì zip nhánh `master`); © Ulrich Apel. Chỉ giữ kanji xuất hiện trong từ vựng JLPT, bỏ biến thể (`-Kaisho`, …) | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) — phải ghi nhận KanjiVG / Ulrich Apel và chia sẻ cùng giấy phép khi phân phối |
+| `kanji_parts.csv` | Có (~230 KB) | KanjiVG (cùng zip với `kanji_strokes.json`), dựng bằng `--only kanji_parts`: **cây phân rã** của mọi chữ trong zip có ít nhất một thành phần (~6 300 chữ; chữ đơn như 一 日 月 không có dòng). `kanji,parts,originals,positions,radical_part,phon_part,phon` — `parts` = `kvg:element` của các nhóm con **trực tiếp** theo thứ tự viết (時 → `日 寺`, 土 / 寸 nằm trong 寺 không tính), `originals` = `kvg:original` của biến thể (扌 → 手, `-` nếu không), `positions` = `kvg:position` (`-` nếu thiếu), `radical_part` = part mang `kvg:radical` (ưu tiên general > tradit > nelson > jis), `phon_part` / `phon` = part mang `kvg:phon` và giá trị đã chuẩn hoá thành một chữ (`之V` → 之; giá trị không ra một chữ như `3+6+1` thì để trống). Dùng cho sơ đồ cấu tạo chữ Hán `/graph` (spec 2026-10-30): họ chữ cùng thành phần chỉ âm (時 持 待 特 等 詩 侍 đều `phon` = 寺). Nhóm con không có `kvg:element` nhưng mang `kvg:phon` (氐 trong 低, 臤 trong 堅) là một part mang tên chỉ âm đó. Trên 1 971 chữ JLPT: 1 908 có dòng, 1 065 có `phon` | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) — file phái sinh **đã commit** nên repo phải giữ ghi nhận KanjiVG / Ulrich Apel (dòng này) và phân phối cùng giấy phép |
+| `kradfile.csv` | Có (~300 KB, commit từ 10/2026; dựng lại bằng `--only kradfile`) | [KRADFILE / kradfile-u](https://www.edrdg.org/krad/kradinf.html) của EDRDG, tải từ thư mục [`pub/Nihongo/`](https://www.edrdg.org/pub/Nihongo/) (`kradfile-u.gz` UTF-8, dự phòng `kradfile.gz` EUC-JP); KRADFILE2 © Jim Rose | [EDRDG licence](https://www.edrdg.org/edrdg/licence.html) (CC BY-SA 4.0) |
+| `pitch_accent.csv` | **Không** (~200 KB, gitignore) | [mifunetoshiro/kanjium](https://github.com/mifunetoshiro/kanjium) `data/source_files/raw/accents.txt`, lọc theo từ vựng JLPT | [CC BY-SA 4.0](https://github.com/mifunetoshiro/kanjium/blob/master/LICENSE.txt) |
+| (Tatoeba, trong `jmdict.sqlite`) | — | Câu ví dụ Nhật – Anh của mục từ (bảng `examples`) | [CC BY 2.0 FR](https://creativecommons.org/licenses/by/2.0/fr/) — ghi nguồn ở trang `/about/data` |
+| `dict_overrides.json` | **Không** (gitignore, ghi lúc chạy) | Bản sao lớp ghi đè từ điển của admin do backend đẩy sang (`overrides.py`) | — |
+| (SudachiDict `core`) | pip | [WorksApplications/SudachiDict](https://github.com/WorksApplications/SudachiDict) | Apache-2.0 |
+| (wordfreq) | pip | [rspeer/wordfreq](https://github.com/rspeer/wordfreq) | MIT (dữ liệu CC BY-SA 4.0) |
+
+Bảng `entries` trong `jmdict.sqlite`: `kanji TEXT, kana TEXT, gloss TEXT, common INTEGER, jlpt TEXT`
+(index trên `(kanji, kana)` và `kana`). `gloss` = 2 nghĩa đầu × 2 gloss đầu, nối bằng `; `.
+Thiếu file này thì service vẫn chạy: `meaningEn` lấy từ cột `meaning` của CSV JLPT, health báo `jmdict=false`.
+
+## Thiếu dữ liệu thì tính năng nào giảm
+
+Không file nào bắt buộc để service khởi động; thiếu file thì tính năng tương ứng giảm chất lượng hoặc trả 404, và
+`GET /api/extract/health` báo cờ đó `false` (Admin Panel đọc lại qua `GET /api/admin/health` của backend):
+
+| Thiếu | Cờ health | Ảnh hưởng |
+|---|---|---|
+| `jmdict.sqlite` | `jmdict` | Nghĩa EN chỉ còn cột `meaning` của CSV JLPT (từ ngoài JLPT không có nghĩa); đồ thị Hán-Việt (`han_viet_graph`) chỉ còn từ JLPT; từ đồng âm / từ dễ nhầm (`distractors`, `kanji_similar`) và cảnh báo mâu thuẫn (`conflicts`) chỉ còn đối chiếu danh sách JLPT; câu i+1 (`sentence_mining`) thiếu nghĩa |
+| `kanji_strokes.json` | `kanjivg`, `kanjiStrokes` | `/api/kanji/{ch}/strokes` và `/api/kanji/score` trả 404 → luyện viết không có nét mẫu, không chấm (frontend vẫn cho vẽ / hoàn tác / đếm nét) |
+| `kradfile.csv` | `kradfile` | Chữ Hán giống hình chỉ còn tín hiệu yếu (cùng bộ thủ, lệch ≤ 2 nét, điểm tối đa 0.3) → ít phương án nhiễu "giống hình", độ tin cậy thấp và bị ngưỡng `distractor_min_confidence` lọc bớt |
+| `kanji_parts.csv` (đã commit) | `kanjiParts` | Sơ đồ chữ Hán `/api/kanji-info/diagram` chế độ Cấu tạo chỉ còn bộ thủ (Unihan), không có thành phần / họ chữ chỉ âm; `stats.parts=false` |
+| `pitch_accent.csv` | `pitch` | `/api/audio/pitch-reference` trả 404; `/api/audio/pitch-score` chỉ chấm được khi client gửi `accentType` → luyện trọng âm không có mẫu chuẩn (luyện phát âm bằng Web Speech API không ảnh hưởng) |
+| `unihan_rs.csv` (đã commit) | `radicals` | Không tra được bộ thủ / số nét: thẻ chữ Hán và thẻ bộ thủ thiếu bộ; kanji giống hình mất tín hiệu bộ thủ / số nét (thiếu cả KRADFILE thì không còn ứng viên) |
+| `radicals_214.csv` (đã commit) | `radicalCards` | `/api/radicals/cards` vẫn trả thẻ nhưng không có bộ thủ; mẹo nhớ mẫu thiếu phần bộ |
+| `unihan_definitions.csv` (đã commit) | — | `meaningEn` của thẻ chữ Hán / thẻ bộ thủ chỉ còn ~270 chữ sửa tay (`kanji_meaning_overrides.csv`), chữ khác rơi về entry JMdict một chữ (nghĩa của *từ*, vd 日 にち "Sunday") rồi cột meaning JLPT |
+| CSV JLPT / Unihan khác (đã commit) | `jlpt`, `unihan` | Phân cấp JLPT rơi về wordfreq, không có âm Hán-Việt — chỉ xảy ra khi file bị xoá nhầm |
+
+Bảng nạp lười **một lần** (cache cả kết quả rỗng) → dựng file xong phải **khởi động lại service**.
+
+## Ghi nguồn khi phân phối
+
+KanjiVG (CC BY-SA 3.0, © Ulrich Apel), JMdict / KRADFILE (giấy phép EDRDG, CC BY-SA 4.0) và kanjium (CC BY-SA 4.0) yêu cầu
+ghi nguồn và chia sẻ dữ liệu phái sinh cùng giấy phép khi phân phối. `jmdict.sqlite`, `kanji_strokes.json`, `pitch_accent.csv`
+không commit; `kradfile.csv` (EDRDG) và `kanji_parts.csv` (KanjiVG) **đã commit** nên repo phải giữ ghi nhận nguồn ở bảng trên;
+khi triển khai công khai cần thêm trang / chân trang ghi nguồn trên giao diện (hiện frontend chưa có).
+
+## Dữ liệu chữ Hán (`app/extract/kanjidata.py`, lộ trình học 2 §0.1 LP-17)
+
+| File | Định dạng | Hàm |
+|---|---|---|
+| `unihan_rs.csv` | `char,radical_no,residual_strokes,total_strokes` | `radical_strokes(ch) → (số bộ, tổng nét) \| None` |
+| `kradfile.csv` | `kanji,components` — thành phần cách nhau bằng khoảng trắng (`明,日 月`) | `components(ch) → ('日', '月')` hoặc `()` |
+| `kanji_strokes.json` | `{"日": [[[x, y] × 32] mỗi nét, theo thứ tự viết]}`; toạ độ 0..1 theo hộp bao của **cả chữ**, tỉ lệ đồng nhất (cạnh dài = 1, cạnh ngắn căn giữa), làm tròn 3 chữ số; điểm cách đều theo chiều dài nét | `strokes(ch) → [[(x, y), …], …] \| None` |
+| `pitch_accent.csv` | `word,reading,accent_type` — 0 = 平板, n = hạ giọng sau mora thứ n; kanjium ghi nhiều kiểu (`(副)0,(名)3`) thì lấy kiểu đầu | `pitch_accent(word, reading) → int \| None` |
+
+Thiếu file nào thì hàm tương ứng trả `None` / rỗng và `GET /api/extract/health` báo cờ đó
+(`radicals` / `kradfile` / `kanjivg` / `pitch`) là `false`; service vẫn chạy. Tính năng dùng các file này:
+`kanji_strokes.json` → `/api/kanji/{ch}/strokes` + `/api/kanji/score` (`stroke_score.py`, cờ health `kanjiStrokes`);
+`pitch_accent.csv` → `/api/audio/pitch-reference` + `/api/audio/pitch-score` (`pitch.py`); `unihan_rs.csv` +
+`unihan_japanese.csv` + `unihan_vietnamese.csv` (đã commit) → `/api/kanji-info/*` (`han_viet_graph.py`, `kanji_cards.py`,
+cờ `hanVietGraph` / `kanjiCards`); `kradfile.csv` chỉ nâng chất lượng kanji giống hình trong `distractors`. Bảng nạp lười **một lần** và cache cả
+kết quả rỗng khi file thiếu (xếp hạng kanji giống hình trong `kanji_similar.py` cũng cache) → dựng file mới bằng
+`build_dicts.py` xong phải **khởi động lại service**; health chỉ stat file nên báo `true` ngay dù dữ liệu chưa nạp.
+
+## Bộ thủ (`app/extract/radicals.py`, C4 thẻ bộ thủ + mẹo nhớ)
+
+`radicals_214.csv`: `no,char,unified,strokes,name_vi,meaning_vi,han_viet` — `char` là ký tự khối Kangxi (⽔ U+2F54,
+nhiều font không có), `unified` là chữ CJK thống nhất (水; dạng JIS 戸 青 麦 黄 黒 ở 5 bộ, xem bảng trên) dùng để hiển
+thị và tra Unihan; `name_vi` viết thường ("thủy", "nhân đi"), `han_viet` viết hoa như `han_viet.py` ("THỦY"). Cùng một
+tên có thể gặp ở hai bộ (人 / 儿 nhân, 冖 / 糸 mịch, 父 / 阜 phụ, 黍 / 鼠 thử…) nên khoá là `no`. `radical_of(ch)` đi qua
+`kanjidata.radical_strokes` (Unihan `kRSUnicode`) nên cần `unihan_rs.csv`; thiếu `radicals_214.csv` thì bảng rỗng,
+`radical_of` trả None, cờ health `radicalCards` ở `GET /api/extract/health` (= `radicals.available()`; cờ `radicals`
+có sẵn là của `unihan_rs.csv`) báo `false` và `/api/radicals/cards` vẫn trả thẻ không có bộ. Mẹo nhớ mẫu
+(`template_mnemonic`) không cần dữ liệu ngoài bảng này; `clean_meaning` bỏ gloss phụ tố / lượng từ trước khi ghép
+nghĩa vào câu. Bảng cũng không phải nguồn của `/api/kanji-info/kanji-cards` (C5 chỉ dùng số bộ Unihan).
+
+KRADFILE: nếu `--only kradfile` không tải được (EDRDG đổi đường dẫn), tải tay `kradfile-u.gz` hoặc `kradzip.zip` từ
+thư mục `pub/Nihongo/` ở trên, đặt vào `scripts/.download_cache/` với đúng tên file rồi chạy lại — script ưu tiên file
+có sẵn trong cache.
+
+## Từ đồng tự dị âm (`heteronyms.yaml`, B5 furigana theo ngữ cảnh)
+
+Biên soạn tay, commit, không có script tải về. ~30 từ một cách viết nhiều cách đọc (辛い からい / つらい, 一日 いちにち /
+ついたち, 開く あく / ひらく…), mỗi cách đọc kèm `cues` = chuỗi con tìm trong ngữ cảnh quanh từ (cả nghĩa VI / EN in sẵn ở
+bố cục danh sách). `heteronyms.resolve` chỉ đổi cách đọc Sudachi khi một cách đọc có nhiều cue khớp nhất (duy nhất);
+pipeline khi đó ghi `readingNote`, hạ `levelConfidence` 0.1, thêm `heteronym:<cue>` vào `levelSources`. Cách đọc tài
+liệu khai báo (ruby / cột kana) không bao giờ bị đổi. Thiếu file / YAML hỏng → bảng rỗng, giữ cách đọc Sudachi.
+Bảng nạp một lần → sửa file xong phải khởi động lại service.
+
+## Danh sách JLPT: dòng nhiều biến thể và nghĩa sửa tay (`app/extract/jlpt/classifier.py`, LC-11)
+
+Danh sách Tanos gộp các cách viết / cách đọc của một mục vào cùng ô, nối bằng `; ` (hay `、`). `classifier._read_rows`
+tách mỗi dòng như vậy thành nhiều mục **cùng cấp, cùng nghĩa** trước mọi chỉ mục (phân cấp, đồng âm, chữ → từ), nên
+đồ thị Hán-Việt, thẻ chữ Hán, phương án nhiễu… đều thấy `高校` và `高等学校` là hai từ riêng, mỗi từ một cách đọc và
+âm Hán-Việt:
+
+- Hai ô cùng số biến thể → ghép theo vị trí (`高校` ↔ `こうこう`, `高等学校` ↔ `こうとうがっこう`).
+- Lệch số → mỗi cách viết nhận mọi cách đọc khớp phần kana của nó (`行く` → `いく`, `ゆく`; `足; 脚` → cùng `あし`;
+  `お金持ち` chỉ nhận `おかねもち`, không nhận `かねもち`); không cách đọc nào khớp thì nhận hết.
+- Viết tắt dùng chung đuôi kana với biến thể cuối được gắn lại: `堅; 硬; 固い` → `堅い`, `硬い`, `固い`;
+  `伯父; 叔父さん` → `伯父さん`, `叔父さん`.
+- Dấu phẩy và ngoặc trong ô là ghi chú ngữ cảnh (`(花を〜) 生ける, 活ける`, `パート (タイム)`), **không** tách.
+
+`jlpt_meaning_overrides.csv` (`expression,reading,meaning`) thay cột `meaning` của đúng cặp (cách viết, cách đọc) sau
+khi tách, thắng cả nghĩa của `_LEVEL_FIXES`; khoá chuẩn hoá như CSV JLPT (bỏ `～`, katakana → hiragana) nên ghi `～人`
+hay `人` đều được. Dòng không trúng mục nào thì không thêm từ mới (test kiểm mỗi dòng phải trúng một mục thật).
+
+Cách lập danh sách (19/10/2026): quét `n5.csv` / `n4.csv`, đối chiếu cột `meaning` với gloss JMdict (`jmdict.sqlite`)
+của cùng (cách viết, cách đọc) — liệt kê dòng không chung từ nào với JMdict và dòng thêm danh từ chỉ người / nơi chốn
+("pupil", "student", "person"…) mà JMdict không có — rồi duyệt tay. **Chỉ giữ lỗi rõ ràng** (nghĩa của một từ khác),
+không sửa gloss chỉ thiếu sắc thái hay ghi kiểu phụ tố (`～時間` "~ hours", `～本` "counter for…" là đúng cho phụ tố):
+
+| Mục | CSV ghi | Sửa thành | Lý do |
+|---|---|---|---|
+| 中学校 ちゅうがっこう (N4) | junior high school pupil | junior high school | Nghĩa của 中学生; JMdict: "junior high school, middle school" |
+| 辞典 じてん (N4) | encyclopedia, reference book | dictionary, lexicon | "encyclopedia" là 事典 (cùng cách đọc); JMdict: "dictionary, lexicon" |
+| ～人 じん (N5) | counter for people | ~ person (nationality, e.g. American, Japanese) | Lượng từ đếm người là ～人 にん (dòng riêng trong n5.csv); じん là hậu tố quốc tịch / nghề (日本人, アメリカ人) |
+
+Giữ bảng ≤ 30 dòng; sửa xong phải khởi động lại service (bảng nạp lười một lần).

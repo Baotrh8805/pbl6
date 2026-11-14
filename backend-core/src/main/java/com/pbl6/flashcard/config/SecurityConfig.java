@@ -11,6 +11,9 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.http.HttpStatus;
@@ -23,12 +26,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-
+@EnableMethodSecurity
 public class SecurityConfig {
     public SecurityConfig(CustomUserDetailsService userDetailsService, JwtAuthenticationFilter jwtAuthFilter,
             @Value("${app.cors.allowed-origins}") List<String> allowedOrigins) {
@@ -43,21 +47,47 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        // CorsFilter tự dựng (không qua .cors()) để origin bị từ chối nhận 403 JSON tiếng Việt thay vì chữ thô "Invalid CORS request"
+        CorsFilter corsFilter = new CorsFilter(corsConfigurationSource());
+        corsFilter.setCorsProcessor(new JsonCorsProcessor());
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(AbstractHttpConfigurer::disable)
+                .addFilterAt(corsFilter, CorsFilter.class)
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Rà soát 27/10: header bảo mật cho mọi phản hồi API (frontend là SPA ở origin khác nên CSP chặt không ảnh hưởng
+                // giao diện; Swagger UI cần script nên được miễn CSP). HSTS chỉ phát trên kết nối HTTPS (Spring tự kiểm).
+                .headers(h -> h
+                        .frameOptions(f -> f.deny())
+                        .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                        .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
+                        .addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter(
+                                "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"))
+                        .addHeaderWriter(new org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter(
+                                request -> !request.getRequestURI().startsWith("/swagger-ui")
+                                        && !request.getRequestURI().startsWith("/v3/api-docs"),
+                                new org.springframework.security.web.header.writers.StaticHeadersWriter(
+                                        "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"))))
                 .authorizeHttpRequests(auth -> auth
                         // Chỉ login/register là công khai. /me, /profile, /password, /jlpt-level thao
                         // tác
                         // trên tài khoản đang đăng nhập -> phải có token, thiếu token là 401 chứ không
                         // phải NPE 500.
                         .requestMatchers("/api/auth/login", "/api/auth/register",
-                                "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+                                "/api/auth/forgot-password", "/api/auth/reset-password",
+                                "/api/auth/refresh", "/api/auth/logout").permitAll()
+                        // Người chưa xác thực email / bị khoá không có token: xác thực, xin gửi lại link, gửi khiếu nại
+                        .requestMatchers("/api/auth/verify-email", "/api/auth/resend-verification",
+                                "/api/auth/appeals").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll() // Mở khóa
                                                                                                               // Swagger
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated() // Các API còn lại yêu cầu Token
+                        // Mọi vai trò đã đăng nhập: hồ sơ, đổi mật khẩu, thông báo hệ thống
+                        .requestMatchers("/api/auth/**", "/api/announcement", "/api/notifications/**").authenticated()
+                        // Admin Panel: staff (ADMIN; SUPER_ADMIN qua RoleHierarchy); đổi vai trò / sửa cấu hình nâng bậc bằng @PreAuthorize
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // API học tập chỉ cho người học: staff bị 403 (một tài khoản một vai trò)
+                        .anyRequest().hasRole("USER")
                 )
                 // Thiếu/sai/hết hạn token -> 401 (mặc định Spring trả 403, làm interceptor 401 ở
                 // frontend không bao giờ chạy). 403 chỉ dành cho "đã đăng nhập nhưng không có quyền".
@@ -66,6 +96,12 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    /** SUPER_ADMIN > ADMIN; USER đứng ngoài. Spring Security 6.x tự dùng bean này cho cả URL lẫn @PreAuthorize. */
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.fromHierarchy("ROLE_SUPER_ADMIN > ROLE_ADMIN");
     }
 
     @Bean

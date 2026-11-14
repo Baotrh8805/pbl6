@@ -1,0 +1,80 @@
+package com.pbl6.flashcard.model;
+
+import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.Map;
+
+/** Thông báo trong app (V17). type tự do (không CHECK) để thêm loại mới không cần migration; payload cho frontend dựng câu. */
+@Entity
+@Table(name = "notifications")
+public class Notification {
+    public static final String REPORT_RESOLVED = "REPORT_RESOLVED";
+    public static final String DECK_UNPUBLISHED = "DECK_UNPUBLISHED";
+    public static final String DECK_DELETED = "DECK_DELETED";
+    public static final String COMMENT_CLEARED = "COMMENT_CLEARED";
+    public static final String PREMIUM_CHANGED = "PREMIUM_CHANGED";
+    public static final String ROLE_CHANGED = "ROLE_CHANGED";
+    /** Lộ trình 2.0 (spec §4.4): bản nháp sẵn sàng / thất bại, nhắc học mỗi sáng, qua chương, hoàn thành. Cột type dài 30. */
+    public static final String LEARNING_PATH_READY = "LEARNING_PATH_READY";
+    public static final String LEARNING_PATH_FAILED = "LEARNING_PATH_FAILED";
+    public static final String LEARNING_PATH_REMINDER = "LEARNING_PATH_REMINDER";
+    public static final String LEARNING_PATH_CHAPTER_PASSED = "LEARNING_PATH_CHAPTER_PASSED";
+    public static final String LEARNING_PATH_COMPLETED = "LEARNING_PATH_COMPLETED";
+    /**
+     * D4 "nhắc làm lại nếu chưa đạt": lượt kiểm tra chương ĐẦU TIÊN dưới ngưỡng (một lần mỗi chương, không theo từng lần trượt);
+     * payload {pathId, pathTitle, chapterId, chapterTitle, pct, passPct}. Cột type không có CHECK (V17) nên không cần migration.
+     */
+    public static final String LEARNING_PATH_CHAPTER_RETRY = "LEARNING_PATH_CHAPTER_RETRY";
+    /** Đợt 2 §4 (G2): mẹo nhớ bộ thủ của người dùng đã được duyệt / từ chối; payload {kanji, status, note}. */
+    public static final String MNEMONIC_REVIEWED = "MNEMONIC_REVIEWED";
+    /** Từ điển (V32): báo lỗi mục từ / bình luận đã được admin xử lý {reportId, entryKey, term, action, note}. */
+    public static final String DICT_REPORT_RESOLVED = "DICT_REPORT_RESOLVED";
+    /** Từ điển (V32): bình luận của người học bị admin ẩn {commentId, entryKey, term, note}. */
+    public static final String DICT_COMMENT_HIDDEN = "DICT_COMMENT_HIDDEN";
+    /**
+     * Kiểm duyệt AI (V38, spec 2026-10-27 đêm): bình luận bị chặn MUỘN bởi job quét lại {kind, id, entryKey | deckId, words};
+     * admin khôi phục bình luận AI đã chặn {kind, id, entryKey | deckId}; bị khoá bình luận 24 giờ {until}.
+     */
+    public static final String MOD_COMMENT_BLOCKED = "MOD_COMMENT_BLOCKED";
+    public static final String MOD_COMMENT_RESTORED = "MOD_COMMENT_RESTORED";
+    public static final String MOD_COMMENT_LOCKED = "MOD_COMMENT_LOCKED";
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Column(nullable = false, length = 30)
+    private String type;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> payload = Map.of();
+
+    @Column(name = "read_at")
+    private Instant readAt;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt = Instant.now();
+
+    public Notification() {}
+
+    public Notification(Long userId, String type, Map<String, Object> payload) {
+        this.userId = userId;
+        this.type = type;
+        this.payload = payload == null ? Map.of() : payload;
+    }
+
+    public Long getId() { return id; }
+    public Long getUserId() { return userId; }
+    public String getType() { return type; }
+    public Map<String, Object> getPayload() { return payload; }
+    public Instant getReadAt() { return readAt; }
+    public void setReadAt(Instant readAt) { this.readAt = readAt; }
+    public Instant getCreatedAt() { return createdAt; }
+}

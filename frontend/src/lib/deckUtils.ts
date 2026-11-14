@@ -40,6 +40,7 @@ export const MASTERED_INTERVAL_DAYS = 21;
 export interface DeckProgress {
     total: number;
     due: number;
+    newCards: number;
     mastered: number;
     pct: number;
 }
@@ -50,10 +51,11 @@ export const calcDeckProgress = (
     now: Date = new Date()
 ): DeckProgress => {
     const total = cards.length;
-    const due = cards.filter((c) => isDue(reviews[c.id], now)).length;
+    const due = cards.filter((c) => !!reviews[c.id] && isDue(reviews[c.id], now)).length;
+    const newCards = cards.filter((c) => !reviews[c.id]).length;
     const mastered = cards.filter((c) => (reviews[c.id]?.intervalDays ?? 0) >= MASTERED_INTERVAL_DAYS).length;
     const pct = total ? Math.round((mastered / total) * 100) : 0;
-    return { total, due, mastered, pct };
+    return { total, due, newCards, mastered, pct };
 };
 
 /** Nhãn nguồn bộ thẻ theo quyền của người đang xem. */
@@ -62,3 +64,24 @@ export const deckSourceLabel = (deck: Pick<Deck, "access" | "visibility">): stri
 
 /** Chủ bộ thẻ và người được chia sẻ quyền sửa: sửa thông tin + thêm/sửa/xoá thẻ. Xoá bộ thẻ chỉ chủ. */
 export const canEditDeck = (deck: Pick<Deck, "access">): boolean => deck.access !== "viewer";
+
+/**
+ * Liên kết chia sẻ bộ thẻ = đúng trang chi tiết (/decks/:deckId), không phải route riêng:
+ * người mở chưa đăng nhập sẽ bị đưa tới /login rồi tự quay lại đây; backend cấp quyền xem
+ * nếu bộ thẻ công khai hoặc người đó được mời. Cắt "/" thừa cuối origin để không ra "//decks".
+ */
+export const deckShareUrl = (origin: string, deckId: string): string =>
+    `${origin.replace(/\/+$/, "")}/decks/${encodeURIComponent(deckId)}`;
+
+/** So khớp thuật ngữ thẻ: NFKC (全角/半角 như nhau), bỏ khoảng trắng hai đầu; rỗng -> "". */
+const termKey = (term: string | null | undefined): string => (term ?? "").normalize("NFKC").trim();
+
+/**
+ * Thẻ trong bộ đã có đúng thuật ngữ này (vd. thêm 学校 từ bản đồ Hán–Việt vào bộ đã có 学校) -> trả thẻ đó để báo trùng;
+ * backend không chặn thẻ trùng nên máy khách tự kiểm trước khi thêm. Thuật ngữ rỗng -> null.
+ */
+export const findCardByTerm = (cards: readonly Pick<Card, "term" | "reading" | "meaning">[], term: string) => {
+    const key = termKey(term);
+    if (!key) return null;
+    return cards.find((c) => termKey(c.term) === key) ?? null;
+};

@@ -27,16 +27,25 @@ public class QuizResult {
     @Column(nullable = false)
     private int total;
 
+    @Column(nullable = false, length = 16)
+    private String mode = QuizAttempt.EXAM;
+
+    @JsonIgnore
+    @Column(name = "attempt_id")
+    private java.util.UUID attemptId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     public QuizResult() {}
 
-    public QuizResult(Long userId, String deckId, int score, int total) {
+    public QuizResult(Long userId, String deckId, int score, int total, String mode, java.util.UUID attemptId) {
         this.userId = userId;
         this.deckId = deckId;
         this.score = score;
         this.total = total;
+        this.mode = mode;
+        this.attemptId = attemptId;
     }
 
     public Long getId() { return id; }
@@ -44,5 +53,6 @@ public class QuizResult {
     public String getDeckId() { return deckId; }
     public int getScore() { return score; }
     public int getTotal() { return total; }
+    public String getMode() { return mode; }
     public Instant getCreatedAt() { return createdAt; }
 }

@@ -57,3 +57,23 @@ export function computeFolderMetrics(decks: Deck[] | null | undefined): FolderMe
   }
   return map;
 }
+
+export interface FlatFolder {
+  id: string;
+  title: string;
+  /** 0 = thư mục gốc; dùng để thụt lề. */
+  depth: number;
+  /** "Cha / Con": nhãn đầy đủ khi hiện trong ô chọn. */
+  path: string;
+}
+
+// Duỗi cây thư mục thành danh sách phẳng (thứ tự duyệt sâu) kèm độ sâu và đường dẫn.
+export function flattenFolders(nodes: FolderNode[], depth = 0, prefix = ""): FlatFolder[] {
+  const list: FlatFolder[] = [];
+  for (const node of nodes) {
+    const path = prefix ? `${prefix} / ${node.title}` : node.title;
+    list.push({ id: node.id, title: node.title, depth, path });
+    if (node.children?.length) list.push(...flattenFolders(node.children, depth + 1, path));
+  }
+  return list;
+}

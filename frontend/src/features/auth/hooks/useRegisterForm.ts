@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
 import { extractErrorMessage } from "@/services/apiClient";
+import { passwordPolicyError } from "@/lib/passwordRules";
 
 export const useRegisterForm = () => {
   const navigate = useNavigate();
@@ -27,6 +28,8 @@ export const useRegisterForm = () => {
   }>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Đợt 2 (A1): máy chủ bật xác thực email -> ở lại trang, hiện hướng dẫn kiểm tra hộp thư + nút gửi lại.
+  const [pendingVerification, setPendingVerification] = useState<{ email: string; message: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const validate = (): boolean => {
@@ -50,13 +53,9 @@ export const useRegisterForm = () => {
       newErrors.email = "Email không đúng định dạng";
     }
 
-    if (!password) {
-      newErrors.password = "Mật khẩu không được để trống";
-    } else if (password.length < 6) {
-      newErrors.password = "Mật khẩu phải có ít nhất 6 ký tự";
-    } else if (password.length > 72) {
-      newErrors.password = "Mật khẩu tối đa 72 ký tự";
-    }
+    // Cùng chính sách với PasswordPolicy của backend (27/10): 8–72 ký tự, có chữ, số, ký tự đặc biệt
+    const policy = passwordPolicyError(password);
+    if (policy) newErrors.password = policy;
 
     if (!confirmPassword) {
       newErrors.confirmPassword = "Vui lòng xác nhận mật khẩu";
@@ -79,13 +78,20 @@ export const useRegisterForm = () => {
 
     setIsLoading(true);
     try {
-      const message = await authService.register({
+      const result = await authService.register({
         fullName: fullName.trim(),
         email: email.trim(),
         password,
       });
 
-      setSuccessMessage(message || "Đăng ký tài khoản thành công!");
+      if (result.needsVerification) {
+        // Chưa đăng nhập được cho tới khi bấm link trong email: không tự chuyển sang /login.
+        setPendingVerification({ email: email.trim(), message: result.message });
+        setPassword("");
+        setConfirmPassword("");
+        return;
+      }
+      setSuccessMessage(result.message);
       // Automatically navigate to login page after 2 seconds
       redirectTimer.current = setTimeout(() => {
         navigate("/login", { state: { registeredEmail: email.trim() } });
@@ -110,6 +116,9 @@ export const useRegisterForm = () => {
     errors,
     apiError,
     successMessage,
+    pendingVerification,
+    /** "Đăng ký bằng email khác": quay lại form (giữ họ tên, xoá mật khẩu đã nhập). */
+    resetVerification: () => setPendingVerification(null),
     isLoading,
     handleSubmit,
   };

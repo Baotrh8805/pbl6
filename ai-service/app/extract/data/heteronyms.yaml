@@ -1,0 +1,287 @@
+# Từ đồng tự dị âm (B5): cùng chữ viết, cách đọc đổi theo nghĩa / ngữ cảnh. Sudachi gần như luôn cho MỘT cách đọc
+# mỗi lemma (開い luôn là ひらい, 辛かっ luôn là つらかっ, 抱い luôn là いだい) nên câu "ドアが開いている", "カレーが辛い",
+# "子供を抱いて" nhận furigana sai. Bảng này chỉ đổi cách đọc khi ngữ cảnh có DẤU HIỆU (cue) của một cách đọc khác;
+# không cue nào khớp, hoặc hai cách đọc khớp ngang nhau → giữ cách đọc Sudachi (heteronyms.resolve).
+#
+# Cú pháp:
+#   term: dạng từ điển đúng như lemma của Sudachi (động từ / tính từ ở dạng 〜る / 〜い).
+#   readings[].reading: hiragana. readings[].meaning: nghĩa tiếng Việt, chỉ để người biên soạn đọc.
+#   readings[].cues: chuỗi con tìm trong cửa sổ quanh từ (câu văn xuôi, cả dòng ở bố cục danh sách — gồm nghĩa in sẵn
+#     nên có cue tiếng Việt / Anh, so không phân biệt hoa thường). Cue càng cụ thể càng ít nhầm: ưu tiên cụm có trợ từ
+#     ("が開い") hơn một chữ ("開"); tránh cue là chuỗi con của chính term. Cue của cách đọc Sudachi VỐN đã cho chỉ có
+#     tác dụng chặn việc đổi (hoà điểm → giữ) nên phải còn cụ thể hơn: "一日に" (cả 一日に三回 lẫn 四月一日に) sẽ chặn
+#     nhầm cue "月一日" của ついたち. Tránh danh từ chủ đề đi được với CẢ HAI cách đọc (人気: 公園 / 夜 có cả にんき;
+#     今日: 時代 khớp 江戸時代) và cue là chuỗi con của từ thường gặp (大家: 画 ⊂ 計画 / 映画); hai cue lồng nhau của cùng
+#     một cách đọc (人気のない ⊃ 人気のな) đếm hai điểm cho một lần xuất hiện → chỉ giữ cue ngắn hơn.
+#
+# Không đưa vào: cặp khác lemma mà Sudachi đã tách đúng (行う おこなう / 行く いく: 行った mơ hồ thật sự giữa hai động
+# từ, không phải hai cách đọc của một từ); từ Sudachi đã đọc theo ngữ cảnh mà bảng không làm tốt hơn. 方: Sudachi chọn
+# ほう / かた theo ngữ cảnh khá đúng (この方が便利 ほう, あの方は先生 かた) → chỉ giữ cue かた có trợ từ neo (あの方は,
+# あの方が…) cho chỗ nó đọc nhầm (あの方が来ました → ほう); "この方" trần lật nhầm この方が便利 sang かた.
+
+- term: 辛い
+  readings:
+    - reading: からい
+      meaning: cay
+      cues: [料理, 味, カレー, 唐辛子, 香辛料, ラーメン, スープ, キムチ, 辛口, 甘い, 塩, 舌, 食べ, spicy, cay]
+    - reading: つらい
+      meaning: khổ sở, vất vả
+      cues: [仕事, 生活, 気持ち, 毎日, 別れ, 経験, 思い, 練習, 人生, 悲し, 苦し, 寂し, painful, khổ, vất vả, cay đắng]
+
+- term: 生物
+  readings:
+    - reading: せいぶつ
+      meaning: sinh vật
+      cues: [授業, 研究, 地球, 進化, 細胞, 科学, 絶滅, 微生物, 海洋, 動物, 植物, sinh vật, organism, biology]
+    - reading: なまもの
+      meaning: đồ tươi sống
+      cues: [冷蔵, 賞味, 早めに, 召し上が, 刺身, 腐, お早め, 持ち帰, đồ sống, tươi sống, raw food, perishable]
+
+- term: 人気
+  readings:
+    - reading: にんき
+      meaning: được ưa chuộng
+      cues: [店, 歌手, 商品, 番組, 俳優, ランキング, 若者, アイドル, 映画, 一番, 投票, 大人気, 観光地, popular, ưa chuộng, nổi tiếng]
+    - reading: ひとけ
+      meaning: dấu hiệu có người
+      cues: [人気のな, 人気の少な, 人気の絶え, dấu hiệu, vắng, deserted]
+
+- term: 大家
+  readings:
+    - reading: おおや
+      meaning: chủ nhà (cho thuê)
+      cues: [家賃, アパート, 部屋, 借り, 契約, 住, 引っ越, 大家さん, chủ nhà, landlord]
+    - reading: たいか
+      meaning: bậc thầy, đại gia (một ngành)
+      cues: [書道, 画家, 日本画, 洋画, 絵画, 音楽, 文学, 学界, 巨匠, 芸術, 料理界, 作家, 権威, 流派, bậc thầy, master, authority]
+
+- term: 上手
+  readings:
+    - reading: じょうず
+      meaning: giỏi
+      cues: [料理, 歌, 日本語, 英語, 絵, 運転, 上手な, お上手, giỏi, skilful, skillful, good at]
+    - reading: うわて
+      meaning: (đối thủ) cao tay hơn
+      cues: [一枚上手, 相手が上手, 上手を行, 上手をい, 上手に出る, cao tay]
+
+- term: 市場
+  readings:
+    - reading: いちば
+      meaning: chợ
+      cues: [魚, 野菜, 果物, 朝市, 買い物, 買う, 買い, 屋台, 青物, 魚市場, 築地, chợ, marketplace, fish market]
+    - reading: しじょう
+      meaning: thị trường
+      cues: [株, 経済, 金融, 価格, 拡大, 規模, 国内, 海外, 世界, 競争, 開拓, 需要, 参入, 投資, 為替, 買い手, 売り手, thị trường, stock market]
+
+- term: 一日
+  readings:
+    - reading: いちにち
+      meaning: một ngày
+      cues: [一日中, 一日おき, 一日分, 一日あたり, 一日一回, 一日一度, 一日も早, 丸一日, 何回, cả ngày, một ngày, one day, all day]
+    - reading: ついたち
+      meaning: mùng một (ngày đầu tháng)
+      cues: [月一日, 月の一日, 毎月一日, mùng 1, mùng một, đầu tháng, first day of the month, 1st of]
+
+- term: 今日
+  readings:
+    - reading: きょう
+      meaning: hôm nay
+      cues: [今日は, 今日も, 今日の天気, 今日の午後, 今日の朝, 今日中, 天気, 宿題, 授業, hôm nay, today]
+    - reading: こんにち
+      meaning: ngày nay
+      cues: [今日では, 今日に至, 今日の社会, 今日の日本, 今日の世界, 今日の時代, 今日的, ngày nay, nowadays]
+
+- term: 明日
+  readings:
+    - reading: あした
+      meaning: ngày mai (khẩu ngữ)
+      cues: [また明日, 明日も, 明日から, 学校, 友達, 一緒に, 遊び, 宿題, 会いましょう, 会おう, 行きます, 来ます, ngày mai, tomorrow]
+    - reading: あす
+      meaning: ngày mai (văn viết, tin tức)
+      cues: [天気予報, 予報, 発表, ニュース, 開幕, 見込み, 明日以降, 明日付]
+    - reading: みょうにち
+      meaning: ngày mai (rất trang trọng)
+      cues: [弊社, 御社, 存じ, 申し上げ, 伺い, 伺います, 参ります, 何卒]
+
+- term: 下手
+  readings:
+    - reading: へた
+      meaning: kém, vụng
+      cues: [料理, 歌, 字, 運転, 絵, 下手な, 下手だ, 下手です, 英語, 日本語, vụng, kém, unskilful, poor at]
+    - reading: したて
+      meaning: (thái độ) nhún nhường
+      cues: [下手に出, 下手から, nhún nhường]
+
+- term: 色紙
+  readings:
+    - reading: いろがみ
+      meaning: giấy màu
+      cues: [折り紙, 折, 鶴, 切り絵, 工作, 子供, はさみ, のり, giấy màu, colored paper]
+    - reading: しきし
+      meaning: tấm giấy xin chữ ký / viết thư pháp
+      cues: [サイン, 寄せ書き, 署名, 書道, 色紙に書, 卒業, 送別, chữ ký, autograph]
+
+- term: 風車
+  readings:
+    - reading: ふうしゃ
+      meaning: cối xay gió
+      cues: [オランダ, 発電, 風力, 粉, 小屋, 巨大, cối xay, windmill, wind turbine]
+    - reading: かざぐるま
+      meaning: chong chóng (đồ chơi)
+      cues: [おもちゃ, 子供, 回して, 吹いて, 縁日, 紙の, chong chóng, pinwheel]
+
+- term: 最中
+  readings:
+    - reading: さいちゅう
+      meaning: đang giữa lúc
+      cues: [最中に, 最中だ, 最中です, 最中で, ている最中, の最中, 最中、, 会議, 授業, 試合, 話して, 真っ最中, đang lúc, in the middle of]
+    - reading: もなか
+      meaning: bánh monaka
+      cues: [和菓子, 菓子, あんこ, 餡, アイス最中, 最中アイス, お茶と最中, 最中を食べ, 最中を買, お土産, bánh, wafer]
+
+- term: 心中
+  readings:
+    - reading: しんじゅう
+      meaning: tự sát cùng nhau
+      cues: [無理心中, 一家心中, 心中を図, 遺体, 事件, 死, 恋人と, 心中した, tự sát]
+    - reading: しんちゅう
+      meaning: trong lòng
+      cues: [心中を察, 心中お察し, 察し, 穏やか, 複雑, trong lòng, at heart]
+
+- term: 分別
+  readings:
+    - reading: ぶんべつ
+      meaning: phân loại (rác)
+      cues: [ごみ, ゴミ, 資源, リサイクル, 収集, 缶, ペットボトル, 分別して, phân loại, sorting]
+    - reading: ふんべつ
+      meaning: sự suy xét, biết điều
+      cues: [分別のある, 分別がある, 分別がつ, 分別のない, 無分別, 思慮, 大人の, suy xét, discretion]
+
+- term: 目下
+  readings:
+    - reading: めした
+      meaning: người dưới (cấp dưới, hậu bối)
+      cues: [目上, 目下の人, 目下の者, 部下, 後輩, 敬語, 目下に, người dưới, subordinate]
+    - reading: もっか
+      meaning: hiện tại, trước mắt
+      cues: [目下のところ, 目下、, 調査中, 検討中, 交渉中, 状況, 進行中, hiện tại, at present]
+
+- term: 寒気
+  readings:
+    - reading: さむけ
+      meaning: cơn ớn lạnh
+      cues: [寒気がする, 寒気がし, 風邪, 熱, ぞくぞく, 背筋, 震え, ớn lạnh, chill]
+    - reading: かんき
+      meaning: khí lạnh (thời tiết)
+      cues: [寒気団, 流れ込, 上空, 気象, 予報, 北から, シベリア, 強い寒気, khí lạnh, cold air]
+
+- term: 一行
+  readings:
+    - reading: いっこう
+      meaning: đoàn (người)
+      cues: [旅行, 一行は, 到着, 訪問, 視察, ご一行, 使節, 一行が, đoàn, party]
+    - reading: いちぎょう
+      meaning: một dòng
+      cues: [行目, 文章, 一行ずつ, 改行, 一行目, 一行で, 一行を, 読む, 読ん, 書く, 書い, một dòng, one line]
+
+- term: 見物
+  readings:
+    - reading: けんぶつ
+      meaning: đi xem, tham quan
+      cues: [観光, 見物に, 見物する, 見物し, 祭り, 名所, 見物客, 京都, tham quan, sightseeing]
+    - reading: みもの
+      meaning: (cảnh) đáng xem
+      cues: [見物だ, 見物です, 見物である, どうなるか, đáng xem, worth seeing]
+
+- term: 大事
+  readings:
+    - reading: だいじ
+      meaning: quan trọng
+      cues: [大事な, 大事にして, 大事にする, 大事です, 大切, 大事だ, quan trọng, important]
+    - reading: おおごと
+      meaning: chuyện lớn, rắc rối nghiêm trọng
+      cues: [大事になってしま, 大事になりかね, 大事になる前, 大事になら, ちょっとした大事, 騒ぎ, chuyện lớn, serious matter]
+
+- term: 方
+  readings:
+    - reading: ほう
+      meaning: phía, (so sánh) bên
+      cues: [方がいい, 方が良い, 方がよい, 方がまし, 方へ, 方向, より, phía, hơn]
+    - reading: かた
+      meaning: vị, người (kính ngữ)
+      cues: [あの方は, この方は, あの方に, あの方が, どの方, お方, 方々, honorific]
+
+- term: 何人
+  readings:
+    - reading: なんにん
+      meaning: mấy người
+      cues: [家族, 兄弟, 学生, 人数, 何人で, 何人いる, 何人い, 何人来, 何人も, mấy người, how many people]
+    - reading: なにじん
+      meaning: người nước nào
+      cues: [国籍, 出身, 国の人, quốc tịch, nationality, người nước nào]
+
+- term: 開く
+  readings:
+    - reading: ひらく
+      meaning: mở (tha động từ), tổ chức
+      cues: [を開い, を開き, を開く, を開か, を開こ, 差が開, 距離が開, 会議, 大会, パーティー, 会を, 花が, 傘, 心を, 店を開, tổ chức, mở ra]
+    - reading: あく
+      meaning: (tự) mở ra
+      cues: [が開い, が開き, が開く, が開か, が開け, は開い, は開き, 窓が, ドアが, 戸が, 扉が, 穴が, 口が]
+
+- term: 怒る
+  readings:
+    - reading: おこる
+      meaning: nổi giận, mắng
+      cues: [先生に, 母に, 父に, 怒られ, 叱, 本気で, かんかん, nổi giận, mắng]
+    - reading: いかる
+      meaning: phẫn nộ (văn viết)
+      cues: [怒り狂, 烈火, 神の, 天の, 民衆, 肩を怒, phẫn nộ]
+
+- term: 抱く
+  readings:
+    - reading: だく
+      meaning: bế, ôm
+      cues: [子供, 赤ちゃん, 赤ん坊, 猫, 犬, 腕, 胸に, 人形, 娘, 息子, bế, ôm]
+    - reading: いだく
+      meaning: ôm ấp (ước mơ, cảm xúc)
+      cues: [夢, 希望, 疑問, 不安, 野望, 感情, 好意, 疑い, 志, 理想, 恐怖, ôm ấp, hoài bão]
+
+- term: 空く
+  readings:
+    - reading: あく
+      meaning: trống, rảnh
+      cues: [席が, 時間が, 部屋が, 穴が, 手が, 予定, 間が, trống, rảnh]
+    - reading: すく
+      meaning: vắng; đói (bụng)
+      cues: [お腹, 腹が, 電車, 道が, バス, 車内, 店内, đói, vắng]
+
+- term: 弾く
+  readings:
+    - reading: ひく
+      meaning: chơi (nhạc cụ)
+      cues: [ピアノ, ギター, バイオリン, 曲, 楽器, 琴, 三味線, chơi đàn, play]
+    - reading: はじく
+      meaning: búng, bật ra
+      cues: [指で, 指先, そろばん, 水を, 弾き返, 油, búng, flick]
+
+- term: 角
+  readings:
+    - reading: かど
+      meaning: góc (đường, đồ vật)
+      cues: [曲が, 道, 交差点, 机の, 角の店, 街角, 曲がり, góc đường, corner]
+    - reading: つの
+      meaning: sừng
+      cues: [牛, 鹿, 鬼, 生え, 羊, サイ, sừng, horn]
+    - reading: かく
+      meaning: góc (hình học)
+      cues: [角度, 三角, 直角, 四角, 内角, 鋭角, góc độ, angle]
+
+- term: 工場
+  readings:
+    - reading: こうじょう
+      meaning: nhà máy
+      cues: [自動車, 製造, 生産, 大規模, 工業, 稼働, nhà máy, factory, plant]
+    - reading: こうば
+      meaning: xưởng nhỏ
+      cues: [町工場, 小さな工場, 下町, 職人, xưởng nhỏ, workshop]

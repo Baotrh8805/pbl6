@@ -6,6 +6,7 @@ import { extractErrorMessage } from "@/services/apiClient";
 import type { LearningSettings } from "../../types/dashboard.types";
 import { getTargetWordsByLevel } from "../../lib/dashboardUtils";
 import { JLPT_LEVELS } from "@/lib/deckUtils";
+import { canSpeak } from "@/lib/speech";
 
 interface LearningSettingsModalProps {
   isOpen: boolean;
@@ -69,10 +70,14 @@ const SettingsForm: React.FC<SettingsFormProps> = ({
   const [dailyGoal, setDailyGoal] = useState(String(settings.dailyGoalWords));
   const [customTarget, setCustomTarget] = useState(settings.targetWords !== null);
   const [target, setTarget] = useState(String(settings.targetWords ?? getTargetWordsByLevel(currentLevel)));
+  // E5: chỉ có ý nghĩa khi trình duyệt đọc được văn bản; không hỗ trợ thì khoá công tắc và nói rõ.
+  const [audioOnly, setAudioOnly] = useState(settings.audioOnly && canSpeak);
   const [error, setError] = useState("");
   const dailyId = useId();
   const targetId = useId();
   const autoId = useId();
+  const audioId = useId();
+  const audioHelpId = useId();
 
   const autoTarget = getTargetWordsByLevel(level);
 
@@ -91,7 +96,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({
     setError("");
     onSavingChange(true);
     try {
-      await onSave({ dailyGoalWords: daily, targetWords: customTarget ? targetNum : null }, level);
+      await onSave({ dailyGoalWords: daily, targetWords: customTarget ? targetNum : null, audioOnly }, level);
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -172,6 +177,40 @@ const SettingsForm: React.FC<SettingsFormProps> = ({
           />
           Tự động theo trình độ ({level}: {autoTarget.toLocaleString()} từ)
         </label>
+      </div>
+
+      {/* E5 – công tắc chế độ chỉ nghe: role="switch" để trình đọc màn hình báo "bật/tắt" thay vì "đã chọn". */}
+      <div className="flex items-start justify-between gap-3 p-3 rounded-lg bg-surface-container-low border border-surface-container-high">
+        <div className="min-w-0">
+          <label htmlFor={audioId} className={labelClass}>
+            Chế độ chỉ nghe (audio-only)
+          </label>
+          <p id={audioHelpId} className="text-xs text-on-surface-variant leading-relaxed mt-0.5">
+            {canSpeak
+              ? "Trang Học và Kiểm tra sẽ ẩn chữ, tự đọc từ và cách đọc; lật thẻ mới hiện chữ và nghĩa. Hợp để luyện nghe hoặc học khi không nhìn màn hình. Có thể đổi Nghe / Đọc ngay trong phiên học."
+              : "Trình duyệt này không hỗ trợ đọc văn bản (Web Speech API) nên chưa bật được."}
+          </p>
+        </div>
+        <button
+          id={audioId}
+          type="button"
+          role="switch"
+          aria-checked={audioOnly}
+          aria-describedby={audioHelpId}
+          disabled={!canSpeak}
+          onClick={() => setAudioOnly((v) => !v)}
+          className={`relative shrink-0 w-11 h-6 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+            audioOnly ? "bg-primary" : "bg-outline-variant"
+          }`}
+        >
+          <span className="sr-only">{audioOnly ? "Đang bật" : "Đang tắt"}</span>
+          <span
+            aria-hidden="true"
+            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+              audioOnly ? "translate-x-5" : ""
+            }`}
+          />
+        </button>
       </div>
 
       <p className="text-xs text-outline leading-relaxed">

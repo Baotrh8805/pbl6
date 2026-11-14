@@ -1,0 +1,698 @@
+import json
+import logging
+from types import SimpleNamespace
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core.config import settings
+from app.extract import gemini
+from app.main import app
+
+client = TestClient(app)
+
+
+class _FakeModels:
+    def __init__(self, responder):
+        self.responder = responder
+        self.calls = []
+
+    def generate_content(self, model, contents, config=None):
+        self.calls.append({"model": model, "contents": contents, "config": config})
+        return SimpleNamespace(text=self.responder(contents, config))
+
+
+@pytest.fixture
+def fake_client(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-key")
+    holder = {}
+
+    def install(responder):
+        models = _FakeModels(responder)
+        monkeypatch.setattr(gemini, "_client", SimpleNamespace(models=models))
+        holder["models"] = models
+        return models
+    yield install
+    monkeypatch.setattr(gemini, "_client", None)
+
+
+
+
+
+
+
+
+
+
+def _echo_translate(contents, config):
+    # Lấy items từ prompt (JSON sau "Items:") và trả bản dịch giả theo ref
+    items = json.loads(contents.split("Items:\n", 1)[1])
+    return json.dumps([{"ref": it["ref"], "meaningVi": f"nghĩa {it['ref']}", "exampleVi": ""} for it in items])
+
+
+def test_translate_batches_of_40_and_parses_json(fake_client):
+    models = fake_client(_echo_translate)
+    items = [{"ref": str(i), "term": f"語{i}", "reading": None, "example": None} for i in range(45)]
+    out = gemini.translate_items(items, "vi")
+    assert len(models.calls) == 2
+    assert len(out) == 45
+    assert out[0] == {"ref": "0", "meaningVi": "nghĩa 0", "exampleVi": None}
+    cfg = models.calls[0]["config"]
+    assert cfg.response_mime_type == "application/json"
+    assert cfg.response_schema is not None
+    assert models.calls[0]["model"] == gemini.MODEL
+    # Giá trị None bị bỏ khỏi prompt
+    assert '"reading"' not in models.calls[0]["contents"]
+
+
+def test_translate_accepts_code_fence_and_dict_wrapper(fake_client):
+    fake_client(lambda c, cfg: '```json\n{"items": [{"ref": "a", "meaningVi": "học", "exampleVi": "Ví dụ."}]}\n```')
+    out = gemini.translate_items([{"ref": "a", "term": "勉強"}])
+    assert out == [{"ref": "a", "meaningVi": "học", "exampleVi": "Ví dụ."}]
+
+
+def test_invalid_json_is_error(fake_client):
+    fake_client(lambda c, cfg: "not json")
+    with pytest.raises(gemini.GeminiError) as ei:
+        gemini.translate_items([{"ref": "a", "term": "勉強"}])
+    assert ei.value.reason == "error"
+
+
+def test_quota_mapping(fake_client):
+    from google.genai import errors
+
+    def raise_quota(contents, config):
+        raise errors.APIError(429, {"error": {"message": "RESOURCE_EXHAUSTED", "status": "RESOURCE_EXHAUSTED"}})
+    fake_client(raise_quota)
+    with pytest.raises(gemini.GeminiError) as ei:
+        gemini.translate_items([{"ref": "a", "term": "勉強"}])
+    assert ei.value.reason == "quota"
+
+
+def test_generic_error_mapping_hides_details(fake_client):
+    def raise_err(contents, config):
+        raise RuntimeError("secret test-key leaked?")
+    fake_client(raise_err)
+    with pytest.raises(gemini.GeminiError) as ei:
+        gemini.vision_transcribe(b"png", "image/png", "vertical")
+    assert ei.value.reason == "error"
+    assert "test-key" not in str(ei.value)
+
+
+def test_no_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    assert gemini.available() is False
+    with pytest.raises(gemini.GeminiError) as ei:
+        gemini.translate_items([{"ref": "a", "term": "勉強"}])
+    assert ei.value.reason == "no_api_key"
+
+
+def test_vision_prompt_mentions_orientation(fake_client):
+    models = fake_client(lambda c, cfg: " 日本語 ")
+    assert gemini.vision_transcribe(b"png", "image/png", "vertical") == "日本語"
+    contents = models.calls[0]["contents"]
+    assert "right to left" in contents[1]
+    assert contents[0].inline_data.mime_type == "image/png"
+
+
+# --- /api/extract/enrich qua TestClient ----------------------------------------
+
+
+
+
+
+
+
+
+
+ITEMS = [
+    {"ref": "1", "term": "勉強", "reading": "べんきょう", "pos": "名詞", "meaningEn": "study", "example": "毎日漢字を勉強します。"},
+    {"ref": "2", "term": "食べる", "reading": "たべる", "pos": "動詞", "meaningEn": "to eat"},
+    {"ref": "3", "term": "学校", "reading": "がっこう", "pos": "名詞", "meaningEn": "school"},
+    {"ref": "4", "term": "映画", "reading": "えいが", "pos": "名詞", "meaningEn": "movie"},
+    {"ref": "5", "term": "山", "reading": "やま", "pos": "名詞", "meaningEn": "mountain", "example": "山は高い。"},
+]
+
+
+def test_enrich_filters_bad_outputs(monkeypatch):
+    monkeypatch.setattr(gemini, "available", lambda: True)
+    monkeypatch.setattr(gemini, "translate_items", lambda items, lang, model=None: [
+        {"ref": "1", "meaningVi": "học, học tập", "exampleVi": "Mỗi ngày tôi học kanji."},
+        {"ref": "2", "meaningVi": "ăn (食べる)", "exampleVi": None},           # còn chữ Nhật → bỏ
+        {"ref": "3", "meaningVi": "", "exampleVi": "x"},                        # rỗng → bỏ
+        {"ref": "4", "meaningVi": "a" * 121, "exampleVi": None},                # quá dài → bỏ
+        {"ref": "5", "meaningVi": "núi", "exampleVi": "Núi 山 cao."},            # ví dụ xấu → null
+        {"ref": "99", "meaningVi": "lạ", "exampleVi": None},                    # ref lạ → bỏ
+    ])
+    r = client.post("/api/extract/enrich", json={"targetLang": "vi", "items": ITEMS})
+    assert r.status_code == 200
+    assert r.json() == {"enriched": True, "reason": None, "items": [
+        {"ref": "1", "meaningVi": "học, học tập", "exampleVi": "Mỗi ngày tôi học kanji."},
+        {"ref": "5", "meaningVi": "núi", "exampleVi": None},
+    ]}
+
+
+@pytest.mark.parametrize("reason", ["quota", "error"])
+def test_enrich_reports_gemini_failure(monkeypatch, reason):
+    monkeypatch.setattr(gemini, "available", lambda: True)
+    def boom(items, lang, model=None):
+        raise gemini.GeminiError(reason)
+    monkeypatch.setattr(gemini, "translate_items", boom)
+    r = client.post("/api/extract/enrich", json={"targetLang": "vi", "items": ITEMS})
+    assert r.json() == {"enriched": False, "items": [], "reason": reason}
+
+
+def test_enrich_no_key(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    r = client.post("/api/extract/enrich", json={"targetLang": "vi", "items": ITEMS})
+    assert r.json() == {"enriched": False, "items": [], "reason": "no_api_key"}
+
+
+def test_health_gemini_flag(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+    assert client.get("/api/extract/health").json()["gemini"] is True
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    assert client.get("/api/extract/health").json()["gemini"] is False
+
+
+# --- Thử lại 429/503, model dự phòng, prompt bảng từ vựng (spec §2.3, §2.5, §2.7) --------------------------
+
+class _Boom(Exception):
+    def __init__(self, code):
+        super().__init__(f"{code} error")
+        self.code = code
+
+
+def _flaky(fails, code):
+    state = {"n": 0}
+
+    def responder(contents, config):
+        state["n"] += 1
+        if state["n"] <= fails:
+            raise _Boom(code)
+        return "銀行口座\tbank account"
+    return responder
+
+
+def _gen(*_args, model=None):
+    """Chuỗi thử lại / đổi model chung (hồ sơ mặc định: 3 lần thử lại). vision_transcribe nay dùng OCR_PROFILE (1 lần) —
+    xem các test "Hồ sơ gọi riêng cho OCR" cuối file."""
+    return gemini._generate("x", model=model)
+
+
+@pytest.fixture(autouse=True)
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(gemini, "_sleep", lambda s: None)
+    monkeypatch.setattr(gemini, "_cooldown_until", 0.0)  # cầu dao quota là trạng thái module, không để rò giữa các test
+    monkeypatch.setattr(gemini, "_primary_quota_until", {})
+    monkeypatch.setattr(gemini, "_unusable_until", {})
+    monkeypatch.setattr(gemini, "_warned_models", set())
+
+
+def test_retries_503_then_succeeds(fake_client):
+    models = fake_client(_flaky(2, 503))
+    assert _gen() == "銀行口座\tbank account"
+    assert len(models.calls) == 3 and all(c["model"] == gemini.MODEL for c in models.calls)
+
+
+def test_fallback_model_after_retries(fake_client, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    models = fake_client(_flaky(4, 429))
+    assert _gen()
+    assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
+
+
+def test_retry_exhausted_keeps_quota_reason(fake_client, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    models = fake_client(_flaky(99, 429))
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.translate_items([{"ref": "1", "term": "語"}], "vi")
+    assert exc.value.reason == "quota" and len(models.calls) == 5
+
+
+def test_slow_failures_stop_within_total_budget(fake_client, monkeypatch):
+    # Model treo tới timeout 60 s mỗi lần (504 thấy thật 14/10): tổng vòng thử lại phải dừng trước AI_SERVICE_READ_TIMEOUT
+    # của backend (3 phút), nếu không backend timeout và cả job FAILED dù dịch nghĩa chỉ là bước làm giàu.
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    clock = {"t": 0.0}
+
+    def fake_now():
+        clock["t"] += 70.0  # mỗi lần hỏi giờ ≈ một lượt gọi treo 60 s + giãn cách
+        return clock["t"]
+
+    monkeypatch.setattr(gemini, "_now", fake_now)
+    models = fake_client(_flaky(99, 504))
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.translate_items([{"ref": "1", "term": "語"}], "vi")
+    assert exc.value.reason == "error" and exc.value.retryable
+    assert len(models.calls) == 2  # lượt 3 sẽ vượt ngân sách 150 s -> không gọi nữa, không sang model dự phòng
+
+
+def test_non_retryable_error_not_retried(fake_client):
+    models = fake_client(_flaky(99, 404))
+    with pytest.raises(gemini.GeminiError) as exc:
+        _gen()
+    assert exc.value.reason == "error" and len(models.calls) == 1
+
+
+def test_prompts_mention_vocab_table_and_source_gloss(fake_client):
+    models = fake_client(lambda c, cfg: "x")
+    gemini.vision_transcribe(b"png", "image/png", "horizontal")
+    prompt = models.calls[0]["contents"][1]
+    assert "TAB" in prompt and "vocabulary" in prompt and "furigana" in prompt
+    fake_client(_echo_translate)
+    gemini.translate_items([{"ref": "1", "term": "語", "meaningEn": "word"}], "vi")
+    assert "original gloss" in gemini._client.models.calls[0]["contents"]
+
+
+def test_504_is_retried_then_fallback(fake_client, monkeypatch):
+    # Model quá tải trả 503 rồi 504 DEADLINE_EXCEEDED (thấy thật ngày 12/10): 504 cũng phải thử lại / sang model dự phòng
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    models = fake_client(_flaky(4, 504))
+    assert _gen()
+    assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
+
+
+def test_quota_cooldown_skips_calls_until_expiry(fake_client, monkeypatch):
+    # Hết quota (429) ở một trang -> các lượt gọi tiếp theo trong COOLDOWN_S không gọi Gemini nữa (OCR 18 trang
+    # scan không thể chờ 14 s/trang khi quota đã hết); hết thời gian nguội thì gọi lại bình thường.
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "")
+    models = fake_client(_flaky(99, 429))
+    with pytest.raises(gemini.GeminiError):
+        _gen()
+    n = len(models.calls)
+    assert n == 4
+    with pytest.raises(gemini.GeminiError) as exc:
+        _gen()
+    assert exc.value.reason == "quota" and len(models.calls) == n  # không gọi thêm
+    clock["t"] += gemini.COOLDOWN_S + 1
+    fake_client(lambda c, cfg: "ok")
+    assert _gen() == "ok"
+
+
+def test_primary_quota_goes_straight_to_fallback_next_calls(fake_client, monkeypatch):
+    # Model chính 429 nhưng model dự phòng chạy được: lượt sau không thử lại model chính nữa (OCR 18 trang scan
+    # không thể tốn 2+4+8 s mỗi trang), đi thẳng dự phòng cho tới hết thời gian nguội.
+    clock = {"t": 5000.0}
+    monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+
+    box = {}
+
+    def primary_429_fallback_ok(contents, cfg):
+        if box["models"].calls[-1]["model"] == "fallback-model":
+            return "ok"
+        raise _Boom(429)
+
+    models = box["models"] = fake_client(primary_429_fallback_ok)
+    assert _gen() == "ok"
+    assert [c["model"] for c in models.calls] == [gemini.MODEL] * 4 + ["fallback-model"]
+    assert _gen() == "ok"
+    assert [c["model"] for c in models.calls[5:]] == ["fallback-model"]  # không gọi model chính
+    clock["t"] += gemini.COOLDOWN_S + 1
+    _gen()
+    assert models.calls[6]["model"] == gemini.MODEL  # hết thời gian nguội -> thử lại model chính
+
+
+def test_degenerate_repeats_are_collapsed(fake_client):
+    # Gemini Vision trang mục lục "この本の使い方 ·····" sinh 50 000 dấu chấm dẫn (thấy thật 14/10) -> cắt chuỗi lặp
+    fake_client(lambda c, cfg: "この本の使い方 " + "·" * 5000 + chr(10) + "第1課 あいさつ" + "ー" * 30)
+    out = gemini.vision_transcribe(b"png", "image/png", "auto")
+    assert out.count("·") <= 3 and "第1課 あいさつ" in out and out.count("ー") <= 3
+    assert len(out) < 100
+
+
+# --- Mẹo nhớ bộ thủ (C4): generate_mnemonics + bộ lọc mnemonic_ok -----------------------------------------------
+
+MNEMONIC_ITEMS = [
+    {"kanji": "海", "hanViet": "HẢI", "radicalName": "thủy", "radicalChar": "水", "meaningEn": "sea",
+     "examples": [{"term": "海外"}, "航海", None, "海岸", "海水"]},
+    {"kanji": "火", "hanViet": "HỎA", "radicalName": "hỏa", "radicalChar": "火", "meaningEn": "fire", "examples": []},
+    {"kanji": "花", "hanViet": "HOA", "radicalName": "thảo", "radicalChar": "艸", "meaningEn": "flower"},
+    {"kanji": "学", "hanViet": "HỌC", "radicalName": "tử", "radicalChar": "子", "meaningEn": "learning"},
+    {"kanji": "道", "hanViet": "ĐẠO", "radicalName": "sước", "radicalChar": "辵", "meaningEn": "road"},
+    {"kanji": "人", "hanViet": "NHÂN", "radicalName": "nhân", "radicalChar": "人", "meaningEn": "person"},
+]
+
+
+def _split_items(contents):
+    return json.loads(contents.split("Danh sách:\n", 1)[1])
+
+
+def test_mnemonics_parse_filter_and_prompt(fake_client):
+    models = fake_client(lambda c, cfg: json.dumps([
+        {"kanji": "海", "mnemonicVi": "Bộ Thuỷ là nước, biển hải mênh mông."},   # dấu / hoa thường khác vẫn nhận
+        {"kanji": "火", "mnemonicVi": "Lửa 火 cháy, đọc là ひ hỏa."},             # lẫn kana → bỏ
+        {"kanji": "花", "mnemonicVi": "Hoa nở trên cỏ 艸, chữ 花 đẹp."},        # chỉ chữ đích + bộ của nó → nhận
+        {"kanji": "学", "mnemonicVi": "Trẻ con đến trường mỗi sáng."},           # không nhắc HỌC / tử → bỏ
+        {"kanji": "道", "mnemonicVi": "ĐẠO " + "x" * 300},                        # quá 300 ký tự → bỏ
+        {"kanji": "人", "mnemonicVi": "  "},                                      # rỗng → bỏ
+        {"kanji": "海", "mnemonicVi": "Mẹo thứ hai cho HẢI."},                    # trùng chữ → giữ mẹo đầu
+        {"kanji": "龘", "mnemonicVi": "Chữ lạ không gửi lên: HẢI."},              # kanji không có trong lô → bỏ
+        "not a dict",
+    ], ensure_ascii=False))
+    out = gemini.generate_mnemonics(MNEMONIC_ITEMS)
+    assert out == {"items": [{"kanji": "海", "mnemonicVi": "Bộ Thuỷ là nước, biển hải mênh mông."},
+                             {"kanji": "花", "mnemonicVi": "Hoa nở trên cỏ 艸, chữ 花 đẹp."}], "reason": None,
+                   "model": gemini.MODEL}
+    assert len(models.calls) == 1 and models.calls[0]["model"] == gemini.MODEL
+    cfg = models.calls[0]["config"]
+    assert cfg.response_mime_type == "application/json" and cfg.response_schema is not None and cfg.temperature == 0.7
+    prompt = models.calls[0]["contents"]
+    assert "Hán-Việt" in prompt and "bộ thủ" in prompt and "romaji" in prompt and "200 ký tự" in prompt
+    assert "phản cảm" in prompt and '{"kanji", "mnemonicVi"}' in prompt
+    sent = _split_items(prompt)
+    # ví dụ ≤ 3, bỏ None, dict → term; khoá rỗng không gửi
+    assert sent[0] == {"kanji": "海", "hanViet": "HẢI", "radicalName": "thủy", "radicalChar": "水", "meaningEn": "sea",
+                       "examples": ["海外", "航海", "海岸"]}
+    assert "examples" not in sent[1] and "examples" not in sent[2]
+
+
+def test_mnemonics_batches_of_40_keep_order(fake_client):
+    def echo(contents, cfg):
+        return json.dumps([{"kanji": it["kanji"], "mnemonicVi": f"Bộ {it['radicalName']} nhớ {it['hanViet']}."}
+                           for it in _split_items(contents)], ensure_ascii=False)
+    models = fake_client(echo)
+    items = [{"kanji": chr(0x4E00 + i), "hanViet": f"AM{i}", "radicalName": "thủy"} for i in range(45)]
+    out = gemini.generate_mnemonics(items)
+    assert len(models.calls) == 2 and out["reason"] is None and len(out["items"]) == 45
+    assert out["items"][44] == {"kanji": chr(0x4E00 + 44), "mnemonicVi": "Bộ thủy nhớ AM44."}
+
+
+def test_mnemonics_quota_keeps_earlier_batches_and_reports_reason(fake_client, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "")
+    state = {"n": 0}
+
+    def first_ok_then_quota(contents, cfg):
+        state["n"] += 1
+        if state["n"] == 1:
+            return json.dumps([{"kanji": it["kanji"], "mnemonicVi": f"Nhớ {it['hanViet']}."} for it in _split_items(contents)],
+                              ensure_ascii=False)
+        raise _Boom(429)
+    models = fake_client(first_ok_then_quota)
+    items = [{"kanji": chr(0x4E00 + i), "hanViet": f"AM{i}"} for i in range(41)]
+    out = gemini.generate_mnemonics(items)
+    assert out["reason"] == "quota" and len(out["items"]) == 40          # batch đầu giữ, batch hai hết quota sau thử lại
+    assert len(models.calls) == 1 + len(gemini.RETRY_DELAYS) + 1
+    # cầu dao đã bật: lượt sau không gọi Gemini, vẫn báo quota để router dùng template
+    assert gemini.generate_mnemonics(items[:1]) == {"items": [], "reason": "quota", "model": None}
+    assert len(models.calls) == 1 + len(gemini.RETRY_DELAYS) + 1
+
+
+def test_mnemonics_error_and_no_key(fake_client, monkeypatch):
+    fake_client(lambda c, cfg: "not json")
+    assert gemini.generate_mnemonics(MNEMONIC_ITEMS[:1]) == {"items": [], "reason": "error", "model": None}
+    models = fake_client(_flaky(99, 404))
+    assert gemini.generate_mnemonics(MNEMONIC_ITEMS[:1]) == {"items": [], "reason": "error", "model": None}
+    assert len(models.calls) == 1                                        # 404 không thử lại
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    assert gemini.generate_mnemonics(MNEMONIC_ITEMS[:1]) == {"items": [], "reason": "no_key", "model": None}
+    assert gemini.generate_mnemonics([]) == {"items": [], "reason": "no_key", "model": None}
+
+
+@pytest.mark.parametrize("text,ok", [
+    ("Biển HẢI thuộc bộ Thủy.", True),
+    ("biển hải mênh mông", True),                 # không phân biệt hoa / thường / cách bỏ dấu
+    ("Thuỷ là nước.", True),                      # tên bộ, chính tả ỷ ≠ ủy
+    ("Hải sản rất ngon.", True),
+    ("Chữ 海 (HẢI) có bộ 水 là nước.", True),    # chữ đích và bộ của nó được phép
+    ("Bộ Thủy viết ⽔ (khối Kangxi) nằm trong 海.", True),
+    ("Bộ Thủy 氵 (nước) + âm HẢI = biển.", True),  # dạng viết trong chữ của bộ (radicals.variants) cũng được phép
+    ("Ba chấm thủy 氺 dưới chữ, HẢI.", True),
+    ("Chữ 海 có bộ 水 là nước.", False),          # chỉ nghĩa bộ, không có tên bộ / âm → bỏ
+    ("Chữ 海 trong 日本海.", False),               # kanji khác → người học N5 không đọc được
+    ("Biển đọc là うみ, HẢI.", False),             # kana
+    ("Biển rộng mênh mông.", False),              # không nhắc âm Hán-Việt / tên bộ
+    ("Hảiyyy.", False),                           # âm phải là một từ trọn vẹn
+    ("", False),
+    ("   ", False),
+    ("HẢI " + "x" * 300, False),
+])
+def test_mnemonic_ok_filter(text, ok):
+    item = {"kanji": "海", "hanViet": "HẢI", "radicalName": "thủy", "radicalChar": "水"}
+    assert gemini.mnemonic_ok(text, item) is ok
+
+
+@pytest.mark.parametrize("text,item,ok", [
+    ("Bộ thảo 艹 trên đầu, âm THẢO là cỏ.", {"kanji": "花", "hanViet": "HOA", "radicalName": "thảo", "radicalChar": "艸"}, True),
+    ("Bộ sước 辶 chạy dưới, ĐẠO là đường.", {"kanji": "道", "hanViet": "ĐẠO", "radicalName": "sước", "radicalChar": "辵"}, True),
+    ("Bộ Thanh 靑 cũ, chữ 静 đọc TĨNH.", {"kanji": "静", "hanViet": "TĨNH", "radicalName": "thanh", "radicalChar": "青"}, True),
+    # chiều ngược lại: caller gửi dạng cũ 靑 → dạng JIS 青 người học thấy trong chữ cũng được phép
+    ("Bộ Thanh 青, chữ 静 đọc TĨNH.", {"kanji": "静", "hanViet": "TĨNH", "radicalName": "thanh", "radicalChar": "靑"}, True),
+    # caller gửi sẵn radicalVariants (router) → không tra bảng; danh sách rỗng → chỉ chữ đích + radicalChar
+    ("Bộ Thủy 氵, HẢI.", {"kanji": "海", "hanViet": "HẢI", "radicalChar": "水", "radicalVariants": ["氵"]}, True),
+    ("Bộ Thủy 氵, HẢI.", {"kanji": "海", "hanViet": "HẢI", "radicalChar": "水", "radicalVariants": []}, False),
+    ("Bộ thảo 艹 nhưng chữ 草 khác.", {"kanji": "花", "hanViet": "HOA", "radicalName": "thảo", "radicalChar": "艸"}, False),
+])
+def test_mnemonic_ok_accepts_radical_variants(text, item, ok):
+    assert gemini.mnemonic_ok(text, item) is ok
+
+
+def test_mnemonic_ok_single_letter_reading_needs_word_boundary():
+    item = {"kanji": "衣", "hanViet": "Y", "radicalName": "y", "radicalChar": "衣"}
+    assert gemini.mnemonic_ok("Áo 衣 đọc là Y.", item)
+    assert not gemini.mnemonic_ok("Yêu cái áo này.", item)
+    assert gemini.mnemonic_ok("Tên bộ: nhân đi.", {"kanji": "兄", "hanViet": None, "radicalName": "nhân đi"})
+    assert not gemini.mnemonic_ok("Không có gì để so.", {"kanji": "兄"})
+
+
+# --- Model chính theo request (Admin > Cấu hình > ai_model_primary, backend gửi kèm mỗi lượt gọi) --------------------
+
+def test_allowed_models_configured_first_then_env_then_known(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", " Gemini-9-Ultra , ,gemini-3.7-flash")
+    allowed = gemini.allowed_models()
+    assert allowed[:3] == [gemini.MODEL, "fallback-model", "gemini-9-ultra"]
+    assert len(allowed) == len(set(allowed))       # gemini-3.7-flash vừa ở env vừa ở KNOWN_MODELS -> một lần
+    assert set(gemini.KNOWN_MODELS) <= set(allowed)
+
+
+def test_known_models_are_only_the_measured_ones(monkeypatch):
+    # Chỉ model đã đo với key dự án (12/10/2026). Họ 2.5 / bản -lite chưa thử: chọn ở Admin mà Google 404 thì tắt Gemini của
+    # mọi lượt gọi -> phải thêm qua GEMINI_ALLOWED_MODELS (người thêm tự gọi thử trước), mặc định bị bỏ qua.
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "")
+    assert gemini.KNOWN_MODELS == ("gemini-3.8-flash", "gemini-3.7-flash")
+    for name in ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.8-flash-lite"):
+        assert gemini.resolve_model(name) == gemini.MODEL
+
+
+def test_request_model_overrides_default_for_every_call(fake_client, monkeypatch):
+    # Ba lượt gọi Gemini (OCR, dịch nghĩa, mẹo nhớ) đều theo model backend gửi khi nó nằm trong danh sách cho phép
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "gemini-9-ultra,gemini-2.5-pro,gemini-2.5-flash")
+    vision = fake_client(lambda c, cfg: "日本語")
+    assert _gen(model=" Gemini-9-Ultra ") == "日本語"
+    assert [c["model"] for c in vision.calls] == ["gemini-9-ultra"]     # GEMINI_ALLOWED_MODELS, không phân biệt hoa thường
+    translate = fake_client(_echo_translate)
+    gemini.translate_items([{"ref": "1", "term": "語"}], "vi", model="gemini-2.5-pro")
+    assert [c["model"] for c in translate.calls] == ["gemini-2.5-pro"]
+    mnemonic = fake_client(lambda c, cfg: json.dumps([{"kanji": "海", "mnemonicVi": "Biển HẢI mênh mông."}],
+                                                     ensure_ascii=False))
+    out = gemini.generate_mnemonics(MNEMONIC_ITEMS[:1], model="gemini-2.5-flash")
+    assert [c["model"] for c in mnemonic.calls] == ["gemini-2.5-flash"]
+    assert out["model"] == "gemini-2.5-flash" and len(out["items"]) == 1   # backend ghi model này vào generated_model
+
+
+def test_unknown_request_model_uses_default_and_logs_once(fake_client, caplog):
+    # Gõ sai ở trang Admin: gửi thẳng lên Google thì MỌI lượt gọi 404 -> bỏ qua, dùng GEMINI_MODEL, chỉ ghi log một lần
+    models = fake_client(lambda c, cfg: "ok")
+    with caplog.at_level(logging.WARNING, logger=gemini.logger.name):
+        for _ in range(3):
+            assert _gen(model="gemini-2.5-flsh") == "ok"
+        _gen(model="  ")
+        _gen(model=None)
+    assert [c["model"] for c in models.calls] == [gemini.MODEL] * 5
+    assert len([r for r in caplog.records if "gemini-2.5-flsh" in r.getMessage()]) == 1
+
+
+def test_quota_on_requested_model_does_not_divert_default_model(fake_client, monkeypatch):
+    # Model Admin chọn hết quota -> về GEMINI_MODEL (quota riêng, chạy được) trước dự phòng; lượt sau CỦA model đó chạy như
+    # chưa chọn trong COOLDOWN_S; lượt dùng GEMINI_MODEL không bị đẩy sang dự phòng
+    clock = {"t": 9000.0}
+    monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "gemini-9-ultra")
+    box = {}
+
+    def chosen_429(contents, cfg):
+        if box["models"].calls[-1]["model"] == "gemini-9-ultra":
+            raise _Boom(429)
+        return "ok"
+
+    models = box["models"] = fake_client(chosen_429)
+    assert _gen(model="gemini-9-ultra") == "ok"
+    assert [c["model"] for c in models.calls] == ["gemini-9-ultra"] * 4 + [gemini.MODEL]
+    assert _gen(model="gemini-9-ultra") == "ok"
+    assert models.calls[5]["model"] == gemini.MODEL
+    assert _gen() == "ok"
+    assert models.calls[6]["model"] == gemini.MODEL
+    clock["t"] += gemini.COOLDOWN_S + 1
+    _gen(model="gemini-9-ultra")
+    assert models.calls[7]["model"] == "gemini-9-ultra"  # hết thời gian nguội -> thử lại model Admin chọn
+
+
+def test_requested_model_404_falls_back_to_default_model(fake_client, monkeypatch, caplog):
+    # Model Admin chọn bị Google ngừng (404 cho key này): không được tắt Gemini của mọi lượt gọi. Lượt đó về GEMINI_MODEL (có
+    # thử lại đủ như khi chưa chọn, không tạm ngưng); lượt sau bỏ qua model đó UNUSABLE_S giây; 404 của GEMINI_MODEL vẫn raise.
+    clock = {"t": 20000.0}
+    monkeypatch.setattr(gemini, "_now", lambda: clock["t"])
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "gemini-9-ultra")
+    box = {"default_fails": 0}
+
+    def chosen_404(contents, cfg):
+        name = box["models"].calls[-1]["model"]
+        if name == "gemini-9-ultra":
+            raise _Boom(404)
+        if name == gemini.MODEL and box["default_fails"] > 0:
+            box["default_fails"] -= 1
+            raise _Boom(503)
+        return box.get("text", "ok")
+
+    models = box["models"] = fake_client(chosen_404)
+    box["default_fails"] = 2
+    with caplog.at_level(logging.WARNING, logger=gemini.logger.name):
+        assert _gen(model="gemini-9-ultra") == "ok"
+    assert [c["model"] for c in models.calls] == ["gemini-9-ultra"] + [gemini.MODEL] * 3   # GEMINI_MODEL được thử lại
+    assert gemini._cooldown_until == 0.0
+    assert any("gemini-9-ultra" in r.getMessage() and "404" in r.getMessage() for r in caplog.records)
+    box["text"] = json.dumps([{"kanji": "海", "mnemonicVi": "Biển HẢI mênh mông."}], ensure_ascii=False)
+    out = gemini.generate_mnemonics(MNEMONIC_ITEMS[:1], model="gemini-9-ultra")
+    assert models.calls[4]["model"] == gemini.MODEL and len(models.calls) == 5   # trong UNUSABLE_S: không tốn thêm 404
+    assert out["model"] == gemini.MODEL                                          # generated_model ghi đúng model đã viết
+    clock["t"] += gemini.UNUSABLE_S + 1
+    _gen(model="gemini-9-ultra")
+    assert [c["model"] for c in models.calls[5:]] == ["gemini-9-ultra", gemini.MODEL]   # hết hạn -> thử lại (Admin có thể đã sửa)
+
+
+def test_default_model_404_is_still_not_retried(fake_client, monkeypatch):
+    # 404 của chính GEMINI_MODEL là cấu hình .env sai: giữ như cũ (raise ngay, không sang dự phòng, có gợi ý đổi model)
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "fallback-model")
+    models = fake_client(_flaky(99, 404))
+    with pytest.raises(gemini.GeminiError) as exc:
+        _gen()
+    assert exc.value.code == 404 and "GEMINI_MODEL" in str(exc.value) and len(models.calls) == 1
+
+
+@pytest.mark.parametrize("fallback, chosen, code", [
+    ("fallback-model", "fallback-model", 503),   # Admin chọn đúng model dự phòng (vì model mặc định từng quá tải)
+    ("", "gemini-9-ultra", 429),                 # không đặt dự phòng (mặc định của .env.example)
+])
+def test_requested_model_failure_still_tries_default_model(fake_client, monkeypatch, fallback, chosen, code):
+    # Trước khi có Model AI chính, cùng sự cố đó có chuỗi hai model (GEMINI_MODEL -> dự phòng). Model Admin chọn hỏng mà
+    # không thử GEMINI_MODEL thì chỉ còn một model và cả Gemini bị tạm ngưng COOLDOWN_S.
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", fallback)
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "gemini-9-ultra")
+    box = {}
+
+    def chosen_fails(contents, cfg):
+        if box["models"].calls[-1]["model"] == chosen:
+            raise _Boom(code)
+        return "ok"
+
+    models = box["models"] = fake_client(chosen_fails)
+    assert _gen(model=chosen) == "ok"
+    assert [c["model"] for c in models.calls] == [chosen] * 4 + [gemini.MODEL]
+    assert gemini._cooldown_until == 0.0
+
+
+def test_unknown_model_log_memory_is_bounded(fake_client):
+    # Tên lạ dài bao nhiêu cũng không 422 (form / JSON không giới hạn) nhưng chỉ lưu tối đa _WARN_KEY_CHARS ký tự mỗi tên
+    fake_client(lambda c, cfg: "ok")
+    for i in range(3):
+        _gen(model=f"{i}" + "x" * 1_000_000)
+    assert len(gemini._warned_models) == 3
+    assert max(len(k) for k in gemini._warned_models) <= gemini._WARN_KEY_CHARS
+
+
+def test_enrich_forwards_gemini_model(monkeypatch):
+    monkeypatch.setattr(gemini, "available", lambda: True)
+    seen = []
+
+    def fake_translate(items, lang, model=None):
+        seen.append(model)
+        return []
+    monkeypatch.setattr(gemini, "translate_items", fake_translate)
+    client.post("/api/extract/enrich", json={"targetLang": "vi", "items": ITEMS[:1], "geminiModel": "gemini-2.5-pro"})
+    client.post("/api/extract/enrich", json={"targetLang": "vi", "items": ITEMS[:1]})
+    assert seen == ["gemini-2.5-pro", None]
+
+
+def test_health_lists_gemini_models(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_ALLOWED_MODELS", "gemini-9-ultra")
+    body = client.get("/api/extract/health").json()
+    assert body["geminiModel"] == gemini.MODEL and body["geminiModels"][0] == gemini.MODEL
+    assert "gemini-9-ultra" in body["geminiModels"]
+    assert not any(m.startswith("gemini-2.5") for m in body["geminiModels"])   # chưa đo -> không gợi ý cho Admin
+
+
+# --- Hồ sơ gọi riêng cho OCR (spec 21/10: timeout 30 s, 1 lần thử lại, deadline chung của tài liệu) -----------------
+
+def test_vision_uses_ocr_profile_timeout_and_single_retry(fake_client):
+    models = fake_client(_flaky(1, 503))
+    assert gemini.vision_transcribe(b"png", "image/png", "auto") == "銀行口座\tbank account"
+    assert len(models.calls) == 2
+    assert models.calls[0]["config"].http_options.timeout == 30_000
+
+
+def test_vision_gives_up_after_one_retry(fake_client, monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODEL", "")
+    models = fake_client(_flaky(5, 503))
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png")
+    assert exc.value.retryable and len(models.calls) == 2
+
+
+def test_translate_keeps_default_profile(fake_client):
+    models = fake_client(_flaky(3, 503))
+    with pytest.raises(gemini.GeminiError):   # bản dịch giả không phải JSON -> lỗi parse, nhưng đã gọi đủ 4 lượt
+        gemini.translate_items([{"ref": "a", "term": "x"}], "vi")
+    assert len(models.calls) == 4
+    assert models.calls[0]["config"].http_options is None
+
+
+def test_ocr_profile_budget_does_not_set_cooldown(fake_client, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    models = fake_client(lambda c, cfg: "ok")
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", deadline=clock[0] + 5)    # còn 5 s < MIN_TIMEOUT_S -> không gọi
+    assert exc.value.reason == "budget" and exc.value.retryable
+    assert len(models.calls) == 0
+    assert gemini._cooldown_until == 0.0
+
+
+def test_ocr_deadline_stops_retry_mid_chain(fake_client, monkeypatch):
+    # Lượt đầu 503; thử lại không còn đủ 30 s trước deadline -> dừng, báo "budget", không cooldown
+    clock = [0.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    monkeypatch.setattr(gemini, "_sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    flaky = _flaky(9, 503)
+
+    def slow(contents, cfg):
+        clock[0] += 15.0   # lượt gọi treo 15 s rồi 503
+        return flaky(contents, cfg)
+    models = fake_client(slow)
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", deadline=25.0)   # lượt 1 lúc t=0 (timeout kẹp 25 s), thử lại lúc t=18 chỉ còn 7 s < 8
+    assert exc.value.reason == "budget" and len(models.calls) == 1
+    assert gemini._cooldown_until == 0.0
+
+
+def test_ocr_timeout_clamped_to_remaining_budget(fake_client, monkeypatch):
+    # Review 21/10: còn 15 s tới deadline -> vẫn gọi, với timeout 15 s (không từ chối chỉ vì không đủ 30 s)
+    clock = [100.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    models = fake_client(lambda c, cfg: "ok")
+    assert gemini.vision_transcribe(b"png", deadline=clock[0] + 15) == "ok"
+    assert models.calls[0]["config"].http_options.timeout == 15_000
+
+
+def test_ocr_budget_refused_below_floor(fake_client, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(gemini, "_now", lambda: clock[0])
+    models = fake_client(lambda c, cfg: "ok")
+    with pytest.raises(gemini.GeminiError) as exc:
+        gemini.vision_transcribe(b"png", deadline=clock[0] + gemini.MIN_TIMEOUT_S - 1)
+    assert exc.value.reason == "budget" and len(models.calls) == 0

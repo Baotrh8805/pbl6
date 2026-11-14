@@ -41,6 +41,39 @@ public class User {
     @Column(name = "password_changed_at")
     private java.time.Instant passwordChangedAt;
 
+    /** Khác null = tài khoản bị khoá: không đăng nhập, token đang có bị từ chối (Admin Panel). */
+    @Column(name = "locked_at")
+    private java.time.Instant lockedAt;
+
+    /** Hạn mức bóc tách / ngày riêng; null = theo app_settings. */
+    @Column(name = "extraction_daily_limit")
+    private Integer extractionDailyLimit;
+
+    /** Hạn Premium; null = vĩnh viễn (khi is_premium = true). HousekeepingJob hạ về free khi quá hạn. */
+    @Column(name = "premium_until")
+    private java.time.Instant premiumUntil;
+
+    /** Staff: phải đổi mật khẩu (seed / do người khác đặt) trước khi dùng Admin Panel. */
+    @JsonIgnore
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword = false;
+
+    /** Lý do admin khoá (hiện cho người bị khoá khi đăng nhập); null khi không khoá. */
+    @Column(name = "locked_reason")
+    private String lockedReason;
+
+    /**
+     * Mốc xác thực email (V24); null = chưa xác thực -> USER bị chặn đăng nhập khi app_settings email_verification_required
+     * bật (EmailVerificationService.mustVerify). Staff không bao giờ bị chặn bởi cột này.
+     */
+    @JsonIgnore
+    @Column(name = "email_verified_at")
+    private java.time.Instant emailVerifiedAt;
+
+    /** Khoá bình luận mềm (V38): 3 lần bị AI chặn / 24 giờ → không bình luận / đánh giá tới mốc này; admin mở sớm. */
+    @Column(name = "comment_locked_until")
+    private java.time.Instant commentLockedUntil;
+
     public User() {}
 
     /** Email so khớp không phân biệt hoa thường: lưu và tra cứu luôn ở dạng này. */
@@ -70,8 +103,36 @@ public class User {
     public void setRole(Role role) { this.role = role; }
 
     public java.time.Instant getPasswordChangedAt() { return passwordChangedAt; }
-    public void setPasswordChangedAt(java.time.Instant passwordChangedAt) { this.passwordChangedAt = passwordChangedAt; }
+    /**
+     * Cắt về micro giây (độ chính xác Postgres lưu): token cấp ngay từ user trong bộ nhớ (đổi mật khẩu) mang pcv = mốc này
+     * tính bằng ms, phải khớp mốc JwtAuthenticationFilter đọc lại từ DB ở request sau (DB tự làm tròn có thể lên 1 ms).
+     */
+    public void setPasswordChangedAt(java.time.Instant passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt == null ? null
+                : passwordChangedAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
+
+    public java.time.Instant getLockedAt() { return lockedAt; }
+    public void setLockedAt(java.time.Instant lockedAt) { this.lockedAt = lockedAt; }
+
+    public Integer getExtractionDailyLimit() { return extractionDailyLimit; }
+    public void setExtractionDailyLimit(Integer extractionDailyLimit) { this.extractionDailyLimit = extractionDailyLimit; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public java.time.Instant getPremiumUntil() { return premiumUntil; }
+    public void setPremiumUntil(java.time.Instant premiumUntil) { this.premiumUntil = premiumUntil; }
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
+    public String getLockedReason() { return lockedReason; }
+    public void setLockedReason(String lockedReason) { this.lockedReason = lockedReason; }
+    public java.time.Instant getEmailVerifiedAt() { return emailVerifiedAt; }
+    public void setEmailVerifiedAt(java.time.Instant emailVerifiedAt) { this.emailVerifiedAt = emailVerifiedAt; }
+    public java.time.Instant getCommentLockedUntil() { return commentLockedUntil; }
+    public void setCommentLockedUntil(java.time.Instant commentLockedUntil) { this.commentLockedUntil = commentLockedUntil; }
+
+    /** Staff còn phải đổi mật khẩu seed: chỉ được dùng /api/auth/** để hoàn tất. */
+    @JsonIgnore
+    public boolean isSetupPending() { return role != Role.USER && mustChangePassword; }
 }

@@ -1,0 +1,635 @@
+# Danh mục mẫu ngữ pháp JLPT (N5–N4, một số N3). Cú pháp `pattern`: xem đầu matcher.py.
+# Thứ tự trong file quyết định ưu tiên khi hai mẫu khớp cùng độ dài → mẫu cụ thể đặt trước.
+
+# ---------- Nghĩa vụ / cho phép / cấm ----------
+- id: nakereba_naranai
+  name: 〜なければならない
+  level: N4
+  pattern: "ない/助動詞[仮定] ば なる/動詞|いける/動詞|だめ|駄目"
+  meaning_vi: "phải làm gì (nghĩa vụ)"
+- id: nakute_wa_ikenai
+  name: 〜なくてはいけない
+  level: N4
+  pattern: "ない/助動詞[連用] て は いける/動詞|なる/動詞|だめ|駄目"
+  meaning_vi: "phải làm gì (không làm thì không được)"
+- id: nai_to_ikenai
+  name: 〜ないといけない
+  level: N4
+  pattern: "ない/助動詞 と/助詞/接続助詞 いける/動詞|だめ|駄目"
+  meaning_vi: "phải làm gì"
+- id: nakya
+  name: 〜なきゃ／なくちゃ
+  level: N3
+  pattern: "V[未然] ない/助動詞[仮定形-融合]|ない/助動詞[連用形-融合]"
+  meaning_vi: "phải làm gì (nói tắt, thân mật)"
+- id: nakute_mo_ii
+  name: 〜なくてもいい
+  level: N4
+  pattern: "ない/助動詞[連用] て も いい/形容詞|よい/形容詞|良い/形容詞|構う/動詞|大丈夫"
+  meaning_vi: "không cần phải làm gì cũng được"
+- id: te_mo_ii
+  name: 〜てもいい
+  level: N5
+  pattern: "* て|で も いい/形容詞|よい/形容詞|良い/形容詞|構う/動詞|大丈夫"
+  meaning_vi: "được phép làm gì, làm gì cũng được"
+- id: te_wa_ikenai
+  name: 〜てはいけない
+  level: N5
+  pattern: "V[連用]|A[連用] て|で は いける/動詞|なる/動詞|だめ|駄目"
+  meaning_vi: "không được làm gì (cấm)"
+
+# ---------- Thể て + động từ bổ trợ ----------
+- id: te_iru
+  name: 〜ている
+  level: N5
+  pattern: "V[連用] て|で いる/動詞"
+  meaning_vi: "đang làm gì / trạng thái kéo dài"
+- id: te_iru_short
+  name: 〜ている
+  level: N5
+  pattern: "V[連用] てる/助動詞|でる/助動詞"
+  meaning_vi: "đang làm gì / trạng thái kéo dài"
+- id: te_aru
+  name: 〜てある
+  level: N4
+  pattern: "V[連用] て|で ある/動詞"
+  meaning_vi: "trạng thái đã được làm sẵn (kết quả hành động có chủ ý)"
+- id: te_oku
+  name: 〜ておく
+  level: N4
+  pattern: "V[連用] て|で おく/動詞|置く/動詞|とく/助動詞"
+  meaning_vi: "làm sẵn, chuẩn bị trước"
+- id: te_shimau
+  name: 〜てしまう
+  level: N4
+  pattern: "V[連用] て|で しまう/動詞"
+  meaning_vi: "làm xong hẳn / lỡ làm (tiếc nuối)"
+- id: te_shimau_short
+  name: 〜てしまう
+  level: N4
+  pattern: "V[連用] ちゃう/助動詞|じゃう/助動詞"
+  meaning_vi: "làm xong hẳn / lỡ làm (tiếc nuối)"
+- id: te_miru
+  name: 〜てみる
+  level: N4
+  pattern: "V[連用] て|で みる/動詞|見る/動詞"
+  meaning_vi: "thử làm gì"
+- id: te_iku
+  name: 〜ていく
+  level: N4
+  pattern: "V[連用] て|で いく/動詞|行く/動詞"
+  meaning_vi: "làm gì rồi đi / thay đổi dần về phía tương lai"
+- id: te_kuru
+  name: 〜てくる
+  level: N4
+  pattern: "V[連用] て|で くる/動詞|来る/動詞"
+  meaning_vi: "làm gì rồi đến / thay đổi dần đến hiện tại"
+- id: te_kara
+  name: 〜てから
+  level: N5
+  pattern: "V[連用] て|で から/助詞"
+  meaning_vi: "sau khi làm gì"
+- id: te_hoshii
+  name: 〜てほしい
+  level: N3
+  pattern: "V[連用] て|で ほしい/形容詞|欲しい/形容詞"
+  meaning_vi: "muốn ai đó làm gì"
+- id: te_sumimasen
+  name: 〜てすみません
+  level: N4
+  pattern: "V[連用]|ない/助動詞 て|で すみません|すまない/形容詞|申し訳/名詞"
+  meaning_vi: "xin lỗi vì đã…"
+
+# ---------- Cho – nhận ----------
+- id: sasete_kudasai
+  name: 〜させてください
+  level: N4
+  pattern: "V[未然] せる/助動詞|させる/助動詞 て くださる/動詞"
+  meaning_vi: "xin hãy cho phép tôi làm gì"
+- id: naide_kudasai
+  name: 〜ないでください
+  level: N5
+  pattern: "ない/助動詞 で くださる/動詞"
+  meaning_vi: "xin đừng làm gì"
+- id: te_kudasai
+  name: 〜てください
+  level: N5
+  pattern: "V[連用] て|で ください"
+  meaning_vi: "hãy làm gì (yêu cầu lịch sự)"
+- id: te_itadakemasenka
+  name: 〜ていただけませんか
+  level: N3
+  pattern: "V[連用] て|で いただける/動詞|もらえる/動詞 ます/助動詞? ぬ/助動詞|ん? か/助詞?"
+  meaning_vi: "có thể làm giúp tôi… được không? (rất lịch sự)"
+- id: te_kureru
+  name: 〜てくれる
+  level: N4
+  pattern: "V[連用] て|で くれる/動詞|くださる/動詞"
+  meaning_vi: "ai đó làm gì cho tôi"
+- id: te_ageru
+  name: 〜てあげる
+  level: N4
+  pattern: "V[連用] て|で あげる/動詞|やる/動詞|差し上げる/動詞"
+  meaning_vi: "làm gì cho ai"
+- id: te_morau
+  name: 〜てもらう
+  level: N4
+  pattern: "V[連用] て|で もらう/動詞|いただく/動詞"
+  meaning_vi: "được ai làm gì cho"
+- id: kureru_ageru_morau
+  name: くれる／あげる／もらう
+  level: N5
+  pattern: "くれる/動詞|あげる/動詞|もらう/動詞|くださる/動詞|いただく/動詞"
+  meaning_vi: "cho (tôi) / cho (người khác) / nhận"
+
+# ---------- Kính ngữ cơ bản ----------
+- id: o_kudasai
+  name: お〜ください
+  level: N4
+  pattern: "お/接頭辞|ご/接頭辞 V[連用]|/名詞 くださる/動詞"
+  meaning_vi: "xin mời / xin hãy… (kính ngữ)"
+- id: o_ni_naru
+  name: お〜になる
+  level: N4
+  pattern: "お/接頭辞|ご/接頭辞 V[連用]|/名詞 に なる/動詞"
+  meaning_vi: "tôn kính ngữ: ai đó làm gì"
+- id: o_suru
+  name: お〜する
+  level: N4
+  pattern: "お/接頭辞|ご/接頭辞 V[連用]|/名詞 する/動詞|いたす/動詞|致す/動詞"
+  meaning_vi: "khiêm nhường ngữ: tôi làm gì"
+
+# ---------- Khả năng / kinh nghiệm / quyết định ----------
+- id: ta_koto_ga_aru
+  name: 〜たことがある
+  level: N4
+  pattern: "た/助動詞 こと が ある/動詞|ない/形容詞|無い/形容詞"
+  meaning_vi: "đã từng làm gì"
+- id: koto_ga_aru
+  name: 〜ことがある
+  level: N3
+  pattern: "V[連体]|ない/助動詞 こと が ある/動詞"
+  meaning_vi: "có khi, thỉnh thoảng xảy ra"
+- id: koto_ga_dekiru
+  name: 〜ことができる
+  level: N4
+  pattern: "V[連体]|V[終止] こと が できる/動詞|出来る/動詞"
+  meaning_vi: "có thể làm gì"
+- id: koto_ni_suru
+  name: 〜ことにする
+  level: N4
+  pattern: "V[連体]|ない/助動詞 こと に する/動詞"
+  meaning_vi: "quyết định làm gì"
+- id: koto_ni_naru
+  name: 〜ことになる
+  level: N4
+  pattern: "V[連体]|ない/助動詞 こと に なる/動詞"
+  meaning_vi: "được quyết định là / dẫn đến việc"
+- id: you_ni_suru
+  name: 〜ようにする
+  level: N4
+  pattern: "V[連体]|ない/助動詞 よう/形状詞 に する/動詞"
+  meaning_vi: "cố gắng để / làm sao cho"
+- id: you_ni_naru
+  name: 〜ようになる
+  level: N4
+  pattern: "V[連体]|ない/助動詞 よう/形状詞 に なる/動詞"
+  meaning_vi: "trở nên có thể / bắt đầu làm gì"
+- id: you_ni
+  name: 〜ように
+  level: N4
+  pattern: "V[連体]|ない/助動詞 よう/形状詞 に"
+  meaning_vi: "để, nhằm (mục đích) / như là"
+- id: tame_ni
+  name: 〜ために
+  level: N4
+  pattern: "V[連体]|の|ない/助動詞 ため/名詞|為/名詞 に|の?"
+  meaning_vi: "để, vì (mục đích / nguyên nhân)"
+- id: tsumori
+  name: 〜つもり
+  level: N4
+  pattern: "V[連体]|ない/助動詞 つもり/名詞"
+  meaning_vi: "dự định làm gì"
+- id: you_to_omou
+  name: 〜ようと思う
+  level: N4
+  pattern: "V[意志推量] と 思う/動詞|考える/動詞"
+  meaning_vi: "định làm gì (ý định)"
+- id: you_to_suru
+  name: 〜ようとする
+  level: N3
+  pattern: "V[意志推量] と する/動詞"
+  meaning_vi: "định / cố gắng làm gì (sắp xảy ra)"
+- id: to_omou
+  name: 〜と思う
+  level: N5
+  pattern: "と/助詞/格助詞 思う/動詞"
+  meaning_vi: "tôi nghĩ rằng…"
+- id: to_iu
+  name: 〜という
+  level: N4
+  pattern: "と/助詞/格助詞 いう/動詞[連体]|言う/動詞[連体]"
+  meaning_vi: "gọi là, được gọi là…"
+
+# ---------- Mong muốn / cảm xúc ----------
+- id: tai
+  name: 〜たい
+  level: N5
+  pattern: "V[連用] たい/助動詞"
+  meaning_vi: "muốn làm gì"
+- id: tagaru
+  name: 〜たがる
+  level: N4
+  pattern: "V[連用] たがる/助動詞"
+  meaning_vi: "(người khác) có vẻ muốn làm gì"
+- id: ga_hoshii
+  name: 〜がほしい
+  level: N5
+  pattern: "が/助詞 ほしい/形容詞|欲しい/形容詞"
+  meaning_vi: "muốn có cái gì"
+- id: garu
+  name: 〜がる
+  level: N4
+  pattern: "がる/接尾辞"
+  meaning_vi: "(người khác) tỏ ra, cảm thấy…"
+
+# ---------- Suy đoán / truyền đạt ----------
+- id: sou_da_appearance
+  name: 〜そうだ（様態）
+  level: N4
+  pattern: "V[連用]|A[語幹]|/形状詞|なさ そう/形状詞"
+  meaning_vi: "có vẻ, trông như sắp…"
+- id: sou_da_hearsay
+  name: 〜そうだ（伝聞）
+  level: N4
+  pattern: "V[終止]|V[連体]|A[終止]|A[連体]|だ/助動詞|た/助動詞|ない/助動詞 そう/名詞"
+  meaning_vi: "nghe nói rằng…"
+- id: rashii
+  name: 〜らしい
+  level: N4
+  pattern: "らしい/助動詞|らしい/接尾辞"
+  meaning_vi: "hình như, nghe nói / đúng chất…"
+- id: you_da
+  name: 〜ようだ
+  level: N4
+  pattern: "よう/形状詞 だ|です|でしょう|な|だっ"
+  meaning_vi: "có vẻ như, giống như"
+- id: mitai
+  name: 〜みたい
+  level: N4
+  pattern: "みたい/形状詞"
+  meaning_vi: "giống như, có vẻ (nói thân mật)"
+- id: hazu_da
+  name: 〜はずだ
+  level: N4
+  pattern: "はず/名詞"
+  meaning_vi: "chắc chắn là, lẽ ra"
+- id: kamoshirenai
+  name: 〜かもしれない
+  level: N4
+  pattern: "か も しれる/動詞|知れる/動詞"
+  meaning_vi: "có lẽ, không chừng"
+- id: deshou
+  name: 〜でしょう
+  level: N5
+  pattern: "でしょう|でしょ"
+  meaning_vi: "có lẽ, chắc là… (suy đoán lịch sự)"
+- id: darou
+  name: 〜だろう
+  level: N4
+  pattern: "だろう|だろ"
+  meaning_vi: "có lẽ, chắc là… (suy đoán)"
+- id: wake_ga_nai
+  name: 〜わけがない
+  level: N3
+  pattern: "わけ/名詞 が|は ない/形容詞|無い/形容詞"
+  meaning_vi: "không có lý nào, không thể nào"
+- id: n_desu
+  name: 〜んです
+  level: N5
+  pattern: "ん/助詞/準体助詞|の/助詞/準体助詞 です|だ|でしょう"
+  meaning_vi: "giải thích lý do / nhấn mạnh"
+
+# ---------- Mệnh lệnh / lời khuyên ----------
+- id: nasai
+  name: 〜なさい
+  level: N4
+  pattern: "V[連用] なさる/動詞[命令]"
+  meaning_vi: "hãy làm gì (mệnh lệnh nhẹ)"
+- id: ta_hou_ga_ii
+  name: 〜たほうがいい
+  level: N4
+  pattern: "た/助動詞|ない/助動詞 ほう/名詞|方/名詞 が いい/形容詞|よい/形容詞|良い/形容詞"
+  meaning_vi: "nên / không nên làm gì (lời khuyên)"
+- id: hou_ga
+  name: 〜のほうが
+  level: N5
+  pattern: "の|が|な ほう/名詞|方/名詞 が"
+  meaning_vi: "… hơn (so sánh)"
+- id: tara_dou
+  name: 〜たらどうですか
+  level: N4
+  pattern: "たら|だら どう/副詞"
+  meaning_vi: "hay là… thì sao? (đề nghị)"
+- id: mashou
+  name: 〜ましょう
+  level: N5
+  pattern: "V[連用] ます/助動詞[意志推量]"
+  meaning_vi: "chúng ta hãy… / để tôi…"
+- id: masenka
+  name: 〜ませんか
+  level: N5
+  pattern: "V[連用] ます/助動詞 ぬ/助動詞 か/助詞"
+  meaning_vi: "… không? (mời, rủ)"
+
+# ---------- Phủ định đặc biệt ----------
+- id: naide
+  name: 〜ないで
+  level: N4
+  pattern: "ない/助動詞 で/助詞/接続助詞"
+  meaning_vi: "không làm gì mà… / đừng"
+- id: nakute
+  name: 〜なくて
+  level: N4
+  pattern: "ない/助動詞[連用] て"
+  meaning_vi: "vì không… / không… và"
+- id: zu_ni
+  name: 〜ずに
+  level: N3
+  pattern: "V[未然] ず/助動詞 に"
+  meaning_vi: "không làm gì mà… (văn viết)"
+- id: shika_nai
+  name: 〜しか〜ない
+  level: N4
+  pattern: "しか/助詞 * ない/助動詞|ない/形容詞|無い/形容詞|ます/助動詞 ぬ/助動詞?"
+  meaning_vi: "chỉ… (không có gì khác)"
+
+# ---------- Điều kiện / nhượng bộ / nguyên nhân ----------
+- id: tara
+  name: 〜たら
+  level: N4
+  pattern: "た/助動詞[仮定]"
+  meaning_vi: "nếu / khi… thì"
+- id: ba
+  name: 〜ば
+  level: N4
+  pattern: "V[仮定]|A[仮定]|ない/助動詞[仮定] ば"
+  meaning_vi: "nếu… thì"
+- id: ba_hodo
+  name: 〜ば〜ほど
+  level: N3
+  pattern: "V[仮定]|A[仮定] ば V[連体]|A[連体] ほど/助詞"
+  meaning_vi: "càng… càng…"
+- id: to_conditional
+  name: 〜と（条件）
+  level: N4
+  pattern: "V[終止]|ない/助動詞[終止] と/助詞/接続助詞"
+  meaning_vi: "hễ… thì (điều kiện tất yếu)"
+- id: nara
+  name: 〜なら
+  level: N4
+  pattern: "だ/助動詞[仮定]"
+  meaning_vi: "nếu là… thì (giả định dựa trên thông tin)"
+- id: temo
+  name: 〜ても
+  level: N4
+  pattern: "V[連用]|A[連用]|ない/助動詞 て|で も"
+  meaning_vi: "dù… cũng"
+- id: demo
+  name: 〜でも
+  level: N4
+  pattern: "/名詞|/代名詞 で/助詞/格助詞 も"
+  meaning_vi: "ngay cả… cũng / … hay gì đó"
+- id: noni
+  name: 〜のに
+  level: N4
+  pattern: "V[連体]|A[連体]|た/助動詞|ない/助動詞|な の/助詞/準体助詞 に"
+  meaning_vi: "mặc dù… vậy mà"
+- id: node
+  name: 〜ので
+  level: N4
+  pattern: "の/助詞/準体助詞 で"
+  meaning_vi: "vì… nên (lý do khách quan)"
+- id: kara_reason
+  name: 〜から（理由）
+  level: N5
+  pattern: "V[終止]|A[終止]|だ/助動詞|です/助動詞|ます/助動詞|ない/助動詞|た/助動詞 から/助詞"
+  meaning_vi: "vì… nên"
+- id: shi
+  name: 〜し
+  level: N4
+  pattern: "し/助詞/接続助詞"
+  meaning_vi: "vừa… vừa… / hơn nữa (liệt kê lý do)"
+- id: tari
+  name: 〜たり〜たりする
+  level: N5
+  pattern: "V[連用] たり|だり"
+  meaning_vi: "lúc thì… lúc thì… / nào là…"
+- id: nagara
+  name: 〜ながら
+  level: N4
+  pattern: "V[連用] ながら"
+  meaning_vi: "vừa… vừa…"
+- id: okage_de
+  name: 〜おかげで
+  level: N3
+  pattern: "おかげ/名詞|お陰/名詞 で"
+  meaning_vi: "nhờ có… mà"
+- id: sei_de
+  name: 〜せいで
+  level: N3
+  pattern: "せい/名詞 で|か"
+  meaning_vi: "tại vì… (kết quả xấu)"
+
+# ---------- Bị động / sai khiến ----------
+- id: saserareru
+  name: 〜させられる
+  level: N3
+  pattern: "V[未然] せる/助動詞|させる/助動詞 られる/助動詞|れる/助動詞"
+  meaning_vi: "bị bắt phải làm gì"
+- id: saseru
+  name: 〜させる
+  level: N4
+  pattern: "V[未然] せる/助動詞|させる/助動詞"
+  meaning_vi: "bắt / cho phép ai làm gì (sai khiến)"
+- id: rareru
+  name: 〜られる
+  level: N4
+  pattern: "V[未然] られる/助動詞|れる/助動詞"
+  meaning_vi: "bị / được… (bị động) / có thể"
+
+# ---------- Thời gian ----------
+- id: mae_ni
+  name: 〜前に
+  level: N5
+  pattern: "V[連体]|の 前/名詞 に"
+  meaning_vi: "trước khi…"
+- id: ato_de
+  name: 〜後で
+  level: N5
+  pattern: "た/助動詞|の 後/名詞|あと/名詞 で|に"
+  meaning_vi: "sau khi…"
+- id: chuu
+  name: 〜中
+  level: N4
+  pattern: "/名詞 中/接尾辞"
+  meaning_vi: "đang trong lúc… / trong suốt…"
+- id: aida_ni
+  name: 〜間に
+  level: N3
+  pattern: "V[連体]|いる/動詞|の|A[連体] 間/名詞|あいだ/名詞 に|は?"
+  meaning_vi: "trong lúc… / trong khi…"
+- id: uchi_ni
+  name: 〜うちに
+  level: N3
+  pattern: "V[連体]|ない/助動詞|の|A[連体] うち/名詞 に"
+  meaning_vi: "trong khi còn…"
+- id: tokoro
+  name: 〜ところ
+  level: N4
+  pattern: "て|で? V[連体]|いる/動詞[連体]|た/助動詞 ところ/名詞 だ|です|でし|な|に|で|を?"
+  meaning_vi: "sắp / đang / vừa mới làm gì"
+- id: ta_bakari
+  name: 〜たばかり
+  level: N4
+  pattern: "た/助動詞 ばかり"
+  meaning_vi: "vừa mới làm gì xong"
+- id: toki
+  name: 〜とき
+  level: N5
+  pattern: "V[連体]|た/助動詞|A[連体]|の|な 時/名詞|とき/名詞"
+  meaning_vi: "khi…"
+- id: made_ni
+  name: 〜までに
+  level: N4
+  pattern: "まで/助詞 に"
+  meaning_vi: "trước (hạn chót)…"
+- id: mama
+  name: 〜まま
+  level: N3
+  pattern: "た/助動詞|の|/連体詞 まま/名詞"
+  meaning_vi: "giữ nguyên trạng thái…"
+
+# ---------- Mức độ / so sánh / giới hạn ----------
+- id: te_bakari_iru
+  name: 〜てばかりいる
+  level: N3
+  pattern: "V[連用] て|で ばかり いる/動詞"
+  meaning_vi: "toàn chỉ làm gì"
+- id: bakari
+  name: 〜ばかり
+  level: N3
+  pattern: "/名詞 ばかり"
+  meaning_vi: "toàn là, chỉ toàn…"
+- id: sugiru
+  name: 〜すぎる
+  level: N4
+  pattern: "V[連用]|A[語幹]|/形状詞 すぎる/動詞|過ぎる/動詞"
+  meaning_vi: "quá…"
+- id: hodo
+  name: 〜ほど
+  level: N3
+  pattern: "ほど/助詞"
+  meaning_vi: "đến mức… / không bằng…"
+- id: yori
+  name: 〜より
+  level: N5
+  pattern: "より/助詞"
+  meaning_vi: "hơn… (so sánh)"
+- id: dake
+  name: 〜だけ
+  level: N5
+  pattern: "だけ/助詞"
+  meaning_vi: "chỉ…"
+- id: zutsu
+  name: 〜ずつ
+  level: N4
+  pattern: "ずつ/助詞"
+  meaning_vi: "mỗi… (phân chia đều)"
+- id: toka
+  name: 〜とか
+  level: N3
+  pattern: "と/助詞/格助詞 か/助詞/副助詞"
+  meaning_vi: "nào là… nào là… (liệt kê)"
+- id: ka_dou_ka
+  name: 〜かどうか
+  level: N3
+  pattern: "か どう/副詞 か"
+  meaning_vi: "… hay không"
+- id: sae
+  name: 〜さえ
+  level: N3
+  pattern: "さえ/助詞"
+  meaning_vi: "ngay cả… / chỉ cần…"
+- id: koso
+  name: 〜こそ
+  level: N3
+  pattern: "こそ/助詞"
+  meaning_vi: "chính là… (nhấn mạnh)"
+
+# ---------- Hậu tố động từ / danh từ hoá ----------
+- id: kata
+  name: 〜方
+  level: N4
+  pattern: "V[連用]? %方/名詞|方/接尾辞"
+  meaning_vi: "cách làm gì"
+- id: yasui
+  name: 〜やすい
+  level: N4
+  pattern: "V[連用] やすい/接尾辞|やすい/形容詞|易い/形容詞"
+  meaning_vi: "dễ làm gì"
+- id: nikui
+  name: 〜にくい
+  level: N4
+  pattern: "V[連用] にくい/接尾辞|にくい/形容詞|難い/形容詞"
+  meaning_vi: "khó làm gì"
+- id: hajimeru
+  name: 〜始める
+  level: N4
+  pattern: "V[連用] 始める/動詞|はじめる/動詞"
+  meaning_vi: "bắt đầu làm gì"
+- id: owaru
+  name: 〜終わる
+  level: N4
+  pattern: "V[連用] 終わる/動詞|おわる/動詞"
+  meaning_vi: "làm xong gì"
+- id: tsuzukeru
+  name: 〜続ける
+  level: N4
+  pattern: "V[連用] 続ける/動詞|つづける/動詞"
+  meaning_vi: "tiếp tục làm gì"
+- id: dasu
+  name: 〜出す
+  level: N3
+  pattern: "V[連用] 出す/動詞|だす/動詞"
+  meaning_vi: "bắt đầu đột ngột làm gì"
+- id: ku_naru
+  name: 〜くなる／〜になる
+  level: N5
+  pattern: "A[連用]|に なる/動詞"
+  meaning_vi: "trở nên…"
+- id: ni_tsuite
+  name: 〜について
+  level: N3
+  pattern: "に つく/動詞 て"
+  meaning_vi: "về (chủ đề)…"
+- id: ni_yotte
+  name: 〜によって
+  level: N3
+  pattern: "に よる/動詞 て|よる/動詞[終止]"
+  meaning_vi: "tuỳ theo / bởi… / bằng cách…"
+- id: to_shite
+  name: 〜として
+  level: N3
+  pattern: "と/助詞/格助詞 する/動詞[連用] て"
+  meaning_vi: "với tư cách là…"
+- id: ni_totte
+  name: 〜にとって
+  level: N3
+  pattern: "に とる/動詞 て"
+  meaning_vi: "đối với…"
+- id: ni_taishite
+  name: 〜に対して
+  level: N3
+  pattern: "に 対する/動詞 て"
+  meaning_vi: "đối với, trái lại với…"

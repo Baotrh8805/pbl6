@@ -1,6 +1,8 @@
-// Chạy backend (Spring Boot :8080), đợi backend lên rồi chạy frontend (Vite :5173). Dùng: npm run dev
+// Chạy ai-service (FastAPI :8000), backend (Spring Boot :8080), đợi backend lên rồi chạy frontend (Vite :5173). Dùng: npm run dev
 import { spawn, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import net from "node:net";
+import path from "node:path";
 
 const isWin = process.platform === "win32";
 
@@ -33,12 +35,13 @@ function freePort(port) {
 // 8081 là cổng các lần chạy tay trước đây hay dùng -> dọn luôn để không còn instance thứ hai
 // cùng chạy migration/seed trên một DB.
 const bePort = process.env.BE_PORT ?? "8080";
-for (const port of new Set([bePort, "8081", "5173"])) freePort(port);
+for (const port of new Set([bePort, "8081", "5173", "8000"])) freePort(port);
 
 const procs = [];
 let closing = false;
 
-function start(tag, cmd, cwd) {
+// optional: tiến trình phụ (ai-service) thoát thì chỉ báo, không tắt BE/FE
+function start(tag, cmd, cwd, optional = false) {
     // shell: true vì trên Windows mvn/npm là file .cmd, spawn trực tiếp sẽ EINVAL
     const p = spawn(cmd, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"] });
     const print = (chunk) => {
@@ -51,7 +54,7 @@ function start(tag, cmd, cwd) {
     p.on("error", (e) => console.error(`[${tag}] không chạy được "${cmd}": ${e.message}`));
     p.on("exit", (code) => {
         console.log(`[${tag}] thoát với code ${code}`);
-        shutdown();
+        if (!optional) shutdown();
     });
     procs.push(p);
     return p;
@@ -83,6 +86,15 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// ai-service: dùng python trong venv nếu đã tạo (README bước 2), không có thì nhắc và vẫn chạy BE/FE
+// (tính năng bóc tách tài liệu sẽ báo "Không kết nối được dịch vụ AI" cho tới khi ai-service lên).
+const venvPython = path.join("ai-service", "venv", isWin ? "Scripts/python.exe" : "bin/python");
+if (existsSync(venvPython)) {
+    start("AI", `"${path.resolve(venvPython)}" -X utf8 -m uvicorn app.main:app --port 8000`, "ai-service", true);
+} else {
+    console.log("[dev] chưa có ai-service/venv -> bỏ qua ai-service (xem README bước 2)");
+}
 
 start("BE", `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${bePort}`, "backend-core");
 

@@ -1,6 +1,8 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Modal } from "@/components/ui/Modal";
 import type { CardDto } from "@/types/api.types";
+import { CardContent } from "./CardContent";
 
 export interface DeckPreviewModalProps {
   isOpen: boolean;
@@ -10,6 +12,8 @@ export interface DeckPreviewModalProps {
   description?: string;
   cards: CardDto[];
   onSaveToFolder?: () => void;
+  /** Đã lưu bộ này (Thư viện): hiện "Đã lưu · Mở" tới bản đã lưu thay cho nút lưu. */
+  savedHref?: string | null;
   /** Thẻ đang tải từ API / lỗi tải (xem trước bộ thẻ Thư viện). */
   loading?: boolean;
   error?: string;
@@ -25,6 +29,7 @@ export const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
   description,
   cards,
   onSaveToFolder,
+  savedHref,
   loading,
   error,
   extra,
@@ -51,7 +56,16 @@ export const DeckPreviewModal: React.FC<DeckPreviewModalProps> = ({
         >
           Đóng
         </button>
-        {onSaveToFolder && (
+        {savedHref ? (
+          <Link
+            to={savedHref}
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-on-primary text-sm font-semibold hover:bg-primary-container transition-colors shadow-sm"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">bookmark_added</span>
+            Đã lưu · Mở
+          </Link>
+        ) : onSaveToFolder && (
           <button
             type="button"
             onClick={() => {
@@ -159,18 +173,17 @@ const PreviewBody: React.FC<{ description?: string; cards: CardDto[] }> = ({ des
             ) : (
               /* Mặt sau */
               <div className="text-center py-4 space-y-2.5">
-                <h3 className="text-xl font-bold text-primary font-headline">
-                  {currentCard.meaning}
+                <h3>
+                  <CardContent
+                    text={currentCard.meaning}
+                    headClassName="text-xl font-bold text-primary font-headline"
+                    restClassName="text-xs font-normal text-on-surface-variant text-left mt-2 p-2.5 rounded-lg bg-surface-container/60"
+                  />
                 </h3>
                 {currentCard.reading && (
                   <p className="text-xs text-on-surface-variant">
                     Đọc: <span className="font-medium">{currentCard.reading}</span>
                   </p>
-                )}
-                {currentCard.example && (
-                  <div className="p-2.5 rounded-lg bg-surface-container/60 text-xs text-left mt-2">
-                    <p className="text-primary font-medium">{currentCard.example}</p>
-                  </div>
                 )}
               </div>
             )}

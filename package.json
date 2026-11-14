@@ -6,6 +6,9 @@
         "dev": "node dev.mjs",
         "smoke": "node smoke-auth.mjs",
         "smoke:crud": "node smoke-crud.mjs",
-        "e2e": "node e2e.mjs"
+        "smoke:extraction": "node smoke-extraction.mjs",
+        "smoke:learning-path": "node smoke-learning-path.mjs",
+        "e2e": "node e2e.mjs",
+        "k6": "k6 run scripts/perf-k6.js"
     }
 }

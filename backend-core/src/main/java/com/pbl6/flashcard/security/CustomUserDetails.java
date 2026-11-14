@@ -25,6 +25,8 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
+        // Staff chưa đổi mật khẩu seed: chỉ ROLE_SETUP -> /api/auth/** (authenticated) để đổi, 403 nơi khác
+        if (user.isSetupPending()) return Collections.singleton(new SimpleGrantedAuthority("ROLE_SETUP"));
         return Collections.singleton(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
     }
 
@@ -42,7 +44,7 @@ public class CustomUserDetails implements UserDetails {
     public boolean isAccountNonExpired() { return true; }
 
     @Override
-    public boolean isAccountNonLocked() { return true; }
+    public boolean isAccountNonLocked() { return user.getLockedAt() == null; } // DaoAuthenticationProvider -> LockedException
 
     @Override
     public boolean isCredentialsNonExpired() { return true; }

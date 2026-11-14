@@ -6,6 +6,9 @@ import { ProfileHero } from "@/features/profile/components/ProfileHero";
 import { ProfileInfoTab } from "@/features/profile/components/ProfileInfoTab";
 import { ProfileSecurityTab } from "@/features/profile/components/ProfileSecurityTab";
 import { QuizHistoryTab } from "@/features/profile/components/QuizHistoryTab";
+import { FrictionTab } from "@/features/profile/components/FrictionTab";
+import { PracticeStatsTab } from "@/features/profile/components/PracticeStatsTab";
+import { MyReportsTab } from "@/features/profile/components/MyReportsTab";
 import { panelId, parseProfileTab, tabId, type ProfileTab } from "@/features/profile/lib/profileUtils";
 
 export const ProfilePage: React.FC = () => {
@@ -19,7 +22,7 @@ export const ProfilePage: React.FC = () => {
         setSearchParams(tab === "info" ? {} : { tab }, { replace: true });
 
     return (
-        <section className="flex flex-col gap-space-lg pb-space-xl max-w-5xl">
+        <section className="flex flex-col gap-6 pb-12 max-w-5xl">
             <ProfileHero
                 displayName={displayName}
                 email={userProfile?.email ?? userEmail ?? ""}
@@ -34,6 +37,9 @@ export const ProfilePage: React.FC = () => {
                 {activeTab === "info" && <ProfileInfoTab />}
                 {activeTab === "security" && <ProfileSecurityTab />}
                 {activeTab === "history" && <QuizHistoryTab />}
+                {activeTab === "friction" && <FrictionTab />}
+                {activeTab === "practice" && <PracticeStatsTab />}
+                {activeTab === "reports" && <MyReportsTab />}
             </div>
         </section>
     );
