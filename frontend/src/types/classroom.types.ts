@@ -138,6 +138,11 @@ export interface ClassroomQuiz {
     createdAt: string;
     myLatestScore?: number | null;
     submissionCount: number;
+    scopeType?: "LESSON_ONLY" | "CUMULATIVE_UP_TO_LESSON" | "CLASSROOM_ALL";
+    requiredLessonId?: number | null;
+    requiredLessonTitle?: string | null;
+    isLockedForUser?: boolean;
+    extraDeckIds?: string[];
 }
 
 export interface CreateClassroomQuizInput {
@@ -146,8 +151,11 @@ export interface CreateClassroomQuizInput {
     description?: string;
     durationMinutes?: number;
     questionCount?: number;
-    deckIds: string[];
+    deckIds?: string[];
     cardRange?: string;
+    scopeType?: "LESSON_ONLY" | "CUMULATIVE_UP_TO_LESSON" | "CLASSROOM_ALL";
+    requiredLessonId?: number | null;
+    extraDeckIds?: string[];
 }
 
 export interface QuizQuestionItem {

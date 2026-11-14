@@ -58,17 +58,137 @@ public class ClassroomQuizService {
         this.objectMapper = objectMapper;
     }
 
+    /** Thu thập thẻ flashcard của một buổi học cụ thể (tính cả dải thẻ nếu tiêu đề có ghi) */
+    private List<Flashcard> collectCardsForLesson(ClassroomLesson lesson) {
+        if (lesson == null || lesson.getDeckIds() == null || lesson.getDeckIds().isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Flashcard> cards = new ArrayList<>();
+        for (String deckId : lesson.getDeckIds()) {
+            cards.addAll(flashcardRepo.findByDeck_IdOrderByPositionAsc(deckId));
+        }
+        if (cards.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Trích xuất range từ tiêu đề bài học nếu có (VD: Thẻ 1 - 20)
+        if (lesson.getTitle() != null) {
+            Matcher m = RANGE_PATTERN.matcher(lesson.getTitle());
+            if (m.find()) {
+                int start = Integer.parseInt(m.group(1));
+                int end = Integer.parseInt(m.group(2));
+                int fromIndex = Math.max(0, start - 1);
+                int toIndex = Math.min(cards.size(), end);
+                if (fromIndex < toIndex) {
+                    return new ArrayList<>(cards.subList(fromIndex, toIndex));
+                }
+            }
+        }
+        return cards;
+    }
+
+    /** Thu thập và lọc trùng kho câu hỏi của bài kiểm tra dựa theo phạm vi (Scope) */
+    public List<Flashcard> collectQuestionPool(ClassroomQuiz quiz) {
+        List<Flashcard> rawCards = new ArrayList<>();
+        String scope = quiz.getScopeType() != null && !quiz.getScopeType().isBlank()
+                ? quiz.getScopeType().trim().toUpperCase()
+                : (quiz.getLessonId() != null ? "LESSON_ONLY" : "CLASSROOM_ALL");
+
+        if ("LESSON_ONLY".equals(scope)) {
+            if (quiz.getLessonId() != null) {
+                ClassroomLesson lesson = lessonRepo.findById(quiz.getLessonId()).orElse(null);
+                if (lesson != null) {
+                    List<String> dIds = quiz.getDeckIds() != null && !quiz.getDeckIds().isEmpty()
+                            ? quiz.getDeckIds()
+                            : (lesson.getDeckIds() != null ? lesson.getDeckIds() : Collections.emptyList());
+                    List<Flashcard> lessonDeckCards = new ArrayList<>();
+                    for (String dId : dIds) {
+                        lessonDeckCards.addAll(flashcardRepo.findByDeck_IdOrderByPositionAsc(dId));
+                    }
+
+                    String effectiveRange = quiz.getCardRange() != null && !quiz.getCardRange().isBlank()
+                            ? quiz.getCardRange()
+                            : (lesson.getTitle() != null ? lesson.getTitle() : null);
+
+                    if (effectiveRange != null) {
+                        Matcher m = RANGE_PATTERN.matcher(effectiveRange);
+                        if (m.find()) {
+                            int start = Integer.parseInt(m.group(1));
+                            int end = Integer.parseInt(m.group(2));
+                            int fromIndex = Math.max(0, start - 1);
+                            int toIndex = Math.min(lessonDeckCards.size(), end);
+                            if (fromIndex < toIndex) {
+                                rawCards.addAll(lessonDeckCards.subList(fromIndex, toIndex));
+                            } else {
+                                rawCards.addAll(lessonDeckCards);
+                            }
+                        } else {
+                            rawCards.addAll(lessonDeckCards);
+                        }
+                    } else {
+                        rawCards.addAll(lessonDeckCards);
+                    }
+                }
+            } else if (quiz.getDeckIds() != null) {
+                for (String deckId : quiz.getDeckIds()) {
+                    rawCards.addAll(flashcardRepo.findByDeck_IdOrderByPositionAsc(deckId));
+                }
+            }
+        } else if ("CUMULATIVE_UP_TO_LESSON".equals(scope)) {
+            if (quiz.getLessonId() != null) {
+                ClassroomLesson currentLesson = lessonRepo.findById(quiz.getLessonId()).orElse(null);
+                if (currentLesson != null) {
+                    List<ClassroomLesson> allLessons = lessonRepo.findByClassroomIdOrderByOrderIndexAsc(quiz.getClassroomId());
+                    for (ClassroomLesson l : allLessons) {
+                        if (l.getOrderIndex() != null && currentLesson.getOrderIndex() != null
+                                && l.getOrderIndex() <= currentLesson.getOrderIndex()) {
+                            rawCards.addAll(collectCardsForLesson(l));
+                        }
+                    }
+                }
+            }
+        } else {
+            // CLASSROOM_ALL: Toàn bộ bài học trong lớp + Extra Decks nếu có
+            List<ClassroomLesson> allLessons = lessonRepo.findByClassroomIdOrderByOrderIndexAsc(quiz.getClassroomId());
+            for (ClassroomLesson l : allLessons) {
+                rawCards.addAll(collectCardsForLesson(l));
+            }
+            if (quiz.getExtraDeckIds() != null) {
+                for (String extraDeckId : quiz.getExtraDeckIds()) {
+                    rawCards.addAll(flashcardRepo.findByDeck_IdOrderByPositionAsc(extraDeckId));
+                }
+            }
+            if (rawCards.isEmpty() && quiz.getDeckIds() != null) {
+                for (String deckId : quiz.getDeckIds()) {
+                    rawCards.addAll(flashcardRepo.findByDeck_IdOrderByPositionAsc(deckId));
+                }
+            }
+        }
+
+        // Lọc trùng lặp thẻ theo thuật ngữ (term)
+        Map<String, Flashcard> deduplicated = new LinkedHashMap<>();
+        for (Flashcard c : rawCards) {
+            if (c == null) continue;
+            String key = c.getTerm() != null ? c.getTerm().trim().toLowerCase() : c.getId();
+            deduplicated.putIfAbsent(key, c);
+        }
+        return new ArrayList<>(deduplicated.values());
+    }
+
     /** Tạo bài kiểm tra riêng cho Lớp học (Chỉ giáo viên/chủ lớp) */
     @Transactional
     public ClassroomQuizResponse createQuiz(User user, Long classroomId, CreateClassroomQuizRequest req) {
         Classroom classroom = getOwnedClassroom(user, classroomId);
+
+        String scopeType = req.scopeType() != null && !req.scopeType().isBlank()
+                ? req.scopeType().trim().toUpperCase()
+                : (req.lessonId() != null ? "LESSON_ONLY" : "CLASSROOM_ALL");
 
         ClassroomQuiz quiz = new ClassroomQuiz();
         quiz.setClassroomId(classroom.getId());
         quiz.setTitle(req.title().trim());
         quiz.setDescription(req.description());
         quiz.setDurationMinutes(req.durationMinutes() != null && req.durationMinutes() > 0 ? req.durationMinutes() : 15);
-        quiz.setQuestionCount(req.questionCount() != null && req.questionCount() > 0 ? req.questionCount() : 30);
+        quiz.setScopeType(scopeType);
 
         List<String> deckIds = new ArrayList<>();
         if (req.deckIds() != null && !req.deckIds().isEmpty()) {
@@ -85,37 +205,121 @@ public class ClassroomQuizService {
             }
             quiz.setLessonId(lesson.getId());
 
-            // Nếu chưa chọn bộ thẻ, kế thừa bộ thẻ của buổi học
-            if (deckIds.isEmpty() && lesson.getDeckIds() != null) {
-                deckIds.addAll(lesson.getDeckIds());
+            // Nếu request có truyền deckIds và buổi học hiện tại chưa có bộ thẻ, tự động gán luôn cho buổi học
+            if (req.deckIds() != null && !req.deckIds().isEmpty()) {
+                if (lesson.getDeckIds() == null || lesson.getDeckIds().isEmpty()) {
+                    lesson.setDeckIds(new ArrayList<>(req.deckIds()));
+                    lessonRepo.save(lesson);
+                }
             }
 
-            // Nếu chưa nhập cardRange, thử trích xuất từ tiêu đề buổi học (ví dụ: Buổi 1: Từ vựng (Thẻ 1 - 41))
-            if ((cardRange == null || cardRange.isBlank()) && lesson.getTitle() != null) {
-                Matcher m = RANGE_PATTERN.matcher(lesson.getTitle());
-                if (m.find()) {
-                    cardRange = m.group(1) + "-" + m.group(2);
+            if ("LESSON_ONLY".equals(scopeType)) {
+                if (deckIds.isEmpty() && lesson.getDeckIds() != null && !lesson.getDeckIds().isEmpty()) {
+                    deckIds.addAll(lesson.getDeckIds());
                 }
+
+                // Fallback thông minh: Nếu buổi học chưa có bộ thẻ, kiểm tra xem có buổi khác trong lớp đã gán bộ thẻ không
+                if (deckIds.isEmpty()) {
+                    List<ClassroomLesson> allLessons = lessonRepo.findByClassroomIdOrderByOrderIndexAsc(classroom.getId());
+                    for (ClassroomLesson l : allLessons) {
+                        if (l.getDeckIds() != null && !l.getDeckIds().isEmpty()) {
+                            deckIds.addAll(l.getDeckIds());
+                            lesson.setDeckIds(new ArrayList<>(l.getDeckIds()));
+                            lessonRepo.save(lesson);
+                            break;
+                        }
+                    }
+                }
+
+                if ((cardRange == null || cardRange.isBlank()) && lesson.getTitle() != null) {
+                    Matcher m = RANGE_PATTERN.matcher(lesson.getTitle());
+                    if (m.find()) {
+                        cardRange = m.group(1) + "-" + m.group(2);
+                    }
+                }
+            } else if ("CUMULATIVE_UP_TO_LESSON".equals(scopeType)) {
+                List<ClassroomLesson> allLessons = lessonRepo.findByClassroomIdOrderByOrderIndexAsc(classroom.getId());
+                for (ClassroomLesson l : allLessons) {
+                    if (l.getOrderIndex() != null && lesson.getOrderIndex() != null
+                            && l.getOrderIndex() <= lesson.getOrderIndex() && l.getDeckIds() != null) {
+                        for (String did : l.getDeckIds()) {
+                            if (!deckIds.contains(did)) deckIds.add(did);
+                        }
+                    }
+                }
+                // Nếu vẫn rỗng, fallback tìm trong tất cả các bài của lớp
+                if (deckIds.isEmpty()) {
+                    for (ClassroomLesson l : allLessons) {
+                        if (l.getDeckIds() != null && !l.getDeckIds().isEmpty()) {
+                            for (String did : l.getDeckIds()) {
+                                if (!deckIds.contains(did)) deckIds.add(did);
+                            }
+                        }
+                    }
+                }
+                cardRange = null;
             }
 
             // Cập nhật thông tin hasQuiz cho buổi học
             lesson.setHasQuiz(true);
             lesson.setQuizDurationMinutes(quiz.getDurationMinutes());
             lessonRepo.save(lesson);
-        }
+        } else {
+            // General classroom quiz
+            if (req.requiredLessonId() != null) {
+                ClassroomLesson reqLesson = lessonRepo.findById(req.requiredLessonId())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy buổi học yêu cầu."));
+                if (!reqLesson.getClassroomId().equals(classroom.getId())) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Buổi học yêu cầu không thuộc lớp này.");
+                }
+                quiz.setRequiredLessonId(reqLesson.getId());
+            }
 
-        if (deckIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vui lòng chọn ít nhất 1 bộ thẻ nguồn để tạo bài kiểm tra.");
+            if (req.extraDeckIds() != null && !req.extraDeckIds().isEmpty()) {
+                quiz.setExtraDeckIds(new ArrayList<>(req.extraDeckIds()));
+            }
+
+            // Thu thập deckIds từ tất cả các bài học của lớp
+            List<ClassroomLesson> allLessons = lessonRepo.findByClassroomIdOrderByOrderIndexAsc(classroom.getId());
+            for (ClassroomLesson l : allLessons) {
+                if (l.getDeckIds() != null) {
+                    for (String did : l.getDeckIds()) {
+                        if (!deckIds.contains(did)) deckIds.add(did);
+                    }
+                }
+            }
+            if (req.extraDeckIds() != null) {
+                for (String edid : req.extraDeckIds()) {
+                    if (!deckIds.contains(edid)) deckIds.add(edid);
+                }
+            }
         }
 
         quiz.setDeckIds(deckIds);
         quiz.setCardRange(cardRange != null && !cardRange.isBlank() ? cardRange.trim() : null);
+
+        // Kiểm tra kho câu hỏi
+        List<Flashcard> pool = collectQuestionPool(quiz);
+        if (pool.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Không tìm thấy thẻ học nào để tạo đề thi. Vui lòng đảm bảo các buổi học đã được gán bộ thẻ nguồn.");
+        }
+
+        // Tự động điều chỉnh số câu hỏi tối đa bằng kích thước kho thẻ nếu vượt quá
+        int requestedQuestions = req.questionCount() != null && req.questionCount() > 0 ? req.questionCount() : 30;
+        quiz.setQuestionCount(Math.min(requestedQuestions, pool.size()));
+
         quiz.setIsPublished(true);
         quiz.setCreatedAt(Instant.now());
         quiz.setUpdatedAt(Instant.now());
         quiz = quizRepo.save(quiz);
 
-        return toQuizResponse(quiz, null, 0L);
+        String reqLessonTitle = null;
+        if (quiz.getRequiredLessonId() != null) {
+            reqLessonTitle = lessonRepo.findById(quiz.getRequiredLessonId()).map(ClassroomLesson::getTitle).orElse(null);
+        }
+
+        return toQuizResponse(quiz, null, 0L, false, reqLessonTitle);
     }
 
     /** Lấy danh sách bài kiểm tra của Lớp học */
@@ -127,6 +331,9 @@ public class ClassroomQuizService {
         if (quizzes.isEmpty()) {
             return Collections.emptyList();
         }
+
+        Classroom classroom = classroomRepo.findById(classroomId).orElse(null);
+        boolean isOwner = classroom != null && classroom.getOwnerId().equals(user.getId());
 
         List<Long> quizIds = quizzes.stream().map(ClassroomQuiz::getId).toList();
 
@@ -146,9 +353,41 @@ public class ClassroomQuizService {
             myScores.putIfAbsent(s.getQuizId(), s.getScore());
         }
 
-        return quizzes.stream()
-                .map(q -> toQuizResponse(q, myScores.get(q.getId()), submissionCounts.getOrDefault(q.getId(), 0L)))
-                .toList();
+        // Bản đồ tiến độ các buổi học của user để kiểm tra prerequisite
+        Set<Long> reqLessonIds = quizzes.stream()
+                .map(ClassroomQuiz::getRequiredLessonId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, Boolean> completedLessonsMap = new HashMap<>();
+        Map<Long, String> lessonTitlesMap = new HashMap<>();
+        if (!reqLessonIds.isEmpty()) {
+            List<ClassroomLesson> reqLessons = lessonRepo.findAllById(reqLessonIds);
+            for (ClassroomLesson l : reqLessons) {
+                lessonTitlesMap.put(l.getId(), l.getTitle());
+            }
+            List<ClassroomLessonProgress> progressList = progressRepo.findByLessonIdInAndUserId(new ArrayList<>(reqLessonIds), user.getId());
+            for (ClassroomLessonProgress p : progressList) {
+                if (Boolean.TRUE.equals(p.getIsCompleted())) {
+                    completedLessonsMap.put(p.getLessonId(), true);
+                }
+            }
+        }
+
+        return quizzes.stream().map(q -> {
+            boolean isLocked = false;
+            String reqTitle = null;
+            if (q.getRequiredLessonId() != null) {
+                reqTitle = lessonTitlesMap.get(q.getRequiredLessonId());
+                if (!isOwner) {
+                    boolean completed = completedLessonsMap.getOrDefault(q.getRequiredLessonId(), false);
+                    if (!completed) {
+                        isLocked = true;
+                    }
+                }
+            }
+            return toQuizResponse(q, myScores.get(q.getId()), submissionCounts.getOrDefault(q.getId(), 0L), isLocked, reqTitle);
+        }).toList();
     }
 
     /** Bắt đầu làm bài kiểm tra (Sinh đề ngẫu nhiên theo số câu và phạm vi thẻ) */
@@ -162,34 +401,27 @@ public class ClassroomQuizService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bài kiểm tra không thuộc lớp này.");
         }
 
+        Classroom classroom = classroomRepo.findById(classroomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lớp học."));
+        boolean isOwner = classroom.getOwnerId().equals(user.getId());
+
+        // Kiểm tra điều kiện tiên quyết (Prerequisite check)
+        if (!isOwner && quiz.getRequiredLessonId() != null) {
+            Optional<ClassroomLessonProgress> pOpt = progressRepo.findByLessonIdAndUserId(quiz.getRequiredLessonId(), user.getId());
+            if (pOpt.isEmpty() || !Boolean.TRUE.equals(pOpt.get().getIsCompleted())) {
+                String reqTitle = lessonRepo.findById(quiz.getRequiredLessonId()).map(ClassroomLesson::getTitle).orElse("buổi học yêu cầu");
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Bạn cần hoàn thành " + reqTitle + " trước khi làm bài kiểm tra này.");
+            }
+        }
+
         // Xóa attempt cũ nếu có
         attemptRepo.deleteByQuizIdAndUserId(quiz.getId(), user.getId());
 
-        // Thu thập các thẻ flashcard từ các deck nguồn
-        List<Flashcard> allCards = new ArrayList<>();
-        if (quiz.getDeckIds() != null) {
-            for (String deckId : quiz.getDeckIds()) {
-                allCards.addAll(flashcardRepo.findByDeck_IdOrderByPositionAsc(deckId));
-            }
-        }
-
-        if (allCards.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bộ thẻ nguồn không có thẻ flashcard nào.");
-        }
-
-        // Lọc theo cardRange nếu có (ví dụ "1-41")
-        List<Flashcard> questionPool = new ArrayList<>(allCards);
-        if (quiz.getCardRange() != null && !quiz.getCardRange().isBlank()) {
-            Matcher m = RANGE_PATTERN.matcher(quiz.getCardRange());
-            if (m.find()) {
-                int start = Integer.parseInt(m.group(1));
-                int end = Integer.parseInt(m.group(2));
-                int fromIndex = Math.max(0, start - 1);
-                int toIndex = Math.min(allCards.size(), end);
-                if (fromIndex < toIndex) {
-                    questionPool = new ArrayList<>(allCards.subList(fromIndex, toIndex));
-                }
-            }
+        // Thu thập kho thẻ câu hỏi
+        List<Flashcard> questionPool = collectQuestionPool(quiz);
+        if (questionPool.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Kho thẻ của bài kiểm tra chưa có câu hỏi nào.");
         }
 
         // Bốc ngẫu nhiên số lượng câu hỏi
@@ -198,11 +430,29 @@ public class ClassroomQuizService {
         List<Flashcard> selectedCards = questionPool.subList(0, targetCount);
 
         // Tập hợp tất cả các nghĩa để làm đáp án nhiễu (distractors)
-        List<String> allMeanings = allCards.stream()
+        List<String> allMeanings = questionPool.stream()
                 .map(c -> QuizService.headline(c.getMeaning()))
                 .filter(m -> m != null && !m.isBlank())
                 .distinct()
                 .collect(Collectors.toList());
+
+        // Nếu số nghĩa trong pool chưa đủ 4, bổ sung nghĩa từ các thẻ khác trong lớp
+        if (allMeanings.size() < 4) {
+            List<ClassroomLesson> allLessons = lessonRepo.findByClassroomIdOrderByOrderIndexAsc(classroomId);
+            for (ClassroomLesson l : allLessons) {
+                if (l.getDeckIds() != null) {
+                    for (String dId : l.getDeckIds()) {
+                        for (Flashcard c : flashcardRepo.findByDeck_IdOrderByPositionAsc(dId)) {
+                            String m = QuizService.headline(c.getMeaning());
+                            if (m != null && !m.isBlank() && !allMeanings.contains(m)) {
+                                allMeanings.add(m);
+                                if (allMeanings.size() >= 10) break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         List<QuizInternalItem> internalItems = new ArrayList<>();
         List<QuestionItemDto> clientQuestions = new ArrayList<>();
@@ -511,10 +761,14 @@ public class ClassroomQuizService {
         }
     }
 
-    private ClassroomQuizResponse toQuizResponse(ClassroomQuiz q, Integer myLatestScore, Long submissionCount) {
+    private ClassroomQuizResponse toQuizResponse(ClassroomQuiz q, Integer myLatestScore, Long submissionCount,
+                                                 Boolean isLockedForUser, String requiredLessonTitle) {
         String lessonTitle = null;
         if (q.getLessonId() != null) {
             lessonTitle = lessonRepo.findById(q.getLessonId()).map(ClassroomLesson::getTitle).orElse(null);
+        }
+        if (requiredLessonTitle == null && q.getRequiredLessonId() != null) {
+            requiredLessonTitle = lessonRepo.findById(q.getRequiredLessonId()).map(ClassroomLesson::getTitle).orElse(null);
         }
 
         return new ClassroomQuizResponse(
@@ -531,7 +785,12 @@ public class ClassroomQuizService {
                 q.getIsPublished(),
                 q.getCreatedAt(),
                 myLatestScore,
-                submissionCount
+                submissionCount,
+                q.getScopeType(),
+                q.getRequiredLessonId(),
+                requiredLessonTitle,
+                isLockedForUser != null ? isLockedForUser : false,
+                q.getExtraDeckIds() != null ? new ArrayList<>(q.getExtraDeckIds()) : Collections.emptyList()
         );
     }
 

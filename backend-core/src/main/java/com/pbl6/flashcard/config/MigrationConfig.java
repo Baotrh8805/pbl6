@@ -1,7 +1,9 @@
 package com.pbl6.flashcard.config;
 
+import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.flyway.FlywayConfigurationCustomizer;
+import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -21,6 +23,17 @@ public class MigrationConfig {
             if (!url.isBlank()) {
                 configuration.dataSource(url, username, password);
             }
+        };
+    }
+
+    /**
+     * Tự động repair checksum nếu migration script có thay đổi nhỏ sau khi đã apply vào DB dev.
+     */
+    @Bean
+    public FlywayMigrationStrategy flywayMigrationStrategy() {
+        return flyway -> {
+            flyway.repair();
+            flyway.migrate();
         };
     }
 }

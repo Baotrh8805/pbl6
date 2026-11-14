@@ -16,7 +16,10 @@ public class ClassroomQuizDtos {
             Integer durationMinutes,
             Integer questionCount,
             List<String> deckIds,
-            String cardRange
+            String cardRange,
+            String scopeType,
+            Long requiredLessonId,
+            List<String> extraDeckIds
     ) {}
 
     public record ClassroomQuizResponse(
@@ -33,7 +36,12 @@ public class ClassroomQuizDtos {
             Boolean isPublished,
             Instant createdAt,
             Integer myLatestScore,
-            Long submissionCount
+            Long submissionCount,
+            String scopeType,
+            Long requiredLessonId,
+            String requiredLessonTitle,
+            Boolean isLockedForUser,
+            List<String> extraDeckIds
     ) {}
 
     public record QuestionItemDto(

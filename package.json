@@ -8,6 +8,7 @@
         "smoke:crud": "node smoke-crud.mjs",
         "smoke:extraction": "node smoke-extraction.mjs",
         "smoke:learning-path": "node smoke-learning-path.mjs",
-        "e2e": "node e2e.mjs"
+        "e2e": "node e2e.mjs",
+        "k6": "k6 run scripts/perf-k6.js"
     }
 }

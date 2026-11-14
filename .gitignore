@@ -102,3 +102,16 @@ docs/
 ai-service/models/*
 !ai-service/models/MANIFEST.json
 !ai-service/models/README.md
+
+# ==============================================================================
+# Performance Testing Temporary / Export Files (Kiểm thử hiệu năng)
+# ==============================================================================
+*.doc
+*.docx
+~$*
+Excel_Copy_Bao.html
+Test_Cases_Hieu_Nang_Bao.tsv
+k6-dom-test.png
+scripts/perf-test.mjs
+scripts/perf-k6.js
+*k6*.js

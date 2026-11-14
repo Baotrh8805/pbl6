@@ -44,6 +44,16 @@ public class ClassroomQuiz {
     @Column(name = "deck_ids", columnDefinition = "jsonb")
     private List<String> deckIds = new ArrayList<>();
 
+    @Column(name = "scope_type", length = 30)
+    private String scopeType = "LESSON_ONLY";
+
+    @Column(name = "required_lesson_id")
+    private Long requiredLessonId;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "extra_deck_ids", columnDefinition = "jsonb")
+    private List<String> extraDeckIds = new ArrayList<>();
+
     @Column(name = "is_published")
     private Boolean isPublished = true;
 
@@ -125,6 +135,30 @@ public class ClassroomQuiz {
 
     public void setDeckIds(List<String> deckIds) {
         this.deckIds = deckIds;
+    }
+
+    public String getScopeType() {
+        return scopeType;
+    }
+
+    public void setScopeType(String scopeType) {
+        this.scopeType = scopeType;
+    }
+
+    public Long getRequiredLessonId() {
+        return requiredLessonId;
+    }
+
+    public void setRequiredLessonId(Long requiredLessonId) {
+        this.requiredLessonId = requiredLessonId;
+    }
+
+    public List<String> getExtraDeckIds() {
+        return extraDeckIds;
+    }
+
+    public void setExtraDeckIds(List<String> extraDeckIds) {
+        this.extraDeckIds = extraDeckIds;
     }
 
     public Boolean getIsPublished() {

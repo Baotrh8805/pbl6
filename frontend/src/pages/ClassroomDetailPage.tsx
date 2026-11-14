@@ -82,12 +82,15 @@ export const ClassroomDetailPage: React.FC = () => {
     const [quizzes, setQuizzes] = useState<ClassroomQuiz[]>([]);
     const [createQuizModalOpen, setCreateQuizModalOpen] = useState(false);
     const [quizLessonId, setQuizLessonId] = useState<number | null>(null);
+    const [quizScopeType, setQuizScopeType] = useState<"LESSON_ONLY" | "CUMULATIVE_UP_TO_LESSON" | "CLASSROOM_ALL">("LESSON_ONLY");
+    const [quizRequiredLessonId, setQuizRequiredLessonId] = useState<number | null>(null);
+    const [includeExtraDecks, setIncludeExtraDecks] = useState(false);
+    const [selectedExtraDecks, setSelectedExtraDecks] = useState<string[]>([]);
+    const [extraDeckSearch, setExtraDeckSearch] = useState("");
     const [quizTitle, setQuizTitle] = useState("");
     const [quizDescription, setQuizDescription] = useState("");
     const [quizDuration, setQuizDuration] = useState(15);
     const [quizQuestionCount, setQuizQuestionCount] = useState(30);
-    const [selectedQuizDecks, setSelectedQuizDecks] = useState<string[]>([]);
-    const [quizDeckSearch, setQuizDeckSearch] = useState("");
     const [savingQuiz, setSavingQuiz] = useState(false);
 
     // Modal xem danh sách điểm thi của học sinh (Giáo viên)
@@ -125,14 +128,18 @@ export const ClassroomDetailPage: React.FC = () => {
 
             try {
                 if (data.isOwner) {
-                    const [pending, approved, quizList] = await Promise.all([
+                    const [pending, approved, quizList, decks] = await Promise.all([
                         fetchPendingMembers(classroomId).catch(() => []),
                         fetchApprovedMembers(classroomId).catch(() => []),
                         fetchClassroomQuizzes(classroomId).catch(() => []),
+                        fetchDecks().catch(() => []),
                     ]);
                     setPendingMembers(pending);
                     setApprovedMembers(approved);
                     setQuizzes(quizList);
+                    if (decks && decks.length > 0) {
+                        setMyDecks(decks);
+                    }
                 } else {
                     const [approved, quizList] = await Promise.all([
                         fetchApprovedMembers(classroomId).catch(() => []),
@@ -291,29 +298,56 @@ export const ClassroomDetailPage: React.FC = () => {
         return { start, end, count: end - start + 1 };
     };
 
+    // Đếm số thẻ của một buổi học cụ thể
+    const getCardsCountForLesson = (lesson: ClassroomLesson): number => {
+        const range = extractLessonRange(lesson.title);
+        if (range) return range.count;
+        if (!lesson.deckIds || lesson.deckIds.length === 0) return 0;
+        return myDecks
+            .filter((d) => lesson.deckIds?.includes(d.id))
+            .reduce((sum, d) => sum + (d.cards?.length || 0), 0);
+    };
+
+    // Đếm số thẻ tích lũy cuốn chiếu từ Buổi 1 đến buổi mục tiêu
+    const getCardsCountForCumulative = (targetLesson: ClassroomLesson): number => {
+        const targetIdx = lessons.findIndex((l) => l.id === targetLesson.id);
+        if (targetIdx === -1) return getCardsCountForLesson(targetLesson);
+        return lessons
+            .slice(0, targetIdx + 1)
+            .reduce((sum, l) => sum + getCardsCountForLesson(l), 0);
+    };
+
+    // Đếm tổng số thẻ của tất cả các buổi học trong lớp
+    const getCardsCountForClassroomAll = (): number => {
+        return lessons.reduce((sum, l) => sum + getCardsCountForLesson(l), 0);
+    };
+
     // Mở modal tạo bài kiểm tra riêng
     const handleOpenCreateQuizModal = (lesson?: ClassroomLesson) => {
         if (lesson) {
             setQuizLessonId(lesson.id);
-            const range = extractLessonRange(lesson.title);
+            setQuizScopeType("LESSON_ONLY");
+            setQuizRequiredLessonId(null);
+            setIncludeExtraDecks(false);
+            setSelectedExtraDecks([]);
+
+            const count = getCardsCountForLesson(lesson);
             const label = formatLessonLabel(lesson);
             setQuizTitle(`Kiểm tra 15 phút - ${label}`);
-            setSelectedQuizDecks(lesson.deckIds ? [...lesson.deckIds] : []);
-
-            if (range) {
-                setQuizQuestionCount(Math.min(range.count, 30));
-            } else {
-                setQuizQuestionCount(30);
-            }
+            setQuizQuestionCount(count > 0 ? Math.min(count, 30) : 5);
         } else {
             setQuizLessonId(null);
+            setQuizScopeType("CLASSROOM_ALL");
+            setQuizRequiredLessonId(null);
+            setIncludeExtraDecks(false);
+            setSelectedExtraDecks([]);
+
+            const allCount = getCardsCountForClassroomAll();
             setQuizTitle("Bài kiểm tra trắc nghiệm tổng hợp (30 câu)");
-            setSelectedQuizDecks([]);
-            setQuizQuestionCount(30);
+            setQuizQuestionCount(allCount > 0 ? Math.min(allCount, 30) : 30);
         }
         setQuizDescription("");
         setQuizDuration(15);
-        setQuizDeckSearch("");
         setCreateQuizModalOpen(true);
     };
 
@@ -321,21 +355,47 @@ export const ClassroomDetailPage: React.FC = () => {
     const handleSelectQuizLesson = (lessonIdVal: number | null) => {
         setQuizLessonId(lessonIdVal);
         if (lessonIdVal) {
+            setQuizScopeType("LESSON_ONLY");
+            setQuizRequiredLessonId(null);
+            setIncludeExtraDecks(false);
+            setSelectedExtraDecks([]);
+
             const les = lessons.find((l) => l.id === lessonIdVal);
             if (les) {
-                setSelectedQuizDecks(les.deckIds ? [...les.deckIds] : []);
-                const range = extractLessonRange(les.title);
+                const count = getCardsCountForLesson(les);
                 const label = formatLessonLabel(les);
                 setQuizTitle(`Kiểm tra 15 phút - ${label}`);
-                if (range) {
-                    setQuizQuestionCount(Math.min(range.count, 30));
-                } else {
-                    setQuizQuestionCount(30);
-                }
+                setQuizQuestionCount(count > 0 ? Math.min(count, 30) : 5);
             }
         } else {
+            setQuizScopeType("CLASSROOM_ALL");
+            setQuizRequiredLessonId(null);
+            setIncludeExtraDecks(false);
+            setSelectedExtraDecks([]);
+
+            const allCount = getCardsCountForClassroomAll();
             setQuizTitle("Bài kiểm tra trắc nghiệm tổng hợp (30 câu)");
-            setQuizQuestionCount(30);
+            setQuizQuestionCount(allCount > 0 ? Math.min(allCount, 30) : 30);
+        }
+    };
+
+    // Khi thay đổi phạm vi bài thi buổi học (Tại buổi vs Lũy kế)
+    const handleSelectScopeType = (newScope: "LESSON_ONLY" | "CUMULATIVE_UP_TO_LESSON") => {
+        setQuizScopeType(newScope);
+        if (quizLessonId) {
+            const les = lessons.find((l) => l.id === quizLessonId);
+            if (les) {
+                const label = formatLessonLabel(les);
+                if (newScope === "LESSON_ONLY") {
+                    const count = getCardsCountForLesson(les);
+                    setQuizTitle(`Kiểm tra 15 phút - ${label}`);
+                    setQuizQuestionCount(count > 0 ? Math.min(count, 30) : 5);
+                } else {
+                    const count = getCardsCountForCumulative(les);
+                    setQuizTitle(`Kiểm tra lũy kế - Đến ${label}`);
+                    setQuizQuestionCount(count > 0 ? Math.min(count, 30) : 10);
+                }
+            }
         }
     };
 
@@ -346,14 +406,16 @@ export const ClassroomDetailPage: React.FC = () => {
             alert("Vui lòng nhập tiêu đề bài kiểm tra.");
             return;
         }
-        if (selectedQuizDecks.length === 0) {
-            alert("Vui lòng chọn ít nhất 1 bộ thẻ nguồn để tạo câu hỏi trắc nghiệm.");
+
+        // Nếu là quiz chung có tick chọn bộ thẻ ngoài nhưng chưa tick bộ nào
+        if (!quizLessonId && includeExtraDecks && selectedExtraDecks.length === 0) {
+            alert("Bạn đã bật tùy chọn 'Thêm bộ thẻ bên ngoài', vui lòng tick chọn ít nhất 1 bộ thẻ hoặc bỏ chọn.");
             return;
         }
 
-        // Tự động nhận diện dải thẻ nếu buổi học có băm thẻ
+        // Tự động nhận diện dải thẻ nếu buổi học có băm thẻ và là LESSON_ONLY
         let finalCardRange: string | undefined = undefined;
-        if (quizLessonId) {
+        if (quizLessonId && quizScopeType === "LESSON_ONLY") {
             const currentLesson = lessons.find((l) => l.id === quizLessonId);
             const currentLessonRange = extractLessonRange(currentLesson?.title);
             if (currentLessonRange) {
@@ -369,8 +431,10 @@ export const ClassroomDetailPage: React.FC = () => {
                 description: quizDescription.trim() || undefined,
                 durationMinutes: quizDuration,
                 questionCount: quizQuestionCount,
-                deckIds: selectedQuizDecks,
                 cardRange: finalCardRange,
+                scopeType: quizLessonId ? quizScopeType : "CLASSROOM_ALL",
+                requiredLessonId: !quizLessonId ? quizRequiredLessonId : null,
+                extraDeckIds: !quizLessonId && includeExtraDecks ? selectedExtraDecks : [],
             });
 
             setQuizzes((prev) => [created, ...prev.filter((q) => q.id !== created.id)]);
@@ -812,75 +876,116 @@ export const ClassroomDetailPage: React.FC = () => {
                             <div className="space-y-2.5">
                                 {quizzes
                                     .filter((q) => !q.lessonId)
-                                    .map((quiz) => (
-                                        <div
-                                            key={quiz.id}
-                                            className="p-3.5 rounded-2xl bg-white border border-purple-100 hover:border-purple-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold shrink-0">
-                                                    <span className="material-symbols-outlined text-[18px]">quiz</span>
-                                                </div>
-                                                <div className="space-y-0.5">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <h4 className="font-bold text-slate-900 text-xs">{quiz.title}</h4>
-                                                        <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold text-[10px] border border-purple-200">
-                                                            {quiz.questionCount} câu ngẫu nhiên · {quiz.durationMinutes} phút
+                                    .map((quiz) => {
+                                        const isQuizLocked = !classroom.isOwner && Boolean(quiz.isLockedForUser);
+                                        return (
+                                            <div
+                                                key={quiz.id}
+                                                className={`p-3.5 rounded-2xl transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs ${
+                                                    isQuizLocked
+                                                        ? "bg-slate-50/70 border border-dashed border-slate-300 opacity-70"
+                                                        : "bg-white border border-purple-100 hover:border-purple-300"
+                                                }`}
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold shrink-0 ${
+                                                        isQuizLocked
+                                                            ? "bg-slate-200 text-slate-500"
+                                                            : "bg-purple-100 text-purple-700"
+                                                    }`}>
+                                                        <span className="material-symbols-outlined text-[18px]">
+                                                            {isQuizLocked ? "lock" : "quiz"}
                                                         </span>
                                                     </div>
-                                                    <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                                                        <span>{quiz.deckIds.length} bộ thẻ nguồn</span>
-                                                        {quiz.myLatestScore !== null && quiz.myLatestScore !== undefined ? (
-                                                            <span className="font-bold text-emerald-600 flex items-center gap-0.5">
-                                                                · <span className="material-symbols-outlined text-[13px]">stars</span>
-                                                                Điểm của bạn: {quiz.myLatestScore}/100
+                                                    <div className="space-y-0.5">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <h4 className="font-bold text-slate-900 text-xs">{quiz.title}</h4>
+                                                            <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold text-[10px] border border-purple-200">
+                                                                {quiz.questionCount} câu ngẫu nhiên · {quiz.durationMinutes} phút
                                                             </span>
-                                                        ) : (
-                                                            <span>· Chưa làm bài</span>
-                                                        )}
+                                                            {quiz.requiredLessonId && quiz.requiredLessonTitle && (
+                                                                <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] border flex items-center gap-1 ${
+                                                                    isQuizLocked
+                                                                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                                }`}>
+                                                                    <span className="material-symbols-outlined text-[12px]">
+                                                                        {isQuizLocked ? "lock" : "lock_open"}
+                                                                    </span>
+                                                                    <span>Yêu cầu: Hoàn thành {quiz.requiredLessonTitle}</span>
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                                                            <span>{quiz.deckIds.length} bộ thẻ nguồn</span>
+                                                            {quiz.myLatestScore !== null && quiz.myLatestScore !== undefined ? (
+                                                                <span className="font-bold text-emerald-600 flex items-center gap-0.5">
+                                                                    · <span className="material-symbols-outlined text-[13px]">stars</span>
+                                                                    Điểm của bạn: {quiz.myLatestScore}/100
+                                                                </span>
+                                                            ) : (
+                                                                <span>· {isQuizLocked ? "Chưa mở khóa thi" : "Chưa làm bài"}</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
+
+                                                <div className="flex items-center gap-2 self-end sm:self-center">
+                                                    {classroom.isOwner && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenQuizSubmissions(quiz)}
+                                                            className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold text-xs border border-purple-200 transition-colors cursor-pointer flex items-center gap-1"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[14px]">groups</span>
+                                                            <span>{quiz.submissionCount} bạn đã nộp</span>
+                                                        </button>
+                                                    )}
+
+                                                    {isQuizLocked ? (
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed group relative"
+                                                            title={`Bạn cần hoàn thành ${quiz.requiredLessonTitle || "buổi học yêu cầu"} trước khi làm bài thi này`}
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">lock</span>
+                                                            <span>Chưa mở khóa</span>
+                                                            <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 right-0 z-30 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-medium whitespace-nowrap shadow-xl">
+                                                                Cần hoàn thành {quiz.requiredLessonTitle || "buổi học yêu cầu"} trước
+                                                                <div className="absolute top-full right-4 border-4 border-transparent border-t-slate-900" />
+                                                            </div>
+                                                        </button>
+                                                    ) : (
+                                                        <Link
+                                                            to={`/classrooms/${classroomId}/quizzes/${quiz.id}`}
+                                                            className={`px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
+                                                                quiz.myLatestScore !== null && quiz.myLatestScore !== undefined
+                                                                    ? "bg-purple-100 hover:bg-purple-200 text-purple-800"
+                                                                    : "bg-purple-600 hover:bg-purple-700 text-white"
+                                                            }`}
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">
+                                                                {quiz.myLatestScore !== null ? "replay" : "play_arrow"}
+                                                            </span>
+                                                            <span>{quiz.myLatestScore !== null ? "Làm lại bài thi" : "Làm bài thi ngay"}</span>
+                                                        </Link>
+                                                    )}
+
+                                                    {classroom.isOwner && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteQuiz(quiz.id, quiz.title)}
+                                                            className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                                            title="Xóa bài thi này"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
-
-                                            <div className="flex items-center gap-2 self-end sm:self-center">
-                                                {classroom.isOwner && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleOpenQuizSubmissions(quiz)}
-                                                        className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold text-xs border border-purple-200 transition-colors cursor-pointer flex items-center gap-1"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[14px]">groups</span>
-                                                        <span>{quiz.submissionCount} bạn đã nộp</span>
-                                                    </button>
-                                                )}
-
-                                                <Link
-                                                    to={`/classrooms/${classroomId}/quizzes/${quiz.id}`}
-                                                    className={`px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
-                                                        quiz.myLatestScore !== null && quiz.myLatestScore !== undefined
-                                                            ? "bg-purple-100 hover:bg-purple-200 text-purple-800"
-                                                            : "bg-purple-600 hover:bg-purple-700 text-white"
-                                                    }`}
-                                                >
-                                                    <span className="material-symbols-outlined text-[16px]">
-                                                        {quiz.myLatestScore !== null ? "replay" : "play_arrow"}
-                                                    </span>
-                                                    <span>{quiz.myLatestScore !== null ? "Làm lại bài thi" : "Làm bài thi ngay"}</span>
-                                                </Link>
-
-                                                {classroom.isOwner && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDeleteQuiz(quiz.id, quiz.title)}
-                                                        className="p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                                        title="Xóa bài thi này"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[16px]">delete</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                             </div>
                         </div>
                     )}
@@ -892,32 +997,47 @@ export const ClassroomDetailPage: React.FC = () => {
                             <p className="text-xs text-slate-400">Giáo viên sẽ sớm thêm các buổi học và bài tập vào đây.</p>
                         </div>
                     ) : (
-                        lessons.map((lesson) => {
+                        lessons.map((lesson, index) => {
                             const lessonQuiz = quizzes.find((q) => q.lessonId === lesson.id);
+                            const isLessonLocked = !classroom.isOwner && index > 0 && !lessons.slice(0, index).every((l) => l.isCompleted);
+                            const prevLesson = index > 0 ? lessons[index - 1] : null;
+                            const lockTooltipText = prevLesson
+                                ? `Cần học theo thứ tự: Hãy hoàn thành ${formatLessonLabel(prevLesson)} trước để mở khóa bài học này`
+                                : "Cần học theo thứ tự: Hãy hoàn thành bài học trước để mở khóa";
+
                             return (
                                 <div
                                     key={lesson.id}
-                                    className={`p-4 rounded-2xl bg-white border transition-all space-y-3 ${
+                                    className={`p-4 rounded-2xl transition-all space-y-3 ${
                                         lesson.isCompleted
-                                            ? "border-emerald-200 bg-emerald-50/15 shadow-2xs"
-                                            : "border-slate-200 hover:border-blue-300 hover:shadow-xs"
+                                            ? "border border-emerald-200 bg-emerald-50/15 shadow-2xs"
+                                            : isLessonLocked
+                                            ? "border border-dashed border-slate-300 bg-slate-50/70 opacity-65"
+                                            : "border border-slate-200 hover:border-blue-300 hover:shadow-xs bg-white"
                                     }`}
                                 >
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                         <div className="flex items-start gap-3.5">
-                                            <div
-                                                className={`w-10 h-10 rounded-xl font-bold flex items-center justify-center text-sm shrink-0 ${
-                                                    lesson.isCompleted
-                                                        ? "bg-emerald-600 text-white shadow-xs"
-                                                        : "bg-blue-50 text-blue-700"
-                                                }`}
-                                            >
-                                                {lesson.isCompleted ? (
+                                            {lesson.isCompleted ? (
+                                                <div className="w-10 h-10 rounded-xl font-bold flex items-center justify-center text-sm shrink-0 bg-emerald-600 text-white shadow-xs">
                                                     <span className="material-symbols-outlined text-[20px]">check</span>
-                                                ) : (
-                                                    lesson.orderIndex
-                                                )}
-                                            </div>
+                                                </div>
+                                            ) : isLessonLocked ? (
+                                                <div
+                                                    className="w-10 h-10 rounded-xl font-bold flex items-center justify-center text-sm shrink-0 bg-slate-200/80 text-slate-500 border border-slate-300 group relative cursor-not-allowed"
+                                                    title={lockTooltipText}
+                                                >
+                                                    <span className="material-symbols-outlined text-[20px]">lock</span>
+                                                    <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-medium whitespace-nowrap shadow-xl">
+                                                        {lockTooltipText}
+                                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-xl font-bold flex items-center justify-center text-sm shrink-0 bg-blue-50 text-blue-700">
+                                                    {lesson.orderIndex}
+                                                </div>
+                                            )}
                                             <div className="space-y-1">
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     <h4 className="font-bold text-slate-900 text-sm">{lesson.title}</h4>
@@ -925,6 +1045,12 @@ export const ClassroomDetailPage: React.FC = () => {
                                                         <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-200 flex items-center gap-1">
                                                             <span className="material-symbols-outlined text-[13px]">check_circle</span>
                                                             <span>Đã hoàn thành</span>
+                                                        </span>
+                                                    )}
+                                                    {isLessonLocked && (
+                                                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-semibold text-[10px] border border-slate-200 flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-[12px]">lock</span>
+                                                            <span>Cần học theo thứ tự</span>
                                                         </span>
                                                     )}
                                                     {lessonQuiz && (
@@ -960,40 +1086,58 @@ export const ClassroomDetailPage: React.FC = () => {
                                         </div>
 
                                         <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
-                                            {lesson.deckIds && lesson.deckIds.length === 1 && (
-                                                <Link
-                                                    to={getLessonStudyUrl(lesson.deckIds[0], lesson.title, lesson.id)}
-                                                    className={`px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
-                                                        lesson.isCompleted
-                                                            ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300"
-                                                            : "bg-blue-600 hover:bg-blue-700 text-white"
-                                                    }`}
+                                            {isLessonLocked ? (
+                                                <button
+                                                    type="button"
+                                                    disabled
+                                                    className="px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed group relative"
+                                                    title={lockTooltipText}
                                                 >
-                                                    <span className="material-symbols-outlined text-[16px]">
-                                                        {lesson.isCompleted ? "replay" : "play_arrow"}
-                                                    </span>
-                                                    <span>{lesson.isCompleted ? "Ôn lại bài" : "Học ngay"}</span>
-                                                </Link>
-                                            )}
-                                            {lesson.deckIds && lesson.deckIds.length > 1 && (
-                                                <div className="flex items-center gap-1.5">
-                                                    {lesson.deckIds.map((did, didx) => (
+                                                    <span className="material-symbols-outlined text-[16px]">lock</span>
+                                                    <span>Chưa mở khóa</span>
+                                                    <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full mb-2 right-0 z-30 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-medium whitespace-nowrap shadow-xl">
+                                                        {lockTooltipText}
+                                                        <div className="absolute top-full right-4 border-4 border-transparent border-t-slate-900" />
+                                                    </div>
+                                                </button>
+                                            ) : (
+                                                <>
+                                                    {lesson.deckIds && lesson.deckIds.length === 1 && (
                                                         <Link
-                                                            key={did}
-                                                            to={getLessonStudyUrl(did, lesson.title, lesson.id)}
-                                                            className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1 border transition-colors ${
+                                                            to={getLessonStudyUrl(lesson.deckIds[0], lesson.title, lesson.id)}
+                                                            className={`px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
                                                                 lesson.isCompleted
-                                                                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300"
-                                                                    : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                                                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300"
+                                                                    : "bg-blue-600 hover:bg-blue-700 text-white"
                                                             }`}
                                                         >
-                                                            <span className="material-symbols-outlined text-[14px]">
+                                                            <span className="material-symbols-outlined text-[16px]">
                                                                 {lesson.isCompleted ? "replay" : "play_arrow"}
                                                             </span>
-                                                            <span>{lesson.isCompleted ? `Ôn phần ${didx + 1}` : `Học phần ${didx + 1}`}</span>
+                                                            <span>{lesson.isCompleted ? "Ôn lại bài" : "Học ngay"}</span>
                                                         </Link>
-                                                    ))}
-                                                </div>
+                                                    )}
+                                                    {lesson.deckIds && lesson.deckIds.length > 1 && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            {lesson.deckIds.map((did, didx) => (
+                                                                <Link
+                                                                    key={did}
+                                                                    to={getLessonStudyUrl(did, lesson.title, lesson.id)}
+                                                                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1 border transition-colors ${
+                                                                        lesson.isCompleted
+                                                                            ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300"
+                                                                            : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                                                    }`}
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[14px]">
+                                                                        {lesson.isCompleted ? "replay" : "play_arrow"}
+                                                                    </span>
+                                                                    <span>{lesson.isCompleted ? `Ôn phần ${didx + 1}` : `Học phần ${didx + 1}`}</span>
+                                                                </Link>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </div>
@@ -1019,7 +1163,7 @@ export const ClassroomDetailPage: React.FC = () => {
                                                         </div>
                                                     ) : (
                                                         <div className="text-[11px] text-slate-400 mt-0.5">
-                                                            Chưa hoàn thành bài kiểm tra
+                                                            {isLessonLocked ? "Chưa mở khóa kiểm tra" : "Chưa hoàn thành bài kiểm tra"}
                                                         </div>
                                                     )}
                                                 </div>
@@ -1037,21 +1181,33 @@ export const ClassroomDetailPage: React.FC = () => {
                                                     </button>
                                                 )}
 
-                                                <Link
-                                                    to={`/classrooms/${classroomId}/quizzes/${lessonQuiz.id}`}
-                                                    className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all ${
-                                                        lessonQuiz.myLatestScore !== null && lessonQuiz.myLatestScore !== undefined
-                                                            ? "bg-purple-100 hover:bg-purple-200 text-purple-800"
-                                                            : "bg-purple-600 hover:bg-purple-700 text-white"
-                                                    }`}
-                                                >
-                                                    <span className="material-symbols-outlined text-[16px]">
-                                                        {lessonQuiz.myLatestScore !== null ? "replay" : "play_arrow"}
-                                                    </span>
-                                                    <span>
-                                                        {lessonQuiz.myLatestScore !== null ? "Làm lại bài thi" : "Làm kiểm tra ngay"}
-                                                    </span>
-                                                </Link>
+                                                {isLessonLocked ? (
+                                                    <button
+                                                        type="button"
+                                                        disabled
+                                                        className="px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                                                        title={lockTooltipText}
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">lock</span>
+                                                        <span>Khóa</span>
+                                                    </button>
+                                                ) : (
+                                                    <Link
+                                                        to={`/classrooms/${classroomId}/quizzes/${lessonQuiz.id}`}
+                                                        className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all ${
+                                                            lessonQuiz.myLatestScore !== null && lessonQuiz.myLatestScore !== undefined
+                                                                ? "bg-purple-100 hover:bg-purple-200 text-purple-800"
+                                                                : "bg-purple-600 hover:bg-purple-700 text-white"
+                                                        }`}
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">
+                                                            {lessonQuiz.myLatestScore !== null ? "replay" : "play_arrow"}
+                                                        </span>
+                                                        <span>
+                                                            {lessonQuiz.myLatestScore !== null ? "Làm lại bài thi" : "Làm kiểm tra ngay"}
+                                                        </span>
+                                                    </Link>
+                                                )}
 
                                                 {classroom.isOwner && (
                                                     <button
@@ -1789,59 +1945,256 @@ export const ClassroomDetailPage: React.FC = () => {
                         </select>
                     </div>
 
-                    {/* THÔNG TIN PHẠM VI BỐC CÂU HỎI TỰ ĐỘNG */}
-                    {(() => {
-                        const currentLesson = lessons.find((l) => l.id === quizLessonId);
-                        const lessonRange = extractLessonRange(currentLesson?.title);
-                        const totalCardsInDecks = myDecks
-                            .filter((d) => selectedQuizDecks.includes(d.id))
-                            .reduce((sum, d) => sum + (d.cards?.length || 0), 0);
+                    {/* PHẠM VI NGUỒN CÂU HỎI */}
+                    {quizLessonId ? (
+                        /* GIAO DIỆN CHỌN PHẠM VI CHO BUỔI HỌC */
+                        <div className="space-y-2">
+                            <label className="block font-bold text-slate-700">
+                                Nguồn câu hỏi cho bài kiểm tra Buổi học:
+                            </label>
+                            {(() => {
+                                const curLesson = lessons.find((l) => l.id === quizLessonId);
+                                const singleCount = curLesson ? getCardsCountForLesson(curLesson) : 0;
+                                const cumCount = curLesson ? getCardsCountForCumulative(curLesson) : 0;
 
-                        return (
-                            <div className="p-3 rounded-2xl bg-purple-50/70 border border-purple-200/80 text-xs flex items-start gap-2.5">
-                                <span className="material-symbols-outlined text-[18px] text-purple-600 shrink-0 mt-0.5">
-                                    {lessonRange ? "lock" : "auto_awesome"}
+                                return (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        <div
+                                            onClick={() => handleSelectScopeType("LESSON_ONLY")}
+                                            className={`p-3 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-2.5 ${
+                                                quizScopeType === "LESSON_ONLY"
+                                                    ? "border-purple-600 bg-purple-50/70 shadow-xs"
+                                                    : "border-slate-200 bg-white hover:border-slate-300"
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="quizScope"
+                                                checked={quizScopeType === "LESSON_ONLY"}
+                                                onChange={() => handleSelectScopeType("LESSON_ONLY")}
+                                                className="mt-0.5 text-purple-600"
+                                            />
+                                            <div className="space-y-0.5">
+                                                <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                                                    <span>Chỉ thẻ tại buổi này</span>
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">
+                                                        {singleCount} thẻ
+                                                    </span>
+                                                </div>
+                                                <p className="text-[11px] text-slate-500">
+                                                    Đề thi chỉ bốc câu hỏi từ nội dung học của riêng buổi học này, không lấy bài khác.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div
+                                            onClick={() => handleSelectScopeType("CUMULATIVE_UP_TO_LESSON")}
+                                            className={`p-3 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-2.5 ${
+                                                quizScopeType === "CUMULATIVE_UP_TO_LESSON"
+                                                    ? "border-purple-600 bg-purple-50/70 shadow-xs"
+                                                    : "border-slate-200 bg-white hover:border-slate-300"
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="quizScope"
+                                                checked={quizScopeType === "CUMULATIVE_UP_TO_LESSON"}
+                                                onChange={() => handleSelectScopeType("CUMULATIVE_UP_TO_LESSON")}
+                                                className="mt-0.5 text-purple-600"
+                                            />
+                                            <div className="space-y-0.5">
+                                                <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                                                    <span>Lũy kế từ Buổi 1</span>
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">
+                                                        {cumCount} thẻ
+                                                    </span>
+                                                </div>
+                                                <p className="text-[11px] text-slate-500">
+                                                    Bốc cuốn chiếu từ Buổi 1 đến buổi hiện tại, hỗ trợ ôn tập liên tục và tự lọc trùng thẻ.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    ) : (
+                        /* GIAO DIỆN CHO BÀI KIỂM TRA CHUNG CẢ LỚP */
+                        <div className="space-y-3">
+                            <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200/90 text-xs flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[20px] text-purple-600 shrink-0 mt-0.5">
+                                    school
                                 </span>
-                                <div className="space-y-0.5">
+                                <div className="space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-bold text-slate-900">
-                                            {lessonRange
-                                                ? `Phạm vi: Tự động theo Buổi học (Thẻ ${lessonRange.start} → ${lessonRange.end})`
-                                                : "Phạm vi: Bốc ngẫu nhiên từ toàn bộ các bộ thẻ nguồn"}
+                                            Kho thẻ mặc định: Toàn bộ bài học trong lớp
                                         </span>
-                                        <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold text-[10px]">
-                                            {lessonRange ? `${lessonRange.count} thẻ` : `${totalCardsInDecks} thẻ`}
+                                        <span className="px-2 py-0.5 rounded-md bg-purple-200/80 text-purple-900 font-bold text-[10px]">
+                                            {getCardsCountForClassroomAll()} thẻ
                                         </span>
                                     </div>
-                                    <p className="text-[11px] text-slate-500">
-                                        {lessonRange
-                                            ? "Hệ thống tự động khóa đề thi chỉ bốc câu hỏi trong các thẻ đã học ở buổi này, không bị lẫn sang buổi khác."
-                                            : "Hệ thống sẽ bốc ngẫu nhiên câu hỏi từ các bộ thẻ bạn tick chọn bên dưới."}
+                                    <p className="text-[11px] text-slate-600">
+                                        Đề thi sẽ tổng hợp kiến thức từ tất cả các buổi học của lớp, tự động lọc bỏ các câu hỏi trùng lặp thuật ngữ.
                                     </p>
                                 </div>
                             </div>
-                        );
-                    })()}
 
-                    {/* Cài đặt số câu hỏi & thời gian */}
+                            {/* ĐIỀU KIỆN TIÊN QUYẾT: YÊU CẦU HOÀN THÀNH ĐẾN BUỔI NÀO */}
+                            <div className="space-y-1">
+                                <label className="block font-bold text-slate-700">
+                                    Yêu cầu hoàn thành trước khi thi (Dành cho học sinh):
+                                </label>
+                                <select
+                                    value={quizRequiredLessonId ?? ""}
+                                    onChange={(e) => setQuizRequiredLessonId(e.target.value ? Number(e.target.value) : null)}
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-purple-500 text-xs bg-white cursor-pointer"
+                                >
+                                    <option value="">🔓 Không yêu cầu (Học viên có thể thi bất cứ lúc nào)</option>
+                                    {lessons.map((l) => (
+                                        <option key={l.id} value={l.id}>
+                                            🔒 Phải hoàn thành đến {formatLessonLabel(l)} mới được làm bài thi
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-slate-400">
+                                    Học sinh chưa hoàn thành buổi học này sẽ thấy bài thi ở trạng thái khóa và không thể bắt đầu làm bài.
+                                </p>
+                            </div>
+
+                            {/* TÙY CHỌN THÊM BỘ THẺ BÊN NGOÀI */}
+                            <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={includeExtraDecks}
+                                        onChange={(e) => setIncludeExtraDecks(e.target.checked)}
+                                        className="w-4 h-4 text-purple-600 rounded-md"
+                                    />
+                                    <span className="font-bold text-slate-700">
+                                        Chọn thêm bộ thẻ bên ngoài vào đề thi (Tự động lọc trùng)
+                                    </span>
+                                </label>
+
+                                {includeExtraDecks && (
+                                    <div className="space-y-2 pl-6 pt-1">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                            <span className="text-slate-500 font-medium">
+                                                Đã chọn: <strong>{selectedExtraDecks.length} bộ thẻ ngoài</strong>
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedExtraDecks(myDecks.map((d) => d.id))}
+                                                    className="text-purple-600 font-semibold hover:underline"
+                                                >
+                                                    Chọn tất cả
+                                                </button>
+                                                <span>·</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedExtraDecks([])}
+                                                    className="text-slate-500 font-semibold hover:underline"
+                                                >
+                                                    Bỏ chọn
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <input
+                                            type="text"
+                                            value={extraDeckSearch}
+                                            onChange={(e) => setExtraDeckSearch(e.target.value)}
+                                            placeholder="🔍 Tìm kiếm bộ thẻ ngoài..."
+                                            className="w-full px-3 py-1.5 rounded-xl border border-slate-200 focus:outline-hidden focus:border-purple-500 text-xs"
+                                        />
+
+                                        <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white">
+                                            {myDecks
+                                                .filter((d) =>
+                                                    (d.title || "").toLowerCase().includes(extraDeckSearch.toLowerCase())
+                                                )
+                                                .map((deck) => {
+                                                    const isChecked = selectedExtraDecks.includes(deck.id);
+                                                    return (
+                                                        <label
+                                                            key={deck.id}
+                                                            className={`p-2 px-3 flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                                                isChecked ? "bg-purple-50/50" : "hover:bg-slate-50"
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={(e) => {
+                                                                        if (e.target.checked) {
+                                                                            setSelectedExtraDecks((prev) => [...prev, deck.id]);
+                                                                        } else {
+                                                                            setSelectedExtraDecks((prev) =>
+                                                                                prev.filter((id) => id !== deck.id)
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                    className="w-4 h-4 text-purple-600 rounded-md"
+                                                                />
+                                                                <div>
+                                                                    <span className="font-semibold text-slate-800 block text-xs">
+                                                                        {deck.title}
+                                                                    </span>
+                                                                    {deck.description && (
+                                                                        <span className="text-[10px] text-slate-400 block truncate max-w-xs">
+                                                                            {deck.description}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
+                                                                {deck.cards?.length || 0} thẻ
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* CÀI ĐẶT SỐ CÂU HỎI & THỜI GIAN LÀM BÀI */}
                     {(() => {
-                        const currentLesson = lessons.find((l) => l.id === quizLessonId);
-                        const lessonRange = extractLessonRange(currentLesson?.title);
-                        const totalCardsInDecks = myDecks
-                            .filter((d) => selectedQuizDecks.includes(d.id))
-                            .reduce((sum, d) => sum + (d.cards?.length || 0), 0);
-
-                        const availableInScope = lessonRange ? lessonRange.count : totalCardsInDecks;
+                        let availableInScope = 0;
+                        if (quizLessonId) {
+                            const curLesson = lessons.find((l) => l.id === quizLessonId);
+                            if (curLesson) {
+                                availableInScope = quizScopeType === "LESSON_ONLY"
+                                    ? getCardsCountForLesson(curLesson)
+                                    : getCardsCountForCumulative(curLesson);
+                            }
+                        } else {
+                            const classroomCards = getCardsCountForClassroomAll();
+                            const extraCards = selectedExtraDecks.reduce(
+                                (sum, did) => sum + (myDecks.find((d) => d.id === did)?.cards?.length || 0),
+                                0
+                            );
+                            availableInScope = classroomCards + (includeExtraDecks ? extraCards : 0);
+                        }
 
                         return (
                             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1.5">
-                                        <label className="block font-bold text-slate-700">
-                                            Số câu hỏi trong đề: <strong>{quizQuestionCount} câu</strong>
-                                        </label>
+                                        <div className="flex items-center justify-between">
+                                            <label className="block font-bold text-slate-700">
+                                                Số câu hỏi trong đề:
+                                            </label>
+                                            <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
+                                                {availableInScope > 0 ? `${quizQuestionCount} câu` : "0 câu (Chưa có thẻ)"}
+                                            </span>
+                                        </div>
                                         <div className="flex flex-wrap items-center gap-1.5">
-                                            {availableInScope > 0 && availableInScope < 30 && (
+                                            {availableInScope > 0 && (
                                                 <button
                                                     type="button"
                                                     onClick={() => setQuizQuestionCount(availableInScope)}
@@ -1854,27 +2207,38 @@ export const ClassroomDetailPage: React.FC = () => {
                                                     Tối đa ({availableInScope} câu)
                                                 </button>
                                             )}
-                                            {[10, 20, 30, 40].map((cnt) => (
-                                                <button
-                                                    key={cnt}
-                                                    type="button"
-                                                    onClick={() => setQuizQuestionCount(cnt)}
-                                                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors cursor-pointer ${
-                                                        quizQuestionCount === cnt
-                                                            ? "bg-purple-600 text-white"
-                                                            : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
-                                                    }`}
-                                                >
-                                                    {cnt} câu
-                                                </button>
-                                            ))}
+                                            {[5, 10, 20, 30, 40].map((cnt) => {
+                                                const disabled = availableInScope > 0 && cnt > availableInScope;
+                                                return (
+                                                    <button
+                                                        key={cnt}
+                                                        type="button"
+                                                        disabled={disabled || availableInScope === 0}
+                                                        onClick={() => setQuizQuestionCount(cnt)}
+                                                        className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
+                                                            quizQuestionCount === cnt && availableInScope > 0
+                                                                ? "bg-purple-600 text-white"
+                                                                : disabled || availableInScope === 0
+                                                                ? "bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed"
+                                                                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 cursor-pointer"
+                                                        }`}
+                                                    >
+                                                        {cnt} câu
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="block font-bold text-slate-700">
-                                            Thời gian làm bài: <strong>{quizDuration} phút</strong>
-                                        </label>
+                                        <div className="flex items-center justify-between">
+                                            <label className="block font-bold text-slate-700">
+                                                Thời gian làm bài:
+                                            </label>
+                                            <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
+                                                {quizDuration} phút
+                                            </span>
+                                        </div>
                                         <div className="flex items-center gap-1.5">
                                             {[10, 15, 20, 30].map((dur) => (
                                                 <button
@@ -1898,95 +2262,13 @@ export const ClassroomDetailPage: React.FC = () => {
                                     <div className="p-2 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-800 flex items-center gap-1.5">
                                         <span className="material-symbols-outlined text-[16px] text-amber-600">info</span>
                                         <span>
-                                            Phạm vi hiện tại có <strong>{availableInScope} thẻ</strong>. Đề thi sẽ lấy tối đa <strong>{availableInScope} câu hỏi</strong> từ phạm vi này.
+                                            Kho thẻ hiện tại có <strong>{availableInScope} thẻ</strong>. Đề thi sẽ tự động bốc tối đa <strong>{availableInScope} câu hỏi</strong>.
                                         </span>
                                     </div>
                                 )}
                             </div>
                         );
                     })()}
-
-                    {/* Chọn bộ thẻ nguồn */}
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                            <label className="font-bold text-slate-700">
-                                Chọn bộ thẻ nguồn để bốc câu hỏi <span className="text-rose-500">*</span>:
-                            </label>
-                            <div className="flex items-center gap-2 text-[11px]">
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedQuizDecks(myDecks.map((d) => d.id))}
-                                    className="text-purple-600 font-semibold hover:underline"
-                                >
-                                    Chọn tất cả
-                                </button>
-                                <span>·</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedQuizDecks([])}
-                                    className="text-slate-500 font-semibold hover:underline"
-                                >
-                                    Bỏ chọn
-                                </button>
-                            </div>
-                        </div>
-
-                        <input
-                            type="text"
-                            value={quizDeckSearch}
-                            onChange={(e) => setQuizDeckSearch(e.target.value)}
-                            placeholder="🔍 Tìm kiếm bộ thẻ..."
-                            className="w-full px-3 py-1.5 rounded-xl border border-slate-200 focus:outline-hidden focus:border-purple-500 text-xs"
-                        />
-
-                        <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white">
-                            {myDecks
-                                .filter((d) =>
-                                    (d.title || "").toLowerCase().includes(quizDeckSearch.toLowerCase())
-                                )
-                                .map((deck) => {
-                                    const isChecked = selectedQuizDecks.includes(deck.id);
-                                    return (
-                                        <label
-                                            key={deck.id}
-                                            className={`p-2.5 px-3 flex items-center justify-between gap-2 cursor-pointer transition-colors ${
-                                                isChecked ? "bg-purple-50/50" : "hover:bg-slate-50"
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isChecked}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setSelectedQuizDecks((prev) => [...prev, deck.id]);
-                                                        } else {
-                                                            setSelectedQuizDecks((prev) =>
-                                                                prev.filter((id) => id !== deck.id)
-                                                            );
-                                                        }
-                                                    }}
-                                                    className="w-4 h-4 text-purple-600 rounded-md"
-                                                />
-                                                <div>
-                                                    <span className="font-semibold text-slate-800 block">
-                                                        {deck.title}
-                                                    </span>
-                                                    {deck.description && (
-                                                        <span className="text-[10px] text-slate-400 block truncate max-w-xs">
-                                                            {deck.description}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
-                                                {deck.cards?.length || 0} thẻ
-                                            </span>
-                                        </label>
-                                    );
-                                })}
-                        </div>
-                    </div>
 
                     <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                         <button
